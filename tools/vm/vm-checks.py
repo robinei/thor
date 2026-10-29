@@ -76,6 +76,19 @@ def sh(command, input=None, binary=False, check=False):
     return result.stdout
 
 
+def settled(read, quiet=0.5, seconds=5.0):
+    """What `read` gives once it has stopped changing for `quiet` seconds (within `seconds`)."""
+    value, since, end = read(), time.monotonic(), time.monotonic() + seconds
+    while time.monotonic() < end:
+        time.sleep(0.1)
+        now_value = read()
+        if now_value != value:
+            value, since = now_value, time.monotonic()
+        elif time.monotonic() - since >= quiet:
+            break
+    return value
+
+
 def until(condition, seconds=5.0, every=0.2):
     """Waits for a condition; whether it came."""
     end = time.monotonic() + seconds
@@ -582,11 +595,13 @@ class Checks:
         before = light_pixels(self.i.screenshot(), BAR_Y, 20, 600)
         since = now()
         self.i.touch.down(0, ICONS["volume"], BAR_Y)
-        time.sleep(0.5)
-        during = light_pixels(self.i.screenshot(), BAR_Y, 20, 600)
+        # (Held until the slider is drawn: the hold's time, then a frame.)
+        lit_bar = lambda: light_pixels(self.i.screenshot(), BAR_Y, 20, 600)
+        shown = until(lambda: lit_bar() > before + 150, 3)
+        during = lit_bar()
         self.i.touch.up(0)
         time.sleep(3)
-        self.check("bar: a hold on volume shows the slider", during > before + 150, f"light pixels on the bar {before} -> {during}")
+        self.check("bar: a hold on volume shows the slider", shown, f"light pixels on the bar {before} -> {during}")
         self.check("  and doesn't open the volume tab", tab() == "dock" and "Watch(Audio, true)" not in journal(since),
                    f"tab {tab()!r}")
 
@@ -629,13 +644,13 @@ class Checks:
         start = level()
         x = ICONS["brightness"]
         self.i.touch.slide(0, x, BAR_Y, x - 150, BAR_Y, 6, 0.5)  # finger 0 sliding down, still on the screen
-        time.sleep(0.5)
+        until(lambda: level() < start - 10, 3)
         middle = level()
         self.i.tap(ICONS["wifi"], BAR_Y, slot=1)  # finger 1 taps another tab meanwhile
         for step in range(1, 11):  # finger 0 goes on, up
             time.sleep(0.05)
             self.i.touch.move(0, x - 150 + step * 20, BAR_Y)
-        time.sleep(0.5)
+        until(lambda: level() > middle + 10, 3)
         end = level()
         self.i.touch.up(0)
         self.check("bar, two fingers: a slide goes on while another finger taps a tab",
@@ -645,11 +660,22 @@ class Checks:
     # lists
 
     def wifi_forget(self):
-        sh("sudo nmcli connection delete ThorTest > /dev/null 2>&1; "
-           "sudo nmcli dev wifi connect ThorTest password thortest123 ifname wlan0 > /dev/null 2>&1")
-        saved_before = "ThorTest" in sh("nmcli -t -f NAME connection show")
+        sh("sudo nmcli connection delete ThorTest > /dev/null 2>&1")
+
+        def joined():
+            """ThorTest joined by NetworkManager (scanned again first if it isn't in its list)."""
+            sh("sudo nmcli dev wifi connect ThorTest password thortest123 ifname wlan0 > /dev/null 2>&1 "
+               "|| sudo nmcli dev wifi rescan ifname wlan0 > /dev/null 2>&1")
+            return "ThorTest" in sh("nmcli -t -f NAME connection show --active")
+        saved_before = until(joined, 30, 2)
         self.open_tab("wifi")
-        time.sleep(3)  # the list read (the connected network first)
+
+        def first_connected():
+            """Whether the list's first row says Connected (in green): the connected network is first."""
+            w, _, rgb = self.i.screenshot()
+            return sum(1 for y in range(FIRST_ROW_Y - 15, FIRST_ROW_Y + 15) for x in range(990, 1180)
+                       if rgb[(y * w + x) * 3 + 1] > 140 and rgb[(y * w + x) * 3] < 120) > 50
+        until(first_connected, 10)
         since = now()
         self.i.hold(300, FIRST_ROW_Y, 0.8)
         forgot = logged(since, "wifi: forgot ThorTest")
@@ -849,9 +875,11 @@ class Checks:
         off = logged(since, "drm: Bottom screen off", 5)
         self.check("second screen off", off and until(lambda: screens_on() == 1, 5), f"{screens_on()} on")
         since, back = vt_away_and_back()
-        time.sleep(2)
+        # (The main screen lit again, then a moment for the second to come on, which it mustn't.)
+        main_back = until(lambda: screens_on() == 1 and lit(self.i.screenshot(head=0)), 8)
+        time.sleep(1)
         self.check("  another VT and back: the second screen off still, the main one shown",
-                   back and screens_on() == 1 and until(lambda: lit(self.i.screenshot(head=0)), 5),
+                   back and main_back and screens_on() == 1,
                    f"{screens_on()} on; " + "; ".join(l for l in journal(since).splitlines() if "drm:" in l)[-600:])
         control("bottom power")
         self.check("  on again: the bar shown", until(bar_drawn, 8) and screens_on() == 2)
@@ -925,11 +953,12 @@ class Checks:
             # The cursor (white edged; ClamShell draws no full white of its own) where the pointer is, and
             # not where it was.
             self.i.pointer(1500, 700)
-            time.sleep(0.5)
+            until(lambda: white_near(self.i.screenshot(head=2), 1500, 700) > 10, 5)
             self.i.pointer(1000, 500)
-            time.sleep(0.5)
+            cursor_moved = lambda shot: white_near(shot, 1000, 500) > 10 and white_near(shot, 1500, 700) < 5
+            until(lambda: cursor_moved(self.i.screenshot(head=2)), 5)
             shot = self.i.screenshot(head=2)
-            self.check("  the cursor in its picture", white_near(shot, 1000, 500) > 10 and white_near(shot, 1500, 700) < 5,
+            self.check("  the cursor in its picture", cursor_moved(shot),
                        f"{white_near(shot, 1000, 500)} white pixels at the pointer, {white_near(shot, 1500, 700)} where it was")
         finally:
             since = now()
@@ -956,7 +985,6 @@ class Checks:
 
         def flick(x, y):
             pad("press home", f"stick right {x} {y}", "sleep 120", "stick right 0 0", "release home")
-            time.sleep(0.5)
 
         control("tap dock 1")
         until(lambda: len(foot()) == 1, 8)
@@ -966,14 +994,16 @@ class Checks:
             return
         first = focused()
         flick(-1, 0)
-        self.check("  Home + right stick left selects the other top tab", focused() not in (None, first), foot())
+        self.check("  Home + right stick left selects the other top tab", until(lambda: focused() not in (None, first), 3), foot())
         flick(0, 1)
+        until(lambda: len(below()) == 1 and focused() is not None, 3)
         down = below()
         self.check("  a downward flick moves exactly one window below", len(down) == 1 and focused() is not None, foot())
         flick(0, 1)
-        self.check("  the next downward flick swaps that bottom slot", len(below()) == 1 and below() != down and focused() in down, foot())
+        self.check("  the next downward flick swaps that bottom slot",
+                   until(lambda: len(below()) == 1 and below() != down and focused() in down, 3), foot())
         flick(0, -1)
-        self.check("  an upward flick empties the slot and shows its window on top", not below() and len(foot()) == 2, foot())
+        self.check("  an upward flick empties the slot and shows its window on top", until(lambda: not below() and len(foot()) == 2, 3), foot())
 
     # the keyboard's pointing
 
@@ -1095,11 +1125,10 @@ class Checks:
             dpad("down")
         before = typed()
         pad("press a")
-        time.sleep(1.2)
+        until(lambda: typed() - before > 5, 3)
         pad("tap view")
-        # (What was typed until View moved the pad away, with a moment for it to arrive.)
-        time.sleep(0.4)
-        at_view = typed()
+        # (What was typed until View moved the pad away: the count once it stops growing.)
+        at_view = settled(typed)
         time.sleep(1.5)
         pad("release a")
         repeats = at_view - before
@@ -1664,12 +1693,14 @@ class Checks:
         address = vm.BT_DEVICE
         self.open_tab("bluetooth")
         shown = until(lambda: "ThorTestDevice" in sh("bluetoothctl devices"), 20)
-        time.sleep(1.5)
         self.check("Bluetooth: the test device is found", shown)
         if not shown:
             return
         since = now()
-        self.i.tap(300, FIRST_ROW_Y)
+        # Tapped until ClamShell connects it: until its list has it, the first row says it is looking for
+        # devices, and a tap there does nothing.
+        asked = f'effect: Bluetooth(Connect("{address}"))'
+        until(lambda: self.i.tap(300, FIRST_ROW_Y) or logged(since, asked, 1), 10, 0)
         connected = logged(since, f"bluetooth: connected {address}", 15)
         info = sh(f"bluetoothctl info {address}")
         self.check("  a tap pairs and connects it", connected and "Paired: yes" in info and "Connected: yes" in info,
