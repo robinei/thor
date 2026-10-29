@@ -30,27 +30,6 @@ fn a_process_is_marked_by_its_launcher() {
 }
 
 #[test]
-fn an_entry_is_marked_by_its_launchers_shortcut() {
-    let heroic = shortcut("desktop:Pattern Game", "Pattern Game", &["xdg-open", "heroic://launch?appName=patterngame&runner=sideload"]);
-    let lutris = shortcut("desktop:net.lutris.pattern-game-1", "Pattern Game", &["env", "LUTRIS_SKIP_INIT=1", "lutris", "lutris:rungameid/1"]);
-    let steam = Entry { launch: Launch::Steam { appid: 620 }, ..Entry::new("steam:620", "Portal 2") };
-    let other = shortcut("desktop:foot", "Terminal", &["foot"]);
-    let all = library(vec![heroic.clone(), lutris.clone(), steam.clone(), other.clone()]);
-    for (g, mark) in [(&heroic, Some("heroic:sideload:patterngame")), (&lutris, Some("lutris:Pattern Game")), (&steam, Some("steam_app_620")), (&other, None)] {
-        assert_eq!(of_entry(&all, g).as_deref(), mark, "{}", g.id);
-        if let Some(mark) = mark {
-            assert!(is_marked(&all, g, mark), "{}", g.id);
-        }
-    }
-    assert!(!is_marked(&all, &heroic, "heroic:gog:patterngame") && !is_marked(&all, &steam, "steam_app_6200"));
-    // Two Lutris shortcuts of one name: neither is known by it.
-    let twin = shortcut("desktop:net.lutris.pattern-game-2", "Pattern Game", &["lutris", "lutris:rungameid/2"]);
-    let twins = library(vec![lutris.clone(), twin]);
-    assert_eq!(of_entry(&twins, &lutris), None);
-    assert!(!is_marked(&twins, &lutris, "lutris:Pattern Game"));
-}
-
-#[test]
 fn a_heroic_game_is_launched_by_heroic_without_its_window() {
     let heroic = shortcut("desktop:com.heroicgameslauncher.hgl", "Heroic Games Launcher", &["heroic"]);
     let game = shortcut("desktop:Pattern Game", "Pattern Game", &["xdg-open", "heroic://launch?appName=patterngame&runner=sideload"]);

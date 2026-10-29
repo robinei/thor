@@ -20,7 +20,7 @@ use crate::{Effect, LibraryView, Session};
 
 impl Session {
     /// The running entry of runner `key` that was most recently in front. Only entries in a unit of ours
-    /// count, not those known by a mark (see [`crate::session::running::mark_of`]).
+    /// count, not those known by a mark (see [`crate::Library::mark_of`]).
     pub(crate) fn enqueue_target(&self, key: &str) -> Option<&Running> {
         let runner_of = |r: &Running| r.entry.as_ref().and_then(|g| g.runner.as_ref()).is_some_and(|o| &*o.key == key);
         let candidates = self.running.iter().filter(|r| r.mark.is_none() && runner_of(r));

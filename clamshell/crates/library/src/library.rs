@@ -92,6 +92,11 @@ impl Library {
         &mut self.entries
     }
 
+    /// The index, for the lookups made elsewhere in the crate.
+    pub(crate) fn index(&self) -> &Index {
+        &self.index
+    }
+
     /// Builds the index again, if [`Library::entries_mut`] dropped it.
     pub fn reindex(&mut self) {
         if self.index.stale() {

@@ -20,30 +20,6 @@ fn key(id: &str) -> String {
 }
 
 #[test]
-fn has_mark_agrees_with_mark_of() {
-    let steam = Entry { launch: Launch::Steam { appid: 620 }, ..Entry::new("steam:620", "Portal 2") };
-    let handed = Entry {
-        runner: Some(clamshell_library::RunnerOf { handover: true, ..clamshell_library::RunnerOf::new("android", "Android", false) }),
-        ..Entry::new("desktop:org.app", "App")
-    };
-    let heroic = Entry { launch: Launch::program(vec!["xdg-open".into(), "heroic://launch?appName=x&runner=gog".into()]), ..Entry::new("desktop:X", "X") };
-    let ours = Entry::new("desktop:foot", "Terminal");
-    let library = crate::Library::new(Vec::new(), vec![steam.clone(), handed.clone(), heroic.clone(), ours.clone()]);
-    let marks = ["steam_app_620", "steam_app_62", "org.app", "foot", "heroic:gog:x", ""];
-    for g in [&steam, &handed, &heroic, &ours] {
-        for mark in marks {
-            let mark_of = super::mark_of(&library, g);
-            let by_app_id = WindowFacts { app_id: mark.into(), ..win(1, "") };
-            let by_process = WindowFacts { game: Some(mark.into()), ..win(1, "other") };
-            // A handed-over app is known by its app id alone; a launcher's game by either.
-            let expected = mark_of.as_deref() == Some(mark);
-            assert_eq!(super::has_mark(&library, g, &by_app_id), expected, "{} app id {mark}", g.id);
-            assert_eq!(super::has_mark(&library, g, &by_process), expected && g.id != handed.id, "{} process {mark}", g.id);
-        }
-    }
-}
-
-#[test]
 fn a_play_lasts_by_the_monotonic_clock_however_the_wall_clock_steps() {
     let mut s = state();
     let first = s.library_view().selected().cloned().unwrap();

@@ -526,7 +526,7 @@ impl Session {
     /// The running entry a window belongs to: its main window's (see [`Session::root_of`]), by the first of
     /// these that matches, each a fact or a claim, never the group it was placed in:
     ///
-    /// - its mark (see [`crate::session::running::mark_of`]), as for a launcher's game that runs in the
+    /// - its mark (see [`Library::mark_of`]), as for a launcher's game that runs in the
     ///   launcher's unit;
     /// - its unit, which also covers windows moved down;
     /// - its process, for a program found by its window or tray icon (see [`Running::fathered`]);
@@ -571,7 +571,7 @@ impl Session {
 
     /// The group window `w` is placed in: its main window's program's (see [`Session::running_of`]), else
     /// the claim made on its main window, else the library entry its main window is known by (a launch
-    /// still starting, see [`running::has_mark`]) or its launch unit's entry, else a group of its own, its
+    /// still starting, see [`Library::has_mark`]) or its launch unit's entry, else a group of its own, its
     /// main window's. Borrowed, so that working it out allocates nothing.
     pub(crate) fn home_of<'a>(&'a self, w: &'a WindowFacts, library: &'a Library) -> Home<'a> {
         let root = self.root_facts(w);
@@ -584,9 +584,7 @@ impl Session {
             None => {}
         }
         library
-            .entries()
-            .iter()
-            .find(|g| running::has_mark(library, g, root))
+            .entry_by_mark(&root.app_id, root.game.as_deref())
             .map(|g| Home::Entry(&g.key))
             .or_else(|| root.unit.as_deref().and_then(LaunchUnit::key_of).filter(|_| root.launched()).map(Home::Entry))
             .unwrap_or(Home::Window(root.id))

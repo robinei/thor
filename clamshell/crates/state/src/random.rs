@@ -489,7 +489,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                 // A launcher's game, marked by the launcher on its process: in Steam's scope, a unit of ours
                 // (the launcher's, or its own), or none; known by an app id of its own, or by the mark.
                 3 => {
-                    let marks: Vec<String> = library.entries().iter().filter_map(|g| crate::session::launchers::of_entry(library, g)).collect();
+                    let marks: Vec<String> = library.entries().iter().filter_map(|g| library.launcher_mark(g)).collect();
                     let game = rng.pick(&marks)?.clone();
                     let unit = match rng.below(3) {
                         0 => Some("app-steam.scope".into()),

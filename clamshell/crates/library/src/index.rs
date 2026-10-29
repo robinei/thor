@@ -9,11 +9,13 @@
 //! would find it.
 
 use std::collections::HashMap;
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::fmt::{self, Write};
+use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::{Entry, RunnerOf, ids};
+use crate::hash::Fnv64;
+use crate::{Entry, RunnerOf, ids, marks};
 
 /// A runner of the library's entries, and what they are.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,6 +38,8 @@ pub(crate) struct Index {
     files: Vec<(u64, usize)>,
     /// The desktop file name and `StartupWMClass` of each entry that has them, ASCII-lowercased.
     desktop: Vec<(u64, usize)>,
+    /// The marks each entry might be known by (see [`marks::each_mark`]).
+    marks: Vec<(u64, usize)>,
     /// The runners of the entries, sorted by key.
     runners: Vec<Runner>,
     /// In tests, every hash is the same, so that each lookup has to tell entries apart by comparing.
@@ -59,6 +63,10 @@ impl Index {
                 let name = self.hash_lowercase(name);
                 self.desktop.push((name, i));
             }
+            marks::each_mark(g, |mark| {
+                let mark = self.hash_text(mark);
+                self.marks.push((mark, i));
+            });
             if let Some(r) = &g.runner {
                 match self.runners.binary_search_by(|o| o.of.key.cmp(&r.key)) {
                     Ok(at) => {
@@ -70,7 +78,7 @@ impl Index {
                 }
             }
         }
-        for pairs in [&mut self.keys, &mut self.files, &mut self.desktop] {
+        for pairs in [&mut self.keys, &mut self.files, &mut self.desktop, &mut self.marks] {
             pairs.sort_unstable();
             pairs.dedup();
         }
@@ -83,6 +91,7 @@ impl Index {
         self.keys.clear();
         self.files.clear();
         self.desktop.clear();
+        self.marks.clear();
         self.runners.clear();
         self.stale = true;
     }
@@ -119,6 +128,16 @@ impl Index {
         self.find(&self.desktop, self.hash_lowercase(name), entries, |g| ids::desktop_file(&g.id) == Some(name))
     }
 
+    /// The first slot filed under mark `mark` whose entry `matches`.
+    pub(crate) fn mark(&self, entries: &[Entry], mark: &str, matches: impl Fn(&Entry) -> bool) -> Option<usize> {
+        self.find(&self.marks, self.hash_text(format_args!("{mark}")), entries, matches)
+    }
+
+    /// Whether an entry filed under mark `mark` `matches`.
+    pub(crate) fn any_marked(&self, entries: &[Entry], mark: fmt::Arguments<'_>, matches: impl Fn(&Entry) -> bool) -> bool {
+        self.find(&self.marks, self.hash_text(mark), entries, matches).is_some()
+    }
+
     /// The runner with key `key`.
     pub(crate) fn runner(&self, key: &str) -> Option<&Runner> {
         self.runners().binary_search_by(|o| (*o.of.key).cmp(key)).ok().and_then(|at| self.runners.get(at))
@@ -138,21 +157,29 @@ impl Index {
     }
 
     fn hash(&self, value: &(impl Hash + ?Sized)) -> u64 {
-        let mut h = DefaultHasher::new();
+        let mut h = Fnv64::default();
         value.hash(&mut h);
         self.finish(h)
     }
 
     /// The hash of `name` ASCII-lowercased, as `eq_ignore_ascii_case` compares.
     fn hash_lowercase(&self, name: &str) -> u64 {
-        let mut h = DefaultHasher::new();
+        let mut h = Fnv64::default();
         for b in name.bytes() {
             h.write_u8(b.to_ascii_lowercase());
         }
         self.finish(h)
     }
 
-    fn finish(&self, h: DefaultHasher) -> u64 {
+    /// The hash of the text `text` makes, as made in pieces, without making it.
+    fn hash_text(&self, text: fmt::Arguments<'_>) -> u64 {
+        let mut h = Fnv64::default();
+        // Writing to Fnv64 never fails.
+        let _ = h.write_fmt(text);
+        self.finish(h)
+    }
+
+    fn finish(&self, h: Fnv64) -> u64 {
         #[cfg(test)]
         if self.collide {
             return 0;
@@ -167,7 +194,7 @@ mod tests {
     use std::path::Path;
 
     use super::Runner;
-    use crate::{Browsed, Entry, Library, RunnerOf, demo, ids};
+    use crate::{Browsed, Entry, Launch, Library, RunnerOf, demo, ids};
 
     /// Asserts that each lookup gives what scanning the entries in slot order gives, for each entry's
     /// facts and for some that no entry has.
@@ -201,6 +228,13 @@ mod tests {
             assert_eq!(lib.runner(key), runner.as_ref(), "{key}");
         }
         assert!(lib.runners().is_sorted_by(|a, b| a.of.key < b.of.key));
+        let marks: Vec<String> = entries.iter().filter_map(|g| lib.mark_of(g)).map(|m| m.to_string()).chain(misses.map(String::from)).collect();
+        for app_id in &marks {
+            for game in marks.iter().map(|m| Some(m.as_str())).chain([None]) {
+                let marked = |g: &Entry| lib.has_mark(g, app_id, game);
+                assert_eq!(slot(lib.entry_by_mark(app_id, game)), first(&marked), "{app_id} {game:?}");
+            }
+        }
     }
 
     /// The demo library with entries that share facts: a key, a file, a desktop file name in other case
@@ -218,6 +252,17 @@ mod tests {
         entries.push(Entry { runner: Some(snes.clone()), ..Entry::new("snes:mario", "Mario") });
         entries.push(Entry { runner: Some(RunnerOf::new("mpv", "Videos", false)), app: true, ..Entry::new("mpv:film", "Film") });
         entries.push(Entry { runner: Some(snes), app: true, ..Entry::new("snes:tool", "Tool") });
+        // Launchers' games: two of one Steam game, a Heroic game, Lutris games of which two share a name,
+        // and an app handed over.
+        let program = |argv: &[&str]| Launch::program(argv.iter().map(|a| (*a).to_owned()).collect());
+        entries.push(Entry { launch: Launch::Steam { appid: 620 }, ..Entry::new("steam:620", "Portal 2") });
+        entries.push(Entry { launch: Launch::Steam { appid: 620 }, ..Entry::new("desktop:portal2", "Portal 2") });
+        entries.push(Entry { launch: program(&["xdg-open", "heroic://launch?appName=hk&runner=legendary"]), ..Entry::new("desktop:hk", "Hollow Knight") });
+        entries.push(Entry { launch: program(&["lutris", "lutris:rungameid/1"]), ..Entry::new("desktop:lutris-quake", "Quake") });
+        entries.push(Entry { launch: program(&["lutris", "lutris:rungameid/2"]), ..Entry::new("desktop:lutris-doom-1", "Doom") });
+        entries.push(Entry { launch: program(&["lutris", "lutris:rungameid/3"]), ..Entry::new("desktop:lutris-doom-2", "Doom") });
+        let android = RunnerOf { handover: true, ..RunnerOf::new("android", "Android", false) };
+        entries.push(Entry { runner: Some(android), ..Entry::new("desktop:org.app", "App") });
         lib.reindex();
         lib
     }
@@ -239,6 +284,11 @@ mod tests {
         assert_eq!(lib.entry_of_desktop_file(&["FIREFOX", "firefox"]).map(|g| &*g.id), Some("desktop:firefox"));
         assert_eq!(lib.entry_of_file(Path::new("/home/thor/notes.txt")).map(|g| &*g.id), Some("notes:1"), "not the browsed one");
         assert_eq!(lib.entry_of_file(Path::new("/home/thor/Pictures")), None, "groups and browsed folders are left out");
+        assert_eq!(lib.entry_by_mark("steam_app_620", None).map(|g| &*g.id), Some("steam:620"));
+        assert_eq!(lib.entry_by_mark("x", Some("lutris:Quake")).map(|g| &*g.id), Some("desktop:lutris-quake"));
+        assert_eq!(lib.entry_by_mark("x", Some("lutris:Doom")), None, "two of one name");
+        assert_eq!(lib.entry_by_mark("org.app", Some("org.app")).map(|g| &*g.id), Some("desktop:org.app"));
+        assert_eq!(lib.entry_by_mark("x", Some("org.app")), None, "a handed-over app by its app id alone");
     }
 
     /// With every hash the same, each lookup still finds its entry by comparing.

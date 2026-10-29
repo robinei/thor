@@ -333,7 +333,7 @@ pub struct WindowFacts {
 
 impl WindowFacts {
     /// Whether it is known by `mark`, as its app id or its launcher's game (see
-    /// [`super::running::mark_of`]).
+    /// [`crate::Library::mark_of`]).
     pub(crate) fn marked(&self, mark: &str) -> bool {
         self.app_id == mark || self.game.as_deref() == Some(mark)
     }

@@ -10,6 +10,7 @@ pub mod config;
 pub mod demo;
 pub mod hash;
 pub mod ids;
+pub mod marks;
 pub mod pattern;
 pub mod plays;
 pub mod sort;

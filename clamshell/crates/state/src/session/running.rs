@@ -3,7 +3,7 @@
 //! may run more than once; another launch is another unit and another tab.
 //!
 //! Some entries run in another program's processes, not in a unit of ours, and are known by a mark of
-//! their windows ([`mark_of`]): the game a launcher marks their process with (see [`super::launchers`]),
+//! their windows ([`Library::mark_of`]): the game a launcher marks their process with (see [`super::launchers`]),
 //! as Steam, Heroic and Lutris do, or their app id. These are launchers' games (Steam's in Steam's scope)
 //! and the entries of a runner that hands its apps over, such as Waydroid's, whose app id is their desktop
 //! file's name and which run in the Waydroid session. Their windows are put in their entry's group as they
@@ -85,7 +85,7 @@ pub struct Running {
     /// Its key, which names its group and its launches' units and slice.
     pub key: String,
     pub origin: Origin,
-    /// What its windows are known by, if it runs in another program's processes (see [`mark_of`]).
+    /// What its windows are known by, if it runs in another program's processes (see [`Library::mark_of`]).
     pub mark: Option<Arc<str>>,
     /// When it first started, in monotonic seconds as in [`crate::Event::Tick`].
     pub start: u64,
@@ -160,7 +160,7 @@ impl Running {
 pub struct Launching {
     pub entry: Arc<str>,
     pub unit: LaunchUnit,
-    /// What its windows are known by, if it runs in another program's processes (see [`mark_of`]).
+    /// What its windows are known by, if it runs in another program's processes (see [`Library::mark_of`]).
     pub mark: Option<Arc<str>>,
     /// When it was asked for, in monotonic seconds.
     pub at: u64,
@@ -173,31 +173,8 @@ pub struct Launching {
 /// it is given up as not started.
 pub(crate) const LAUNCH_WAIT: u64 = 30;
 
-/// What an entry's windows are known by when it runs in another program's processes, which makes them its
-/// windows wherever they open. For a launcher's game it is the mark the launcher gives its processes (see
-/// [`super::launchers`]), Steam's `steam_app_<id>` also its windows' app id. For an entry whose runner
-/// hands its apps over, such as Waydroid's, it is its windows' app id, the desktop file's name. It is none
-/// for the rest, which run in units of ours.
-pub(crate) fn mark_of(library: &Library, g: &Entry) -> Option<Arc<str>> {
-    handed_over_app(g).map(Into::into).or_else(|| launchers::of_entry(library, g).map(Into::into))
-}
-
-/// Whether window `w` is marked as [`mark_of`] `g`, without building the mark, since this is asked for
-/// every window and entry.
-pub(crate) fn has_mark(library: &Library, g: &Entry, w: &WindowFacts) -> bool {
-    match handed_over_app(g) {
-        Some(app) => w.app_id == app,
-        None => [Some(w.app_id.as_str()), w.game.as_deref()].into_iter().flatten().any(|mark| launchers::is_marked(library, g, mark)),
-    }
-}
-
 /// A play that ended: the entry and when it started, in monotonic seconds. State records it in the Library.
 pub(crate) type Play = (Arc<str>, u64);
-
-/// A handed-over entry's app id: its desktop file's name.
-fn handed_over_app(g: &Entry) -> Option<&str> {
-    ids::desktop_file(&g.id).filter(|_| g.runner.as_ref().is_some_and(|r| r.handover))
-}
 
 impl Session {
     /// Runs after systemd's list of our units changed, and after any event. A launch with no answer by
@@ -254,7 +231,7 @@ impl Session {
             // Its units are named by the wall clock.
             let start = first.min().map_or(now, |secs| now.saturating_sub(unix.saturating_sub(secs)));
             if let Some(g) = library.entry_by_key(key) {
-                self.running.push(Running { mark: mark_of(library, g), ..Running::of(g, Origin::Ours, start) });
+                self.running.push(Running { mark: library.mark_of(g), ..Running::of(g, Origin::Ours, start) });
                 continue;
             }
             // A program an earlier ClamShell found and moved into a scope of ours, or a file it opened,
@@ -351,7 +328,7 @@ impl Session {
         // carries, doesn't keep it, and ends once its own window closes; the game is taken here, not a
         // settle later.
         for w in self.windows.iter().filter(|w| !self.running_of(w).is_some_and(|r| r.owns(w))) {
-            let Some(g) = library.entries().iter().find(|g| has_mark(library, g, w)) else {
+            let Some(g) = library.entry_by_mark(&w.app_id, w.game.as_deref()) else {
                 continue;
             };
             if !self.launching.iter().any(|l| l.entry == g.id) && !new.iter().any(|n| n.id == g.id) {
@@ -362,7 +339,7 @@ impl Session {
         steam.extend(steam_games.into_iter().map(|g| g.id.clone()));
         let new: Vec<Running> = new
             .into_iter()
-            .map(|g| Running { mark: mark_of(library, g), seen: true, ..Running::of(g, Origin::Windows { since: now, until: now }, now) })
+            .map(|g| Running { mark: library.mark_of(g), seen: true, ..Running::of(g, Origin::Windows { since: now, until: now }, now) })
             .collect();
         let Some(r) = new.last() else {
             return false;
@@ -712,7 +689,7 @@ impl Session {
             self.launch_in_launcher(g, (launcher, argv), library, settings, clock, start, out);
             return Launched::Yes;
         }
-        let mark = mark_of(library, g).filter(|_| command.is_none());
+        let mark = library.mark_of(g).filter(|_| command.is_none());
         let (launch, key) = (command.unwrap_or_else(|| g.launch.clone()), g.key.clone());
         let runner = g.runner.as_ref().map(|r| &*r.key);
         let values = settings.of_in(&entry, runner.as_slice());
@@ -751,7 +728,7 @@ impl Session {
         settings.env_in(&launcher.id, runner.as_slice(), &mut env);
         let unit = self.begin_launch(launcher.id.clone(), launcher.key.clone(), None, clock, Start::Background);
         let now = clock.mono();
-        self.running.push(Running { mark: mark_of(library, g), ..Running::of(g, Origin::Windows { since: now, until: now + LAUNCHER_WAIT }, now) });
+        self.running.push(Running { mark: library.mark_of(g), ..Running::of(g, Origin::Windows { since: now, until: now + LAUNCHER_WAIT }, now) });
         if start == Start::Front {
             self.set_front_launch(LaunchUnit { key: g.key.clone(), secs: clock.unix(), n: 0 }, Some(now + LAUNCHER_WAIT));
         }
