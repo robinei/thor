@@ -604,6 +604,9 @@ impl Wm {
                     window.serial = Some(u64::from(low) | (u64::from(high) << 32));
                     log::debug!("X11 surface serial id={}", window.id);
                 }
+                if event.format == 32 && event.type_ == self.atoms.get("_NET_ACTIVE_WINDOW") {
+                    self.activate(event.window, event.data.as_data32(), server);
+                }
             }
             Some(CONFIGURE_REQUEST_EVENT) => {
                 let event = ConfigureRequestEvent::try_parse(bytes).map_err(io::Error::other)?.0;
@@ -624,6 +627,26 @@ impl Wm {
             _ => {}
         }
         Ok(())
+    }
+    /// A client asks for `xid` to be in front (`_NET_ACTIVE_WINDOW`; `data` is its source, time and the
+    /// asker's active window). As for a Wayland client's activation, only the program that has the focus
+    /// may move it: the asker's active window is the focused one, or the window is the focused one's
+    /// process's.
+    fn activate(&self, xid: u32, data: [u32; 5], server: &mut Server) {
+        let Some(window) = self.windows.iter().find(|w| w.xid == xid && w.opened) else {
+            return log::debug!("X11 activation of {xid}: no such window open");
+        };
+        let [_, _, asker, ..] = data;
+        if self.may_activate(window, asker) {
+            server.core.handle(WindowEvent::Activate(window.id).into());
+        } else {
+            log::info!("X11 activation of window {} refused: its program doesn't have the focus", window.id);
+        }
+    }
+    /// Whether `window` may be put in front at the ask of a client whose active window is `asker`.
+    fn may_activate(&self, window: &Window, asker: u32) -> bool {
+        let focused = self.focus.and_then(|focus| self.windows.iter().find(|w| w.xid == focus));
+        focused.is_some_and(|f| f.xid == asker || (f.pid.is_some() && f.pid == window.pid))
     }
     fn forget(&mut self, id: i64, server: &mut Server) {
         self.windows.retain(|w| w.id != id);
@@ -972,6 +995,25 @@ mod tests {
         event.resize(32, 0);
         wm.event(&event, &mut wire, &mut server).unwrap();
         assert!(wm.windows[0].wants_map && !wm.windows[0].override_redirect);
+    }
+    /// A client may put a window in front only while its program has the focus.
+    #[test]
+    fn only_the_focused_program_activates_a_window() {
+        let (_display, mut server) = crate::tests::ServerBuilder::new().build();
+        let (socket, _peer) = UnixStream::pair().unwrap();
+        let mut wire = Transport::new(socket, Instant::now()).unwrap();
+        let mut wm = Wm { root: 1, owner: 2, atoms: Atoms(NAMES.iter().enumerate().map(|(i, name)| (*name, 100 + i as u32)).collect()), ..Wm::default() };
+        for (xid, pid) in [(10, 1), (20, 1), (30, 2)] {
+            wm.discover(xid, Rectangle::from_size((400, 300).into()), false, &mut wire, &mut server).unwrap();
+            let w = wm.windows.last_mut().unwrap();
+            w.pid = Some(pid);
+            w.opened = true;
+        }
+        assert!(!wm.may_activate(&wm.windows[1], 10), "nothing focused");
+        wm.focus = Some(10);
+        assert!(wm.may_activate(&wm.windows[1], 0), "the focused program's own window");
+        assert!(wm.may_activate(&wm.windows[2], 10), "asked by the focused window");
+        assert!(!wm.may_activate(&wm.windows[2], 30), "another program's");
     }
     /// A window opens only once its process is identified, off the compositor's thread, so its facts carry
     /// its unit and processes; a window gone before the answer is forgotten with it, and one whose client
