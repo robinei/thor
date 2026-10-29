@@ -44,6 +44,8 @@ pub(crate) struct Pipeline {
     /// What a screenshot is drawn with, kept between screenshots taken close together (see `crate::hold`).
     capture: Option<Capture>,
     capture_hold: crate::hold::Hold,
+    /// A screenshot started, waiting for the GPU (see [`Pipeline::captured`]).
+    reading: Option<CaptureReading>,
 }
 
 /// A screenshot's texture, of the layout's size, and the shaders encoding each scene, by its primaries, in
@@ -269,6 +271,7 @@ impl Pipeline {
             histogram: Default::default(),
             capture: None,
             capture_hold: Default::default(),
+            reading: None,
         })
     }
 
@@ -559,9 +562,13 @@ impl Pipeline {
         Ok(frame.finish()?)
     }
 
-    /// Both scenes side by side in sRGB, for a screenshot, `size` being the layout's. What it is drawn with is
-    /// kept for the next taken soon after.
-    pub fn capture(&mut self, renderer: &mut GlesRenderer, size: (i32, i32)) -> Result<clamshell_state::ScreenshotPixels, String> {
+    /// Starts a screenshot: both scenes side by side in sRGB, `size` being the layout's, copied out once the
+    /// GPU has drawn them, which [`Pipeline::captured`] then reads. What it is drawn with is kept for the next
+    /// taken soon after.
+    pub fn capture(&mut self, renderer: &mut GlesRenderer, size: (i32, i32)) -> Result<(), String> {
+        if self.reading.is_some() {
+            return Err("another screenshot is being taken".into());
+        }
         let primaries = self.scenes.each_ref().map(|scene| scene.output.0.primaries);
         let fits = self.capture.as_ref().is_some_and(|capture| capture.size == size && capture.programs.each_ref().map(|(p, _)| *p) == primaries);
         if !fits {
@@ -578,26 +585,55 @@ impl Pipeline {
             let mut target = renderer.bind(&mut capture.texture).map_err(|error| error.to_string())?;
             let [(_, top), (_, bottom)] = &capture.programs;
             self.present_with(renderer, &mut target, size, [top, bottom]).map_err(|error| error.to_string())?;
-            read_back(renderer, &target, size)
+            let mapping = smithay::backend::renderer::ExportMem::copy_framebuffer(renderer, &target, Rectangle::from_size(size.into()), Fourcc::Abgr8888)
+                .map_err(|e| e.to_string())?;
+            drop(target);
+            let fence =
+                super::histogram::fence(renderer).inspect_err(|error| log::info!("screenshot: no fence for its readback, so it is read at once: {error}")).ok();
+            self.reading = Some(CaptureReading { mapping, fence, size });
+            Ok(())
         })();
         self.capture = Some(capture);
         result
     }
+
+    /// The screenshot started by [`Pipeline::capture`], once the GPU has drawn it, or at once with `wait`
+    /// (a host that waits anyway). None while there is none, or it isn't done yet (see
+    /// [`Pipeline::capture_due`]).
+    pub fn captured(&mut self, renderer: &mut GlesRenderer, wait: bool) -> Option<Result<clamshell_state::ScreenshotPixels, String>> {
+        let reading = self.reading.take()?;
+        if !wait && !super::histogram::copied(renderer, reading.fence.as_ref(), "the screenshot") {
+            self.reading = Some(reading);
+            return None;
+        }
+        Some(read_back(renderer, &reading.mapping, reading.size))
+    }
+
+    /// When to look again whether a screenshot started is drawn: soon, while there is one.
+    pub fn capture_due(&self, now: std::time::Instant) -> Option<std::time::Instant> {
+        self.reading.as_ref().map(|_| now + std::time::Duration::from_millis(2))
+    }
+}
+
+/// A screenshot's readback, read once its fence says the GPU has done the copy.
+struct CaptureReading {
+    mapping: <GlesRenderer as smithay::backend::renderer::ExportMem>::TextureMapping,
+    fence: Option<smithay::backend::egl::fence::EGLFence>,
+    size: (i32, i32),
 }
 
 /// Readback is an SDR file export; clients and the composition target retain their native precision.
 fn read_back(
     renderer: &mut GlesRenderer,
-    target: &smithay::backend::renderer::gles::GlesTarget<'_>,
+    mapping: &<GlesRenderer as smithay::backend::renderer::ExportMem>::TextureMapping,
     size: (i32, i32),
 ) -> Result<clamshell_state::ScreenshotPixels, String> {
     use smithay::backend::renderer::{ExportMem, TextureMapping};
     let width = u32::try_from(size.0).map_err(|e| e.to_string())?;
     let height = u32::try_from(size.1).map_err(|e| e.to_string())?;
     let stride = usize::try_from(width).ok().and_then(|w| w.checked_mul(4)).filter(|n| *n != 0).ok_or("invalid capture width")?;
-    let mapping = renderer.copy_framebuffer(target, Rectangle::from_size(size.into()), Fourcc::Abgr8888).map_err(|e| e.to_string())?;
     let flipped = mapping.flipped();
-    let bytes = renderer.map_texture(&mapping).map_err(|e| e.to_string())?;
+    let bytes = renderer.map_texture(mapping).map_err(|e| e.to_string())?;
     let mut rgba = Vec::with_capacity(bytes.len());
     if flipped {
         for row in bytes.chunks_exact(stride).rev() {

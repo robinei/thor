@@ -136,7 +136,10 @@ pub fn run(
                             let (renderer, mut framebuffer) = backend.bind()?;
                             pipeline.present(renderer, &mut framebuffer, server.screens.size)?;
                             if capturing {
-                                let captured = pipeline.capture(renderer, server.screens.size);
+                                // (Read at once: the host's frame waits for the GPU anyway.)
+                                let captured = pipeline
+                                    .capture(renderer, server.screens.size)
+                                    .and_then(|()| pipeline.captured(renderer, true).unwrap_or_else(|| Err("no screenshot".into())));
                                 if let Err(error) = &captured {
                                     log::warn!("compositor screenshot: {error}");
                                 }

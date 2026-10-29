@@ -61,7 +61,7 @@ impl Measure {
             return;
         }
         if let Some(reading) = self.reading.take() {
-            if !copied(renderer, reading.fence.as_ref()) {
+            if !copied(renderer, reading.fence.as_ref(), "the curve's histogram") {
                 self.reading = Some(reading);
                 return;
             }
@@ -117,12 +117,7 @@ impl Measure {
         let bound = renderer.bind(target).map_err(|e| e.to_string())?;
         let mapping = renderer.copy_framebuffer(&bound, Rectangle::from_size(SIZE.into()), Fourcc::Abgr8888).map_err(|e| e.to_string())?;
         drop(bound);
-        let display = renderer.egl_context().display().clone();
-        let fence = match renderer.with_context(|_| EGLFence::create(&display)) {
-            Ok(Ok(fence)) => Some(fence),
-            Ok(Err(error)) => self.without_fence(error.to_string()),
-            Err(error) => self.without_fence(error.to_string()),
-        };
+        let fence = fence(renderer).map_or_else(|error| self.without_fence(error), Some);
         self.reading = Some(Reading { mapping, fence, window, hdr });
         Ok(())
     }
@@ -135,18 +130,29 @@ impl Measure {
     }
 }
 
+/// A fence after the renderer's commands so far, such as a readback's copy.
+pub(super) fn fence(renderer: &mut GlesRenderer) -> Result<EGLFence, String> {
+    let display = renderer.egl_context().display().clone();
+    match renderer.with_context(|_| EGLFence::create(&display)) {
+        Ok(Ok(fence)) => Ok(fence),
+        Ok(Err(error)) => Err(error.to_string()),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 /// Whether the GPU has done the copy `fence` follows, checked without waiting; a copy without a fence is
 /// taken as done. The check flushes the renderer's commands, so the fence comes without another frame.
-fn copied(renderer: &mut GlesRenderer, fence: Option<&EGLFence>) -> bool {
+/// `what` the copy is for, for the log.
+pub(super) fn copied(renderer: &mut GlesRenderer, fence: Option<&EGLFence>, what: &str) -> bool {
     let Some(fence) = fence else { return true };
     match renderer.with_context(|_| fence.client_wait(Some(Duration::ZERO), true)) {
         Ok(Ok(signalled)) => signalled,
         Ok(Err(error)) => {
-            log::warn!("compositor: the curve's histogram: checking its readback's fence: {error}; it is read now");
+            log::warn!("compositor: {what}: checking its readback's fence: {error}; it is read now");
             true
         }
         Err(error) => {
-            log::warn!("compositor: the curve's histogram: checking its readback's fence: {error}; it is read now");
+            log::warn!("compositor: {what}: checking its readback's fence: {error}; it is read now");
             true
         }
     }

@@ -654,8 +654,13 @@ fn step(
     if let Some(histogram) = drawing.pipeline.take_histogram(&mut drawing.renderer, server) {
         server.report_histogram(histogram);
     }
-    if capture {
-        on_capture(drawing.pipeline.capture(&mut drawing.renderer, server.screens.size));
+    // A screenshot is drawn now and read once the GPU is done, at a later turn: reading it at once would
+    // wait for the GPU here.
+    if capture && let Err(error) = drawing.pipeline.capture(&mut drawing.renderer, server.screens.size) {
+        on_capture(Err(error));
+    }
+    if let Some(captured) = drawing.pipeline.captured(&mut drawing.renderer, false) {
+        on_capture(captured);
     }
     let composed = server.pacing.commits;
     // Buffers not used for a while are dropped (see `crate::hold`), and the loop wakes when the next would be.
@@ -670,7 +675,7 @@ fn step(
             layers.trim(now, &mut trims);
         }
     }
-    let mut due: Option<Instant> = earlier(timed, trims.finish());
+    let mut due: Option<Instant> = earlier(earlier(timed, trims.finish()), drawing.pipeline.capture_due(now));
     for screen in &mut drawing.screens {
         if screen.surface.flip_due().is_some_and(|lost| now >= lost) {
             log::warn!("drm: {:?} screen: no flip {} ms after its frame: drawn again", screen.role, crate::presenter::FLIP_LOST.as_millis());
