@@ -1,6 +1,5 @@
-//! Which icon stands for one of the state's things: a tab, a Wi-Fi signal, a setting, a Bluetooth device.
+//! Which icon stands for one of the state's things: a Wi-Fi signal, a setting, a Bluetooth device.
 
-use clamshell_state::Tab;
 use clamshell_state::radios::bluetooth::Kind;
 use clamshell_state::radios::wifi::signal_bars;
 use clamshell_state::settings::Setting;
@@ -8,25 +7,6 @@ use clamshell_state::settings::Setting;
 use crate::gfx::icons::Icon;
 
 impl Icon {
-    /// A tab's icon in the bar, as it looks without a reading.
-    pub fn for_tab(tab: Tab) -> Icon {
-        match tab {
-            Tab::Settings => Icon::Sliders,
-            Tab::Dock => Icon::Apps,
-            Tab::Keyboard => Icon::Keyboard,
-            Tab::Touchpad => Icon::Touchpad,
-            Tab::Sysinfo => Icon::Sysinfo,
-            Tab::Volume => Icon::Volume { waves: 3, muted: false },
-            Tab::Brightness => Icon::Brightness,
-            Tab::Wifi => Icon::Wifi { bars: Some(3) },
-            Tab::Battery => Icon::Battery { tenths: 10, charging: false },
-            Tab::Bluetooth => Icon::Bluetooth { connected: false },
-            // Its button in the bar is the clock.
-            Tab::Time => Icon::Gauge,
-            Tab::Windows => Icon::Windows,
-        }
-    }
-
     /// The icon for a Wi-Fi signal's quality (0-100), or `None` when not connected.
     pub fn wifi(quality: Option<u8>) -> Icon {
         Icon::Wifi { bars: quality.map(signal_bars) }

@@ -126,7 +126,7 @@ impl Pad {
         }
         match (top, tab) {
             (Top::App { .. }, _) => Some(Claimant::App),
-            (Top::Window { .. }, Tab::Keyboard) => Some(Claimant::Typing),
+            (Top::Window { .. }, tab) if tab.definition().types => Some(Claimant::Typing),
             (Top::Window { .. }, _) => Some(Claimant::Game),
         }
     }

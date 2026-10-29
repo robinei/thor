@@ -63,6 +63,10 @@ pub struct TabDefinition {
     /// What is read from the system while it is open and seen.
     pub watch: Option<Watch>,
     pub button: BarPlace,
+    /// With a window in front, the pad types with it rather than playing (see [`crate::nav::pad`]).
+    pub types: bool,
+    /// Whether it is open again at the next start when it was open at the last (see [`crate::Resume`]).
+    pub restored: bool,
 }
 
 /// Where a tab's button is in the bar.
@@ -80,7 +84,7 @@ impl Tab {
     /// Its definition.
     pub fn definition(self) -> &'static TabDefinition {
         const fn tab(watch: Option<Watch>, button: BarPlace) -> TabDefinition {
-            TabDefinition { watch, button }
+            TabDefinition { watch, button, types: false, restored: true }
         }
         const SPREAD: TabDefinition = tab(None, BarPlace::Spread);
         const VOLUME: TabDefinition = tab(Some(Watch::Audio), BarPlace::Spread);
@@ -91,6 +95,9 @@ impl Tab {
         const SYSINFO: TabDefinition = tab(Some(Watch::Metrics), BarPlace::Spread);
         const TIME: TabDefinition = tab(Some(Watch::Time), BarPlace::Clock);
         const WINDOWS: TabDefinition = tab(None, BarPlace::End);
+        const KEYBOARD: TabDefinition = TabDefinition { types: true, ..SPREAD };
+        // Every touch there moves the pointer, so it opens only on request.
+        const TOUCHPAD: TabDefinition = TabDefinition { restored: false, ..SPREAD };
         match self {
             Tab::Volume => &VOLUME,
             Tab::Brightness => &BRIGHTNESS,
@@ -100,7 +107,9 @@ impl Tab {
             Tab::Sysinfo => &SYSINFO,
             Tab::Time => &TIME,
             Tab::Windows => &WINDOWS,
-            Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Touchpad => &SPREAD,
+            Tab::Keyboard => &KEYBOARD,
+            Tab::Touchpad => &TOUCHPAD,
+            Tab::Settings | Tab::Dock => &SPREAD,
         }
     }
 }

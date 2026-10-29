@@ -12,13 +12,15 @@
 use clamshell_state::bottom::BarPlace;
 use clamshell_state::bottom::notice::NoticeKind;
 use clamshell_state::levels::slider::{Control, Slider};
-use clamshell_state::{Id, State, Tab};
+use clamshell_state::{Id, Tab};
 
 use clamshell_ui::gfx::icons::Icon;
 use clamshell_ui::gfx::{Align, Rect};
 use clamshell_ui::toolkit::format::Fmt;
 use clamshell_ui::toolkit::style::{Look, Tone};
 use clamshell_ui::toolkit::{Frame, Track, widgets};
+
+use super::tabs::{self, Face};
 
 /// The bar's height as a fraction of the screen's, at least 20 pixels.
 const BAR_H: f32 = 0.075;
@@ -34,127 +36,76 @@ const SLOT: f32 = 1.15;
 /// strongly it shows.
 const DIVIDER: f32 = 0.4;
 const DIVIDER_ALPHA: f32 = 0.35;
-/// A battery level at or below this, while not charging, shows in the accent colour.
-const LOW_BATTERY: u8 = 15;
-
-/// The bar's target for `tab`'s icon. Volume and brightness target their controls, where a tap opens the
-/// tab and a slide sets the level. The other tabs target the tab itself.
-pub(crate) fn tab_target(tab: Tab) -> Id {
-    match tab {
-        Tab::Volume => Id::Control(Control::Volume),
-        Tab::Brightness => Id::Control(Control::Brightness),
-        tab => Id::Tab(tab),
-    }
-}
-
-/// A tab's button in the bar: its target, its icon with its level or status, and its tone. The tone is
-/// lit while the tab is open and dim without a reading.
-fn tab_button(s: &State, tab: Tab) -> (Id, Icon, Tone) {
-    let open = s.bottom().tab() == tab;
-    let lit = |reading: bool| {
-        if open {
-            Tone::Accent
-        } else if reading {
-            Tone::Normal
-        } else {
-            Tone::Dim
-        }
-    };
-    match tab {
-        Tab::Volume => {
-            let volume = s.levels().control(Control::Volume);
-            (tab_target(tab), Icon::volume(volume.unwrap_or(0), s.levels().muted()), lit(volume.is_some()))
-        }
-        Tab::Brightness => (tab_target(tab), Icon::Brightness, lit(s.levels().control(Control::Brightness).is_some())),
-        Tab::Bluetooth => {
-            let bt = s.radios().bluetooth();
-            let connected = bt.connected() > 0;
-            (Id::Tab(tab), Icon::Bluetooth { connected }, lit(bt.on && connected))
-        }
-        Tab::Wifi => {
-            let quality = s.sys().status().wifi;
-            (Id::Tab(tab), Icon::wifi(quality), lit(quality.is_some()))
-        }
-        // An empty, dim battery when there is none, and the accent colour when low.
-        Tab::Battery => {
-            let status = &s.sys().status();
-            let (icon, tone) = match status.battery {
-                Some(level) => {
-                    let low = level <= LOW_BATTERY && !status.charging;
-                    (Icon::battery(level, status.charging), if low { Tone::Accent } else { Tone::Normal })
-                }
-                None => (Icon::Battery { tenths: 0, charging: false }, Tone::Dim),
-            };
-            (Id::Tab(tab), icon, if open { Tone::Accent } else { tone })
-        }
-        Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Touchpad | Tab::Sysinfo | Tab::Time | Tab::Windows => {
-            (Id::Tab(tab), Icon::for_tab(tab), if open { Tone::Accent } else { Tone::Dim })
-        }
-    }
-}
-
 /// The bar's height on `screen`.
 pub(super) fn height(screen: Rect) -> f32 {
     (screen.h * BAR_H).max(20.0)
 }
 
-/// Draws the bar along the top of `screen` and returns the area below it.
+/// Draws the bar along the top of `screen` and returns the area below it: the tabs' buttons where their
+/// definitions put them (see `super::tabs`), and the pad mouse's. A tab's button is lit while it is open.
 pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
+    let s = f.s;
     // The pad starts on the open tab's button.
-    f.start(tab_target(f.s.bottom().tab()));
+    f.start((tabs::view(s.bottom().tab()).button)(s).id);
     let bar_h = height(screen);
     let mut body = screen;
     let mut bar = body.take_top(bar_h);
+    let at = |place: BarPlace| Tab::ALL.into_iter().filter(move |t| t.definition().button == place);
+    let button = |tab: Tab| {
+        let b = (tabs::view(tab).button)(s);
+        let tone = if s.bottom().tab() == tab { Tone::Accent } else { b.tone };
+        (b, tone)
+    };
     let icon_button = |f: &mut Frame, id: Id, r: Rect, icon: Icon, tone: Tone| {
         // Smaller in a narrow window, so that neighbours don't touch.
         let side = (bar_h * ICON).min(r.w * 0.8);
         f.button(id, r, Look::ICON, |f| f.c.icon(icon, r.square_center(side), tone));
     };
-    // On the right: the windows' tab, the pad mouse, the clock, and the line before them. The windows'
-    // tab is lit while open, stands out while a window of the program in front is below behind another
-    // tab, and is dim with nothing below.
-    let windows = bar.take_right(bar_h * SLOT);
-    let tone = if f.s.bottom().tab() == Tab::Windows {
-        Tone::Accent
-    } else if f.s.bottom().hidden_down(f.s.session()).is_some() {
-        Tone::Fn
-    } else if f.s.session().bottom_window().is_some() {
-        Tone::Normal
-    } else {
-        Tone::Dim
-    };
-    icon_button(f, Id::Tab(Tab::Windows), windows, Icon::Windows, tone);
+    // On the right: the tabs at its end, the pad mouse, the clock, and the line before them.
+    for tab in at(BarPlace::End) {
+        let (b, tone) = button(tab);
+        let r = bar.take_right(bar_h * SLOT);
+        if let Face::Icon(icon) = b.face {
+            icon_button(f, b.id, r, icon, tone);
+        }
+    }
     let mouse = bar.take_right(bar_h * SLOT);
-    let tone = if f.s.pad().mouse_on() { Tone::Accent } else { Tone::Dim };
+    let tone = if s.pad().mouse_on() { Tone::Accent } else { Tone::Dim };
     icon_button(f, Id::PadMouse, mouse, Icon::Mouse, tone);
-    let clock = f.scratch.local(f.s.clock().unix(), f.s.sys().time_zones().current.as_deref()).time(f.s.sys().twelve_hour());
-    let size = bar_h * CLOCK_TEXT;
-    let clock_w = f.c.text_width(size, &clock) + bar_h * CLOCK_PAD;
-    let clock_r = bar.take_right(clock_w);
-    let tone = if f.s.bottom().tab() == Tab::Time { Tone::Accent } else { Tone::Normal };
-    f.button(Id::Tab(Tab::Time), clock_r, Look::ICON, |f| {
-        f.c.text_in(clock_r, size, tone, &clock, Align::Center);
-    });
+    let mut line_at = bar.x + bar.w;
+    for tab in at(BarPlace::Clock) {
+        let (b, tone) = button(tab);
+        let clock = f.scratch.local(s.clock().unix(), s.sys().time_zones().current.as_deref()).time(s.sys().twelve_hour());
+        let size = bar_h * CLOCK_TEXT;
+        let clock_w = f.c.text_width(size, &clock) + bar_h * CLOCK_PAD;
+        let clock_r = bar.take_right(clock_w);
+        f.button(b.id, clock_r, Look::ICON, |f| {
+            f.c.text_in(clock_r, size, tone, &clock, Align::Center);
+        });
+        line_at = clock_r.x;
+    }
     let line = bar_h * DIVIDER;
-    f.c.fill(Rect::new(clock_r.x - 0.5, (bar_h - line) / 2.0, 1.0, line), Tone::Dim.rgb().alpha(DIVIDER_ALPHA));
+    f.c.fill(Rect::new(line_at - 0.5, (bar_h - line) / 2.0, 1.0, line), Tone::Dim.rgb().alpha(DIVIDER_ALPHA));
 
-    // Before the line, every tab, spread evenly. Volume and brightness land near the middle, and their
+    // Before the line, the spread tabs, evenly. Volume and brightness land near the middle, and their
     // slider makes do with the room on either side. Each button opens its tab. Holding or sliding on
     // volume or brightness brings up the slider, which runs along the screen's whole width.
-    let spread = |t: &Tab| t.definition().button == BarPlace::Spread;
-    let cell = bar.w.max(0.0) / Tab::ALL.into_iter().filter(spread).count() as f32;
-    for (i, tab) in Tab::ALL.into_iter().filter(spread).enumerate() {
-        let (id, icon, tone) = tab_button(f.s, tab);
-        let slides = matches!(id, Id::Control(_));
-        icon_button(f, id, Rect::new(i as f32 * cell, 0.0, cell, bar_h), icon, tone);
+    let cell = bar.w.max(0.0) / at(BarPlace::Spread).count() as f32;
+    for (i, tab) in at(BarPlace::Spread).enumerate() {
+        let (b, tone) = button(tab);
+        let slides = matches!(b.id, Id::Control(_));
+        if let Face::Icon(icon) = b.face {
+            icon_button(f, b.id.clone(), Rect::new(i as f32 * cell, 0.0, cell, bar_h), icon, tone);
+        }
         if slides {
             f.track(Track { x0: screen.x, w: screen.w });
         }
-        f.bar_tab(tab, tab_target(tab));
+        f.bar_tab(tab, b.id);
     }
-    // Then, right of the line, the clock's and the windows' tabs.
-    f.bar_tab(Tab::Time, Id::Tab(Tab::Time));
-    f.bar_tab(Tab::Windows, Id::Tab(Tab::Windows));
+    // Then, left to right, those right of the line.
+    for tab in at(BarPlace::Clock).chain(at(BarPlace::End)) {
+        f.bar_tab(tab, (tabs::view(tab).button)(s).id);
+    }
     body
 }
 

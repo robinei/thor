@@ -47,9 +47,9 @@ mod no_alloc;
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
 mod pad_tests;
 
+use clamshell_state::Top;
 use clamshell_state::bottom::editor::Purpose;
 use clamshell_state::library_view::files::FileName;
-use clamshell_state::{Tab, Top};
 
 use clamshell_ui::gfx::Rect;
 use clamshell_ui::toolkit::Frame;
@@ -137,10 +137,10 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
     }
     let body = bar::draw(f, screen);
     f.body = body;
-    tabs::view(f.s.bottom().tab())(f);
-    // While pointing, the area below the bar is a touchpad and its contents are faded. The touchpad tab
-    // has nothing to fade.
-    if f.s.bottom().pointing() && f.s.bottom().tab() != Tab::Touchpad {
+    let tab = tabs::view(f.s.bottom().tab());
+    (tab.draw)(f);
+    // While pointing, the area below the bar is a touchpad and the tab's contents are faded, if it says so.
+    if f.s.bottom().pointing() && tab.fades {
         f.c.fill(body, clamshell_ui::gfx::Rgb(0).alpha(POINTING_FADE));
     }
     bar::draw_slider_over(f, screen, body.y);

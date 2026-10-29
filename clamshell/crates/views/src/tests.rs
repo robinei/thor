@@ -1,6 +1,6 @@
 use super::*;
 use clamshell_state::profiles::picker::{Kind, ProfileId};
-use clamshell_state::{Event, Id, Init, Reading, State, Status};
+use clamshell_state::{Event, Id, Init, Reading, State, Status, Tab};
 use clamshell_ui::gfx::images::Images;
 use clamshell_ui::gfx::record::Recording;
 use clamshell_ui::gfx::{Canvas, DrawCache};
@@ -339,7 +339,7 @@ fn down_from_the_bar_reaches_the_tabs_first_line() {
                 id: t.id.clone(),
             })
             .collect();
-        let down = step(&all, Some(&bar::tab_target(tab)), Dir::Down);
+        let down = step(&all, Some(&(tabs::view(tab).button)(&state).id), Dir::Down);
         assert_eq!(down.as_ref(), Some(&first), "{tab:?}");
         assert_eq!(step(&all, down.as_ref(), Dir::Down).as_ref(), Some(&second), "{tab:?}: then the list");
     }

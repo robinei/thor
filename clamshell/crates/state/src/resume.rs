@@ -39,9 +39,8 @@ impl Resume {
 
     /// Takes the second screen back to its tab.
     pub(crate) fn restore_tab(&self, bottom: &mut Bottom) {
-        // Any tab but the touchpad. There every touch moves the pointer, so it opens only on request.
-        // What a tab watches starts with Event::Start.
-        if let Some(tab) = Tab::from_name(&self.tab).filter(|t| *t != Tab::Touchpad) {
+        // A tab that is restored, as its definition says. What a tab watches starts with Event::Start.
+        if let Some(tab) = Tab::from_name(&self.tab).filter(|t| t.definition().restored) {
             bottom.restore_tab(tab);
         }
     }

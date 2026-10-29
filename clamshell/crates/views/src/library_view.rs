@@ -6,7 +6,7 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use clamshell_state::{Entry, Event, Id, Launch, LibraryViewEvent, LibraryViewId, ListId, PointerEvent, State, Tab};
+use clamshell_state::{Entry, Event, Id, Launch, LibraryViewEvent, LibraryViewId, ListId, PointerEvent, State};
 
 use clamshell_ui::gfx::icons::Icon;
 use clamshell_ui::gfx::{Column, Keep, Rect, Span, WRAP_LINE};
@@ -283,7 +283,7 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
                 (entry.is_group(), Icon::Chevron, Tone::Normal),
                 (starting || s.session().runs(&entry.id), Icon::Dot, if paused { Tone::Dim } else { Tone::Go }),
                 (s.library_view().files().selected().contains(&entry.id), Icon::Check, Tone::Accent),
-                (s.dock().is_pinned(&entry.id), Icon::for_tab(Tab::Dock), Tone::Normal),
+                (s.dock().is_pinned(&entry.id), Icon::Apps, Tone::Normal),
                 (entry.favourite, Icon::Star, Tone::Accent),
             ];
             for (on, icon, mark_tone) in marks {

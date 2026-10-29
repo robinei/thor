@@ -92,7 +92,10 @@ in the views crate (`crates/views/src/apps.rs`), found by the same `BuiltinApp`.
 for any of them. Shared code (the session, the dock, sync) reads the
 definitions, never which app it is, so a new app is an entry, a definition, an area and a view.
 The second screen's tabs follow the same pattern: each `Tab`'s `TabDefinition` in the state (what it
-watches while seen, where its button is in the bar) and its view in `crates/views/src/tabs.rs`.
+watches while seen, where its button is in the bar, whether the pad types with it, whether it is open
+again at the next start) and its view and bar button in `crates/views/src/tabs.rs`. The bar, the pad, the
+resume and the framework ask these, never which tab it is; only links between features name one (the
+tab an editor or a Setup step opens on).
 
 ## Windows
 
