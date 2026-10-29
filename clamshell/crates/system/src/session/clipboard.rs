@@ -24,6 +24,7 @@
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::os::fd::{AsFd, OwnedFd};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -48,6 +49,9 @@ const MOST: usize = 1 << 20;
 const SECRET: &str = "x-kde-passwordManagerHint";
 /// How long `--clipboard set` waits for its text to be taken. Once ClamShell takes it, ClamShell keeps it.
 const SET_WAIT: Duration = Duration::from_secs(5);
+/// How long a text is waited for from the program that copied it, or waits to be taken by the program
+/// pasting it, before it is given up: a program that never writes or reads would hold a thread for good.
+const TRANSFER_WAIT: Duration = Duration::from_secs(5);
 
 /// Where the kept text is also written, so that a ClamShell started again after an update or a crash
 /// offers it. It is in the user's runtime directory, which only they can read and which is gone at a
@@ -103,7 +107,7 @@ pub(crate) fn spawn(runtime: Option<&std::path::Path>, display: Option<std::path
             let sink = crate::os::lock(&sink);
             let _ = sink.send(Event::Reading(Reading::Clipboard(text.map(Arc::from))));
         };
-        let kept = Arc::new(KeptText { text: Mutex::new(before), on_read: Box::new(on_read) });
+        let kept = Arc::new(KeptText { text: Mutex::new(before), on_read: Box::new(on_read), latest: AtomicU64::new(0) });
         match Keeper::connect(Mode::Keep { kept, own: None }, display.as_deref()) {
             Ok((mut keeper, mut queue)) => {
                 log::info!("clipboard: kept by ClamShell");
@@ -130,7 +134,7 @@ pub fn get() -> Result<Option<String>, String> {
         return Ok(None);
     };
     let read = receive(&keeper.conn, offer, mime)?;
-    Ok(read_text(read))
+    Ok(read_text(read, TRANSFER_WAIT))
 }
 
 /// Sets the clipboard to `text` (`--clipboard set`) until it is taken, normally by ClamShell, which then
@@ -156,6 +160,9 @@ pub fn set(text: String) -> Result<(), String> {
 struct KeptText {
     text: Mutex<Option<String>>,
     on_read: Box<dyn Fn(Option<String>) + Send + Sync>,
+    /// The latest change of the clipboard, counted: a text read for an earlier one, finishing after a
+    /// later copy, is dropped.
+    latest: AtomicU64,
 }
 
 impl KeptText {
@@ -211,6 +218,10 @@ impl Keeper {
                 o.destroy();
             }
         }
+        // Each change is counted, so that a text still being read for an earlier one is dropped.
+        if let Mode::Keep { kept, .. } = &self.mode {
+            kept.latest.fetch_add(1, Ordering::SeqCst);
+        }
         match &mut self.mode {
             Mode::Get { found } => *found = offer.zip(mime),
             Mode::Set { .. } => {}
@@ -237,19 +248,28 @@ impl Keeper {
                     let read = receive(&self.conn, &offer, mime);
                     offer.destroy();
                     let kept = kept.clone();
+                    let change = kept.latest.load(Ordering::SeqCst);
                     let (conn, manager, device, qh) = (self.conn.clone(), self.manager.clone(), self.device.clone(), qh.clone());
                     let reading = worker::detached("clipboard read", move || {
                         // Text too long to keep, not UTF-8 or unread: what was kept isn't the clipboard any more,
                         // and isn't offered again when the program that copied quits.
-                        let Some(text) = read.inspect_err(|e| log::warn!("clipboard: reading the copied text: {e}")).ok().and_then(read_text) else {
-                            if kept.text().take().is_some() {
+                        let text = read.inspect_err(|e| log::warn!("clipboard: reading the copied text: {e}")).ok().and_then(|r| read_text(r, TRANSFER_WAIT));
+                        let mut held = kept.text();
+                        if kept.latest.load(Ordering::SeqCst) != change {
+                            log::debug!("clipboard: a text read after the clipboard changed again: dropped");
+                            return;
+                        }
+                        let Some(text) = text else {
+                            if held.take().is_some() {
+                                drop(held);
                                 (kept.on_read)(None);
                             }
                             return;
                         };
-                        let changed = kept.text().as_ref() != Some(&text);
+                        let changed = held.as_ref() != Some(&text);
                         if changed {
-                            *kept.text() = Some(text.clone());
+                            *held = Some(text.clone());
+                            drop(held);
                             (kept.on_read)(Some(text));
                             // Set the primary selection too, so a middle click (a right click in Foot)
                             // pastes the last text copied or selected.
@@ -286,7 +306,7 @@ impl Keeper {
             return;
         };
         let written = worker::detached("clipboard send", move || {
-            if let Err(e) = File::from(fd).write_all(text.as_bytes()) {
+            if let Err(e) = write_text(fd, text.as_bytes(), TRANSFER_WAIT) {
                 log::debug!("clipboard: sending the text: {e}");
             }
         });
@@ -315,14 +335,69 @@ fn receive(conn: &Connection, offer: &ExtDataControlOfferV1, mime: &str) -> Resu
     Ok(read)
 }
 
-/// Reads a pipe's text to the end. None if it is too long or not text.
-fn read_text(read: OwnedFd) -> Option<String> {
+/// Reads a pipe's text to the end, for up to `wait`. None if it is too long, not text, or not all there
+/// by then.
+fn read_text(read: OwnedFd, wait: Duration) -> Option<String> {
+    let until = Instant::now() + wait;
     let mut bytes = Vec::new();
-    File::from(read).take(MOST as u64 + 1).read_to_end(&mut bytes).inspect_err(|e| log::warn!("clipboard: reading the copied text: {e}")).ok()?;
-    if bytes.len() > MOST {
-        return None;
+    let mut file = File::from(read);
+    let mut chunk = [0u8; 8192];
+    loop {
+        if !ready(file.as_fd(), rustix::event::PollFlags::IN, until) {
+            log::warn!("clipboard: the copied text didn't come within {} s: not kept", wait.as_secs());
+            return None;
+        }
+        match file.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => bytes.extend_from_slice(chunk.get(..n)?),
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+            Err(e) => {
+                log::warn!("clipboard: reading the copied text: {e}");
+                return None;
+            }
+        }
+        if bytes.len() > MOST {
+            return None;
+        }
     }
     String::from_utf8(bytes).ok()
+}
+
+/// Writes `text` to a pipe, for up to `wait` while its reader doesn't take it.
+fn write_text(fd: OwnedFd, text: &[u8], wait: Duration) -> io::Result<()> {
+    let until = Instant::now() + wait;
+    rustix::fs::fcntl_setfl(&fd, rustix::fs::OFlags::NONBLOCK)?;
+    let mut file = File::from(fd);
+    let mut left = text;
+    while !left.is_empty() {
+        if !ready(file.as_fd(), rustix::event::PollFlags::OUT, until) {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "not taken in time"));
+        }
+        match file.write(left) {
+            Ok(n) => left = left.get(n..).unwrap_or_default(),
+            Err(e) if matches!(e.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted) => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
+}
+
+/// Whether `fd` is ready for `flags` (or at its end) before `until`.
+fn ready(fd: std::os::fd::BorrowedFd, flags: rustix::event::PollFlags, until: Instant) -> bool {
+    loop {
+        let left = until.saturating_duration_since(Instant::now());
+        let Ok(timeout) = rustix::event::Timespec::try_from(left) else { return false };
+        let mut fds = [rustix::event::PollFd::from_borrowed_fd(fd, flags)];
+        match rustix::event::poll(&mut fds, Some(&timeout)) {
+            Ok(0) => return false,
+            Ok(_) => return true,
+            Err(rustix::io::Errno::INTR) => {}
+            Err(e) => {
+                log::debug!("clipboard: waiting on the pipe: {e}");
+                return false;
+            }
+        }
+    }
 }
 
 /// Dispatches the events that arrive within `wait`.
@@ -357,6 +432,12 @@ impl Dispatch<ExtDataControlDeviceV1, ()> for Keeper {
         match event {
             ext_data_control_device_v1::Event::DataOffer { id } => keeper.offers.push((id, Vec::new())),
             ext_data_control_device_v1::Event::Selection { id } => keeper.selection(id, qh),
+            // The primary selection's offers aren't read: dropped at once, rather than kept until the next
+            // clipboard change, piling up as text is selected.
+            ext_data_control_device_v1::Event::PrimarySelection { id: Some(offer) } => {
+                keeper.offers.retain(|(o, _)| *o != offer);
+                offer.destroy();
+            }
             _ => {}
         }
     }
@@ -416,7 +497,7 @@ mod tests {
         let mut file = tempfile::tempfile().unwrap();
         file.write_all(bytes).unwrap();
         std::io::Seek::rewind(&mut file).unwrap();
-        read_text(OwnedFd::from(file))
+        read_text(OwnedFd::from(file), TRANSFER_WAIT)
     }
 
     #[test]
@@ -426,5 +507,17 @@ mod tests {
         assert_eq!(read(&vec![b'a'; MOST]).map(|t| t.len()), Some(MOST), "at the limit");
         assert_eq!(read(&vec![b'a'; MOST + 1]), None, "past it");
         assert_eq!(read(&[0x66, 0x6f, 0xff, 0x6f]), None, "not UTF-8");
+    }
+
+    /// A program that never finishes writing its text, or never reads ours, is given up after the wait.
+    #[test]
+    fn a_text_not_written_or_not_read_is_given_up() {
+        let (read, write) = rustix::pipe::pipe().unwrap();
+        rustix::io::write(&write, b"part").unwrap();
+        assert_eq!(read_text(read, Duration::from_millis(50)), None, "the writer still has it open");
+        let (_reader, write) = rustix::pipe::pipe().unwrap();
+        let big = vec![b'a'; 1 << 20];
+        let e = write_text(write, &big, Duration::from_millis(50)).unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::TimedOut);
     }
 }
