@@ -90,6 +90,10 @@ impl Hold {
             Some("threshold") => Hold::Threshold,
             Some("firmware") => Hold::Firmware,
             Some("current") => Hold::Current,
+            Some(other) => {
+                log::warn!("CLAMSHELL_CHARGE_LIMIT={other:?} isn't threshold, firmware or current: the controls are detected");
+                Hold::selected(None, policy)
+            }
             _ if policy.prefer_current => Hold::Current,
             _ => Hold::Detected,
         }

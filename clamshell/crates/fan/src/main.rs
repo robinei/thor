@@ -130,6 +130,7 @@ fn main() {
         }
     };
     let Some(fan) = profile.fan else {
+        eprintln!("{}: no fan to drive", profile.name);
         return;
     };
     if to_safe {

@@ -95,6 +95,7 @@ impl Setter {
         let value = raw(level, share, max);
         let through_logind = match self.logind.get() {
             Ok(conn) => {
+                self.bus.ok();
                 let set = conn.call::<()>(
                     "org.freedesktop.login1",
                     "/org/freedesktop/login1/session/auto",
