@@ -15,13 +15,17 @@ growpart "$disk" "$num" || echo "growpart: no change"
 resize2fs "$part"
 
 if [ ! -e /swapfile ]; then
+    # (Made beside, and moved into place only once it is swap: a run cut off before leaves no /swapfile
+    # that isn't, which a rerun would take as done.)
+    rm -f /swapfile.new
     free=$(df --output=avail -B1G / | tail -1)
     if (( free >= SWAP_GIB + 8 )); then
         echo "making /swapfile, $SWAP_GIB GiB"
-        fallocate -l "${SWAP_GIB}G" /swapfile
-        chmod 600 /swapfile
-        mkswap /swapfile
-        echo '/swapfile none swap defaults 0 0' >> /etc/fstab
+        fallocate -l "${SWAP_GIB}G" /swapfile.new
+        chmod 600 /swapfile.new
+        mkswap /swapfile.new
+        mv /swapfile.new /swapfile
+        grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap defaults 0 0' >> /etc/fstab
         swapon /swapfile
     else
         echo "$free GiB free: no swap file, so no hibernate (suspend only)"
