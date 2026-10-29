@@ -199,10 +199,20 @@ impl Server {
             }
 
             InputEvent::PointerAxis { event, .. } => {
-                let vertical = event.amount(Axis::Vertical).unwrap_or_else(|| event.amount_v120(Axis::Vertical).unwrap_or_default() / 8.0);
+                let amount = |axis| event.amount(axis).unwrap_or_else(|| event.amount_v120(axis).unwrap_or_default() / 8.0);
+                let vertical = amount(Axis::Vertical);
                 if self.hit(self.pointer.location).is_some() {
                     if let Some(pointer) = self.seat.get_pointer() {
-                        let frame = AxisFrame::new(event.time()).source(event.source()).value(Axis::Vertical, vertical);
+                        // Both axes, with the wheel's steps where it has them.
+                        let mut frame = AxisFrame::new(event.time()).source(event.source());
+                        for axis in [Axis::Vertical, Axis::Horizontal] {
+                            if event.amount(axis).is_some() || event.amount_v120(axis).is_some() {
+                                frame = frame.value(axis, amount(axis));
+                            }
+                            if let Some(v120) = event.amount_v120(axis) {
+                                frame = frame.v120(axis, v120 as i32);
+                            }
+                        }
                         pointer.axis(self, frame);
                         pointer.frame(self);
                     }
