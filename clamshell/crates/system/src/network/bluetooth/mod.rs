@@ -263,15 +263,16 @@ impl<S: Sink> BtThread<S> {
         self.sink.send(Event::Reading(Reading::Bluetooth(bt)))
     }
 
-    /// Carries out a request. Every request except connecting needs the adapter and fails without one.
-    /// Connecting is done by the worker, which finds the adapter itself.
+    /// Carries out a request. Every request except connecting and watching needs the adapter and fails
+    /// without one. Connecting is done by the worker, which finds the adapter itself.
     fn apply(&self, s: &mut Session, request: &Request) -> Result<(), Error> {
         match request {
             Request::Do(Command::Connect(address)) => {
                 s.connecting.try_send(address.clone()).map_err(|_| io::Error::other("it has ended"))?;
             }
+            // Without an adapter (a desktop without Bluetooth) there is nothing to look with, which is no
+            // problem: watching is noted all the same, so that it ends.
             Request::Watch(on) => {
-                s.adapter()?;
                 self.shared.lock().watching = *on;
                 s.discover(*on);
             }
