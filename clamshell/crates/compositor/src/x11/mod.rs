@@ -151,7 +151,12 @@ impl Supervisor {
         if let Some(running) = self.running.as_mut() {
             match running.child.try_wait() {
                 Ok(Some(status)) => {
-                    log::warn!("compositor: Xwayland exited: {status}; awaiting next X11 client");
+                    // (It ends by itself once its last client has, being run with -terminate.)
+                    if status.success() {
+                        log::info!("compositor: Xwayland ended with its last client; awaiting the next");
+                    } else {
+                        log::warn!("compositor: Xwayland exited: {status}; awaiting the next X11 client");
+                    }
                     running.remove_sources(&self.handle);
                     running.wm.clear(server);
                     server.dh.backend_handle().kill_client(running.client.id(), DisconnectReason::ConnectionClosed);

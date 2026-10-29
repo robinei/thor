@@ -99,6 +99,8 @@ struct Screen {
     failing: bool,
     /// Whether turning it off fails, tried again each turn: logged at the first.
     off_failing: bool,
+    /// Whether composing it fails, every turn: logged at the first.
+    compose_failing: bool,
 }
 
 impl Screen {
@@ -291,6 +293,7 @@ pub fn run(
             layers_dirty: false,
             failing: false,
             off_failing: false,
+            compose_failing: false,
         });
     }
     // With CLAMSHELL_SCANOUT=1, each screen's own buffers, for while it shows only ClamShell.
@@ -632,8 +635,20 @@ fn step(
     // what came meanwhile), unless it shows its own buffers or a window's; for a screenshot, all of them.
     let capture = std::mem::take(&mut server.screenshot_requested);
     for index in 0..drawing.screens.len() {
-        if let Err(error) = compose(drawing, server, index, capture) {
-            log::warn!("drm: drawing: {error}");
+        // A failure is warned of at the first, and while it goes on, at debug: it would be every turn.
+        match compose(drawing, server, index, capture) {
+            Ok(()) => {
+                if let Some(screen) = drawing.screens.get_mut(index) {
+                    screen.compose_failing = false;
+                }
+            }
+            Err(error) => match drawing.screens.get_mut(index) {
+                Some(screen) if !screen.compose_failing => {
+                    screen.compose_failing = true;
+                    log::warn!("drm: drawing: {error}");
+                }
+                _ => log::debug!("drm: drawing: {error}"),
+            },
         }
     }
     if let Some(histogram) = drawing.pipeline.take_histogram(&mut drawing.renderer, server) {

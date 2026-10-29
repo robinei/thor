@@ -199,6 +199,9 @@ impl Surface {
     }
 }
 
+/// Marks a surface that couldn't be imported, so that it is warned of once.
+struct ImportFailed;
+
 /// The elements of `surface`'s tree at `location`, front first, handed to `f` one by one: Smithay's
 /// `render_elements_from_surface_tree` (at scale 1, opaque) without collecting them into a list, so that
 /// drawing a frame allocates nothing, but for a window with xdg popups open (Smithay lists them each time
@@ -227,7 +230,9 @@ pub(crate) fn surface_tree_elements(
             match WaylandSurfaceRenderElement::from_surface(renderer, surface, states, location, 1.0, kind) {
                 Ok(Some(element)) => f(element),
                 Ok(None) => {}
-                Err(error) => log::warn!("compositor: a surface can't be imported: {error}"),
+                // Warned of once for the surface; every frame after, it would say the same.
+                Err(error) if states.data_map.insert_if_missing(|| ImportFailed) => log::warn!("compositor: a surface can't be imported: {error}"),
+                Err(error) => log::debug!("compositor: a surface can't be imported: {error}"),
             }
         },
         |_, _, _| true,

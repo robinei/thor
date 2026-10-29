@@ -65,8 +65,11 @@ struct ReadRequest {
 }
 impl SeatSelections {
     pub fn read(&mut self, target: SelectionTarget, mime: String, fd: OwnedFd, origin: u64) {
-        if self.entries.get(slot(target)).origin != Some(origin) || self.requests.len() >= MAX_TRANSFERS {
-            return;
+        if self.entries.get(slot(target)).origin != Some(origin) {
+            return log::debug!("compositor: a paste from X11 dropped: the selection has changed since");
+        }
+        if self.requests.len() >= MAX_TRANSFERS {
+            return log::warn!("compositor: a paste from X11 dropped: {MAX_TRANSFERS} already going on");
         }
         if let Err(error) = rustix::fs::fcntl_setfl(&fd, rustix::fs::OFlags::NONBLOCK) {
             log::warn!("compositor: selection reader flags: {error}");

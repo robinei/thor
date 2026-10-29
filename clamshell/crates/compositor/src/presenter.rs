@@ -141,6 +141,9 @@ impl Presenter {
                         && smithay::reexports::drm::Device::get_driver_capability(&surface, smithay::reexports::drm::DriverCapability::SyncObj)
                             .is_ok_and(|v| v != 0)
                         && plane_has(&surface, "IN_FENCE_FD");
+                    if !fencing {
+                        log::info!("drm: commits take no fences here: each frame's drawing is waited for before it is committed");
+                    }
                     return Ok(Presenter {
                         surface,
                         swapchain,
