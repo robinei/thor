@@ -33,16 +33,18 @@ pub type Calibrations = BTreeMap<String, Sticks>;
 
 impl Sticks {
     /// Maps axis `i`'s raw `value` into the controller's range, `min`..`max`, centred on its middle. The
-    /// centre maps to the middle and each extreme to its end, and the result is clamped.
+    /// centre maps to the middle and each extreme to its end, and the result is clamped. (Worked out in
+    /// i64: a calibration is read from a file, and any i32 may be in it.)
     pub fn correct(&self, i: usize, value: i32, min: i32, max: i32) -> i32 {
         let Some(a) = self.axes.get(i) else { return value };
+        let [value, min, max, low, centre, high] = [value, min, max, a.low, a.centre, a.high].map(i64::from);
         let mid = (min + max) / 2;
-        let (span, out) = if value >= a.centre { (a.high - a.centre, max - mid) } else { (a.centre - a.low, mid - min) };
+        let (span, out) = if value >= centre { (high - centre, max - mid) } else { (centre - low, mid - min) };
         if span <= 0 {
-            return value;
+            return i32::try_from(value).unwrap_or_default();
         }
-        let scaled = mid as i64 + (value - a.centre) as i64 * out as i64 / span as i64;
-        scaled.clamp(min as i64, max as i64) as i32
+        let scaled = (mid + (value - centre) * out / span).clamp(min, max);
+        i32::try_from(scaled).unwrap_or_default()
     }
 
     /// Axis `i` went to `value`. If that is past an extreme, the extreme moves out to it, for a stick that
@@ -95,6 +97,8 @@ mod tests {
         assert_eq!(s.correct(0, 1300, -1024, 1024), 1024, "past it: clamped");
         assert_eq!(s.correct(0, 465, -1024, 1024), 512, "halfway");
         assert_eq!(s.correct(9, 465, -1024, 1024), 465, "no such axis: as it is");
+        let wide = Sticks { axes: [StickAxis { low: i32::MIN, centre: i32::MAX, high: i32::MAX }; AXES] };
+        assert_eq!(wide.correct(0, i32::MIN, i32::MIN, i32::MAX), i32::MIN, "the whole of i32: no overflow");
     }
 
     #[test]
