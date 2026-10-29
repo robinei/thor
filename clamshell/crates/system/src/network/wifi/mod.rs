@@ -160,15 +160,25 @@ impl Session {
     }
 
     /// The first Wi-Fi device NetworkManager manages, or else the first Wi-Fi device, if any. A device it
-    /// leaves alone, such as an access point's radio, isn't used to join.
+    /// leaves alone, such as an access point's radio, isn't used to join. One that vanishes between the
+    /// list and its properties (a virtual one, as Waydroid's) is passed over.
     fn wifi_device(&mut self) -> dbus::Result<Option<Path<'static>>> {
         let (devices,): (Vec<Path<'static>>,) = self.call(nm::PATH, nm::MANAGER, "GetDevices", ())?;
         let mut unmanaged = None;
         for path in devices {
-            if self.get::<u32>(&path, nm::DEVICE, "DeviceType")? != DeviceType::Wifi as u32 {
+            let facts = self.get::<u32>(&path, nm::DEVICE, "DeviceType").and_then(|kind| Ok((kind, self.get::<u32>(&path, nm::DEVICE, "State")?)));
+            let (kind, state) = match facts {
+                Ok(facts) => facts,
+                Err(e) if vanished(&e) => {
+                    log::debug!("wifi: device {path}: {e}");
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
+            if kind != DeviceType::Wifi as u32 {
                 continue;
             }
-            if self.get::<u32>(&path, nm::DEVICE, "State")? != DeviceState::Unmanaged as u32 {
+            if state != DeviceState::Unmanaged as u32 {
                 return Ok(Some(path));
             }
             unmanaged.get_or_insert(path);
@@ -209,7 +219,15 @@ impl Session {
         let (connections,): (Vec<Path<'static>>,) = self.call(nm::SETTINGS_PATH, nm::SETTINGS, "ListConnections", ())?;
         let mut out = Vec::new();
         for path in connections {
-            let (settings,): (HashMap<String, dbus::PropMap>,) = self.call(&path, nm::CONNECTION, "GetSettings", ())?;
+            // A connection can be removed between the list and its settings.
+            let (settings,): (HashMap<String, dbus::PropMap>,) = match self.call(&path, nm::CONNECTION, "GetSettings", ()) {
+                Ok(settings) => settings,
+                Err(e) if vanished(&e) => {
+                    log::debug!("wifi: connection {path}: {e}");
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
             if let Some(ssid) = settings.get("802-11-wireless").and_then(|w| Props(w).bytes("ssid")) {
                 out.push((path, String::from_utf8_lossy(&ssid).into_owned()));
             }
@@ -220,6 +238,12 @@ impl Session {
     fn delete(&mut self, connection: &Path<'static>) -> dbus::Result<()> {
         self.call(connection, nm::CONNECTION, "Delete", ())
     }
+}
+
+/// Whether `e` is about one of NetworkManager's objects, such as one gone since it was listed, rather
+/// than NetworkManager or the bus being gone.
+fn vanished(e: &crate::os::dbus::Error) -> bool {
+    !e.is_bus_failure() && !e.is_absent()
 }
 
 /// An access point as NetworkManager has it.
@@ -247,9 +271,11 @@ impl<S: Sink> WifiThread<S> {
     }
 
     fn read(&mut self, s: &mut Session, device: Option<&Path<'static>>) -> dbus::Result<Wifi> {
-        let st = &mut self.state;
         let enabled = s.wireless_enabled()?;
         let Some(device) = device else {
+            // A join going on when the device went is answered: it failed.
+            self.follow_attempt(s, None)?;
+            let st = &self.state;
             return Ok(Wifi { present: false, on: enabled, error: st.error.clone(), ..Wifi::default() });
         };
         let state = s.get::<u32>(device, nm::DEVICE, "State")?;
@@ -479,6 +505,15 @@ mod tests {
 
     fn ap(flags: u32, security: u32) -> Ap {
         Ap { path: Path::from("/ap/1"), ssid: "x".into(), strength: 50, flags, security }
+    }
+
+    /// An object gone since it was listed is passed over; NetworkManager or the bus gone ends the session.
+    #[test]
+    fn a_vanished_object_is_passed_over() {
+        let method = |name: &str| crate::os::dbus::Error::Method { name: name.into(), message: String::new() };
+        assert!(vanished(&method("org.freedesktop.DBus.Error.UnknownObject")));
+        assert!(!vanished(&method("org.freedesktop.DBus.Error.ServiceUnknown")));
+        assert!(!vanished(&crate::os::dbus::Error::Bus("closed".into())));
     }
 
     #[test]
