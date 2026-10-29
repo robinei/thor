@@ -74,19 +74,25 @@ impl Effects {
         };
         for event in events {
             match event.destructure() {
-                EventSummary::UInput(request, UInputCode::UI_FF_UPLOAD, _) => {
-                    let mut upload = pad.process_ff_upload(request)?;
-                    let data = upload.effect();
-                    self.upload(upload.effect_id(), data);
-                    upload.set_retval(0);
-                }
-                EventSummary::UInput(request, UInputCode::UI_FF_ERASE, _) => {
-                    let mut erase = pad.process_ff_erase(request)?;
-                    let id = i16::try_from(erase.effect_id()).unwrap_or(-1);
-                    self.uploaded.retain(|e| e.id != id);
-                    self.playing.retain(|(p, _)| *p != id);
-                    erase.set_retval(0);
-                }
+                // Each request on its own: one that fails doesn't leave the rest unanswered, which would
+                // keep the game waiting on uinput's timeout.
+                EventSummary::UInput(request, UInputCode::UI_FF_UPLOAD, _) => match pad.process_ff_upload(request) {
+                    Ok(mut upload) => {
+                        let data = upload.effect();
+                        self.upload(upload.effect_id(), data);
+                        upload.set_retval(0);
+                    }
+                    Err(e) => log::warn!("rumble: an effect's upload: {e}"),
+                },
+                EventSummary::UInput(request, UInputCode::UI_FF_ERASE, _) => match pad.process_ff_erase(request) {
+                    Ok(mut erase) => {
+                        let id = i16::try_from(erase.effect_id()).unwrap_or(-1);
+                        self.uploaded.retain(|e| e.id != id);
+                        self.playing.retain(|(p, _)| *p != id);
+                        erase.set_retval(0);
+                    }
+                    Err(e) => log::warn!("rumble: an effect's erasing: {e}"),
+                },
                 EventSummary::ForceFeedback(_, FFEffectCode::FF_GAIN, value) => self.gain = u16::try_from(value).unwrap_or(u16::MAX),
                 EventSummary::ForceFeedback(_, FFEffectCode(code), value) => self.play(code, value > 0, now),
                 _ => {}
