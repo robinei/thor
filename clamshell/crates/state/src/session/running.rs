@@ -191,10 +191,10 @@ pub(crate) fn has_mark(library: &Library, g: &Entry, w: &WindowFacts) -> bool {
     }
 }
 
-/// A handed-over entry's app id: its desktop file's name.
 /// A play that ended: the entry and when it started, in monotonic seconds. State records it in the Library.
 pub(crate) type Play = (Arc<str>, u64);
 
+/// A handed-over entry's app id: its desktop file's name.
 fn handed_over_app(g: &Entry) -> Option<&str> {
     ids::desktop_file(&g.id).filter(|_| g.runner.as_ref().is_some_and(|r| r.handover))
 }

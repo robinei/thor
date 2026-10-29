@@ -272,8 +272,7 @@ pub enum Save {
     Autostart(Vec<std::sync::Arc<str>>),
     /// Whether clocks use 12-hour format rather than 24-hour.
     TwelveHour(bool),
-    /// The first start is over, because the Device view was closed with Done. It doesn't open by itself
-    /// again.
+    /// The first start is over, because Setup was finished with Done. It doesn't show by itself again.
     FirstStartDone,
     /// The sticks' calibrations, by controller.
     Sticks(crate::device_view::sticks::Calibrations),

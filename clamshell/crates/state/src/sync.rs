@@ -274,7 +274,6 @@ impl Sent {
     }
 
     /// The settings in force are applied when the program in force changes, and when they change.
-    /// Returns whether they were.
     fn settings(&mut self, w: &Wanted, out: &mut Out) {
         if self.applied.as_ref().is_some_and(|(program, settings)| program.as_ref() == w.program && *settings == w.settings) {
             return;

@@ -71,8 +71,8 @@ impl State {
         }
     }
 
-    /// Shows built-in `b` on the main screen, with the pad's focus on it: the Device view's first row, or the
-    /// Library's selection.
+    /// Shows built-in `b` on the main screen. The focus starts where its view says (see
+    /// [`crate::Top::App`]).
     pub(crate) fn show_app(&mut self, b: BuiltinApp) {
         self.session.cancel_front_launch();
         self.session.command(WindowCommand::Show(b));
@@ -107,8 +107,8 @@ impl State {
         }
     }
 
-    /// Launches `entry` (see [`crate::Session::launch`]), or does what the session says instead: the Device view
-    /// is opened, a group shown open in the Library, or a running entry shown. As a launch starts, where the Library
+    /// Launches `entry` (see [`crate::Session::launch`]), or does what the session says instead: a built-in
+    /// app shown, a group shown open in the Library, or a running entry shown. As a launch starts, where the Library
     /// and the second screen are is saved.
     pub(crate) fn launch(&mut self, entry: Arc<str>, command: Option<Launch>, start: Start, out: &mut Out) -> Launched {
         // Nothing of the user's runs until the account reads with a password (or there is no helper): it may

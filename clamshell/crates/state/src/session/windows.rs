@@ -50,7 +50,6 @@ pub(crate) enum WindowCommand {
     FocusWindow(i64),
     /// Give a client keyboard focus without changing the selected content on either screen.
     KeyboardFocus(i64),
-    /// Bring the Library to the front.
     /// No window in front: the built-in shows.
     Show(clamshell_library::BuiltinApp),
     /// Move a window to the bottom screen and show it there, returning the one there to its group. The

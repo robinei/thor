@@ -171,11 +171,11 @@ pub struct Init {
     pub window_rules: crate::session::below::WindowRules,
     /// Show clocks in 12-hour format rather than 24-hour.
     pub twelve_hour: bool,
-    /// This is ClamShell's first start, meaning the Device view hasn't been closed with Done yet. The
-    /// Device view opens (see [`setup`]).
     /// The account as known before the state starts: ClamShell's starts unread (tests and the snapshots
     /// give one, see [`crate::setup::account::Account`]).
     pub account: crate::setup::account::Account,
+    /// This is ClamShell's first start: Setup hasn't been finished with Done yet, so it shows (see
+    /// [`setup`]).
     pub first_start: bool,
     /// The sticks' calibrations, by controller (see [`crate::device_view::sticks`]).
     pub sticks: crate::device_view::sticks::Calibrations,
@@ -189,8 +189,9 @@ pub struct State {
     bottom: Bottom,
     session: Session,
     dock: Dock,
-    /// The Device view on the main screen (see [`crate::setup`]).
+    /// Setup, the first start's steps, and the account (see [`crate::setup`]).
     setup: setup::Setup,
+    /// The Device view on the main screen (see [`crate::device_view`]).
     device_view: device_view::DeviceView,
     levels: Levels,
     radios: Radios,

@@ -67,8 +67,8 @@ impl Setup {
         self.password_problem.as_deref()
     }
 
-    /// A tap on one of Setup's targets. Done ends Setup for good, the Library showing next with its
-    /// selection focused (`selected`) and the default tab below.
+    /// A tap on one of Setup's targets. Done ends Setup for good, the Library showing next and the default
+    /// tab below.
     pub(crate) fn wizard_tap(&mut self, id: SetupId, out: &mut Out) {
         let Some(step) = self.wizard() else { return };
         match (id, step) {

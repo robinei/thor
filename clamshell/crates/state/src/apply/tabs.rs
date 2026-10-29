@@ -33,7 +33,7 @@ impl State {
 
     /// Runs after any event: the second screen's tab is not the one the last settle saw, `left` (its watch
     /// follows in sync, see [`crate::sync::Sent::watches`]). What the tab left had going ends: the dock's
-    /// menu or move, any level row being set, and the modifiers armed on the keymaps' capture screen. The
+    /// menu or move, and the modifiers armed on the keymaps' capture screen. The
     /// time tab opens on its main page again. A tab left and come back to within one event isn't left.
     pub(crate) fn follow_tab(&mut self) {
         let tab = self.bottom.tab();

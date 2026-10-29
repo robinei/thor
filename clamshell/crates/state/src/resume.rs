@@ -1,6 +1,6 @@
 //! Coming back to the same place after a restart. This covers the Library's current collection, each
-//! collection's open groups and selected entry, and the second screen's tab, and also the screens'
-//! brightness. Both are written once changes have stopped for a moment.
+//! collection's open groups and selected entry, and the second screen's tab. It is written once changes
+//! have stopped for a moment. (The screens' brightness is saved on its own, as `Save::Brightness`.)
 
 use crate::LibraryView;
 use crate::bottom::{Bottom, Tab};

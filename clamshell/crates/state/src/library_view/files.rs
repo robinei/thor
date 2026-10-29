@@ -439,8 +439,6 @@ impl LibraryView {
         out.effects.push(Effect::Files(op));
     }
 
-    /// What the files thread said. A listing drops the selected entries that are gone. A notice says how
-    /// an operation ended.
     /// The files thread was started again after a panic: the operation it was carrying out, the oldest
     /// sent, ends as failed, since it may be half done. Those after it wait in its channel still.
     pub(crate) fn files_interrupted(&mut self, notice: &mut NoticeSlot, now: u64, out: &mut Out) {
@@ -450,6 +448,8 @@ impl LibraryView {
         }
     }
 
+    /// What the files thread said. A listing drops the selected entries that are gone. A notice says how
+    /// an operation ended.
     pub(crate) fn on_files(&mut self, event: FilesEvent, notice: &mut NoticeSlot, now: u64, out: &mut Out) {
         match event {
             FilesEvent::Listed { folder, entries } => {

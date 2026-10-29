@@ -26,7 +26,7 @@ pub enum Launch {
 
 /// ClamShell's own apps on the main screen, entries like any other: placed in the library, and on the
 /// dock while they run. This is who each is, as an entry; what each does is its definition in
-/// clamshell-state (`builtin_apps`), and how it looks its view in clamshell-ui.
+/// clamshell-state (`builtin_apps`), and how it looks its view in clamshell-views.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum BuiltinApp {
     /// What the device has, browsed. It always runs.
