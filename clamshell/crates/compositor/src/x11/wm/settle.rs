@@ -29,6 +29,15 @@ impl Wm {
             if w.override_redirect || !w.wants_map || w.outstanding != 0 {
                 continue;
             }
+            // A managed window waits for its process, asked for once its other answers are in (see
+            // `Wm::take_identified`); one made managed from a menu (see `promote`) asks only then.
+            if let (Some(pid), None) = (w.pid, &w.process) {
+                server.identities.ask(pid, crate::clients::Waiting::X11Window(w.id));
+                if let Some(w) = self.windows.get_mut(i) {
+                    w.outstanding = 1;
+                }
+                continue;
+            }
             if w.input_only {
                 if w.configured.is_none() {
                     wire.request(MapWindowRequest { window: w.xid }, 0, false)?;
@@ -130,7 +139,7 @@ impl Window {
         if self.opened && !self.dirty && self.parent == parent {
             return;
         }
-        let facts = self.properties.facts(self.id, parent, self.process.clone());
+        let facts = self.properties.facts(self.id, parent, self.process.clone().unwrap_or_default());
         if self.opened {
             server.queue_facts(facts);
         } else {

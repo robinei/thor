@@ -111,11 +111,7 @@ impl Wm {
                         .and_then(|v| v.value.first())
                         .copied()
                         .filter(|pid| *pid > 1);
-                    // The window waits on for its process (see `take_identified`).
-                    match window.pid {
-                        Some(pid) => server.identities.ask(pid, crate::clients::Waiting::X11Window(id)),
-                        None => window.outstanding = window.outstanding.saturating_sub(1),
-                    }
+                    window.outstanding = window.outstanding.saturating_sub(1);
                 }
             }
         }
@@ -150,7 +146,8 @@ impl Wm {
             popup_parent: None,
             properties: Properties::default(),
             pid: None,
-            process: Process::default(),
+            process: None,
+            // The attributes, the properties and the process id.
             outstanding: PROPERTIES.len() + 2,
             wants_map: false,
             queried: false,

@@ -67,9 +67,10 @@ struct Window {
     popup_parent: Option<i64>,
     properties: Properties,
     pid: Option<u32>,
-    /// Its process, once identified (see [`crate::clients::Identities`]); waited for as one of the
-    /// outstanding answers.
-    process: Process,
+    /// Its process, once identified (see [`crate::clients::Identities`]). Only a managed window's is asked
+    /// for, once its other answers are in, and waited for as one more outstanding answer: a menu or
+    /// tooltip is shown by its process id alone, and doesn't wait.
+    process: Option<Process>,
     outstanding: usize,
     wants_map: bool,
     queried: bool,
@@ -144,7 +145,7 @@ impl Wm {
     fn take_identified(&mut self, server: &mut Server) {
         for (id, process) in server.x11.identified.drain(..) {
             if let Some(window) = self.windows.iter_mut().find(|w| w.id == id) {
-                window.process = process;
+                window.process = Some(process);
                 window.outstanding = window.outstanding.saturating_sub(1);
             }
         }
@@ -461,6 +462,67 @@ mod tests {
         assert!(server.core.state().session().window(gone).is_none(), "forgotten with its answer");
         assert_eq!(wm.windows.len(), 2);
     }
+    /// A menu's process is never asked for: it is shown by its process id alone, so a process whose read
+    /// is stuck holds up none of its menus. One promoted to a managed window (a splash) asks then, and
+    /// opens once its process is identified.
+    #[test]
+    fn a_menu_doesnt_wait_for_its_process_and_a_promoted_one_does() {
+        use std::sync::{
+            Mutex,
+            atomic::{AtomicUsize, Ordering},
+            mpsc,
+        };
+        let (open, gate) = mpsc::channel::<()>();
+        let gate = Mutex::new(gate);
+        let calls = std::sync::Arc::new(AtomicUsize::new(0));
+        let called = calls.clone();
+        let identify = move |pid| {
+            called.fetch_add(1, Ordering::SeqCst);
+            let _ = gate.lock().unwrap().recv();
+            Process { unit: Some("splash.scope".into()), pids: vec![pid], game: None }
+        };
+        let (_display, mut server) = crate::tests::ServerBuilder::new().identify(identify).build();
+        let (socket, _peer) = UnixStream::pair().unwrap();
+        let now = Instant::now();
+        let mut wire = Transport::new(socket, now).unwrap();
+        let mut wm = Wm { root: 1, owner: 2, atoms: Atoms(NAMES.iter().enumerate().map(|(i, name)| (*name, 100 + i as u32)).collect()), ..Wm::default() };
+        // A menu of program 7, which has a managed window (already identified), and a window of program 9
+        // alone, a splash.
+        for (xid, redirect) in [(10, true), (20, true), (30, false)] {
+            wm.discover(xid, Rectangle::from_size((100, 100).into()), redirect, &mut wire, &mut server).unwrap();
+        }
+        for w in &mut wm.windows {
+            // Only the process id's answer outstanding.
+            (w.outstanding, w.wants_map) = (1, true);
+        }
+        wm.windows[2].process = Some(Process::default());
+        let [menu, splash, managed] = [0, 1, 2].map(|i| wm.windows[i].id);
+        for (id, pid) in [(menu, 7), (splash, 9), (managed, 7)] {
+            let ids = vec![res::ClientIdValue { spec: res::ClientIdSpec { client: 10, mask: res::ClientIdMask::LOCAL_CLIENT_PID }, value: vec![pid] }];
+            let reply = Serialize::serialize(&res::QueryClientIdsReply { sequence: 0, length: 4, ids });
+            wm.reply(Query::Pid(id), &reply, &mut wire, &mut server, now).unwrap();
+        }
+        wm.settle(&mut wire, &mut server).unwrap();
+        wm.settle_menus(&mut wire, &mut server).unwrap();
+        assert!(wm.windows[0].override_redirect && wm.windows[0].outstanding == 0, "the menu waits for nothing");
+        assert!(!wm.windows[1].override_redirect, "promoted");
+        wm.settle(&mut wire, &mut server).unwrap();
+        assert_eq!(wm.windows[1].outstanding, 1, "it waits for its process");
+        assert!(server.core.state().session().window(splash).is_none());
+        open.send(()).unwrap();
+        let until = Instant::now() + Duration::from_secs(5);
+        while server.x11.identified.is_empty() && Instant::now() < until {
+            server.take_identified();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        wm.take_identified(&mut server);
+        wm.settle(&mut wire, &mut server).unwrap();
+        let window = server.core.state().session().window(splash).unwrap();
+        assert_eq!((window.unit.as_deref(), window.pids.clone()), (Some("splash.scope"), vec![9]));
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "only the splash's process was read");
+        assert!(server.core.state().session().window(menu).is_none(), "the menu is no window of the state's");
+    }
+
     /// Xwayland gives a window's surface a 64-bit serial: through `xwayland_shell_v1` on the Wayland side,
     /// and in `WL_SURFACE_SERIAL` as two 32-bit halves, low first, on the X11 side. The window is paired
     /// with the surface committed with that serial, once both have come.

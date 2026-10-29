@@ -1390,7 +1390,7 @@ or malformed clears its fact.
 |---|---|---|---|---|
 | — | CreateNotify on the root | known | PropertyChange selected; no queries | wm `outstanding_…` |
 | known | MapRequest | querying | attributes, nine properties, the PID (waiting for room under the 256) | same |
-| querying | every reply | placed | Opened; ConfigureWindow (the presentation's geometry; _NET_WM_STATE fullscreen or empty; WM_STATE Normal); MapWindow; then focus | wm `placement_is_configured_before_mapping_and_focus_waits_for_the_servers_time` (the request order), `an_unchanged_window_sends_no_x11_requests` (nothing again when unchanged) |
+| querying | every reply, then its process identified (asked for once the rest are in; `a_window_opens_once_its_process_is_identified`) | placed | Opened; ConfigureWindow (the presentation's geometry; _NET_WM_STATE fullscreen or empty; WM_STATE Normal); MapWindow; then focus | wm `placement_is_configured_before_mapping_and_focus_waits_for_the_servers_time` (the request order), `an_unchanged_window_sends_no_x11_requests` (nothing again when unchanged) |
 | querying or placed | an error reply to its query | removed | Closed if open | GAP |
 | placed | WL_SURFACE_SERIAL (two 32-bit halves) and the surface committed with that serial through `xwayland_shell_v1` | drawable | the surface bound once; drawn, hit and paced as a Wayland one. A serial is never reused, unlike a surface's id; serial 0 is a protocol error | wm `a_window_is_paired_with_the_surface_committed_with_its_serial`; `a_committed_serial_pairs_its_surface_once_and_only_xwayland_sees_the_shell` |
 | placed | PropertyNotify of a property it reads | placed | the property read again (once more if it changes meanwhile); changes held to the frame, then compared with the state's facts and sent as Changed and Title (one batch when both), with the colour of its bound surface | wm `x11_title_changes_reach_the_state_once_per_frame`, `x11_facts_deferred_to_the_frame_settle_with_their_title`, `an_x11_window_reports_its_surfaces_colour`; nested "X11 property changes enter the ordinary window-event ring" |
@@ -1429,7 +1429,10 @@ model's policy and key strokes, "no-input clients receive no keys", "Home remove
 ### X11 menus and tooltips (x11/wm/menus.rs, popup.rs, surface.rs)
 
 Override-redirect windows are drawn as popups of a managed parent and never reach the state; a tooltip
-(_NET_WM_WINDOW_TYPE_TOOLTIP) takes no input. The owner is found by following WM_TRANSIENT_FOR through
+(_NET_WM_WINDOW_TYPE_TOOLTIP) takes no input. A menu's process is never identified: it is shown by its
+process id alone, so a process whose read is stuck holds up none of its menus; one promoted to a managed
+window asks for its process then, and opens once it is identified
+(`a_menu_doesnt_wait_for_its_process_and_a_promoted_one_does`). The owner is found by following WM_TRANSIENT_FOR through
 mapped override-redirect ancestors to a managed window; without it, the focused managed window (for a
 tooltip, the one under the pointer, else the focused one) with the same X-Resource PID. A missing or
 unmapped ancestor, or a cycle (the walk is bounded by the number of windows), gives no owner. A shown
