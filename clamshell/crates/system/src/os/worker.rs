@@ -608,6 +608,12 @@ mod tests {
         }
         assert_eq!(count, RESTART_GIVE_UP);
         assert!(started.elapsed() < Duration::from_secs(10), "{:?}", started.elapsed());
+        // (The runs' sender goes as the thread ends, and its command channel only after: until then a
+        // command is still taken.)
+        let until = Instant::now() + Duration::from_secs(5);
+        while w.try_send(1).is_ok() && Instant::now() < until {
+            thread::sleep(Duration::from_millis(1));
+        }
         assert_eq!(w.try_send(1), Err(Gone), "its commands go nowhere");
     }
 
@@ -651,10 +657,11 @@ mod tests {
         assert_eq!(w.try_send(1), Ok(()));
     }
 
-    /// A service that is down twice, then up until its commands stop.
+    /// A service that is down twice, then up until its commands stop. It says when it is up.
     struct Flaky {
         connects: u32,
         log: Vec<String>,
+        up: mpsc::Sender<()>,
     }
 
     impl Service for Flaky {
@@ -665,7 +672,11 @@ mod tests {
 
         fn connect(&mut self) -> Result<(), String> {
             self.connects += 1;
-            if self.connects <= 2 { Err(format!("down {}", self.connects)) } else { Ok(()) }
+            if self.connects <= 2 {
+                return Err(format!("down {}", self.connects));
+            }
+            self.up.send(()).unwrap();
+            Ok(())
         }
 
         fn run_while_up(&mut self, (): (), commands: &Receiver<&'static str>) -> Result<(), Ended<String>> {
@@ -689,13 +700,15 @@ mod tests {
     #[test]
     fn a_service_is_tried_again_and_takes_commands_meanwhile() {
         let (tx, rx) = mpsc::channel();
+        let (up, is_up) = mpsc::channel();
         tx.send("watch").unwrap();
         let worker = thread::spawn(move || {
-            let mut flaky = Flaky { connects: 0, log: Vec::new() };
+            let mut flaky = Flaky { connects: 0, log: Vec::new(), up };
             supervise(&mut flaky, &rx, Duration::from_millis(10));
             flaky.log
         });
-        thread::sleep(Duration::from_millis(100));
+        // (Sent once it is up, not after a fixed time: sent while it is down, it would be taken down.)
+        is_up.recv_timeout(Duration::from_secs(5)).unwrap();
         tx.send("join").unwrap();
         drop(tx);
         // The command sent while the service is down is taken and the service is tried again at once.
