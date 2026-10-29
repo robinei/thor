@@ -26,6 +26,8 @@ Read `architecture.md` first, then `../AGENTS.md` for how work is done here.
 
 ## Plans under way
 
+- `refactors-plan.md`: the architecture refactors left from the review of 2026-10-28, with the choices
+  to make.
 - `review-2026-10-26b.md`: the second review after the compositor became the only session, and its
   plan.
 - `state-facts-plan.md`: State as facts and the rest derived: the review, the bugs it found, the steps.
