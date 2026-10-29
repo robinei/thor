@@ -166,7 +166,26 @@ impl Sent {
                 // The thread holds nothing; the backlights keep their level. Sent again if ClamShell set one.
                 Thread::Brightness => self.brightness = None,
                 Thread::Touchpad => self.touchpad = None,
-                _ => {}
+                // Nothing of theirs is kept here to send again (each is named, so that a new thread is
+                // thought about).
+                Thread::PadDevices
+                | Thread::BluetoothConnect
+                | Thread::Tray
+                | Thread::Sound
+                | Thread::Store
+                | Thread::Launcher
+                | Thread::Icons
+                | Thread::Files
+                | Thread::Freezer
+                | Thread::Units
+                | Thread::Clock
+                | Thread::InputWatch
+                | Thread::Clipboard
+                | Thread::Sleep
+                | Thread::Rescan
+                | Thread::Notifications
+                | Thread::Portal
+                | Thread::Control => {}
             },
         }
     }
