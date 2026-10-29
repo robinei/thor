@@ -212,6 +212,8 @@ struct Sent {
     ring_by_hold: bool,
     /// Launches of a launcher's entry that hand it a game (`launchers::headless`), while they wait.
     handovers: Vec<LaunchUnit>,
+    /// The last Players.
+    players: crate::device_view::controllers::Players,
 }
 
 /// Whether `launch` hands a game to its launcher (see `launchers::headless`): Heroic's command with the
@@ -260,7 +262,9 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
                 DeviceId::EditLibrary,
                 DeviceId::Close,
             ]
-            .map(Id::Device),
+            .map(Id::Device)
+            .into_iter()
+            .chain((0..s.device_view().controllers().list().len() as u16).map(|i| Id::Device(DeviceId::Controller(i)))),
         ),
         // The step's own; the tab's below are the step's tab's.
         Top::App { app: BuiltinApp::Setup, .. } => ids.extend([SetupId::Password, SetupId::Next, SetupId::Back].map(Id::Setup)),
@@ -810,7 +814,17 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             };
             Event::Tray(if rng.one_in(3) { Vec::new() } else { vec![item] })
         }
-        96 => Event::Fetching(rng.one_in(2)),
+        96 if rng.one_in(2) => Event::Fetching(rng.one_in(2)),
+        // Controllers come and go, and a row's player is stepped by the pad.
+        96 => {
+            use crate::device_view::controllers::ControllerEvent;
+            let key = *rng.pick(&["thor", "pad", "pad2"])?;
+            Event::Controller(match rng.below(3) {
+                0 => ControllerEvent::Connected { key: key.into(), name: format!("{key} controller") },
+                1 => ControllerEvent::Disconnected(key.into()),
+                _ => ControllerEvent::Step(rng.below(4) as u16, if rng.one_in(2) { 1 } else { -1 }),
+            })
+        }
         97 if rng.one_in(4) => {
             // Read by a rescan, or after one of the edit mode's writes.
             if rng.one_in(2) { Event::Library(Box::new(library.clone())) } else { Event::LibraryWritten(Box::new(library.clone())) }
@@ -989,9 +1003,17 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
             Effect::Compositor(Compositor::Refresh(hz)) => sent.refresh = *hz,
             Effect::Brightness { level, .. } => sent.brightness = Some(*level),
             Effect::SizeTouchpad(layout) => sent.touchpad = *layout,
+            Effect::Players(players) => sent.players.clone_from(players),
             _ => {}
         }
     }
+    // 14. The pad thread's players (as sent; one never sent is player 1, as there) are the state's.
+    for c in s.device_view().controllers().list() {
+        let sent_player = sent.players.get(&c.key).copied().unwrap_or(crate::device_view::controllers::Player::ONE);
+        ensure!(sent_player == c.player, "14: {} is player {} but the pad thread has {}", c.key, c.player.number(), sent_player.number());
+    }
+    let keys = s.device_view().controllers().list();
+    ensure!(keys.iter().enumerate().all(|(i, c)| !keys.iter().skip(i + 1).any(|o| o.key == c.key)), "14: a controller listed twice");
     if started {
         ensure!(sent.route == Some(s.pad().route()), "2: route sent {:?}, state {:?}", sent.route, s.pad().route());
         let in_force = s.keymapping().in_force(s.in_force().get(Setting::Keymap));

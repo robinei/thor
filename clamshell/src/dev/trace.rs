@@ -73,6 +73,7 @@ fn save(save: &Save) -> String {
         Save::Brightness(_) => "Brightness".into(),
         Save::WindowRules(_) => "WindowRules".into(),
         Save::Sticks(_) => "Sticks".into(),
+        Save::Controllers(_) => "Controllers".into(),
         other => short(other),
     }
 }

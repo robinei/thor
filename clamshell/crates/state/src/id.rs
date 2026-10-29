@@ -298,6 +298,9 @@ pub enum DeviceId {
     Refresh,
     /// The Library's edit mode (see [`crate::library_view::edit`]).
     EditLibrary,
+    /// A controller's row, by its place in the list (see [`crate::device_view::controllers`]): steps its
+    /// player.
+    Controller(u16),
     /// Back to the Library.
     Close,
 }

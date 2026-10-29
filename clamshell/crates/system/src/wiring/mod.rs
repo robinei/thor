@@ -146,9 +146,12 @@ pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, gl
     // The controller is grabbed for good, with a virtual Xbox pad for games.
     let pad_taken = pad::Taken::default();
     let pad = started("pad", pad::spawn(env.gamepad.clone(), env.profile.controls, env.profile.sensor_hub, pad_taken.clone(), sink.clone()));
-    // Send the sticks' calibrations as saved. The state has them too, from the same file.
+    // Send the sticks' calibrations and the controllers' players as saved. The state has them too, from
+    // the same files.
     if let Some(dir) = paths.state_dir.as_deref() {
-        pad.send(pad::Command::Sticks(Store::open(dir).sticks()));
+        let store = Store::open(dir);
+        pad.send(pad::Command::Sticks(store.sticks()));
+        pad.send(pad::Command::Players(store.controllers().into_iter().map(|c| (c.key, c.player)).collect()));
     }
     // Sleep waits for the pad to close the gyro's stream.
     log_failed_start("sleep", crate::power::sleep::spawn_hold(pad.clone()));

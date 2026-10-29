@@ -265,7 +265,7 @@ capture screen doesn't listen and Home acts on the top screen.
 
 `show(kind, now)` replaces any notice; a tick after 2 s removes it. Tests: `keys_step_the_levels_and_show_
 them_for_a_moment`, `a_screenshot_is_asked_for_…`, `a_window_moved_down_…`; BottomRule(false):
-`a_window_moved_up_says_its_rule_is_forgotten`; Account: device `an_account_change_says_how_it_went`. The gyro's "hold still" notice stays until the calibration answers, at most 30 s:
+`a_window_moved_up_says_its_rule_is_forgotten`; Account: device `an_account_change_says_how_it_went`; Controller: `a_new_controller_joins_player_1_with_a_notice_and_is_remembered`. The gyro's "hold still" notice stays until the calibration answers, at most 30 s:
 `the_gyros_hold_still_shows_until_it_answers_at_most_30_s`.
 
 ### View, power and dim (bottom/screen.rs, session/below.rs)
@@ -325,6 +325,7 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 | Ssh with a password → `Account(Ssh)`; further taps do nothing until AccountChanged, at most 30 s | `remote_login_needs_a_password`, `remote_login_waits_for_its_answer_before_another_tap`, `remote_login_is_asked_again_after_30_s_without_an_answer` |
 | Sticks → `CalibrateSticks`; progress; done saves or fails; further taps do nothing until done, or 30 s without progress | `a_sticks_calibration_shows_its_progress_…`, `the_sticks_calibration_waits_for_its_end_before_another_tap`, `the_sticks_calibration_is_asked_again_after_30_s_without_word` |
 | Gyro → notice + `CalibrateGyro`; result notice; without one the notice goes after 30 s | `the_gyros_hold_still_shows_until_it_answers_at_most_30_s` |
+| Controllers (`device_view::controllers`): every controller the pad thread takes is remembered by its key, with its name and player (1 to 4), in the order first seen, and saved (`Save(Controllers)`). `--Controller(Connected{key, name})-->` unknown: listed as player 1, connected, notice (`Controller(name, 1)`), saved; known: connected (a new name saved). `--Disconnected(key)-->` listed, not connected (shown dimmed, never dropped). A tap on a row, or `Controller(Step(i, ±1))` from the pad's left and right on it, steps its player round (1→2→3→4→1, back from 1 to 4) → `Save(Controllers)`, `Players(all by key)`; a row not there does nothing. The pad thread is sent `Players` only on a step, and at start from the same file the state reads: a controller not among them is player 1 there as here | `a_new_controller_joins_player_1_with_a_notice_and_is_remembered`, `a_row_tapped_or_stepped_cycles_its_player_saved_and_sent`, `a_disconnected_controller_keeps_its_player_and_can_be_given_another`, `players_step_round_both_ways`, `the_saved_form_has_no_connection` |
 | Refresh → `CalibrateRefresh` once at a time, the bottom screen off (`Outputs`) while it runs; `CalibrationRate(hz)` from the tool (`clamshell ctl calibration rate HZ`) → `Refresh(hz)` while it runs, nothing otherwise; result → the bottom screen's power and the rate given back (`Outputs`, `Refresh(0)`), one turned off by hand meanwhile staying off | `the_refresh_calibration_runs_once_at_a_time_…`; tests `a_refresh_calibration_sets_the_screens_and_then_gives_them_back` |
 
 ## Pad route and pointer (nav/pad.rs, nav/pointer.rs)
@@ -1720,6 +1721,8 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
     names one held with an action and is followed at once by its NotificationClosed.
 13. **Setup:** no Launch while the account holds programs (unread, unreadable or without a password);
     while Setup shows, the Library is in front.
+14. **Controllers:** each listed once; each one's player is the one last sent in `Players`, or player 1
+    if none was sent for it (the pad thread's default).
 
 The generator draws events valid for the current state: taps, holds and presses on the targets shown
 (the Library's only while the Library is in front, the Device view's while it is open, the tab's), Focus only while
@@ -1728,7 +1731,7 @@ Listened only while listening, notifications sent (any urgency, timeout and acti
 program, tapped and dismissed (mostly ones held), and results only after their requests (a unit or
 LaunchFailed after Launch, a unit ending after EndRun or by itself, windows closing after Close or by
 themselves, the calibrations', account's and screenshot's answers, Busy or Resumed after Sleep), the
-account read early in most runs (late in some, holding programs meanwhile; no helper and failed reads
+controllers connecting, going and their rows stepped, the account read early in most runs (late in some, holding programs meanwhile; no helper and failed reads
 among those drawn later), apps' file chooser requests (asked by a window's process or none, from a
 folder or none; open, save or save several) and their closing, and the library read again by a rescan or
 after a write. A small model of the

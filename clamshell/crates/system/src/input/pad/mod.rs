@@ -48,6 +48,7 @@ use std::time::{Duration, Instant};
 use clamshell_state::Event;
 use clamshell_state::PadRoute;
 use clamshell_state::device_view::SticksEvent;
+use clamshell_state::device_view::controllers::Players;
 use clamshell_state::keymap::Keymap;
 use clamshell_state::settings::RumbleStrength;
 use rustix::event::{PollFd, PollFlags};
@@ -91,6 +92,9 @@ pub(crate) enum Command {
     /// The sticks' calibrations, by controller. They are sent at start, and a calibration made here is
     /// kept here too.
     Sticks(clamshell_state::device_view::sticks::Calibrations),
+    /// The controllers' players, by key. They are sent at start and whenever one changes. A controller not
+    /// among them is player 1.
+    Players(Players),
 }
 
 /// A command's acknowledgement, sent once the command is carried out.
@@ -149,6 +153,7 @@ pub(crate) fn spawn(
         rumble_setting: RumbleStrength::default(),
         buzz: None,
         sticks: Default::default(),
+        players: Players::default(),
     };
     let worker = Worker::spawn_belled(clamshell_state::Thread::Pad.name(), bell, move |commands| worker::supervise(&mut pad, commands, retry))?;
     if let Some(notify) = watched {
@@ -192,6 +197,8 @@ struct PadThread<S> {
     buzz: Option<(Buzz, Instant)>,
     /// The sticks' calibrations, by controller.
     sticks: clamshell_state::device_view::sticks::Calibrations,
+    /// The controllers' players, by key.
+    players: Players,
 }
 
 /// A controller taken over, with its gyro if one is found.
@@ -269,6 +276,7 @@ impl<S: Sink> PadThread<S> {
                 }
             }
             Command::Sticks(all) => self.sticks = all,
+            Command::Players(players) => self.players = players,
         }
     }
 

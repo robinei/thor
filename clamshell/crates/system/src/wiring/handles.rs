@@ -147,6 +147,7 @@ impl Handles {
             Effect::Account(command) => self.system.send(crate::errands::Command::Account(command.clone())),
             Effect::CalibrateRefresh => self.system.send(crate::errands::Command::CalibrateRefresh),
             Effect::CalibrateSticks => self.tuning.pad.send(pad::Command::CalibrateSticks),
+            Effect::Players(players) => self.tuning.pad.send(pad::Command::Players(players.clone())),
             Effect::SetTimeZone(zone) => self.system.send(crate::errands::Command::SetTimeZone(zone.clone())),
             Effect::SetNtp(on) => self.system.send(crate::errands::Command::SetNtp(*on)),
             Effect::StepClock(field, by) => self.system.send(crate::errands::Command::StepClock(*field, *by)),

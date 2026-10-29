@@ -162,6 +162,9 @@ pub enum Effect {
     /// Calibrate the sticks, on the pad thread (`clamshell_system`'s `input::pad::calibrator`). Progress
     /// and the end come back as [`crate::Event::Sticks`].
     CalibrateSticks,
+    /// The players by controller key, for the pad thread, sent when one changes (see
+    /// [`crate::device_view::controllers`]).
+    Players(crate::device_view::controllers::Players),
     /// Calibrate the top screen's refresh rate with thor-panel-calibration. The end comes back as
     /// [`crate::Event::RefreshCalibrated`].
     CalibrateRefresh,
@@ -276,4 +279,6 @@ pub enum Save {
     FirstStartDone,
     /// The sticks' calibrations, by controller.
     Sticks(crate::device_view::sticks::Calibrations),
+    /// Every controller seen, with its player.
+    Controllers(Vec<crate::device_view::controllers::Controller>),
 }

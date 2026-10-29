@@ -121,6 +121,9 @@ pub enum Event {
     GyroCalibrated(bool),
     /// Progress or the end of a stick calibration (see [`crate::setup`]).
     Sticks(crate::device_view::SticksEvent),
+    /// A controller taken or gone, or a controller's player stepped (see
+    /// [`crate::device_view::controllers`]).
+    Controller(crate::device_view::controllers::ControllerEvent),
     /// The top screen's refresh rate calibration ended, with its output or the reason it failed.
     RefreshCalibrated(Result<String, String>),
     /// The running refresh rate calibration asks for the main screen at this rate, in Hz (`clamshell ctl

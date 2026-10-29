@@ -8,8 +8,10 @@
 //! - the time zone, which opens the time tab;
 //! - the password and remote login (see [`crate::setup::account`]);
 //! - calibrating the controller's sticks ([`sticks`]) and gyro;
+//! - the controllers and their players ([`controllers`]);
 //! - calibrating the top screen's refresh rate (thor-panel-calibration).
 
+pub mod controllers;
 pub mod sticks;
 
 use crate::DeviceId;
@@ -20,6 +22,7 @@ use crate::bottom::editor::{Editor, Purpose};
 use crate::effect::{Effect, Save};
 use crate::out::Out;
 use crate::setup::account::{Account, AccountCommand, PasswordStep};
+use controllers::{Controller, ControllerEvent, Controllers};
 use sticks::{Calibrations, Progress, Sticks};
 
 /// The refresh rate's calibration.
@@ -48,6 +51,8 @@ pub struct DeviceView {
     refresh: Refresh,
     /// The stick calibrations by controller. They are saved, and the pad thread has them too.
     calibrations: Calibrations,
+    /// Every controller seen, with its player.
+    controllers: Controllers,
     /// When remote login was turned on or off (monotonic seconds), until the helper answers. Another tap
     /// waits for the answer, or for [`ANSWER_WAIT`] to pass without one.
     ssh_asked: Option<u64>,
@@ -71,8 +76,22 @@ pub enum SticksEvent {
 }
 
 impl DeviceView {
-    pub(crate) fn new(calibrations: Calibrations) -> DeviceView {
-        DeviceView { calibrations, ..DeviceView::default() }
+    pub(crate) fn new(calibrations: Calibrations, controllers: Vec<Controller>) -> DeviceView {
+        DeviceView { calibrations, controllers: Controllers::new(controllers), ..DeviceView::default() }
+    }
+
+    pub fn controllers(&self) -> &Controllers {
+        &self.controllers
+    }
+
+    /// What the pad thread says about a controller, or a row stepped (see [`controllers`]).
+    pub(crate) fn controller_event(&mut self, event: ControllerEvent, notice: &mut crate::bottom::notice::NoticeSlot, now: u64, out: &mut Out) {
+        self.controllers.event(event, notice, now, out);
+    }
+
+    /// What is saved of the controllers.
+    pub(crate) fn controllers_save(&self) -> Effect {
+        self.controllers.save_effect()
     }
 
     pub fn sticks(&self) -> Option<&Progress> {
@@ -133,6 +152,8 @@ impl DeviceView {
                 out.effects.push(Effect::CalibrateRefresh);
             }
             DeviceId::Refresh => {}
+            // A controller's row steps its player on.
+            DeviceId::Controller(i) => self.controllers.step(usize::from(i), 1, out),
             DeviceId::Close => out.events.push(Event::Entry(clamshell_library::BuiltinApp::Device.id().into(), crate::EntryAct::Quit)),
             DeviceId::EditLibrary => out.events.push(crate::LibraryViewEvent::Edit.into()),
         }

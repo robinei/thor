@@ -180,6 +180,8 @@ pub struct Init {
     pub first_start: bool,
     /// The sticks' calibrations, by controller (see [`crate::device_view::sticks`]).
     pub sticks: crate::device_view::sticks::Calibrations,
+    /// Every controller seen, with its player (see [`crate::device_view::controllers`]).
+    pub controllers: Vec<crate::device_view::controllers::Controller>,
 }
 
 /// Everything ClamShell knows, as its areas (see the [crate docs](crate)).
@@ -256,7 +258,7 @@ impl State {
             session: Session::new(init.autostart, init.device_session, init.window_rules),
             dock: init.dock,
             setup: setup::Setup::new(init.first_start, init.account),
-            device_view: device_view::DeviceView::new(init.sticks),
+            device_view: device_view::DeviceView::new(init.sticks, init.controllers),
             ..State::default()
         };
         if let Some(resume) = &init.resume {
@@ -493,6 +495,7 @@ impl State {
             Event::DumpWindowEvents(path) => out.effects.push(Effect::Compositor(Compositor::DumpWindowEvents(path))),
             Event::Screenshot(result) => self.bottom.notice_mut().show(NoticeKind::Screenshot(result), now),
             Event::Sticks(event) => self.device_view.sticks_event(event, now, out),
+            Event::Controller(event) => self.device_view.controller_event(event, self.bottom.notice_mut(), now, out),
             Event::RefreshCalibrated(result) => self.refresh_calibrated(result),
             Event::Restarted(thread) => self.restarted(thread, now, out),
             Event::CalibrationRate(hz) => self.device_view.calibration_asks(hz),

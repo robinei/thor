@@ -46,6 +46,8 @@ pub enum NoticeKind {
     /// The library was read again and has problems. Holds the first one and how many there are. All of
     /// them are listed under Rescan library on the Tools tab.
     Problems(String, usize),
+    /// A controller seen for the first time: its name, and the player it joined.
+    Controller(String, crate::device_view::controllers::Player),
 }
 
 /// The notice showing, if any. A rule shows one with [`NoticeSlot::show`], the one way to show one.

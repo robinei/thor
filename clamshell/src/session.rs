@@ -49,6 +49,7 @@ pub(crate) fn saved(paths: &Paths) -> Init {
         twelve_hour: store.twelve_hour(),
         first_start: !store.first_start_done(),
         sticks: store.sticks(),
+        controllers: store.controllers(),
         dock: store.dock(),
         autostart: store.autostart(),
         resume: store.resume(),

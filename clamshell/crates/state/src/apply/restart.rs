@@ -22,7 +22,8 @@ impl State {
         }
         match thread {
             // The keymap, the route, the activity watch and the settings applied (the rumble's strength).
-            // The pad thread keeps its virtual controllers and the sticks' calibrations through a restart.
+            // The pad thread keeps its virtual controllers, the sticks' calibrations and the players through a
+            // restart. The controllers it held are said to be gone as it starts again, and found again.
             // Watches: those the thread serves, as it starts (see `Sent::resend`). The system thread also reads the
             // time as views open, and is asked to sleep again if it was last asked; a screenshot or a
             // notification it was handling is lost.
@@ -82,6 +83,7 @@ impl State {
             self.session.autostart_save(),
             Effect::Save(Save::TwelveHour(self.sys.twelve_hour())),
             Effect::Save(Save::Sticks(self.device_view.calibrations().clone())),
+            self.device_view.controllers_save(),
         ]);
         if !self.setup.first_start() {
             out.effects.push(Effect::Save(Save::FirstStartDone));
@@ -212,8 +214,9 @@ mod tests {
             Save::TwelveHour(_) => 9,
             Save::FirstStartDone => 10,
             Save::Sticks(_) => 11,
+            Save::Controllers(_) => 12,
         };
-        let mut sent = [false; 12];
+        let mut sent = [false; 13];
         for e in &fx {
             if let Effect::Save(save) = e
                 && let Some(slot) = sent.get_mut(kind(save))
@@ -221,7 +224,7 @@ mod tests {
                 *slot = true;
             }
         }
-        assert_eq!(sent, [true; 12], "{fx:?}");
+        assert_eq!(sent, [true; 13], "{fx:?}");
     }
 
     #[test]
