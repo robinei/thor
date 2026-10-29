@@ -434,10 +434,15 @@ pub(crate) fn supervise<S: Service>(service: &mut S, commands: &Receiver<S::Comm
 fn run_once<S: Service>(service: &mut S, commands: &Receiver<S::Command>, quiet: &mut Quiet) -> Option<Result<(), Closed>> {
     Some(match service.connect() {
         Ok(session) => {
-            quiet.ok();
+            let up = Instant::now();
             match service.run_while_up(session, commands) {
                 Ok(()) | Err(Ended::Closed) => return None,
                 Err(Ended::Lost(e)) => {
+                    // Only a run that lasted a while makes its loss worth a warning again: a service lost
+                    // as soon as it connects would warn at every retry.
+                    if up.elapsed() >= STEADY {
+                        quiet.ok();
+                    }
                     quiet.failed(S::NAME, &e);
                     service.lost(&e)
                 }
@@ -453,6 +458,9 @@ fn run_once<S: Service>(service: &mut S, commands: &Receiver<S::Command>, quiet:
         }
     })
 }
+
+/// How long a service runs before it counts as up again, for warnings (see [`run_once`]).
+const STEADY: Duration = Duration::from_secs(60);
 
 /// Supervises a service that takes no commands and follows only the service's own signals or events.
 pub(crate) fn supervise_alone<S: Service<Command = Infallible>>(service: &mut S, retry: Duration) {
