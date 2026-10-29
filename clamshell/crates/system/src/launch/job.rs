@@ -90,9 +90,12 @@ pub(crate) fn command(job: &Job) -> Option<Command> {
     cmd.arg(format!("--working-directory={}", workdir.display()));
     // ClamShell's own environment, as a program it started itself would have it (a service starts with
     // the user manager's: a ClamShell run with its own runtime or config dirs, nested or in a test, would
-    // send its games to another compositor), then the job's own, which go before it.
-    let own = std::env::vars().filter(|(k, _)| !UNIT_OWN.contains(&k.as_str()));
-    cmd.args(own.chain(job.env.iter().cloned()).map(|(k, v)| format!("--setenv={k}={v}")));
+    // send its games to another compositor), then the job's own, which go before it. ClamShell's are
+    // named only, for systemd-run to take from its own environment, which is ClamShell's: their values
+    // aren't on its command line, which any user can read.
+    let own = std::env::vars_os().filter_map(|(k, _)| k.into_string().ok()).filter(|k| !UNIT_OWN.contains(&k.as_str()));
+    cmd.args(own.map(|k| format!("--setenv={k}")));
+    cmd.args(job.env.iter().map(|(k, v)| format!("--setenv={k}={v}")));
     cmd.arg("--").arg(program).args(args);
     Some(cmd)
 }
@@ -135,6 +138,7 @@ mod tests {
         assert!(args.contains(&format!("--unit={}", job.unit).as_str()));
         assert!(args.contains(&"--slice=app-graphical-clamshell-run-jobtest.slice"), "in its slice: {args:?}");
         assert!(args.contains(&"--setenv=K=v w") && args.contains(&"--working-directory=/tmp"), "{args:?}");
+        assert!(args.contains(&"--setenv=PATH") && !args.iter().any(|a| a.starts_with("--setenv=PATH=")), "ClamShell's own by name: {args:?}");
         assert!(args.contains(&"--property=ExitType=cgroup"), "running while any of its processes does: {args:?}");
         assert!(args.contains(&"--service-type=exec"), "started once its program runs: {args:?}");
         assert!(args.contains(&"--property=Delegate=yes"), "delegated, for the Steam follower: {args:?}");
