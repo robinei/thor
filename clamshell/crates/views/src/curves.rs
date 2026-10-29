@@ -19,7 +19,7 @@ use clamshell_ui::gfx::{Align, Column, Keep, Rect, Rgb};
 use clamshell_ui::toolkit::format::Fmt;
 use clamshell_ui::toolkit::style::{Look, Text, Tone};
 use clamshell_ui::toolkit::widgets::{HeaderRight, HeldSlider};
-use clamshell_ui::toolkit::{Frame, Track, widgets};
+use clamshell_ui::toolkit::{Drag, Frame, Track, widgets};
 
 /// A parameter row's height, as a fraction of the area's height, and its text, as a fraction of the small
 /// size.
@@ -94,7 +94,7 @@ fn edit(f: &mut Frame, id: u16) {
                 widgets::toned_value_row(f, row, size, p.label(), shown(p, value).as_str(), tone);
             }
         });
-        f.track(track);
+        f.drag(Drag::Slide { control: Control::Curve(p), track, at_once: false });
     }
     // Set apart from the curve, which may be shared: the content's HDR peak, the setting of the level the
     // picker was opened from. Its slider starts at Default, which writes nothing there; the caption says
@@ -126,7 +126,7 @@ fn edit(f: &mut Frame, id: u16) {
                 widgets::value_row(f, row, size, setting.title(), text.as_str(), written);
             }
         });
-        f.track(track);
+        f.drag(Drag::Slide { control, track, at_once: false });
     }
     // A held slider is drawn last, so its card covers the rows below it.
     let within = Rect::new(track.x0, area.y, track.w, area.h);

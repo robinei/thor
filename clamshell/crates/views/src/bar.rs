@@ -18,7 +18,7 @@ use clamshell_ui::gfx::icons::Icon;
 use clamshell_ui::gfx::{Align, Rect};
 use clamshell_ui::toolkit::format::Fmt;
 use clamshell_ui::toolkit::style::{Look, Tone};
-use clamshell_ui::toolkit::{Frame, Track, widgets};
+use clamshell_ui::toolkit::{Drag, Frame, Track, widgets};
 
 use super::tabs::{self, Face};
 
@@ -93,12 +93,11 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
     let cell = bar.w.max(0.0) / at(BarPlace::Spread).count() as f32;
     for (i, tab) in at(BarPlace::Spread).enumerate() {
         let (b, tone) = button(tab);
-        let slides = matches!(b.id, Id::Control(_));
         if let Face::Icon(icon) = b.face {
             icon_button(f, b.id.clone(), Rect::new(i as f32 * cell, 0.0, cell, bar_h), icon, tone);
-        }
-        if slides {
-            f.track(Track { x0: screen.x, w: screen.w });
+            if let Id::Control(control) = b.id {
+                f.drag(Drag::Slide { control, track: Track { x0: screen.x, w: screen.w }, at_once: false });
+            }
         }
         f.bar_tab(tab, b.id);
     }

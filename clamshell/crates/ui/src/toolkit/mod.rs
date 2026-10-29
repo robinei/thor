@@ -11,6 +11,8 @@ pub mod scroll;
 pub mod style;
 pub mod widgets;
 
+use clamshell_state::levels::Level;
+use clamshell_state::levels::slider::Control;
 use clamshell_state::{Event, Id, ItemKey, ListId, PadInput, PointerEvent, State, Tab};
 
 use crate::gfx::images::Images;
@@ -24,8 +26,8 @@ use style::{Look, PRESSED, RADIUS_S, Text, Tone};
 pub struct Target {
     pub rect: Rect,
     pub id: Id,
-    /// Where a finger on it sets a value, if it does.
-    pub track: Option<Track>,
+    /// What a finger along it sets, if anything.
+    pub drag: Option<Drag>,
     /// The scrolled list it is in, if any. A vertical drag on it scrolls the list.
     pub list: Option<scroll::InList>,
     /// The list item it shows, if it is one, as it was when drawn. A press on it carries the key, so it
@@ -49,6 +51,16 @@ pub enum PadUse {
     Held,
     /// By moving to it, and on it the pad's moves are its list's (see [`PadOut::moves`]).
     List,
+}
+
+/// What a finger along a target sets, as the view declares it (see [`Frame::drag`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Drag {
+    /// Sets the level where the finger is, and follows it; on the pad, left and right step it.
+    Level(Level, Track),
+    /// Brings up `control`'s slider under the finger, after a hold or a sideways move, or with `at_once`
+    /// as the finger comes down (for a row with nothing to tap). Only one slider is up at a time.
+    Slide { control: Control, track: Track, at_once: bool },
 }
 
 /// The span along x over which a finger on a target sets a value, in the same units as the target's
@@ -218,7 +230,7 @@ impl<'f, 'c> Frame<'f, 'c> {
             self.ring(shown, look);
         }
         let item = self.s.lists().item_key(&id);
-        self.targets.push(Target { rect, id, track: None, list: None, item, pad: PadUse::Moves });
+        self.targets.push(Target { rect, id, drag: None, list: None, item, pad: PadUse::Moves });
     }
 
     /// The focus ring of a button of `look` shown at `shown`.
@@ -254,11 +266,11 @@ impl<'f, 'c> Frame<'f, 'c> {
         });
     }
 
-    /// Gives the last target a track. The caller passes it because whatever drew the track knows where
-    /// it is.
-    pub fn track(&mut self, track: Track) {
+    /// What a finger along the last target sets. The caller passes its track because whatever drew the
+    /// track knows where it is.
+    pub fn drag(&mut self, drag: Drag) {
         if let Some(t) = self.targets.last_mut() {
-            t.track = Some(track);
+            t.drag = Some(drag);
         }
     }
 

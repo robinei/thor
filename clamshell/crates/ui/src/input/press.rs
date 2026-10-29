@@ -6,9 +6,10 @@
 //! target. Once the timer fires, the press is held: keys repeat, other targets get one long press, and the
 //! release only lifts it.
 //!
-//! A finger on volume or brightness may become a slide, by being held there briefly or moved sideways.
-//! The slider then comes up under it and follows it. A finger on a level row sets the level where it is,
-//! and follows it.
+//! What a finger along a target sets is the target's drag ([`Drag`]). A finger on a target that slides a
+//! control may become a slide, by being held there briefly or moved sideways, or at once if the target
+//! says so. The slider then comes up under it and follows it. A finger on a level's target sets the level
+//! where it is, and follows it.
 //!
 //! A finger on a scrolled list that moves up or down past [`DRAG_START`] drags the list instead, and the
 //! row under it is let go without a tap. If it is let go while moving, the list flings on, slowing down,
@@ -32,7 +33,7 @@ use clamshell_state::{Event, Hold, Id, LevelEvent, ListEvent, PadRoute, PointerE
 use crate::gfx::Rect;
 use crate::input::fling::{FLING_EVERY, Fling, Trail};
 use crate::toolkit::scroll::InList;
-use crate::toolkit::{Target, Track};
+use crate::toolkit::{Drag, Target, Track};
 
 /// A finger on a list that moves this far up or down, in logical pixels, drags the list.
 pub const DRAG_START: f32 = 12.0;
@@ -132,7 +133,8 @@ enum Gesture {
     Tap,
     /// The hold timer acted with a long press or a repeat, so the release only lifts.
     Held,
-    /// On volume or brightness. It becomes a slide when held or moved sideways, and otherwise a tap.
+    /// On a target that slides a control. It becomes a slide when held or moved sideways, and otherwise a
+    /// tap.
     /// `down_x` and `x` are where it came down and where it is now, along the track.
     PendingSlide { control: Control, down_x: f32, x: f32, track: Track },
     /// Moving the slider. The release ends the slide.
@@ -219,21 +221,21 @@ impl Input {
             return vec![];
         }
         let mut actions = self.stop_fling();
-        let gesture = match (&target.id, Level::of(&target.id), target.track) {
-            (Id::Control(control), _, Some(track)) if !self.sliding() => {
+        let (gesture, at_once) = match target.drag {
+            Some(Drag::Slide { control, track, at_once }) if !self.sliding() => {
                 let at = track.along(x);
-                Gesture::PendingSlide { control: *control, down_x: at, x: at, track }
+                (Gesture::PendingSlide { control, down_x: at, x: at, track }, at_once)
             }
-            (_, Some(level), Some(track)) => Gesture::LevelDrag { level, track },
-            _ => Gesture::Tap,
+            Some(Drag::Level(level, track)) => (Gesture::LevelDrag { level, track }, false),
+            _ => (Gesture::Tap, false),
         };
         let id = target.id.clone();
         self.presses.push((source, Press::new(id.clone(), Some(target.rect), gesture, (x, y), target.list, now)));
         actions.extend([Action::Emit(PointerEvent::HideFocus.into()), Action::Emit(PointerEvent::Down(id, target.item).into())]);
         match gesture {
-            // A keymap parameter's row has nothing to tap, so it slides at once from where the finger
-            // came down. A touch without moving changes nothing.
-            Gesture::PendingSlide { control: Control::Param(_), .. } => {
+            // A row with nothing to tap slides at once from where the finger came down. A touch without
+            // moving changes nothing.
+            Gesture::PendingSlide { .. } if at_once => {
                 if let Some((_, press)) = self.presses.last_mut() {
                     actions.extend(Self::start_slide(press));
                 }

@@ -12,8 +12,8 @@ fn blank() -> State {
     State::new(Init::default())
 }
 
-fn target(id: Id, track: Option<Track>) -> Target {
-    Target { rect: Rect::new(0.0, 0.0, 100.0, 50.0), id, track, list: None, item: None, pad: crate::toolkit::PadUse::Moves }
+fn target(id: Id, drag: Option<Drag>) -> Target {
+    Target { rect: Rect::new(0.0, 0.0, 100.0, 50.0), id, drag, list: None, item: None, pad: crate::toolkit::PadUse::Moves }
 }
 
 fn tab() -> Target {
@@ -21,11 +21,12 @@ fn tab() -> Target {
 }
 
 fn volume() -> Target {
-    target(Id::Control(Control::Volume), Some(Track { x0: 10.0, w: 600.0 }))
+    let track = Track { x0: 10.0, w: 600.0 };
+    target(Id::Control(Control::Volume), Some(Drag::Slide { control: Control::Volume, track, at_once: false }))
 }
 
 fn level() -> Target {
-    target(Id::Level(Level::Volume), Some(Track { x0: 100.0, w: 200.0 }))
+    target(Id::Level(Level::Volume), Some(Drag::Level(Level::Volume, Track { x0: 100.0, w: 200.0 })))
 }
 
 fn events(actions: &[Action]) -> Vec<Event> {
@@ -71,7 +72,7 @@ fn row(list: ListId, i: u16) -> Target {
     Target {
         rect: Rect::new(0.0, 0.0, 100.0, 1000.0),
         id,
-        track: None,
+        drag: None,
         list: Some(InList { list, row_h: 50.0 }),
         item: None,
         pad: crate::toolkit::PadUse::Moves,
@@ -217,7 +218,8 @@ fn a_slide_starts_when_moved_far_enough_or_held() {
 fn a_keymap_parameter_slides_at_once() {
     use clamshell_state::keymap::Param;
     let control = Control::Param(Param::Speed);
-    let row = Target { id: Id::Control(control), ..volume() };
+    let track = Track { x0: 10.0, w: 600.0 };
+    let row = Target { id: Id::Control(control), drag: Some(Drag::Slide { control, track, at_once: true }), ..volume() };
     let mut input = Input::default();
     let down = input.touch(Source::Touch(1), &row, (300.0, 0.0), t0());
     assert_eq!(events(&down)[2..], [Slide::Start { control, x: 290.0, width: 600.0 }.into()], "no wait");

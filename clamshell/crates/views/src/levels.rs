@@ -16,7 +16,7 @@ use clamshell_ui::gfx::{Align, Column, Keep, Rect};
 use clamshell_ui::toolkit::format::{self, Fmt};
 use clamshell_ui::toolkit::scroll::Scrolled;
 use clamshell_ui::toolkit::style::{self, Look, Text, Tone};
-use clamshell_ui::toolkit::{Frame, Track, widgets};
+use clamshell_ui::toolkit::{Drag, Frame, Track, widgets};
 
 /// A row's height, as a fraction of the area's height.
 const ROW_H: f32 = 0.11;
@@ -68,7 +68,7 @@ fn level(f: &mut Frame, level: Level, r: Rect, muted: bool) {
     let along = Track { x0: r.x + thumb, w: r.w - 2.0 * thumb };
     let lit = if muted { Tone::Dim } else { Tone::High };
     f.button(level.id(), r, Look::ROW, |f| widgets::track(f.c, along, r.y + r.h / 2.0, r.h * TRACK, thumb, value, lit));
-    f.track(along);
+    f.drag(Drag::Level(level, along));
 }
 
 /// The level as a number in `r`, right-aligned and followed by `suffix`, or "-" when unknown.

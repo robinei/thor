@@ -6,14 +6,13 @@
 //! in the Library's list up and down step through the games. With anything else in front, it stays on the
 //! second screen.
 
-use clamshell_state::levels::Level;
 use clamshell_state::{Event, Id, LevelEvent, PadInput, PointerEvent, RowPart, State, Tab};
 use xkeysym::Keysym;
 
 use crate::gfx::Rect;
 use crate::input::nav::{self, Dir, NavTarget};
 use crate::screens::{Screen, Screens};
-use crate::toolkit::{PadMove, PadOut, PadUse, Target};
+use crate::toolkit::{Drag, PadMove, PadOut, PadUse, Target};
 
 /// What the last frames drew on each screen, and the screens' sizes in surface pixels.
 pub trait Drawn {
@@ -67,6 +66,11 @@ fn pad_screen(s: &State, d: &impl Drawn) -> Screen {
 /// Whether the last frame drew `id` on `screen`, or on either screen if `screen` is `None`.
 pub fn drawn_on(d: &impl Drawn, screen: Option<Screen>, id: &Id) -> bool {
     Screen::BOTH.into_iter().filter(|s| screen.is_none_or(|on| on == *s)).any(|s| d.targets(s).iter().any(|t| &t.id == id))
+}
+
+/// The target `id` as the last frame drew it, on either screen.
+fn drawn<'d>(d: &'d impl Drawn, id: &Id) -> Option<&'d Target> {
+    Screen::BOTH.into_iter().find_map(|s| d.targets(s).iter().find(|t| &t.id == id))
 }
 
 /// The screen the focus is on. It is the top one when the focus isn't on anything drawn.
@@ -152,10 +156,9 @@ pub fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, dir: Di
     if scope == PadScope::BottomOnly && focus_screen(s, d) != Screen::Bottom {
         return Some(focus_bottom(s, d, memory));
     }
-    // On a drawn level row, left and right step the level.
+    // On a drawn target that sets a level, left and right step the level.
     if let (Some(focus), Dir::Left | Dir::Right) = (s.pointer().focus(), dir)
-        && let Some(level) = Level::of(focus)
-        && drawn_on(d, None, focus)
+        && let Some(Drag::Level(level, _)) = drawn(d, focus).and_then(|t| t.drag)
     {
         let step = if dir == Dir::Left { -1 } else { 1 };
         return Some(LevelEvent::Step(level, step).into());
@@ -322,7 +325,7 @@ mod tests {
     }
 
     fn t(x: f32, y: f32, id: Id) -> Target {
-        Target { rect: Rect::new(x, y, 10.0, 10.0), id, track: None, list: None, item: None, pad: PadUse::Moves }
+        Target { rect: Rect::new(x, y, 10.0, 10.0), id, drag: None, list: None, item: None, pad: PadUse::Moves }
     }
 
     /// `t`, a list's (see [`PadUse::List`]).
@@ -559,6 +562,25 @@ mod tests {
         assert_eq!(navigate(&s, &d, &memory, Dir::Up), Some(PointerEvent::Focus(row(2)).into()));
         // Sideways and past the ends, the focus moves by direction but never onto the list's area.
         assert_ne!(navigate(&s, &d, &memory, Dir::Left), Some(PointerEvent::Focus(Id::List(ListId::Wifi)).into()));
+    }
+
+    /// Left and right step the level a focused target sets, as its drag declares; on one not drawn they
+    /// move the focus.
+    #[test]
+    fn left_and_right_on_a_drawn_level_step_it() {
+        use crate::toolkit::Track;
+        use clamshell_state::levels::Level;
+        let mut s = state();
+        let mut d = drawn(&s);
+        let track = Track { x0: 0.0, w: 50.0 };
+        d.0.bottom.push(Target { drag: Some(Drag::Level(Level::Stream(2), track)), ..t(0.0, 70.0, Level::Stream(2).id()) });
+        let memory = Screens::default();
+        focus(&mut s, Level::Stream(2).id());
+        assert_eq!(navigate(&s, &d, &memory, Dir::Left), Some(LevelEvent::Step(Level::Stream(2), -1).into()));
+        assert_eq!(navigate(&s, &d, &memory, Dir::Right), Some(LevelEvent::Step(Level::Stream(2), 1).into()));
+        // Not drawn: the focus moves.
+        focus(&mut s, Level::Stream(3).id());
+        assert!(matches!(navigate(&s, &d, &memory, Dir::Right), Some(Event::Pointer(PointerEvent::Focus(_)))));
     }
 
     #[test]

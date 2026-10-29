@@ -115,7 +115,7 @@ pub fn record(
     for target in &mut retained.targets {
         target.rect.x += sx;
         target.rect.y += sy;
-        if let Some(track) = &mut target.track {
+        if let Some(crate::toolkit::Drag::Level(_, track) | crate::toolkit::Drag::Slide { track, .. }) = &mut target.drag {
             track.x0 += sx;
         }
     }

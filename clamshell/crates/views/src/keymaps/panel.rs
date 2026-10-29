@@ -13,7 +13,7 @@ use clamshell_ui::gfx::{Align, Column, Keep, LINE, Rect};
 use clamshell_ui::toolkit::format::Fmt;
 use clamshell_ui::toolkit::style::{Look, Text, Tone};
 use clamshell_ui::toolkit::widgets::HeldSlider;
-use clamshell_ui::toolkit::{Frame, Track, widgets};
+use clamshell_ui::toolkit::{Drag, Frame, Track, widgets};
 
 use super::words::{Label, as_on_pad, described, shown, summary};
 use super::{BUTTON_H, PANEL_ROW_H, PANEL_TEXT, Picking, remap_title};
@@ -211,7 +211,8 @@ pub(super) fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, vi
                         widgets::value_row(f, row, small, p.label(), &value, changed);
                     }
                 });
-                f.track(track);
+                // The row has nothing to tap, so it slides at once.
+                f.drag(Drag::Slide { control: Control::Param(p), track, at_once: true });
             }
         }
         if input == Input::Gyro && matches!(base.output, Output::Pointer | Output::Stick(_)) {
