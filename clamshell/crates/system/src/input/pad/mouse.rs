@@ -123,6 +123,11 @@ impl Mapping for PadMouse {
     /// Sends motion at most every [`MOTION_EVERY`], for the time since the last. Ticks are wanted while a
     /// stick is deflected.
     fn tick(&mut self, now: Instant, out: &mut Out) -> Option<Instant> {
+        // Still, the time since the last motion isn't motion: the next starts counting afresh.
+        if !self.moving() {
+            self.last = None;
+            return None;
+        }
         let last = *self.last.get_or_insert(now);
         if now.duration_since(last) >= MOTION_EVERY {
             self.motion(now.duration_since(last), out);
@@ -198,6 +203,27 @@ mod tests {
         assert_eq!(sum(&out, RelativeAxisCode::REL_WHEEL_HI_RES), -(MAX_SCROLL * HI_RES_NOTCH) as i32);
     }
 
+    /// After a while still, the first motion is a tick's worth, not the whole time since.
+    #[test]
+    fn the_first_motion_after_idle_doesnt_jump() {
+        let mut m = mouse();
+        let mut out = Out::default();
+        let t0 = Instant::now();
+        m.tick(t0, &mut out);
+        feed(&mut m, Raw::abs(AbsoluteAxisCode::ABS_X, 32767), &mut out);
+        let late = t0 + Duration::from_secs(10);
+        m.tick(late, &mut out);
+        m.tick(late + MOTION_EVERY, &mut out);
+        let one_tick = {
+            let mut fresh = mouse();
+            let mut o = Out::default();
+            feed(&mut fresh, Raw::abs(AbsoluteAxisCode::ABS_X, 32767), &mut o);
+            fresh.motion(MOTION_EVERY, &mut o);
+            sum(&o, RelativeAxisCode::REL_X)
+        };
+        assert_eq!(sum(&out, RelativeAxisCode::REL_X), one_tick);
+    }
+
     #[test]
     fn ticks_come_at_the_motion_rate_while_deflected() {
         let mut m = mouse();
@@ -205,8 +231,10 @@ mod tests {
         let t0 = Instant::now();
         assert_eq!(m.tick(t0, &mut out), None, "at rest");
         feed(&mut m, Raw::abs(AbsoluteAxisCode::ABS_X, 32767), &mut out);
-        assert_eq!(m.tick(t0 + Duration::from_millis(3), &mut out), Some(t0 + MOTION_EVERY), "not yet due");
-        assert_eq!(m.tick(t0 + MOTION_EVERY, &mut out), Some(t0 + 2 * MOTION_EVERY));
+        // The motion counts from when the stick moved, not from the tick at rest.
+        let t1 = t0 + Duration::from_millis(3);
+        assert_eq!(m.tick(t1, &mut out), Some(t1 + MOTION_EVERY), "not yet due");
+        assert_eq!(m.tick(t1 + MOTION_EVERY, &mut out), Some(t1 + 2 * MOTION_EVERY));
         assert!(sum(&out, RelativeAxisCode::REL_X) > 0);
     }
 
