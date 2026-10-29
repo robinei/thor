@@ -153,9 +153,9 @@ fn a_quit_refused_is_given_up() {
     quit(&mut s, "zelda-lttp");
     s.applied(Event::Home);
     s.applied(Event::tick(100 + super::QUIT_WAIT - 1));
-    assert!(s.session().is_quitting("zelda-lttp"), "still waiting");
+    assert!(s.session().is_quitting("zelda-lttp", s.clock().mono()), "still waiting");
     s.applied(Event::tick(100 + super::QUIT_WAIT));
-    assert!(!s.session().is_quitting("zelda-lttp"), "given up");
+    assert!(!s.session().is_quitting("zelda-lttp", s.clock().mono()), "given up");
     s.applied(Event::tick(101 + super::QUIT_WAIT));
     let fx = s.applied(Event::tick(101 + super::QUIT_WAIT + crate::session::background::GRACE));
     assert!(fx.contains(&Effect::Freeze { slice: LaunchUnit::slice_of(&key), frozen: true }), "paused hidden again: {fx:?}");
@@ -470,7 +470,7 @@ fn a_game_known_by_app_id_runs_on_by_its_windows_after_its_unit() {
 fn quit_and_force_kill_of_an_entry_not_running_do_nothing() {
     let mut s = state();
     assert_eq!(s.applied(Event::Entry("zelda-lttp".into(), EntryAct::Quit)), vec![]);
-    assert!(!s.session().is_quitting("zelda-lttp"));
+    assert!(!s.session().is_quitting("zelda-lttp", s.clock().mono()));
     assert_eq!(s.applied(Event::Entry("zelda-lttp".into(), EntryAct::ForceKill)), vec![]);
 }
 

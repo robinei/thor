@@ -18,7 +18,7 @@ impl State {
             EntryAct::Show if Builtin::of(&id).is_some() => self.play(id, out),
             EntryAct::Show => self.show(&id, out),
             EntryAct::OpenAnother => self.open_another(id, out),
-            EntryAct::Suspend => self.session.suspend(&id, out),
+            EntryAct::Suspend => self.session.suspend(&id, self.clock.mono(), out),
             EntryAct::ToggleAutostart => self.session.toggle_autostart(id, out),
             EntryAct::TogglePin => self.dock.toggle_pin(id, &self.session, out),
             // A built-in isn't a process: Quit closes the Device view, and the Library always runs.

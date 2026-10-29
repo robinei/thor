@@ -140,7 +140,7 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
         item(DockId::Move, "Move", Tone::Fn),
         if s.session().suspended(entry) {
             item(DockId::Suspend, "Resume", Tone::Fn)
-        } else if s.session().suspendable(entry) {
+        } else if s.session().suspendable(entry, s.clock().mono()) {
             item(DockId::Suspend, "Suspend", Tone::Fn)
         } else {
             None

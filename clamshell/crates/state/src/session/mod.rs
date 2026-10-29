@@ -176,6 +176,14 @@ pub(crate) struct Quitting {
     asked: u64,
 }
 
+impl Quitting {
+    /// Whether it is still going on at `now`: ended, or its windows asked to close less than
+    /// [`running::QUIT_WAIT`] ago. Past that, the quit is given up and the entry runs on as before.
+    fn going_on(&self, now: u64) -> bool {
+        self.ended || now < self.asked + running::QUIT_WAIT
+    }
+}
+
 impl Session {
     pub(crate) fn new(autostart: Vec<Arc<str>>, device_session: bool, window_rules: below::WindowRules) -> Session {
         Session { autostart, device_session, window_rules, ..Session::default() }
@@ -191,9 +199,9 @@ impl Session {
         self.units.iter().any(|u| u.key == key)
     }
 
-    /// Whether entry `id` is quitting.
-    pub(crate) fn is_quitting(&self, id: &str) -> bool {
-        self.quitting.iter().any(|q| &*q.entry == id)
+    /// Whether entry `id` is quitting at `now` (see [`Quitting::going_on`]).
+    pub(crate) fn is_quitting(&self, id: &str, now: u64) -> bool {
+        self.quitting.iter().any(|q| &*q.entry == id && q.going_on(now))
     }
 
     /// The entries that run, in the order they started.
@@ -644,10 +652,10 @@ impl Session {
         &self.launching
     }
 
-    /// The entries quitting.
+    /// The entries quitting at `now`.
     #[cfg(test)]
-    pub(crate) fn quitting_entries(&self) -> impl Iterator<Item = &Arc<str>> {
-        self.quitting.iter().map(|q| &q.entry)
+    pub(crate) fn quitting_entries(&self, now: u64) -> impl Iterator<Item = &Arc<str>> {
+        self.quitting.iter().filter(move |q| q.going_on(now)).map(|q| &q.entry)
     }
 
     /// The launch to show when its first window appears.

@@ -540,7 +540,8 @@ impl State {
     /// 6. In the background: entries paused, thawed or ended by their setting, once the front is settled
     ///    (`a_paused_game_shown_when_the_front_closes_is_thawed_at_once`).
     /// 7. Quitting entries are ended once their windows are gone, after 6, which a quitting entry isn't
-    ///    paused for (`the_background_is_followed_before_the_quitting`).
+    ///    paused for (`the_background_is_followed_before_the_quitting`). Whether an entry is quitting is
+    ///    worked out from when its quit was asked (`Quitting::going_on`), so no step gives quits up first.
     /// 8. The dock: running entries are added to it and ended ones removed.
     /// 9. The windows and the group in front are remembered for the next pass's 3 and 5
     ///    ([`crate::Session::followed`]; the tests of 5).
@@ -615,10 +616,9 @@ impl State {
         self.follow_portal(out);
         self.session.follow_overview();
         // Once the front is settled, so a program shown again when the front window closed is thawed at
-        // once; before the quitting, which a quitting entry isn't paused for, its quits given up first.
-        self.session.expire_quitting(self.clock.mono());
+        // once; before the quitting, which a quitting entry isn't paused for.
         self.session.follow_background(self.clock.mono(), self.library_view.library(), self.prefs.settings(), out);
-        self.session.follow_quitting(self.library_view.library(), out);
+        self.session.follow_quitting(self.clock.mono(), self.library_view.library(), out);
         self.dock.follow(&self.session);
         // After every step that reads what the last pass saw: the new windows and the group in front.
         self.session.followed();

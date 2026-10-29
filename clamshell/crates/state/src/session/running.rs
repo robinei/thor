@@ -293,7 +293,7 @@ impl Session {
                 ended.push((r.id.clone(), r.start));
                 // It ended without ever having a window and without being quit, so it didn't start, as
                 // with a Steam game that never came.
-                if !r.seen && !self.is_quitting(&r.id) {
+                if !r.seen && !self.is_quitting(&r.id, now) {
                     unstarted.push(r.entry.as_ref().map_or_else(|| r.id.to_string(), |g| g.title.clone()));
                 }
             }
@@ -766,7 +766,7 @@ impl Session {
         if !windows.is_empty() {
             out.effects.push(Effect::Compositor(Compositor::Close(windows)));
         }
-        self.follow_quitting(library, out);
+        self.follow_quitting(now, library, out);
     }
 
     /// Force kill: ends the entry at once. It is kept as quitting, already ended, until it no longer runs,
@@ -809,10 +809,14 @@ impl Session {
     /// Follows the entries quitting. One whose windows are all gone while it still runs is ended, once. One
     /// that no longer runs is done, and if it ended with its windows before being ended, its runner's stop
     /// is run. One whose windows are still there [`QUIT_WAIT`] after they were asked to close, because the
-    /// program refused, as with "save changes?" cancelled, runs on as before.
-    pub(crate) fn follow_quitting(&mut self, library: &Library, out: &mut Out) {
+    /// program refused, as with "save changes?" cancelled, runs on as before: its quit is no longer going on
+    /// (see [`crate::session::Quitting::going_on`]) and is dropped here.
+    pub(crate) fn follow_quitting(&mut self, now: u64, library: &Library, out: &mut Out) {
         let mut quitting = std::mem::take(&mut self.quitting);
         quitting.retain_mut(|q| {
+            if !q.going_on(now) {
+                return false;
+            }
             let runs = self.running(&q.entry).is_some();
             if !runs && !q.ended {
                 out.effects.extend(q.stop.take());
@@ -826,12 +830,6 @@ impl Session {
             }
         }
         self.quitting = quitting;
-    }
-
-    /// Gives up the quits not answered in [`QUIT_WAIT`] by `now`, before anything asks whether an entry is
-    /// quitting this settle.
-    pub(crate) fn expire_quitting(&mut self, now: u64) {
-        self.quitting.retain(|q| q.ended || now < q.asked + QUIT_WAIT);
     }
 }
 

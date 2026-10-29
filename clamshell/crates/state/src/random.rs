@@ -1110,7 +1110,7 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     if let Some(owner) = session.top_window().and_then(|w| session.running_of(w)) {
         ensure!(session.program() == Some(&owner.id), "4: program {:?}, the focused window's {}", session.program(), owner.id);
     }
-    for q in session.quitting_entries() {
+    for q in session.quitting_entries(s.clock().mono()) {
         ensure!(session.running(q).is_some(), "4: {q} quitting, not running");
         ensure!(!session.paused(q), "4: {q} quitting and paused");
     }

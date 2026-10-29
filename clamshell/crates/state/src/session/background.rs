@@ -172,7 +172,7 @@ impl Session {
             // An entry that is quitting isn't paused, since frozen it couldn't end. Nor is one without a
             // window: it has none hidden, and it is starting, between windows or ending, as with Steam's
             // Stop.
-            let quitting = self.is_quitting(&r.id);
+            let quitting = self.is_quitting(&r.id, now);
             let hidden = setting == InBackground::Pauses && !shown && has && !quitting;
             // A suspended entry stays frozen until shown, after its windows were hidden.
             let in_use = if self.background.entries.is_held(&r.key) { self.background.entries.held_in_use(&r.key, shown) } else { !hidden };
@@ -248,10 +248,10 @@ impl Session {
         }
     }
 
-    /// Whether entry `id` can be suspended: it runs in a slice of ours, and isn't suspended or quitting (a
-    /// frozen program couldn't close its windows).
-    pub fn suspendable(&self, id: &str) -> bool {
-        self.running(id).is_some_and(|r| r.origin == Origin::Ours && !self.suspended(id) && !self.is_quitting(id))
+    /// Whether entry `id` can be suspended at `now`: it runs in a slice of ours, and isn't suspended or
+    /// quitting (a frozen program couldn't close its windows).
+    pub fn suspendable(&self, id: &str, now: u64) -> bool {
+        self.running(id).is_some_and(|r| r.origin == Origin::Ours && !self.suspended(id) && !self.is_quitting(id, now))
     }
 
     pub fn suspended(&self, id: &str) -> bool {
@@ -259,8 +259,8 @@ impl Session {
     }
 
     /// Suspends entry `id`: freezes it now (see the module's doc) and hides its windows if one is shown.
-    pub(crate) fn suspend(&mut self, id: &str, out: &mut Out) {
-        if !self.suspendable(id) {
+    pub(crate) fn suspend(&mut self, id: &str, now: u64, out: &mut Out) {
+        if !self.suspendable(id, now) {
             return;
         }
         let shown = self.windows_of(id).any(|w| self.shown(w.id));
@@ -410,7 +410,7 @@ mod tests {
         s.applied(Event::tick(100));
         s.observed(vec![win_of(3, "zelda3", &zelda)]);
         quit(&mut s, "zelda-lttp");
-        assert!(!s.session().suspendable("zelda-lttp"));
+        assert!(!s.session().suspendable("zelda-lttp", s.clock().mono()));
         let fx = s.applied(Event::Entry("zelda-lttp".into(), crate::EntryAct::Suspend));
         assert!(!fx.iter().any(|e| matches!(e, Effect::Freeze { .. })), "{fx:?}");
         assert!(!s.session().paused("zelda-lttp"));
@@ -426,12 +426,12 @@ mod tests {
         let window = || win_of(3, "zelda3", &zelda);
         s.applied(Event::tick(100));
         s.observed(vec![window()]);
-        assert!(s.session().suspendable("zelda-lttp"));
+        assert!(s.session().suspendable("zelda-lttp", s.clock().mono()));
         // Applied whole: its window is still shown when the event's steps follow, which doesn't thaw it.
         let fx = s.applied(Event::Entry("zelda-lttp".into(), crate::EntryAct::Suspend));
         assert!(fx.contains(&freeze(&key, true)) && s.session().shown_builtin().is_some(), "{fx:?}");
         assert!(!fx.contains(&freeze(&key, false)), "{fx:?}");
-        assert!(s.session().suspended("zelda-lttp") && !s.session().suspendable("zelda-lttp"));
+        assert!(s.session().suspended("zelda-lttp") && !s.session().suspendable("zelda-lttp", s.clock().mono()));
         // Hidden, it stays frozen and isn't frozen twice.
         s.observed(vec![window()]);
         assert!(!s.applied(Event::tick(100 + 3 * GRACE)).contains(&freeze(&key, true)));
