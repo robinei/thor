@@ -215,6 +215,7 @@ pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, gl
         sound: started("sound", sound::spawn(carried)),
         system,
         brightness: started("brightness", brightness::spawn(backlights)),
+        lights: crate::lights::Lights::start(PathBuf::from("/sys"), env.profile.lights),
         tuning,
         browse,
         files,

@@ -46,6 +46,8 @@ pub struct Handles {
     pub(crate) freezer: Worker<crate::launch::freezer::Request>,
     pub(crate) sound: Worker<(clamshell_state::Sound, u64)>,
     pub(crate) brightness: Worker<brightness::Command>,
+    /// Writes the stick lights, and turns them off when dropped, as ClamShell ends.
+    pub(crate) lights: crate::lights::Lights,
     pub(crate) tuning: Tuning,
     /// Screenshots, sleep and the other one-off requests (see [`crate::errands`]).
     pub(crate) system: Worker<crate::errands::Command>,
@@ -154,8 +156,7 @@ impl Handles {
             Effect::NotificationClosed { id, reason } => self.notifications.send(Notifications::Closed { id: *id, reason: reason.code() }),
             Effect::ActionInvoked { id, key } => self.notifications.send(Notifications::Invoked { id: *id, key: key.clone() }),
             Effect::FileChosen { request, paths } => self.portal.send(Portal::Answer { id: *request, paths: paths.clone() }),
-            // Not carried out yet: the stick lights get their thread next.
-            Effect::Lights(_) => {}
+            Effect::Lights(lit) => self.lights.send(*lit),
             // The compositor carries out its own.
             Effect::Compositor(_) => {}
         }

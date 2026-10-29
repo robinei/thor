@@ -1727,6 +1727,21 @@ and the OEM switches again at each settings application and every 30 s while the
 
 Whether the firmware honours a write is checked on the device.
 
+### Stick lights (system/lights.rs, device/lights.rs)
+
+The lights thread writes each `Effect::Lights` it is sent (the latest of those waiting) to the LEDs the
+profile's `lights` names: per LED, `multi_intensity` the colour at full brightness in the profile's
+channel order (the Thor's blue, green, red), then `brightness` the percent of its `max_brightness`, at
+least 1 while lit; off is all zeros. The power group may write them (thor-system's `73-thor-power.rules`).
+
+| Transition | Test |
+|---|---|
+| `--Lights([left, right])--> [each stick's LEDs written]` | `a_colour_is_written_in_the_devices_channel_order_and_its_brightness_scaled_to_the_leds`, `the_leds_are_written_and_left_off_at_the_end`; device `the_thors_channels_are_written_blue_green_red`; the colours on the device |
+| no lights in the profile (a desktop, the VM) `--Lights--> nothing`, said once at info | `missing_leds_are_a_logged_failure` |
+| the profile's LEDs missing or not writable `--Lights--> nothing written`, the first failure a warning, then debug until a write succeeds | same |
+| `--ClamShell ends (Handles dropped)--> [every LED off]`, and nothing written after | `the_leds_are_written_and_left_off_at_the_end` |
+| suspend turns the LEDs off (Armada's kernel); `Resumed` sends them again (state, `the_lights_in_force_are_sent_when_they_change`) | on the device |
+
 ### Display modes and the Refresh tile (state/presentation/modes.rs, state/apply/settings_tab.rs, compositor/drm/)
 
 `DisplayModes` holds at most 32 sorted, unique rates (1 to 1000 Hz) and the rate at start; the profile gives

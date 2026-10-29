@@ -10,6 +10,7 @@
 //! - `audio`: PipeWire;
 //! - `display`: backlights, screenshots and the panel's refresh rates;
 //! - `power`: tuning, sleep and the lid;
+//! - `lights`: the stick lights;
 //! - [`time`]: the clock and timedated;
 //! - `network`: NetworkManager and BlueZ;
 //! - [`session`]: the tray, clipboard, account and notifications;
@@ -29,6 +30,7 @@ mod files;
 pub mod input;
 pub mod launch;
 pub mod library;
+mod lights;
 mod network;
 pub mod os;
 pub mod paths;
