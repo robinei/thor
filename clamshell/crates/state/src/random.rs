@@ -264,7 +264,7 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
         // The step's own; the tab's below are the step's tab's.
         Top::Setup(_) => ids.extend([SetupId::Password, SetupId::Next, SetupId::Back].map(Id::Setup)),
         // The edit mode's: its tabs, its rows, and its actions.
-        Top::Library(LibraryMode::Edit | LibraryMode::Pick) if s.library_view().edit().is_some() => {
+        Top::Library(LibraryMode::Edit) => {
             use crate::library_view::edit::EditId;
             ids.extend((0..4).map(EditId::Tab).chain((0..6).map(EditId::Row)).map(Id::from));
             ids.extend([EditId::NewTab, EditId::Up, EditId::Done, EditId::Rename, EditId::Cut, EditId::Paste, EditId::Remove].map(Id::from));
@@ -901,6 +901,9 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     for (i, window) in s.session().windows().iter().enumerate() {
         ensure!(!s.session().windows().iter().skip(i + 1).any(|other| other.id == window.id), "duplicate window id {}", window.id);
     }
+    // An app's pick shows only over the Library; one of ClamShell's own may wait behind a window.
+    let app_pick = s.library_view().pick().is_some_and(|p| matches!(p.purpose, crate::library_view::pick::PickFor::App { .. }));
+    ensure!(!app_pick || matches!(s.top(), Top::Library(LibraryMode::Pick)), "an app's pick not shown: {:?}", s.top());
     ensure!(s.session().selections_valid(), "a selected window is not in its top group, or a screen's window is not open or on both screens");
     ensure!(s.session().overview_valid(), "the overview is open for a group not in front, or with fewer than two windows, or a choice not in it");
     // Every window has a group once the event is settled, except one of a program still starting, whose

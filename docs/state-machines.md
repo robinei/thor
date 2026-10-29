@@ -506,6 +506,7 @@ found by the asking process (the window whose process it is, or started; else th
 | Asked, its program in front (or windowless, or none) and no pick going on → the pick over it, the Library in front, starting in the folder asked for | `an_apps_file_is_chosen_in_the_library_and_the_app_comes_back`, `a_request_of_a_program_without_windows_is_picked_over_any` |
 | Asked from a program behind → waits until it is in front | `a_request_waits_for_its_program` |
 | answered → `FileChosen{paths}` (none: cancelled), its program back in front | same |
+| while Setup shows (in the Library's place), requests wait and an app's pick is set aside | `a_request_waits_while_setup_shows` |
 | Home, or another program shown, while picked → set aside (its program's; one of none is answered with nothing), shown again when its program is | `requests_wait_and_are_cancelled_or_given_up`, `a_request_waits_for_its_program` |
 | Closed → dropped; picked, the pick ends and its program comes back | `requests_wait_and_are_cancelled_or_given_up` |
 | system: a call kept, Close before or after it was sent on, answered, reconnect | live `an_open_call_waits_for_its_answer`; VM check `portal` |

@@ -150,6 +150,23 @@ mod tests {
         assert_eq!(open(&s), home, "the Files tab as the own pick left it");
     }
 
+    /// While Setup shows in the Library's place, a request waits; it is picked once Setup is done.
+    #[test]
+    fn a_request_waits_while_setup_shows() {
+        use crate::setup::account::Account;
+        let mut s = crate::State::new(crate::Init { first_start: true, account: Account::Unread, ..crate::testkit::init() });
+        s.applied(Event::Start);
+        ask(&mut s, 1, false);
+        assert!(s.library_view().pick().is_none(), "not under Setup");
+        s.applied(Event::Reading(crate::Reading::Account(Account::NoHelper)));
+        for _ in 0..3 {
+            assert!(s.library_view().pick().is_none(), "not under Setup: {:?}", s.setup().wizard());
+            s.applied(Event::Pointer(crate::PointerEvent::Activate(Id::Setup(crate::SetupId::Next))));
+        }
+        assert!(s.setup().wizard().is_none());
+        assert_eq!(s.library_view().pick().map(|p| p.asks()), Some("Choose a file"));
+    }
+
     /// A pick leaves the Files tab as it was before it.
     #[test]
     fn a_pick_leaves_the_files_tab_as_it_was() {

@@ -54,7 +54,7 @@ impl State {
     /// answered at once with nothing.
     pub(crate) fn follow_portal(&mut self, out: &mut Out) {
         // Order: set aside before the answers are taken, since one that is no program's is answered so.
-        if self.picking_for_app().is_some() && self.session.shown_builtin() != Some(Builtin::Library) {
+        if self.picking_for_app().is_some() && !matches!(self.top(), crate::Top::Library(_)) {
             self.set_pick_aside();
         }
         if let Some((request, paths)) = self.library_view.take_answered() {
@@ -66,7 +66,9 @@ impl State {
         // A program with no window left (closed to its tray, say) can't come in front: its request is
         // picked over whatever is.
         let windowless = |program: &crate::session::windows::Group| !self.session.windows().iter().any(|w| w.group.as_ref() == Some(program));
-        while self.pick_free()
+        // While Setup shows, the requests wait: it is drawn in the Library's place.
+        while !matches!(self.top(), crate::Top::Setup(_))
+            && self.pick_free()
             && let Some(i) = self.portal.asked.iter().position(|w| w.program.as_ref().is_none_or(|p| Some(p) == front.as_ref() || windowless(p)))
         {
             let Some(request) = self.portal.asked.get(i).map(|w| w.request.clone()) else { break };
