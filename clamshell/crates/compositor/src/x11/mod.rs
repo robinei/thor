@@ -169,15 +169,12 @@ impl Supervisor {
                 Ok(None) => {
                     if let Err(error) = running.turn(&self.handle, server, now) {
                         log::warn!("compositor: Xwayland: {error}; stopping");
-                        running.wm.clear(server);
-                        running.stop(&server.dh);
-                        // Keep only pidfd readiness while SIGKILL is being reaped.
-                        running.remove_io_sources(&self.handle);
+                        running.fail(&self.handle, server);
                     }
                 }
                 Err(error) => {
-                    log::warn!("compositor: checking Xwayland: {error}");
-                    running.stop(&server.dh);
+                    log::warn!("compositor: checking Xwayland: {error}; stopping");
+                    running.fail(&self.handle, server);
                 }
             }
             return;
@@ -194,8 +191,8 @@ impl Supervisor {
         match Running::spawn(&mut server.dh, &self.socket, now) {
             Ok(mut running) => {
                 if let Err(error) = running.register(&self.handle) {
-                    log::warn!("compositor: registering Xwayland: {error}");
-                    running.stop(&server.dh);
+                    log::warn!("compositor: registering Xwayland: {error}; stopping");
+                    running.fail(&self.handle, server);
                     // If pidfd registration itself failed, keep a deadline only until this child is reaped.
                     if running.sources.is_empty() {
                         self.retry = Some(now + Duration::from_secs(1));
@@ -325,6 +322,13 @@ impl Running {
             self.ready_logged = true;
         }
         Ok(())
+    }
+    /// Stops Xwayland after a failure: its windows close, and only its pidfd is still watched (if it
+    /// is), for its end to be reaped.
+    fn fail(&mut self, handle: &LoopHandle<'static, Server>, server: &mut Server) {
+        self.wm.clear(server);
+        self.stop(&server.dh);
+        self.remove_io_sources(handle);
     }
     fn stop(&mut self, dh: &DisplayHandle) {
         self.stopping = true;
