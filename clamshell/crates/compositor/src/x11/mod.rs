@@ -35,6 +35,11 @@ use std::{
 };
 use transport::Transport;
 
+/// How long Xwayland may leave a request unanswered before it is taken to be hung and restarted, which
+/// ends every X11 program. Nothing waits on it meanwhile, so this is long: a game loading, or a machine
+/// swapping, can hold the X server up for seconds.
+pub(super) const HUNG: Duration = Duration::from_secs(30);
+
 /// What the X11 adapter and the Wayland side leave each other on the server.
 #[derive(Default)]
 pub(crate) struct Bridge {

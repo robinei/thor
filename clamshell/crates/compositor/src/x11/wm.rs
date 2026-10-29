@@ -14,11 +14,7 @@ use smithay::{
     reexports::wayland_server::protocol::wl_surface::WlSurface,
     utils::{Logical, Point, Rectangle},
 };
-use std::{
-    borrow::Cow,
-    io,
-    time::{Duration, Instant},
-};
+use std::{borrow::Cow, io, time::Instant};
 use x11rb_protocol::{
     id_allocator::IdAllocator,
     protocol::{composite, randr, res, xproto::*},
@@ -114,7 +110,7 @@ impl Wm {
             return Err(io::Error::other("too many pending XWM replies"));
         }
         let sequence = wire.request(request, opcode, true)?;
-        self.pending.push(Pending { sequence, kind, deadline: now + Duration::from_secs(3) });
+        self.pending.push(Pending { sequence, kind, deadline: now + crate::x11::HUNG });
         Ok(())
     }
     pub fn turn(&mut self, wire: &mut Transport, server: &mut Server, now: Instant) -> io::Result<()> {
@@ -742,7 +738,7 @@ impl Wm {
                     0,
                     false,
                 )?;
-                self.stamp = Stamp::Requested(Instant::now() + Duration::from_secs(3));
+                self.stamp = Stamp::Requested(Instant::now() + crate::x11::HUNG);
                 return Ok(());
             }
         };
@@ -908,6 +904,7 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
     use super::*;
     use std::os::unix::net::UnixStream;
+    use std::time::Duration;
     #[test]
     fn outstanding_deadlines_stale_replies_and_menu_ownership_follow_window_lifetimes() {
         let (_display, mut server) = crate::tests::ServerBuilder::new().build();
@@ -917,8 +914,9 @@ mod tests {
         let mut wm = Wm::default();
         assert_eq!(wm.deadline(), None);
         wm.query(&mut wire, GetWindowAttributesRequest { window: 10 }, 0, Query::Attributes(7), now).unwrap();
-        assert_eq!(wm.deadline(), Some(now + Duration::from_secs(3)));
-        assert_eq!(wm.turn(&mut wire, &mut server, now + Duration::from_secs(3)).unwrap_err().kind(), io::ErrorKind::TimedOut);
+        assert_eq!(wm.deadline(), Some(now + crate::x11::HUNG));
+        wm.turn(&mut wire, &mut server, now + Duration::from_secs(3)).expect("a late reply is waited for");
+        assert_eq!(wm.turn(&mut wire, &mut server, now + crate::x11::HUNG).unwrap_err().kind(), io::ErrorKind::TimedOut);
         wm.pending.clear();
         assert_eq!(wm.deadline(), None);
         wm.discover(10, Rectangle::from_size((640, 360).into()), false, &mut wire, &mut server).unwrap();

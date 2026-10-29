@@ -6,7 +6,7 @@ use std::{
     collections::VecDeque,
     io::{self, Read, Write},
     os::unix::net::UnixStream,
-    time::{Duration, Instant},
+    time::Instant,
 };
 use x11rb_protocol::{
     connect::Connect,
@@ -16,7 +16,6 @@ use x11rb_protocol::{
 };
 
 const LIMIT: usize = 1024 * 1024;
-const TIMEOUT: Duration = Duration::from_secs(3);
 const BUDGET: usize = 64;
 
 pub(super) struct Transport {
@@ -46,8 +45,8 @@ impl Transport {
             outgoing: bytes.into(),
             incoming: Vec::with_capacity(32),
             packet_size: 32,
-            setup_deadline: now + TIMEOUT,
-            write_deadline: Some(now + TIMEOUT),
+            setup_deadline: now + crate::x11::HUNG,
+            write_deadline: Some(now + crate::x11::HUNG),
             last_request: 0,
             last_reply: 0,
         })
@@ -168,7 +167,7 @@ impl Transport {
             return Err(io::Error::other("X11 outgoing queue exceeds limit"));
         }
         if self.outgoing.is_empty() && !bytes.is_empty() {
-            self.write_deadline = Some(Instant::now() + TIMEOUT);
+            self.write_deadline = Some(Instant::now() + crate::x11::HUNG);
         }
         self.outgoing.extend(bytes);
         Ok(())
@@ -179,6 +178,7 @@ impl Transport {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+    use std::time::Duration;
     use x11rb_protocol::x11_utils::Serialize;
 
     fn connected() -> (Transport, UnixStream, Instant) {
@@ -249,7 +249,7 @@ mod tests {
             transport.turn(now).unwrap();
         }
         assert_eq!(transport.outgoing.len(), left, "WouldBlock retains unsent bytes");
-        assert_eq!(transport.turn(now + TIMEOUT + Duration::from_secs(1)).unwrap_err().kind(), io::ErrorKind::TimedOut);
+        assert_eq!(transport.turn(now + crate::x11::HUNG + Duration::from_secs(1)).unwrap_err().kind(), io::ErrorKind::TimedOut);
     }
 
     #[test]
@@ -258,7 +258,7 @@ mod tests {
         let now = Instant::now();
         let mut transport = Transport::new(stream, now).unwrap();
         transport.turn(now).unwrap();
-        assert_eq!(transport.turn(now + TIMEOUT).unwrap_err().kind(), io::ErrorKind::TimedOut);
+        assert_eq!(transport.turn(now + crate::x11::HUNG).unwrap_err().kind(), io::ErrorKind::TimedOut);
         let (mut transport, peer, now) = connected();
         peer.shutdown(std::net::Shutdown::Both).unwrap();
         drop(peer);
