@@ -179,14 +179,13 @@ impl Pad {
     }
 
     /// The game in front changed. Turns the pad mouse on if the game wants it, and off again if the game
-    /// had turned it on and no longer wants it. Returns whether it changed.
-    pub(crate) fn follow_game(&mut self, wanted: bool) -> bool {
+    /// had turned it on and no longer wants it.
+    pub(crate) fn follow_game(&mut self, wanted: bool) {
         match (wanted, self.mouse) {
             (true, PadMouse::Off) => self.mouse = PadMouse::ByGame,
             (false, PadMouse::ByGame) => self.mouse = PadMouse::Off,
-            _ => return false,
+            _ => {}
         }
-        true
     }
 }
 

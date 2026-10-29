@@ -138,20 +138,16 @@ impl Dock {
 
     /// Runs after anything that may start or stop an entry. Running entries not on the dock are added at
     /// its end, and stopped ones that are neither pinned nor being moved are removed, closing their menu.
-    /// Returns whether it changed.
-    pub(crate) fn follow(&mut self, session: &Session) -> bool {
+    pub(crate) fn follow(&mut self, session: &Session) {
         let before = self.items.len();
         let moving = &self.moving;
         self.items.retain(|i| i.pinned || session.runs(&i.id) || moving.as_ref() == Some(&i.id));
-        let removed = before != self.items.len();
-        if removed {
+        if before != self.items.len() {
             self.end_gone();
         }
-        let mut added = false;
         for r in session.running_entries() {
             if self.position(&r.id).is_none() {
                 self.items.push(DockItem { id: r.id.clone(), pinned: false });
-                added = true;
             }
         }
         // The built-ins that run: the Library always pinned, first unless it was moved; the others where
@@ -164,10 +160,8 @@ impl Dock {
                     crate::builtin_apps::DockPlace::Never => continue,
                 };
                 self.items.insert(at, DockItem { id: b.id().into(), pinned });
-                added = true;
             }
         }
-        removed || added
     }
 
     /// A tap or long press on a dock tile, a choice in its menu, which then closes, or a step in move mode.
