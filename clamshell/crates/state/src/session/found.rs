@@ -205,6 +205,23 @@ mod tests {
         assert_eq!((r.found(), r.mark.as_deref()), (false, None));
     }
 
+    /// A program found, not adopted yet, doesn't take the windows left in a unit of its key: those stay
+    /// with the program they were found by.
+    #[test]
+    fn a_found_program_doesnt_take_windows_by_its_keys_unit() {
+        let mut s = device();
+        s.observed(vec![window(5, "game.exe", 500, "app-game.scope")]);
+        let group = |s: &State, id: i64| s.session().window(id).and_then(|w| w.group.clone());
+        let game = s.session().running("window:game.exe").map(|r| r.group());
+        assert!(game.is_some() && group(&s, 5) == game);
+        // Its process now in a unit of ours left from an earlier launch of steam_app_620, which is found.
+        let unit = crate::LaunchUnit { key: clamshell_library::key_of("window:steam_app_620"), secs: 1, n: 0 };
+        let moved = WindowFacts { unit: Some(unit.service()), ..window(5, "game.exe", 500, "") };
+        s.observed(vec![moved, window(6, "steam_app_620", 600, "app-steam.scope")]);
+        assert!(s.session().running("window:steam_app_620").is_some_and(|r| r.found()));
+        assert_eq!(group(&s, 5), game);
+    }
+
     #[test]
     fn a_dialog_over_another_programs_window_stays_in_that_programs_group() {
         let mut s = device();

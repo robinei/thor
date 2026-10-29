@@ -525,11 +525,14 @@ impl Session {
     pub(crate) fn running_of(&self, w: &WindowFacts) -> Option<&Running> {
         let root = self.root_facts(w);
         let by_key = |k: Option<&str>| self.running.iter().find(|r| k == Some(r.key.as_str()));
+        // A unit's windows are its key's entry's, unless that is found and not adopted yet: its windows are
+        // those it is found by (see `Session::follow_adopted`).
+        let by_unit = |k: Option<&str>| by_key(k).filter(|r| !r.found());
         let by_facts = |f: &WindowFacts| {
             self.running
                 .iter()
                 .find(|r| !r.found() && r.owns(f))
-                .or_else(|| by_key(f.unit.as_deref().and_then(LaunchUnit::key_of)))
+                .or_else(|| by_unit(f.unit.as_deref().and_then(LaunchUnit::key_of)))
                 .or_else(|| self.running.iter().find(|r| r.fathered(f)))
         };
         by_facts(root)

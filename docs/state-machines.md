@@ -27,7 +27,7 @@ belong to a bottom client or ClamShell's UI (`None`).
 role, colour, unit, processes and the game its launcher marked its process with), never its placement; the session's record of a window is those facts
 with its group and screen, and a claim made on it. A window's owner is its main window's, worked out from
 facts and claims only, never from the group it was placed in (`Session::running_of`): a library mark, its
-unit, a found program's process, another main window of its process and app id; then a claim (a browsed
+unit (not a found program's before it is adopted: `a_found_program_doesnt_take_windows_by_its_keys_unit`), a found program's process, another main window of its process and app id; then a claim (a browsed
 file's entry took it, or a window of no program went to the program in front's group); then a found
 program's app id, which a claim stands against. Its group follows: the owner's, else the claim, else a
 library mark's or launch unit's entry, else its own (`Session::home_of`). It is worked out as the window
