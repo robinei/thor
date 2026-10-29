@@ -29,8 +29,8 @@ Android kept. Written 2026-10-14, before having the device; everything here is u
   `fastboot flash` (unlocked), or as ROCKNIX's scripts do from Android ("Run Script as Root", `dd`; ROCKNIX's
   `next` ships an `openabl/` folder with the same three scripts). Linux reaches its UEFI variables (bootctl,
   boot counting, BootNext) only with its kernel patch adding SM8550 to qcom_scm's QSEECOM allowlist
-  (`Linux/0001-firmware-qcom-scm-allow-QSEECOM-on-OpenABL-s-platforms.patch`, tested on SM6115 only): ours
-  to add once the Thor boots with it.
+  (`Linux/0001-firmware-qcom-scm-allow-QSEECOM-on-OpenABL-s-platforms.patch`, tested on SM6115 only):
+  Armada carries it (`0910`), so our kernel has it since we follow 664da8c; untried on a Thor.
 - **Or ROCKNIX's ABL** v1.2 (in 20261001: `rocknix_abl/` on the image's FAT partition, with
   `backup_abl.sh`, `flash_abl.sh`, `restore_backup_abl.sh`: plain `dd` of `abl_a` and `abl_b` to and from
   `/sdcard/rocknix_abl/`, run as root through AYN Android's "Run Script as Root", Settings → Handheld
@@ -96,7 +96,8 @@ Android kept. Written 2026-10-14, before having the device; everything here is u
 - Battery: `power_supply` named `battery` (ROCKNIX's patch `0503`, in Armada's kernel; `qcom-battmgr-bat`
   without it); ClamShell and the udev rule find it by its type.
 - USB-C display out: plugging in a DisplayPort monitor hard-freezes the device on Armada's 7.2.3 (Armada
-  #529, open).
+  #529, open); PB-OS's Thor on Linux 7.2.8 shows DP working. Armada pins 7.2.6, so linux-thor carries
+  three of 7.2.8's DP and DPU fixes (`stable-0001`..`0003`); untried on a Thor.
 - The bottom screen draws about 0.7 W at idle. Wi-Fi and Bluetooth work.
 
 ## Our image and packages
@@ -116,7 +117,7 @@ with the others but kept out of the published repository. Nothing in either is a
 | Package | What |
 |---|---|
 | `thor` | the metapackage that is the whole system: the packages below, Turnip, the day-one checks' tools, what maintenance needs; an image is `base` and this (and thor-firmware) |
-| `linux-thor` | Armada's kernel, built in its PKGBUILD as Arch Linux ARM's linux-aarch64 is (cross-compiled with LLVM on the PC): kernel.org's tarball (its signature checked against Linus Torvalds' and Greg Kroah-Hartman's keys, `keys/pgp`) and Armada's repository at a pinned commit (`_armada`; Linux 7.2.6 with their 223 patches at d2bcf6fd3343, 2026-10-21, which reports the charge threshold's failures (0904); binder in their config), their series applied as their build does, our patches and config lines after; a release of its own per package version (`7.2.6-thor-d2bcf6f-6`: Armada's commit and pkgrel); modules, `Image` and the SM8550 device trees in `/usr/lib/modules/<release>`. Following Armada: `tools/repo/follow-armada.sh`. Its source package is published beside it (GPL-2.0) |
+| `linux-thor` | Armada's kernel, built in its PKGBUILD as Arch Linux ARM's linux-aarch64 is (cross-compiled with LLVM on the PC): kernel.org's tarball (its signature checked against Linus Torvalds' and Greg Kroah-Hartman's keys, `keys/pgp`) and Armada's repository at a pinned commit (`_armada`; Linux 7.2.6 with their 293 patches at 664da8c6d73c, 2026-10-29; binder in their config), their series applied as their build does, our patches and config lines after; a release of its own per package version (`7.2.6-thor-664da8c-1`: Armada's commit and pkgrel); modules, `Image` and the SM8550 device trees in `/usr/lib/modules/<release>`. Following Armada: `tools/repo/follow-armada.sh`. Its source package is published beside it (GPL-2.0) |
 | `thor-system` | the boot: `thor-boot` puts the kernel (`/Image`, decompressed, an EFI program), the Thor's device tree, our initramfs (`/usr/lib/thor/mkinitcpio.conf`: base udev modconf block thor-root-wait resume filesystems fsck, no autodetect) and the loader entry's command line on the card's FAT partition for systemd-boot (`EFI/BOOT/BOOTAA64.EFI`), and the same into `/KERNEL` for the ABL (`bootimg.py repack`: the gzip'd Image with the 14 device trees, ROCKNIX's header); a pacman hook runs it after updates of the kernel, systemd, mkinitcpio, kmod, util-linux, zstd. The first boot (`thor-firstboot.service`, once): grows the root partition and its ext4 to the card; makes `/swapfile`, 16 GiB (only if 8 GiB stay free beside it), in fstab; puts `resume=LABEL=THOR_ROOT resume_offset=<first block>` on the command line. The power group's write access to what ClamShell's settings set (cpufreq caps, CPUs' online, the GPU's devfreq cap, the battery's charge limit and charge current, the power key's wakeup; `73-thor-power.rules`); the sticks' range (`/usr/lib/modprobe.d/thor-rsinput.conf`); zram (zstd, priority 100, before the swap file) and swapping tuned for it (Armada's values); the SD card's scheduler (BFQ, 4 MB readahead); PipeWire's buffers (Armada's, against crackling after sleep); sleep (logind: power button and lid do `sleep` = suspend-then-hibernate, else suspend; long press powers off; s2idle; `HibernateDelaySec=30min`); a log of each wake's cause (`/var/log/thor-wake.log`); the checks at each boot (`thor-selftest`: see "Day one"); the account helper `thor-account` (pkexec, polkit: the password and sshd, for ClamShell's Device view); the touchscreens' hwdb entry, uinput for the input group, USB controller autosuspend; the thermal sensors' wakeup off; the fan's, battery's and gamepad's drivers loaded at boot; Wi-Fi scanning with the device's own address (NetworkManager); the lid heeded 5 s after boot or waking; Bluetooth off while asleep (if it was on); the TEO idle governor; the backlights' uevents kept from systemd |
 | `thor-session` | tty1's autologin as `thor` into ClamShell's compositor (`thor-session`, from `/etc/profile.d/thor-session.sh`, starts the user service `clamshell.service`, `clamshell --drm`; its readiness brings up `graphical-session.target` with udiskie; see process-control.md); foot's config (through `XDG_CONFIG_DIRS`, the user's own first); the home's starting files where missing, at each session start (`thor-home`: the starter `library.json` with its folders, the dock's first pins, mpv's and RetroArch's configs and RetroArch's menu theme); Steam's starter (`steam`, `steam-setup`, `steam.desktop`); the Maintenance app (`thor-maintain`: Claude Code with the `/maintain` playbook in `~/.local/share/thor/maintenance`) |
 | `clamshell` | ClamShell and the fan daemon `clamshell-fan` (a system service from early in boot: the fan's speed every 3 s from the mean of the three hottest CPU and GPU sensors, smoothed, on Armada's moderate curve with its ramp, by the mode ClamShell's Fan setting writes to `/run/clamshell-fan`; stopped or failed, `--safe` leaves it at half speed); the power group (sysusers); `clamshell-android` |
@@ -303,16 +304,28 @@ kernel on the device), with our config lines (`config.thor`) and our patches (th
 `source=`: PB-OS's Thor fixes and ours, listed there with where each was tried). So these come with it: the gamepad across sleep (`0508`, `0515`, `1005`–`1007`, `0534`), rumble's
 fixes (`1003`, `1004`), the s2idle stack (`0523`–`0526`, `0512`, `0522`, `0566`, `0204`, `0504` instead of
 ROCKNIX's IPCC change), the wake sources (lid on opening only, volume up not), PCIe WAKE#, the codec's rails
-in s2idle, and the charge current limit (`0903`: 0 runs the device from the charger, for bypass).
+in s2idle, the charge current limit (`0903`: 0 runs the device from the charger, for bypass), and since
+664da8c (followed 2026-10-29): the top panel's frame-length calibration (ROCKNIX's, `0518`–`0518b`; our
+thor-0005 until then), the ADSP FastRPC remote heap in the SoC device trees (`0623`), FastRPC's
+context-leak fix (lore v3, which our pbos-0560 is rebased onto), smp2p's inbound state reset only on a
+restart (`0569`: no storm of q6v5 handover interrupts while the sensors stream), a longer GMU firmware
+init timeout (`0624`), rsinput taking large UART batches (`0515a`), uhid's output queue read under its
+lock (`1008`) and OpenABL's QSEECOM allowlist (`0910`, UEFI variables from Linux).
+Ours on top (linux-thor's `source=`, each patch's header with its source and where it was tried): PB-OS's
+Thor fixes (battery, bottom panel and touch, the sensor hub's FastRPC routing, sleep's wake), the LRA
+motor, the sensor hub's process types and PDR in the device tree, ROCKNIX's panel reset at the clock
+handover and its QSEED4 preload of 7 behind the inline rotator (`rocknix-0018`: no seam in a
+rotated layer split over two pipes, which direct scanout of a game uses), PB-OS's GEM fault at an mmap
+offset (`pbos-0611`: Turnip's dma-buf mappings on the Adreno 740) and 7.2.8's DisplayPort fixes.
 Candidates for our own patches, once tried on the device:
-- [ ] OpenABL's QSEECOM allowlist patch, if we boot through OpenABL (UEFI variables from Linux).
 - [ ] The bottom touchscreen kept powered in suspend (`edt,retain-power-in-suspend` on its node: Thorch's
       `dts-patches/0005`, Kettle's device tree; the FT5452's power-off path is unsafe), if it misbehaves
       after sleep; with Armada #757 (a contact kept after fingers lift; a candidate patch, open).
 - [x] The top panel's refresh calibration (uncalibrated it runs at 118.6 Hz): ROCKNIX's PR #3489 (after
-      20261001; tested on a Thor: 118.63 to 120.09 Hz), its kernel patch ported to Armada's driver
-      (linux-thor's thor-0005) and its tool as ours (`thor-panel-calibration`, thor-system; the values
-      in `/var/lib/thor/panel-calibration`, applied as the panel's driver binds).
+      20261001; tested on a Thor: 118.63 to 120.09 Hz), its kernel patch in Armada's kernel since 664da8c
+      (`0518`, the same sysfs names and ranges; ours was thor-0005) and its tool as ours
+      (`thor-panel-calibration`, thor-system; the values in `/var/lib/thor/panel-calibration`, applied as
+      the panel's driver binds).
 Done in userspace instead (2026-10-20), so no patch of ours:
 - [x] The stick range: Thorch sets `axis-range = <1024>` on the gamepad node (its `dts-patches/0007`);
       Armada's device tree doesn't (they calibrate through rsinput's module parameters); without either,
@@ -534,6 +547,13 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       ratchet. Then fixtures for the parser's tests, which so far check it against its own encoder: with
       `RUST_LOG=clamshell_system::pad::sensor_hub=trace` the hub's datagrams are logged in hex; the
       gyro's SUID report and a few sensor events go into `pad/sensor_hub.rs`'s tests.
+- [ ] The gyro across sleep, with FastRPC's context-leak fix (under pbos-0560) and smp2p's restart-only
+      reset (`0569`): ten suspends and resumes with a gyro keymap in use; after each the gyro streams
+      again ("the gyro closed for sleep", then "the gyro streams at 200 Hz"), and `dmesg` has no
+      "Handover signaled, but it already happened" storm, no "fastrpc_invoke: TIMEOUT", and every
+      "msm/adsp/sensor_pd is down" followed by its "is up". hexagonrpcd's memory
+      (`grep VmRSS /proc/$(pgrep -x hexagonrpcd)/status`) and `/sys/kernel/debug/dma_buf/bufinfo`'s count
+      flat across the cycles.
 - [ ] Rumble: a game's rumble on the controller's motors at each Rumble setting; the keymap's buzzes (a
       layer armed or toggled on, and off: `Buzz` in `pad/rumble.rs`, 40 ms at 40000 on the light motor,
       30000 on the heavy one) felt, and not confused with a game's.
@@ -549,7 +569,10 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       and Back buttons send. The Home chords (`docs/history/compositor-mvp.md`, "The Home chords") assume Home
       is the left one.
 - [ ] GPU: Freedreno (the compositor's GLES) and Turnip (`vkcube`, a game); the compositor's frame rate
-      in sysinfo.
+      in sysinfo. Turnip's exported memory mapped at an offset (pbos-0611): a game that imports Vulkan
+      memory into another API or process (a Proton game through DXVK, Eden or Edinx) draws without
+      garbage or stale tiles; PB-OS's offset-mapping test (their 0611's commit) passes; `dmesg` has no
+      GEM_WARN_ON from `msm_gem_fault`.
 - [ ] Scanout, with `CLAMSHELL_SCANOUT=1` (opt-in, for this). At start ClamShell logs every plane either
       screen can use (rotations, formats and modifiers, colour pipelines and their operations) and the
       CRTCs' colour properties; keep that log. The spec sheet gives the panels as 1080x1920 (main, 120 Hz)
@@ -572,7 +595,10 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
       buffers come by Xwayland); `WAYLAND_DEBUG=1` on the game shows the feedback and the new buffers'
       modifier. Colour: whether the plane log has a pipeline of a 1D then a 3D LUT ("window scanout: plane
       N has no colour pipeline" if not); a game's picture with a curve on, shown directly against composed
-      (a dialog over it composes it), should match.
+      (a dialog over it composes it), should match. No seam (rocknix-0018): a game at a resolution below
+      the panel's (720p, scaled up) and at the panel's own, shown directly, with a picture that has
+      straight lines across the middle of the long side (a menu, a grid): no line repeated, missing or
+      shifted where the two pipes meet, against the same composed.
 - [ ] A game composed in one pass (`colour::render`): with SMAA or FSR on, or a buffer the plane refuses,
       "drm: the Top screen draws window N straight onto it"; a dialog over it "composes through the scene
       again".
@@ -780,8 +806,16 @@ From the review of 2026-10-21 (what Armada, ROCKNIX, Thorch and Kettle do, taken
       (Pocknix turns it back on around sleep).
 - [ ] The bottom touchscreen after sleep: still working, no contact left behind (#757); else the
       `edt,retain-power-in-suspend` patch (see "Candidates for our own patches").
-- [ ] USB-C display out: last, with nothing unsaved (Armada #529: a DisplayPort monitor hard-freezes
-      the device).
+- [ ] USB-C display out, with 7.2.8's DP fixes (`stable-0001`..`0003`): last, with nothing unsaved
+      (Armada #529: a DisplayPort monitor hard-freezes the device on Armada's kernel). Capture ready first:
+      netconsole to the PC over Wi-Fi (`modprobe netconsole netconsole=@/wlan0,6666@<PC's address>/`,
+      `nc -ul 6666` on the PC, `dmesg -n 8`), or ramoops (a `ramoops` reserved-memory node in a dts
+      patch of ours; `/sys/fs/pstore` after the reboot). Then a 1080p monitor, then a
+      4K one (over two lanes 4K60 needs more than the link carries: it should be refused and 4K30 or
+      less offered): the picture, its sound (`DP0 Jack`), unplugging and plugging again, and suspend with
+      it plugged in. If it still freezes, the next suspects are Armada's own DPU patches (`0068` the
+      DSPP's LUT DMA, `0070` its device tree register, `0077` the planes' colour pipelines): a build
+      without them.
 - [ ] The gamepad back from sleep or a replug while a game runs: the game keeps its pad (the virtual pad
       no longer made again for a stick a little off centre), and rumble requests while it is gone don't
       stall the game.
@@ -867,8 +901,9 @@ Sound and the rest
 - Drain asleep from the gyro: ClamShell closes its stream before sleep (a logind delay lock, as PB-OS's
   pbos-motiond; its log says "the gyro closed for sleep") and opens it after. If the log lacks the line,
   `systemd-inhibit --list` shows whether ClamShell holds its lock.
-- A DisplayPort monitor freezes the device (Armada #529): `status = "disabled"` on `&mdss_dp0` in a dts
-  patch of ours until Armada fixes it.
+- A DisplayPort monitor freezes the device (Armada #529) even with 7.2.8's DP fixes: a build without
+  Armada's `0068`, `0070` and `0077`; if that doesn't help either, `status = "disabled"` on `&mdss_dp0` in
+  a dts patch of ours until it is fixed.
 - A DRM lease (a VR headset, gamescope per screen) leaves a thread stuck when it ends: PB-OS's 0610.
 
 ## Ideas to try once the device is here
