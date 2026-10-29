@@ -38,7 +38,7 @@ readings, ticks, windows, units ─▶ Event ───┤
 | Crate | Role |
 |---|---|
 | `crates/state` | the state and its rules; events in, effects out; no I/O, no threads |
-| `crates/system` | a thread per outside concern (systemd and launches, the controller, Wi-Fi, Bluetooth, sound, storage, files, ...), each turning effects into actions and what it sees into events; the game library read from disk |
+| `crates/system` | a thread per outside concern (systemd and launches, the controllers and the players' virtual pads, Wi-Fi, Bluetooth, sound, storage, files, ...), each turning effects into actions and what it sees into events; the game library read from disk |
 | `crates/ui` | the UI framework without a backend (`ui::Core`): owns `State`, draws the views it is given into pixmaps on the CPU (tiny-skia, fontdue, the built-in Noto Sans), the toolkit they are drawn with, and input turned into events; it knows no screen of ClamShell's |
 | `crates/views` | ClamShell's screens (`clamshell_views::VIEWS`): the built-in apps' views (`apps.rs`), the second screen's bar and tabs, the overlays, drawn with the UI's toolkit |
 | `crates/compositor` | the Wayland compositor (Smithay): hosts the UI and runs the event loop; the screens through DRM and libinput (`--drm`) or a window on a desktop (`--nested`), the windows, Xwayland |
@@ -195,7 +195,7 @@ Each thread takes its own commands on a channel (`os::worker`); a thread that wa
 woken by an eventfd. A thread that panics runs again on the same channel, at once and then after waits
 that double up to 5 s, and the state is told (`Event::Restarted`) so it sends again what the thread
 held. Services are reached over D-Bus (systemd, logind, timedated, UDisks2, NetworkManager,
-BlueZ, UPower), PipeWire through `pw-dump` and `wpctl`, the controller through evdev and uinput. Launches
+BlueZ, UPower), PipeWire through `pw-dump` and `wpctl`, the controllers through evdev and uinput. Launches
 are transient services of the user manager (`systemd-run --user`), each its own unit with its output in
 the journal as the unit's, so what runs is systemd's to say: a launch is running while its unit is
 listed, and ClamShell can be restarted without losing track.
