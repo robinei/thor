@@ -1010,22 +1010,29 @@ mod tests {
         wm.event(&event, &mut wire, &mut server).unwrap();
         assert!(wm.windows[0].wants_map && !wm.windows[0].override_redirect);
     }
-    /// An override-redirect window with no owner yet is left mapped, to be shown once its program has the
-    /// focus; one whose owner lost the focus is dismissed.
+    /// An override-redirect window with no owner is managed as a splash when its program has no managed
+    /// window, and left mapped, to be shown once its program has the focus, when it has; one whose owner
+    /// lost the focus is dismissed.
     #[test]
-    fn an_ownerless_override_redirect_window_stays_mapped() {
+    fn an_ownerless_override_redirect_window_is_a_splash_or_waits() {
         let (_display, mut server) = crate::tests::ServerBuilder::new().build();
         let (socket, _peer) = UnixStream::pair().unwrap();
         let mut wire = Transport::new(socket, Instant::now()).unwrap();
         let mut wm = Wm { root: 1, owner: 2, atoms: Atoms(NAMES.iter().enumerate().map(|(i, name)| (*name, 100 + i as u32)).collect()), ..Wm::default() };
-        wm.discover(10, Rectangle::from_size((100, 100).into()), true, &mut wire, &mut server).unwrap();
-        let menu = &mut wm.windows[0];
-        (menu.pid, menu.outstanding, menu.wants_map) = (Some(1), 0, true);
+        for (xid, redirect) in [(10, true), (20, true), (30, false)] {
+            wm.discover(xid, Rectangle::from_size((100, 100).into()), redirect, &mut wire, &mut server).unwrap();
+        }
+        for (w, pid) in wm.windows.iter_mut().zip([1, 2, 2]) {
+            (w.pid, w.outstanding, w.wants_map) = (Some(pid), 0, true);
+        }
         wm.settle_menus(&mut wire, &mut server).unwrap();
-        assert!(wm.windows[0].wants_map, "waiting for an owner");
-        wm.windows[0].popup_parent = Some(99);
+        let splash = &wm.windows[0];
+        assert!(!splash.override_redirect && splash.properties.role == clamshell_state::presentation::WindowRole::Splash);
+        let menu = &wm.windows[1];
+        assert!(menu.override_redirect && menu.wants_map, "its program has a window: waiting for it to have the focus");
+        wm.windows[1].popup_parent = Some(99);
         wm.settle_menus(&mut wire, &mut server).unwrap();
-        assert!(!wm.windows[0].wants_map, "its owner gone: dismissed");
+        assert!(!wm.windows[1].wants_map, "its owner gone: dismissed");
     }
     /// A window reparented into the root is found; one reparented out of it is forgotten.
     #[test]

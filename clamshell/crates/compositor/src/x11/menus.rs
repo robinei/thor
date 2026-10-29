@@ -28,6 +28,16 @@ impl Wm {
         let target = if menu.properties.tooltip { hovered.or(focused) } else { focused }?;
         self.windows.iter().find(|w| w.id == target && !w.override_redirect && w.pid.is_some() && w.pid == menu.pid).map(|w| w.id)
     }
+    /// Manages the override-redirect window at `index` as a window of its own, a splash unless it says
+    /// what it is.
+    fn promote(&mut self, index: usize) {
+        let Some(window) = self.windows.get_mut(index) else { return };
+        log::info!("compositor: X11 override-redirect window {} has no owner: managed as a window", window.id);
+        window.override_redirect = false;
+        if window.properties.role == clamshell_state::presentation::WindowRole::Normal {
+            window.properties.role = clamshell_state::presentation::WindowRole::Splash;
+        }
+    }
     pub(super) fn settle_menus(&mut self, wire: &mut Transport, server: &mut Server) -> io::Result<()> {
         server.sync_x11_popups();
         for id in server.x11.popup_dismiss.drain(..) {
@@ -44,10 +54,15 @@ impl Wm {
                 continue;
             }
             let owner = self.popup_owner(menu, focused, hovered);
-            // One that never had an owner (a splash, an overlay, or a menu mapped before its program's
-            // window has the focus) stays mapped, not shown, until it has one; one whose owner went away
-            // or lost the focus is dismissed as a menu is.
+            // One that never had an owner is a splash, or a game's own window, when its program has no
+            // managed window: it is managed from now on, as a splash (see `promote`). Otherwise (a menu
+            // mapped before its program's window has the focus) it stays mapped, not shown, until it has
+            // an owner. One whose owner went away or lost the focus is dismissed as a menu is.
             if owner.is_none() && menu.popup_parent.is_none() {
+                let alone = !self.windows.iter().any(|w| !w.override_redirect && w.wants_map && w.pid.is_some() && w.pid == menu.pid);
+                if alone {
+                    self.promote(index);
+                }
                 continue;
             }
             let parent = owner.and_then(|id| self.windows.iter().find(|w| w.id == id && w.opened));
