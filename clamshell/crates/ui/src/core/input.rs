@@ -34,6 +34,7 @@ impl Core {
                 list: None,
                 item: None,
                 pad: crate::toolkit::PadUse::Touch,
+                hold: clamshell_state::Hold::Long,
             })
         }) else {
             return;
@@ -175,8 +176,8 @@ impl Core {
     /// A or Enter on the focused target.
     fn press_focus(&mut self, source: Source) {
         match focus::press(&self.state, &self.screens, &self.focus_memory) {
-            Some(PadPress::Press(id)) => {
-                let actions = self.input.press(source, id, std::time::Instant::now());
+            Some(PadPress::Press(id, hold)) => {
+                let actions = self.input.press(source, id, hold, std::time::Instant::now());
                 self.run_actions(actions);
             }
             Some(PadPress::Focus(event)) => self.handle(event),

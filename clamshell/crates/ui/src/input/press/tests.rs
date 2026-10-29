@@ -13,7 +13,7 @@ fn blank() -> State {
 }
 
 fn target(id: Id, drag: Option<Drag>) -> Target {
-    Target { rect: Rect::new(0.0, 0.0, 100.0, 50.0), id, drag, list: None, item: None, pad: crate::toolkit::PadUse::Moves }
+    Target { rect: Rect::new(0.0, 0.0, 100.0, 50.0), id, drag, list: None, item: None, pad: crate::toolkit::PadUse::Moves, hold: Hold::Long }
 }
 
 fn tab() -> Target {
@@ -76,6 +76,7 @@ fn row(list: ListId, i: u16) -> Target {
         list: Some(InList { list, row_h: 50.0 }),
         item: None,
         pad: crate::toolkit::PadUse::Moves,
+        hold: Hold::Long,
     }
 }
 
@@ -182,7 +183,7 @@ fn library_view_settles_on_a_whole_row() {
 fn a_held_key_repeats() {
     let state = State::new(Init::default());
     let mut input = Input::default();
-    input.press(Source::PadA, key(), t0());
+    input.press(Source::PadA, key(), Hold::Repeat, t0());
     let held = input.timer(Source::PadA, Timer::Hold, &state, t0());
     assert_eq!(held, vec![Action::Emit(PointerEvent::Activate(key()).into()), Action::Arm(Source::PadA, Timer::Hold, REPEAT)]);
     assert_eq!(events(&input.up(Source::PadA, End::Release, &blank(), t0())), vec![PointerEvent::Up(key()).into()]);
@@ -258,7 +259,7 @@ fn a_level_row_follows_the_finger_and_the_release_focuses_it() {
 #[test]
 fn pad_a_is_released_when_the_pad_leaves_the_screens() {
     let mut input = Input::default();
-    input.press(Source::PadA, Id::Tab(Tab::Wifi), t0());
+    input.press(Source::PadA, Id::Tab(Tab::Wifi), Hold::Long, t0());
     assert!(input.pad_route(PadRoute::Ui, &blank()).is_empty());
     let released = input.pad_route(PadRoute::Game, &blank());
     assert_eq!(events(&released), vec![PointerEvent::Up(Id::Tab(Tab::Wifi)).into()]);

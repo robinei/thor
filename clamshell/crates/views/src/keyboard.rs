@@ -62,6 +62,8 @@ pub(super) fn draw(f: &mut Frame, body: Rect) {
     // The cell is also the tap area: a touch between labels goes to the nearer key.
     for (pos, slot, cell) in cells(body) {
         f.button(Id::Key(pos), cell, Look::KEY, |f| draw_key(f.c, kb, slot, cell));
+        // Keys repeat while held; modifiers are long-pressed.
+        f.hold(kb.hold(&Id::Key(pos)));
     }
 }
 

@@ -3,8 +3,8 @@
 //! do: events for the state, and timers to arm or disarm, which the caller runs on its event loop.
 //!
 //! A press is a tap until its hold timer fires. A tap acts on release, if the release is still on its
-//! target. Once the timer fires, the press is held: keys repeat, other targets get one long press, and the
-//! release only lifts it.
+//! target. Once the timer fires, the press is held: it repeats or gets one long press, as its target's
+//! hold says, and the release only lifts it.
 //!
 //! What a finger along a target sets is the target's drag ([`Drag`]). A finger on a target that slides a
 //! control may become a slide, by being held there briefly or moved sideways, or at once if the target
@@ -153,6 +153,8 @@ enum Gesture {
 #[derive(Debug, Clone, PartialEq)]
 struct Press {
     id: Id,
+    /// What holding it does, as its target said.
+    hold: Hold,
     /// Where the target is, for a finger or the mouse. It is `None` for the pad's A and Enter.
     rect: Option<Rect>,
     gesture: Gesture,
@@ -163,8 +165,9 @@ struct Press {
 }
 
 impl Press {
-    fn new(id: Id, rect: Option<Rect>, gesture: Gesture, at: (f32, f32), list: Option<InList>, now: Instant) -> Press {
-        Press { id, rect, gesture, down: at, at, list, trail: Trail::new(now, at.1) }
+    fn new(target: (Id, Hold), rect: Option<Rect>, gesture: Gesture, at: (f32, f32), list: Option<InList>, now: Instant) -> Press {
+        let (id, hold) = target;
+        Press { id, hold, rect, gesture, down: at, at, list, trail: Trail::new(now, at.1) }
     }
 
     /// Whether it is still on its target. The mouse must be exactly on it, and a finger within
@@ -205,12 +208,12 @@ impl Input {
         self.presses.iter().any(|(_, p)| matches!(p.gesture, Gesture::PendingSlide { .. } | Gesture::Sliding { .. }))
     }
 
-    /// The pad's A or Enter on the focused target, which is a plain press.
-    pub fn press(&mut self, source: Source, id: Id, now: Instant) -> Vec<Action> {
+    /// The pad's A or Enter on the focused target, which is a plain press; `hold` is the target's.
+    pub fn press(&mut self, source: Source, id: Id, hold: Hold, now: Instant) -> Vec<Action> {
         if self.pressed(source) {
             return vec![];
         }
-        self.presses.push((source, Press::new(id.clone(), None, Gesture::Tap, (0.0, 0.0), None, now)));
+        self.presses.push((source, Press::new((id.clone(), hold), None, Gesture::Tap, (0.0, 0.0), None, now)));
         vec![Action::Emit(PointerEvent::Down(id, None).into()), Action::Arm(source, Timer::Hold, LONG_PRESS)]
     }
 
@@ -230,7 +233,7 @@ impl Input {
             _ => (Gesture::Tap, false),
         };
         let id = target.id.clone();
-        self.presses.push((source, Press::new(id.clone(), Some(target.rect), gesture, (x, y), target.list, now)));
+        self.presses.push((source, Press::new((id.clone(), target.hold), Some(target.rect), gesture, (x, y), target.list, now)));
         actions.extend([Action::Emit(PointerEvent::HideFocus.into()), Action::Emit(PointerEvent::Down(id, target.item).into())]);
         match gesture {
             // A row with nothing to tap slides at once from where the finger came down. A touch without
@@ -257,7 +260,7 @@ impl Input {
         }
         let mut actions = self.stop_fling();
         actions.extend(self.idle.take().map(|s| Action::Disarm(s, Timer::Pointing)));
-        self.presses.push((source, Press::new(target.id.clone(), Some(target.rect), Gesture::Pointing, at, None, now)));
+        self.presses.push((source, Press::new((target.id.clone(), target.hold), Some(target.rect), Gesture::Pointing, at, None, now)));
         actions.push(Action::Point(source, ContactPhase::Down, at));
         actions
     }
@@ -336,8 +339,7 @@ impl Input {
         }
     }
 
-    /// The source's `timer` fired at `now`. A hold repeats targets such as keys (`state` says which) and
-    /// long-presses the rest. The slide timer starts the slide, and the fling timer steps a fling.
+    /// The source's `timer` fired at `now`. A hold repeats or long-presses, as the target's hold says. The slide timer starts the slide, and the fling timer steps a fling.
     pub fn timer(&mut self, source: Source, timer: Timer, state: &State, now: Instant) -> Vec<Action> {
         if timer == Timer::Fling {
             return self.fling_step(state, now);
@@ -365,7 +367,7 @@ impl Input {
         if press.gesture == Gesture::Tap {
             press.gesture = Gesture::Held;
         }
-        match state.keyboard().hold(&press.id) {
+        match press.hold {
             Hold::Repeat => {
                 actions.push(Action::Emit(PointerEvent::Activate(press.id.clone()).into()));
                 actions.push(Action::Arm(source, Timer::Hold, REPEAT));

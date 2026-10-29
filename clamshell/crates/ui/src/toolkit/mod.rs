@@ -13,7 +13,7 @@ pub mod widgets;
 
 use clamshell_state::levels::Level;
 use clamshell_state::levels::slider::Control;
-use clamshell_state::{Event, Id, ItemKey, ListId, PadInput, PointerEvent, State, Tab};
+use clamshell_state::{Event, Hold, Id, ItemKey, ListId, PadInput, PointerEvent, State, Tab};
 
 use crate::gfx::images::Images;
 use crate::gfx::{Canvas, Rect};
@@ -35,6 +35,8 @@ pub struct Target {
     pub item: Option<ItemKey>,
     /// How the pad reaches it.
     pub pad: PadUse,
+    /// What holding it does, by finger or the pad's A.
+    pub hold: Hold,
 }
 
 /// How the pad reaches a target.
@@ -230,7 +232,7 @@ impl<'f, 'c> Frame<'f, 'c> {
             self.ring(shown, look);
         }
         let item = self.s.lists().item_key(&id);
-        self.targets.push(Target { rect, id, drag: None, list: None, item, pad: PadUse::Moves });
+        self.targets.push(Target { rect, id, drag: None, list: None, item, pad: PadUse::Moves, hold: Hold::Long });
     }
 
     /// The focus ring of a button of `look` shown at `shown`.
@@ -271,6 +273,13 @@ impl<'f, 'c> Frame<'f, 'c> {
     pub fn drag(&mut self, drag: Drag) {
         if let Some(t) = self.targets.last_mut() {
             t.drag = Some(drag);
+        }
+    }
+
+    /// What holding the last target drawn does; a target is long-pressed unless it says otherwise.
+    pub fn hold(&mut self, hold: Hold) {
+        if let Some(t) = self.targets.last_mut() {
+            t.hold = hold;
         }
     }
 

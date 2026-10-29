@@ -6,7 +6,7 @@
 //! in the Library's list up and down step through the games. With anything else in front, it stays on the
 //! second screen.
 
-use clamshell_state::{Event, Id, LevelEvent, PadInput, PointerEvent, RowPart, State, Tab};
+use clamshell_state::{Event, Hold, Id, LevelEvent, PadInput, PointerEvent, RowPart, State, Tab};
 use xkeysym::Keysym;
 
 use crate::gfx::Rect;
@@ -65,12 +65,12 @@ fn pad_screen(s: &State, d: &impl Drawn) -> Screen {
 
 /// Whether the last frame drew `id` on `screen`, or on either screen if `screen` is `None`.
 pub fn drawn_on(d: &impl Drawn, screen: Option<Screen>, id: &Id) -> bool {
-    Screen::BOTH.into_iter().filter(|s| screen.is_none_or(|on| on == *s)).any(|s| d.targets(s).iter().any(|t| &t.id == id))
+    drawn_in(d, screen, id).is_some()
 }
 
-/// The target `id` as the last frame drew it, on either screen.
-fn drawn<'d>(d: &'d impl Drawn, id: &Id) -> Option<&'d Target> {
-    Screen::BOTH.into_iter().find_map(|s| d.targets(s).iter().find(|t| &t.id == id))
+/// The target `id` as the last frame drew it on `screen`, or on either screen if `screen` is `None`.
+fn drawn_in<'d>(d: &'d impl Drawn, screen: Option<Screen>, id: &Id) -> Option<&'d Target> {
+    Screen::BOTH.into_iter().filter(|s| screen.is_none_or(|on| on == *s)).find_map(|s| d.targets(s).iter().find(|t| &t.id == id))
 }
 
 /// The screen the focus is on. It is the top one when the focus isn't on anything drawn.
@@ -158,7 +158,7 @@ pub fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, dir: Di
     }
     // On a drawn target that sets a level, left and right step the level.
     if let (Some(focus), Dir::Left | Dir::Right) = (s.pointer().focus(), dir)
-        && let Some(Drag::Level(level, _)) = drawn(d, focus).and_then(|t| t.drag)
+        && let Some(Drag::Level(level, _)) = drawn_in(d, None, focus).and_then(|t| t.drag)
     {
         let step = if dir == Dir::Left { -1 } else { 1 };
         return Some(LevelEvent::Step(level, step).into());
@@ -191,14 +191,15 @@ pub fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, dir: Di
 /// pressed unseen.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PadPress {
-    Press(Id),
+    /// Presses the target, which holding does as it was drawn to.
+    Press(Id, Hold),
     Focus(Event),
 }
 
 pub fn press(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>) -> Option<PadPress> {
     let screen = (scope(s, d) == PadScope::BottomOnly).then_some(Screen::Bottom);
     match s.pointer().focus() {
-        Some(id) if drawn_on(d, screen, id) => Some(PadPress::Press(id.clone())),
+        Some(id) if let Some(t) = drawn_in(d, screen, id) => Some(PadPress::Press(id.clone(), t.hold)),
         _ if s.pad().on_top() => default_focus(d, Screen::Top).map(|id| PadPress::Focus(PointerEvent::Focus(id).into())),
         _ => Some(PadPress::Focus(focus_bottom(s, d, memory))),
     }
@@ -325,7 +326,7 @@ mod tests {
     }
 
     fn t(x: f32, y: f32, id: Id) -> Target {
-        Target { rect: Rect::new(x, y, 10.0, 10.0), id, drag: None, list: None, item: None, pad: PadUse::Moves }
+        Target { rect: Rect::new(x, y, 10.0, 10.0), id, drag: None, list: None, item: None, pad: PadUse::Moves, hold: Hold::Long }
     }
 
     /// `t`, a list's (see [`PadUse::List`]).
@@ -416,7 +417,7 @@ mod tests {
         assert_eq!(focus_bottom(&s, &d, &memory), PointerEvent::Focus(Id::Tab(s.bottom().tab())).into());
         // A drawn target is pressed.
         focus(&mut s, Id::Tab(Tab::Sysinfo));
-        assert_eq!(press(&s, &d, &memory), Some(PadPress::Press(Id::Tab(Tab::Sysinfo))));
+        assert_eq!(press(&s, &d, &memory), Some(PadPress::Press(Id::Tab(Tab::Sysinfo), Hold::Long)));
         // Moving from a lost focus starts at the first target.
         focus(&mut s, Id::Settings(SettingsId::Env));
         assert_eq!(navigate(&s, &d, &memory, Dir::Right), Some(PointerEvent::Focus(entry(&s, 0)).into()));

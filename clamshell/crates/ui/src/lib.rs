@@ -237,7 +237,7 @@ impl PadView {
     /// else where A brings it.
     pub fn start(&self, state: &State) -> Option<clamshell_state::Id> {
         match input::focus::press(state, self, &screens::Screens::default())? {
-            input::focus::PadPress::Press(id) => Some(id),
+            input::focus::PadPress::Press(id, _) => Some(id),
             input::focus::PadPress::Focus(Event::Pointer(clamshell_state::PointerEvent::Focus(id))) => Some(id),
             input::focus::PadPress::Focus(_) => None,
         }

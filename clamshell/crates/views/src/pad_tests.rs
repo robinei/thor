@@ -190,3 +190,26 @@ fn a_dock_tiles_move_takes_back_and_enter() {
     core.key(xkeysym::Keysym::Return, false);
     assert!(core.state().dock().moving().is_none(), "Enter: done");
 }
+
+/// A held on a drawn key repeats it, and on a modifier long-presses it, as the keyboard declares.
+#[test]
+fn a_held_on_a_key_repeats_and_on_a_modifier_long_presses() {
+    use clamshell_state::bottom::keyboard::{self, Key, Modifier};
+    use clamshell_ui::input::focus::{PadPress, press};
+    use clamshell_ui::input::{Action, Input, Source, Timer};
+    let mut s = state();
+    s.apply(PointerEvent::Activate(Id::Tab(Tab::Keyboard)).into(), &mut Vec::new());
+    for (key, repeats) in [(Key::Char('a'), true), (Key::Mod(Modifier::Shift), false)] {
+        let id = Id::Key(keyboard::find(key).expect("on the keyboard"));
+        focus(&mut s, id.clone());
+        let pressed = press(&s, &frames(&s), &Screens::default());
+        assert!(matches!(pressed, Some(PadPress::Press(..))), "{key:?}: {pressed:?}");
+        let Some(PadPress::Press(pressed, hold)) = pressed else { continue };
+        let mut input = Input::default();
+        let now = std::time::Instant::now();
+        input.press(Source::PadA, pressed, hold, now);
+        let held = input.timer(Source::PadA, Timer::Hold, &s, now);
+        let expected = if repeats { PointerEvent::Activate(id) } else { PointerEvent::LongPress(id) };
+        assert!(held.contains(&Action::Emit(expected.into())), "{key:?}: {held:?}");
+    }
+}

@@ -52,7 +52,15 @@ impl Scrolled {
         let offset = f.s.lists().scroll(list).offset();
         let first_target = f.targets.len();
         if area.h > 0.0 && area.w > 0.0 {
-            f.targets.push(super::Target { rect: area, id: Id::List(list), drag: None, list: None, item: None, pad: super::PadUse::Touch });
+            f.targets.push(super::Target {
+                rect: area,
+                id: Id::List(list),
+                drag: None,
+                list: None,
+                item: None,
+                pad: super::PadUse::Touch,
+                hold: clamshell_state::Hold::Long,
+            });
         }
         // Clip a little beyond the area, so the focus ring around a row that fits in it isn't cut.
         f.c.clip(Some(area.inset(-RING_ROOM)));
