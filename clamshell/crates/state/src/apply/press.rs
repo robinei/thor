@@ -146,7 +146,7 @@ impl State {
                 }
             }
             Id::Time(id) => self.sys.on_time(id, self.scrolls.get_mut(ListId::Time), out),
-            Id::Device(crate::DeviceId::Close) => self.close_device(),
+            Id::Device(crate::DeviceId::Close) => self.close_app(clamshell_library::BuiltinApp::Device),
             // The Library comes in front, in its edit mode.
             Id::Device(crate::DeviceId::EditLibrary) => {
                 self.library_view.start_edit();

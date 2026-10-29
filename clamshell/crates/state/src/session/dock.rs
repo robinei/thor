@@ -158,7 +158,10 @@ impl Dock {
         // a running entry goes.
         for b in BuiltinApp::ALL.into_iter().filter(|b| session.runs_builtin(*b)) {
             if self.position(b.id()).is_none() {
-                let (at, pinned) = if b == BuiltinApp::Library { (0, true) } else { (self.items.len(), false) };
+                let (at, pinned) = match crate::builtin_apps::definition(b).dock {
+                    crate::builtin_apps::DockPlace::PinnedFirst => (0, true),
+                    crate::builtin_apps::DockPlace::WhileRunning => (self.items.len(), false),
+                };
                 self.items.insert(at, DockItem { id: b.id().into(), pinned });
                 added = true;
             }
@@ -242,8 +245,8 @@ impl Dock {
     /// Pins `entry` to the dock, at the end if it isn't there, or unpins it, which removes it unless it
     /// runs. The pins are saved.
     pub(crate) fn toggle_pin(&mut self, entry: Arc<str>, session: &Session, out: &mut Out) {
-        // The Library stays pinned.
-        if &*entry == BuiltinApp::Library.id() {
+        // An app pinned first stays pinned.
+        if crate::builtin_apps::always_pinned(&entry) {
             return;
         }
         match self.position(&entry).and_then(|i| self.items.get_mut(i)) {

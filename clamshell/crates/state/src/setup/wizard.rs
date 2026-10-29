@@ -200,7 +200,7 @@ mod tests {
         s.applied(Event::Reading(Reading::Account(Account::Failed("no polkit agent".into()))));
         tap(&mut s, SetupId::Next);
         assert_eq!(s.setup().wizard(), Some(Step::Password), "not passable");
-        assert!(s.setup().holds_programs() && s.setup().reads_account(false));
+        assert!(s.setup().holds_programs() && s.setup().reads_account());
         // A later start: nothing shows while it is read, but programs wait for it.
         let mut s = State::new(Init { account: Account::Unread, ..init() });
         s.applied(Event::Start);

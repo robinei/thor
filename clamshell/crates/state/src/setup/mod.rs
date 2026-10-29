@@ -87,10 +87,11 @@ impl Setup {
         Setup { calibrations, first_start, account, ..Setup::default() }
     }
 
-    /// Whether the account is read: at start, so that one without a password brings Setup back (see
-    /// [`wizard`]), again until it reads, and while the Device view runs (`device_open`) or Setup shows.
-    pub fn reads_account(&self, device_open: bool) -> bool {
-        matches!(self.account, Account::Unread | Account::Failed(_)) || device_open || self.wizard().is_some()
+    /// Whether the account is read for itself: at start, so that one without a password brings Setup back
+    /// (see [`wizard`]), again until it reads, and while Setup shows. The Device view has it read while it
+    /// runs, as its definition says (see [`crate::builtin_apps`]).
+    pub fn reads_account(&self) -> bool {
+        matches!(self.account, Account::Unread | Account::Failed(_)) || self.wizard().is_some()
     }
 
     /// Whether the user's programs are held: launches and autostart wait (see
@@ -145,7 +146,7 @@ impl Setup {
     }
 
     /// A tap on one of the Device view's targets at `now` (monotonic seconds). A tab to open is queued as an
-    /// event, since State changes tabs. Close is the session's ([`crate::Session::close_device`]).
+    /// event, since State changes tabs. Close is the session's ([`crate::Session::close_app`]).
     pub(crate) fn tap(&mut self, id: DeviceId, now: u64, out: &mut Out) {
         let (available, password, ssh) = (self.account.available(), self.account.password(), self.account.ssh());
         match id {

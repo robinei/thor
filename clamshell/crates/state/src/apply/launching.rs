@@ -21,10 +21,10 @@ impl State {
             EntryAct::Suspend => self.session.suspend(&id, self.clock.mono(), out),
             EntryAct::ToggleAutostart => self.session.toggle_autostart(id, out),
             EntryAct::TogglePin => self.dock.toggle_pin(id, &self.session, out),
-            // A built-in isn't a process: Quit closes the Device view, and the Library always runs.
-            EntryAct::Quit | EntryAct::ForceKill if BuiltinApp::of(&id).is_some() => {
-                if BuiltinApp::of(&id) == Some(BuiltinApp::Device) {
-                    self.close_device();
+            // A built-in isn't a process: Quit closes one that runs while open; one that always runs stays.
+            EntryAct::Quit | EntryAct::ForceKill if let Some(app) = BuiltinApp::of(&id) => {
+                if crate::builtin_apps::definition(app).runs == crate::builtin_apps::Runs::WhileOpen {
+                    self.close_app(app);
                 }
             }
             EntryAct::Quit => self.session.quit(&id, self.clock.mono(), self.library_view.library(), out),
@@ -78,9 +78,9 @@ impl State {
         self.session.command(WindowCommand::Show(b));
     }
 
-    /// Closes the Device view: the Library shows in its place if it showed.
-    pub(crate) fn close_device(&mut self) {
-        self.session.close_device();
+    /// Closes `app`, which runs while open: the home shows in its place if it showed.
+    pub(crate) fn close_app(&mut self, app: BuiltinApp) {
+        self.session.close_app(app);
     }
 
     /// The dock menu's Open another: launches `id` again, if that is offered (see [`State::opens_another`]).

@@ -113,8 +113,8 @@ impl LibraryView {
         }
         if selected && entry.browsed.is_none() {
             actions.push(Action::Favourite);
-            // The Library is always on the dock (see `crate::session::dock`).
-            if &*entry.id != clamshell_library::BuiltinApp::Library.id() {
+            // An app always pinned can't be unpinned (see `crate::builtin_apps`).
+            if !crate::builtin_apps::always_pinned(&entry.id) {
                 actions.push(Action::Pin);
             }
         }

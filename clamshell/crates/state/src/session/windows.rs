@@ -72,7 +72,9 @@ impl Session {
                 self.keys = super::Keys::Top;
                 self.top = None;
                 self.builtin = *b;
-                self.device_open |= *b == clamshell_library::BuiltinApp::Device;
+                if let Some(open) = self.open.get_mut(b.index()) {
+                    *open = true;
+                }
                 self.remember_in_front(super::InFront::Builtin(*b));
             }
             WindowCommand::Down(id) => {

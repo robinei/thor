@@ -976,7 +976,10 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         ensure!(sent.route == Some(s.pad().route()), "2: route sent {:?}, state {:?}", sent.route, s.pad().route());
         let in_force = s.keymapping().in_force(s.in_force().get(Setting::Keymap));
         ensure!(sent.keymap.as_ref() == Some(&in_force), "2: keymap sent {:?}, in force {}", sent.keymap.as_ref().map(|k| k.id), in_force.id);
-        let reads = s.setup().reads_account(s.session().runs_builtin(clamshell_library::BuiltinApp::Device));
+        let by_app = clamshell_library::BuiltinApp::ALL
+            .into_iter()
+            .any(|app| s.session().runs_builtin(app) && crate::builtin_apps::definition(app).watches.contains(&crate::Watch::Account));
+        let reads = s.setup().reads_account() || by_app;
         ensure!(sent.account == reads, "2: account watched {}, read {reads}", sent.account);
     }
     let screens_on = s.idle().stage() < Stage::Off;

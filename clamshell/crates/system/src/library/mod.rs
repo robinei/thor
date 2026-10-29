@@ -665,9 +665,8 @@ impl Builder<'_> {
 
 /// The entry of one of ClamShell's own screens.
 fn builtin_entry(builtin: clamshell_library::BuiltinApp) -> Entry {
-    let (title, summary) = clamshell_library::BUILTINS.iter().find(|(b, ..)| *b == builtin).map_or(("", ""), |(_, t, s)| (*t, *s));
-    let details = Details { summary: summary.into(), ..Details::default() };
-    Entry { launch: Launch::Builtin(builtin), app: true, details, ..Entry::new(builtin.id(), title) }
+    let details = Details { summary: builtin.about().into(), ..Details::default() };
+    Entry { launch: Launch::Builtin(builtin), app: true, details, ..Entry::new(builtin.id(), builtin.title()) }
 }
 
 /// The first of `rules` matching an entry with this id, name and categories.

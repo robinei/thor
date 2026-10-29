@@ -123,9 +123,9 @@ pub struct Session {
     recent: Vec<InFront>,
     /// The built-in shown while no window is in front (see [`Session::shown_builtin`]).
     builtin: BuiltinApp,
-    /// The Device view runs: shown, or on the dock behind what is in front, until it is closed. The
-    /// Library always runs.
-    device_open: bool,
+    /// The apps that run while open (see [`crate::builtin_apps::Runs`]) that are: shown, or on the dock
+    /// behind what is in front, until closed. By [`BuiltinApp::index`].
+    open: [bool; BuiltinApp::ALL.len()],
     /// The selected stack of each top group, by its root, retained while the group is hidden.
     selected: Vec<(Group, i64)>,
     /// The launch to show when its first window appears. Until then, other programs' new windows open
@@ -158,6 +158,11 @@ pub struct Session {
     autostarted: bool,
     /// ClamShell is the device's own session (see [`crate::Init::device_session`]).
     device_session: bool,
+}
+
+/// Whether built-in `b` runs, with `open` the apps open (see [`Session::runs_builtin`]).
+fn runs(open: &[bool; BuiltinApp::ALL.len()], b: BuiltinApp) -> bool {
+    crate::builtin_apps::definition(b).runs == crate::builtin_apps::Runs::Always || open.get(b.index()).copied().unwrap_or(false)
 }
 
 /// An entry by its id, in `library` or else among the `running` (see [`Session::entry`]).
@@ -467,9 +472,9 @@ impl Session {
         self.top_window().is_none().then_some(self.builtin)
     }
 
-    /// Whether built-in `b` runs: the Library always, the Device view while it is open.
+    /// Whether built-in `b` runs: always, or while it is open, as its definition says.
     pub fn runs_builtin(&self, b: BuiltinApp) -> bool {
-        b == BuiltinApp::Library || self.device_open
+        runs(&self.open, b)
     }
 
     /// Whether entry `id` runs: a launch or a program found, or a built-in.
@@ -477,12 +482,14 @@ impl Session {
         self.running(id).is_some() || BuiltinApp::of(id).is_some_and(|b| self.runs_builtin(b))
     }
 
-    /// Closes the Device view. If it showed, the Library shows in its place.
-    pub(crate) fn close_device(&mut self) {
-        self.device_open = false;
-        self.recent.retain(|was| *was != InFront::Builtin(BuiltinApp::Device));
-        if self.builtin == BuiltinApp::Device {
-            self.builtin = BuiltinApp::Library;
+    /// Closes `app`, which runs while open. If it showed, the home shows in its place.
+    pub(crate) fn close_app(&mut self, app: BuiltinApp) {
+        if let Some(open) = self.open.get_mut(app.index()) {
+            *open = false;
+        }
+        self.recent.retain(|was| *was != InFront::Builtin(app));
+        if self.builtin == app {
+            self.builtin = crate::builtin_apps::home();
         }
     }
 
@@ -685,9 +692,9 @@ impl Session {
             }
         }
         let present = |group: &Group| self.windows.iter().any(|w| w.group.as_ref() == Some(group));
-        let device_open = self.device_open;
+        let open = self.open;
         self.recent.retain(|was| match was {
-            InFront::Builtin(b) => *b == BuiltinApp::Library || device_open,
+            InFront::Builtin(b) => runs(&open, *b),
             InFront::Group(group) => present(group),
         });
         if let Some(group) = self.top_window().and_then(|w| w.group.clone()).filter(|g| !self.promoted(g)) {

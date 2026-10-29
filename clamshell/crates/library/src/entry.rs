@@ -24,8 +24,9 @@ pub enum Launch {
     Builtin(BuiltinApp),
 }
 
-/// ClamShell's own screens on the main screen, entries like any other: placed in the library, pinned
-/// and on the dock while they run (see clamshell-state's session).
+/// ClamShell's own apps on the main screen, entries like any other: placed in the library, and on the
+/// dock while they run. This is who each is, as an entry; what each does is its definition in
+/// clamshell-state (`builtin_apps`), and how it looks its view in clamshell-ui.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum BuiltinApp {
     /// What the device has, browsed. It always runs.
@@ -49,6 +50,29 @@ impl BuiltinApp {
     /// The built-in whose entry is `id`, if one is.
     pub fn of(id: &str) -> Option<BuiltinApp> {
         BuiltinApp::ALL.into_iter().find(|b| b.id() == id)
+    }
+
+    /// Its place in [`BuiltinApp::ALL`].
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
+    /// Its entry's title.
+    pub fn title(self) -> &'static str {
+        match self {
+            BuiltinApp::Library => "Library",
+            BuiltinApp::Device => "Device",
+        }
+    }
+
+    /// What it is for, as its entry's summary.
+    pub fn about(self) -> &'static str {
+        match self {
+            BuiltinApp::Library => "What the device has: games, films, files and apps.",
+            BuiltinApp::Device => {
+                "Calibrates the controller's sticks and gyro and the top screen's refresh rate; sets the password and remote login; Wi-Fi and the time zone."
+            }
+        }
     }
 }
 

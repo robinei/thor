@@ -6,7 +6,6 @@ use crate::out::Out;
 use crate::session::InFront;
 use crate::session::windows::{Group, WindowCommand};
 use crate::{Effect, EntryAct, Event, LaunchUnit, Session};
-use clamshell_library::BuiltinApp;
 
 /// How long a program whose window in front closed, still running, is waited for to show another (see
 /// [`Session::follow_front`]): Steam replacing its update dialog with its window takes a while.
@@ -45,7 +44,7 @@ impl Session {
         match back.cloned() {
             Some(InFront::Group(group)) => self.focus(&group),
             Some(InFront::Builtin(b)) => self.command(WindowCommand::Show(b)),
-            None => self.command(WindowCommand::Show(BuiltinApp::Library)),
+            None => self.command(WindowCommand::Show(crate::builtin_apps::home())),
         }
     }
 
@@ -58,11 +57,12 @@ impl Session {
         unit.or_else(|| running.outside().then(|| LaunchUnit { key: key.to_owned(), secs: running.start, n: 0 }))
     }
 
-    /// The Home button always goes to the Library.
+    /// The Home button always goes to the home app (see [`crate::builtin_apps::home`]).
     pub(crate) fn home(&mut self) {
         self.cancel_front_launch();
-        if self.shown_builtin() != Some(BuiltinApp::Library) {
-            self.command(WindowCommand::Show(BuiltinApp::Library));
+        let home = crate::builtin_apps::home();
+        if self.shown_builtin() != Some(home) {
+            self.command(WindowCommand::Show(home));
         }
     }
 

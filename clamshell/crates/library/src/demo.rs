@@ -76,12 +76,12 @@ pub fn library() -> Library {
     }
     // ClamShell's own screens, as a library.json with a Tools place would have them.
     let tools = games.len();
-    for (builtin, title, summary) in crate::BUILTINS {
+    for builtin in crate::BuiltinApp::ALL {
         games.push(Entry {
             launch: Launch::Builtin(builtin),
             app: true,
-            details: Details { summary: summary.into(), ..Details::default() },
-            ..Entry::new(builtin.id(), title)
+            details: Details { summary: builtin.about().into(), ..Details::default() },
+            ..Entry::new(builtin.id(), builtin.title())
         });
     }
     // A Files tab: Home, listed, with two folders and three files, one a program.

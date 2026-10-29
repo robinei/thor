@@ -49,8 +49,11 @@ pub(crate) struct Wanted<'a> {
     pub(crate) tab: Option<Watch>,
     /// The UI is up (see [`crate::Event::Start`]).
     pub(crate) ui_up: bool,
-    /// The Device view is open.
-    pub(crate) setup_open: bool,
+    /// The account is to be read for itself (see [`crate::setup::Setup::reads_account`]).
+    pub(crate) account: bool,
+    /// The built-in apps that run, by [`clamshell_library::BuiltinApp::index`]; what they watch is read
+    /// while they do (see [`crate::builtin_apps`]).
+    pub(crate) apps: [bool; clamshell_library::BuiltinApp::ALL.len()],
     /// The keymap in force (see [`Keymapping::version_of`]), and the keymaps it is taken from.
     pub(crate) keymap: (u16, u64),
     pub(crate) keymapping: &'a Keymapping,
@@ -288,15 +291,21 @@ impl Sent {
         }
     }
 
-    /// The bar's status is watched while the screens are on, the account while the Device view is open
-    /// and the UI is up, and the open tab's watch while the tab can be seen and the UI is up.
+    /// The bar's status is watched while the screens are on; the account while it is to be read for itself
+    /// or an app that runs reads it, with the UI up; the open tab's watch while the tab can be seen and the
+    /// UI is up; and what a running app watches (see [`crate::builtin_apps`]) while the UI is up.
     fn watches(&mut self, w: &Wanted, out: &mut Out) {
         let screens_off = w.stage >= Stage::Off;
         let seen = w.ui_up && w.bottom_seen && !screens_off;
+        let by_app = |watch: Watch| {
+            clamshell_library::BuiltinApp::ALL
+                .into_iter()
+                .any(|app| w.apps.get(app.index()).copied().unwrap_or(false) && crate::builtin_apps::definition(app).watches.contains(&watch))
+        };
         let wanted = |watch: Watch| match watch {
             Watch::Status => !screens_off,
-            Watch::Account => w.ui_up && w.setup_open,
-            tab => seen && w.tab == Some(tab),
+            Watch::Account => w.ui_up && (w.account || by_app(watch)),
+            tab => (seen && w.tab == Some(tab)) || (w.ui_up && by_app(tab)),
         };
         // The bar's status and the account first, then the tab's: the one left off before the one opened on.
         let order = [Watch::Status, Watch::Account].into_iter().map(|watch| (watch, None));

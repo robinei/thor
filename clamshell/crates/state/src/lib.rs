@@ -50,6 +50,7 @@
 
 mod apply;
 pub mod bottom;
+pub mod builtin_apps;
 mod clock;
 pub mod colour;
 pub mod curve;
@@ -608,8 +609,8 @@ impl State {
         self.session.follow_replacement(self.clock.mono());
         self.session.follow_front(self.clock.mono());
         // Setup is drawn in the Library's place: while it shows, the Library is in front, over any window.
-        if self.setup.wizard().is_some() && self.session.shown_builtin() != Some(clamshell_library::BuiltinApp::Library) {
-            self.show_builtin(clamshell_library::BuiltinApp::Library);
+        if self.setup.wizard().is_some() && self.session.shown_builtin() != Some(builtin_apps::home()) {
+            self.show_builtin(builtin_apps::home());
         }
         // Order: once the front is settled (a launch's window, a closed window's replacement), which an
         // app's pick is shown over or set aside for; before the overview, which follows what is in front, so
@@ -692,7 +693,8 @@ impl State {
             bottom_on: !bottom_off && !self.setup.calibrating(),
             bottom_seen: !self.bottom.shows_windows(&self.session) && !bottom_off && !self.bottom_dark(),
             tab,
-            setup_open: self.setup.reads_account(self.session.runs_builtin(clamshell_library::BuiltinApp::Device)),
+            account: self.setup.reads_account(),
+            apps: clamshell_library::BuiltinApp::ALL.map(|app| self.session.runs_builtin(app)),
             ui_up: self.ui_up,
             keymap: self.keymapping.version_of(settings.get(Setting::Keymap)),
             keymapping: &self.keymapping,

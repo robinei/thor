@@ -136,12 +136,13 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
     let title = s.entry(entry).map_or("", |g| g.title.as_str());
     let running = s.session().runs(entry);
     let pinned = s.dock().items().iter().any(|i| i.id == *entry && i.pinned);
-    // A built-in isn't a process: it isn't started with ClamShell or killed, the Device view's Quit
-    // closes it, and the Library stays pinned and running.
+    // A built-in isn't a process: it isn't started with ClamShell or killed. One that runs while open
+    // closes; one that always runs stays, and one always pinned stays pinned (see the state's
+    // `builtin_apps`).
     let builtin = clamshell_state::BuiltinApp::of(entry);
-    let library = builtin == Some(clamshell_state::BuiltinApp::Library);
+    let closes = builtin.is_some_and(|app| clamshell_state::builtin_apps::definition(app).runs == clamshell_state::builtin_apps::Runs::WhileOpen);
     // A tile for a tray icon alone isn't a library entry, so it can't be pinned.
-    let pinnable = s.library_view().library().has(entry) && !library;
+    let pinnable = s.library_view().library().has(entry) && !clamshell_state::builtin_apps::always_pinned(entry);
     let item = |id, label, tone| Some((Id::Dock(id), label, tone));
     // An array with `None` for the items that don't apply, so that drawing it every frame doesn't allocate.
     let items = [
@@ -162,7 +163,7 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
         } else {
             None
         },
-        if running && !library { item(DockId::Quit, if builtin.is_some() { "Close" } else { "Quit" }, Tone::Accent) } else { None },
+        if running && (builtin.is_none() || closes) { item(DockId::Quit, if closes { "Close" } else { "Quit" }, Tone::Accent) } else { None },
         if running && builtin.is_none() { item(DockId::ForceKill, "Force kill", Tone::Accent) } else { None },
     ];
     let mut area = widgets::header(f, Some(Id::Dock(DockId::Back)), title, false, HeaderRight::None);
