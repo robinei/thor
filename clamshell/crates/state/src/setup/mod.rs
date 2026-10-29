@@ -290,6 +290,19 @@ mod tests {
         assert!(!on_dock(&s), "closed");
     }
 
+    /// The Device view is on the main screen: the pad's focus on it isn't using the second screen, which
+    /// stays dimmed.
+    #[test]
+    fn the_focus_on_the_device_view_leaves_the_second_screen_dimmed() {
+        let mut s = state();
+        s.applied(Event::tick(1000));
+        launch_now(&mut s, "builtin:device");
+        s.applied(Event::tick(1061));
+        assert!(s.bottom_dimmed());
+        s.applied(Event::Pointer(crate::PointerEvent::Focus(Id::Device(DeviceId::Zone))));
+        assert!(s.bottom_dimmed());
+    }
+
     /// The Wi-Fi and time zone rows open their tabs below, whose readings are then watched.
     #[test]
     fn the_wifi_and_zone_rows_open_their_tabs() {

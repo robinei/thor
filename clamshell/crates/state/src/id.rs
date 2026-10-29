@@ -257,9 +257,10 @@ pub enum AudioId {
 }
 
 impl Id {
-    /// Whether this target is on the main screen. The Library's are; everything else is on the second screen.
-    pub(crate) fn on_top(&self) -> bool {
-        matches!(self, Id::LibraryView(_))
+    /// Whether this target is on the main screen: the built-in apps' and the main screen's overlay's;
+    /// everything else is on the second screen.
+    pub fn on_top(&self) -> bool {
+        matches!(self, Id::LibraryView(_) | Id::Device(_) | Id::Setup(_) | Id::WindowArrow { .. } | Id::OverviewWindow(_))
     }
 }
 
