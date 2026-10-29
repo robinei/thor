@@ -40,14 +40,17 @@ impl Kind {
         }
     }
 
-    /// The kind whose setting `setting` is (the keymap's or the curve's).
-    pub(crate) fn of(setting: Setting) -> Kind {
-        if setting == Setting::Curve { Kind::Curve } else { Kind::Keymap }
+    /// Every kind.
+    pub const ALL: [Kind; 2] = [Kind::Keymap, Kind::Curve];
+
+    /// The kind whose setting `setting` is (the keymap's or the curve's), if it is one's.
+    pub(crate) fn of(setting: Setting) -> Option<Kind> {
+        Kind::ALL.into_iter().find(|k| k.setting() == setting)
     }
 
-    /// The kind whose picker's list `list` is.
-    pub(crate) fn of_list(list: ListId) -> Kind {
-        if list == ListId::Curves { Kind::Curve } else { Kind::Keymap }
+    /// The kind whose picker's list `list` is, if it is one's.
+    pub(crate) fn of_list(list: ListId) -> Option<Kind> {
+        Kind::ALL.into_iter().find(|k| k.list() == list)
     }
 
     /// The picker's list.

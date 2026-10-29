@@ -14,7 +14,7 @@ impl State {
             SettingsId::Tile(Setting::Keymap) if long => self.keymapping.open_picker(),
             SettingsId::Tile(Setting::Curve) if long => self.curving.open_picker(),
             SettingsId::Tile(setting) if long => self.prefs.open_menu(setting),
-            SettingsId::Tile(setting @ (Setting::Keymap | Setting::Curve)) => self.next_profile(ProfileKind::of(setting), out),
+            SettingsId::Tile(setting) if let Some(kind) = ProfileKind::of(setting) => self.next_profile(kind, out),
             SettingsId::Tile(setting) => {
                 let (len, now) = (self.menu_values_len(setting), self.panel().tile_value(setting));
                 let at = (0..len).find(|i| self.menu_value(setting, *i) == Some(now));

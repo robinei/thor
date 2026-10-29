@@ -165,9 +165,11 @@ impl State {
             ListId::Bluetooth => self.radios.tap_device(i, long, out),
             ListId::Streams => self.levels.on_stream(i, part, out),
             // A picker's Reset row is the settings': the level edited goes back to the one below's choice.
-            ListId::Keymaps | ListId::Curves if self.panel().is_profile_reset(ProfileKind::of_list(list), i) => {
+            list if let Some(kind) = ProfileKind::of_list(list)
+                && self.panel().is_profile_reset(kind, i) =>
+            {
                 if !long {
-                    self.change(ProfileKind::of_list(list).setting(), None, out);
+                    self.change(kind.setting(), None, out);
                 }
             }
             ListId::Keymaps => self.on_keymap_row(i, part, long, out),
