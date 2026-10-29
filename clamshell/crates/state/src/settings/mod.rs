@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::sync::Arc;
 
+use crate::device_view::controllers::Player;
 use crate::kit::names::names;
 use env::parse_env;
 
@@ -57,9 +58,17 @@ pub enum Setting {
     Fan,
     /// The pad mouse at launch: 0 off, 1 on.
     PadMouse,
-    /// The keymap by its id (see [`crate::keymap`]). 0 is Default, with no remapping. It is chosen in
-    /// the keymap picker. Any id is kept, and one whose keymap is gone counts as Default.
+    /// Player 1's keymap by its id (see [`crate::keymap`]). 0 is Default, with no remapping. It is chosen
+    /// in the keymap picker. Any id is kept, and one whose keymap is gone counts as Default.
     Keymap,
+    /// Players 2 to 8's keymaps, as player 1's (see [`crate::device_view::controllers`]).
+    Keymap2,
+    Keymap3,
+    Keymap4,
+    Keymap5,
+    Keymap6,
+    Keymap7,
+    Keymap8,
     /// Rumble strength, from 0 (off) up to 3 (full).
     Rumble,
     /// The CPU's frequency cap as a percent of its range. 0 uses the power profile's.
@@ -317,7 +326,7 @@ choices!(
     }
 );
 
-pub const COUNT: usize = 23;
+pub const COUNT: usize = 30;
 
 /// What a value does, for the tile's colour. It is the stock value and does nothing, or it saves power
 /// or eases the load, costs power, or changes how the game looks or plays.
@@ -348,6 +357,13 @@ names!(Setting {
     Fan: "fan";
     PadMouse: "padmouse";
     Keymap: "keymap";
+    Keymap2: "keymap2";
+    Keymap3: "keymap3";
+    Keymap4: "keymap4";
+    Keymap5: "keymap5";
+    Keymap6: "keymap6";
+    Keymap7: "keymap7";
+    Keymap8: "keymap8";
     Rumble: "rumble";
     CpuMax: "cpumax";
     GpuMax: "gpumax";
@@ -364,9 +380,35 @@ impl Setting {
         self as usize
     }
 
+    /// The players' keymap settings, player 1's first (see [`crate::device_view::controllers`]).
+    pub const KEYMAPS: [Setting; Player::MOST] =
+        [Setting::Keymap, Setting::Keymap2, Setting::Keymap3, Setting::Keymap4, Setting::Keymap5, Setting::Keymap6, Setting::Keymap7, Setting::Keymap8];
+
+    /// Player `player`'s keymap setting.
+    pub fn keymap(player: Player) -> Setting {
+        Setting::KEYMAPS.get(player.index()).copied().unwrap_or(Setting::Keymap)
+    }
+
+    /// The player whose keymap this setting is, if it is a keymap's.
+    pub fn keymap_player(self) -> Option<Player> {
+        Setting::KEYMAPS.iter().position(|&s| s == self).and_then(|i| Player::ALL.get(i).copied())
+    }
+
+    /// Whether the setting is a player's keymap.
+    pub fn is_keymap(self) -> bool {
+        self.keymap_player().is_some()
+    }
+
+    /// The settings that hold the same kind of profile as this one: every player's keymap for a keymap,
+    /// else itself. A profile's users are counted, and a deleted one forgotten, in all of them.
+    fn same_kind(self) -> impl Iterator<Item = Setting> {
+        let keymaps = if self.is_keymap() { &Setting::KEYMAPS[..] } else { &[] };
+        keymaps.iter().copied().chain((!self.is_keymap()).then_some(self))
+    }
+
     /// Whether the setting takes `value`. It must be one of its choices, or any keymap id for the keymap.
     pub fn accepts(self, value: u16) -> bool {
-        matches!(self, Setting::Keymap | Setting::Curve) || (self == Setting::Refresh && value <= 1000) || self.choices().contains(&value)
+        self.is_keymap() || self == Setting::Curve || (self == Setting::Refresh && value <= 1000) || self.choices().contains(&value)
     }
 
     /// The setting's values as a [`Choice`]'s table, if they are named choices.
@@ -384,9 +426,15 @@ impl Setting {
             Setting::PadMouse => Some(&MouseAtLaunch::TABLE),
             Setting::Rumble => Some(&RumbleStrength::TABLE),
             Setting::Background => Some(&InBackground::TABLE),
-            Setting::FpsCap | Setting::Refresh | Setting::Keymap | Setting::Curve | Setting::HdrPeak | Setting::CpuMax | Setting::GpuMax | Setting::Sharpen => {
-                None
-            }
+            Setting::FpsCap | Setting::Refresh | Setting::Curve | Setting::HdrPeak | Setting::CpuMax | Setting::GpuMax | Setting::Sharpen => None,
+            Setting::Keymap
+            | Setting::Keymap2
+            | Setting::Keymap3
+            | Setting::Keymap4
+            | Setting::Keymap5
+            | Setting::Keymap6
+            | Setting::Keymap7
+            | Setting::Keymap8 => None,
             Setting::ChargeLimit | Setting::ScreenOff | Setting::Sleep => None,
         }
     }
@@ -400,7 +448,8 @@ impl Setting {
             Setting::FpsCap => &[0, 30, 40, 45, 60, 90, 120],
             Setting::Refresh => &[0],
             // The other values are the existing keymaps and curves.
-            Setting::Keymap | Setting::Curve => &[0],
+            s if s.is_keymap() => &[0],
+            Setting::Curve => &[0],
             Setting::CpuMax | Setting::GpuMax => &[0, 40, 50, 60, 70, 80, 90, 100],
             Setting::Sharpen => &[0, 25, 50, 75, 100],
             Setting::HdrPeak => &[0, 400, 600, 800, 1000, 1500, 2000, 4000],
@@ -454,6 +503,13 @@ impl Setting {
             Setting::Fan => "Fan",
             Setting::PadMouse => "Pad mouse",
             Setting::Keymap => "Keymap",
+            Setting::Keymap2 => "Keymap 2",
+            Setting::Keymap3 => "Keymap 3",
+            Setting::Keymap4 => "Keymap 4",
+            Setting::Keymap5 => "Keymap 5",
+            Setting::Keymap6 => "Keymap 6",
+            Setting::Keymap7 => "Keymap 7",
+            Setting::Keymap8 => "Keymap 8",
             Setting::Rumble => "Rumble",
             Setting::CpuMax => "CPU limit",
             Setting::GpuMax => "GPU limit",
@@ -476,7 +532,8 @@ impl Setting {
             (Setting::Refresh, 120) | (Setting::CpuMax | Setting::GpuMax, 100) => Impact::Costs,
             // Never, or later than the default, costs power. Sooner saves it.
             (Setting::ScreenOff | Setting::Sleep, v) if v == 0 || v > self.default_value() => Impact::Costs,
-            (Setting::Keymap | Setting::Curve | Setting::HdrPeak | Setting::Sharpen, _) => Impact::Changes,
+            (s, _) if s.is_keymap() => Impact::Changes,
+            (Setting::Curve | Setting::HdrPeak | Setting::Sharpen, _) => Impact::Changes,
             _ => Impact::Saves,
         }
     }
@@ -497,9 +554,9 @@ impl Setting {
         let text = match (self, value) {
             (Setting::FpsCap, 0) => "No cap",
             (Setting::Refresh, 0) => "Hz as is",
-            (Setting::Keymap, 0) => "Default",
+            (s, 0) if s.is_keymap() => "Default",
             // The tile shows the keymap's name.
-            (Setting::Keymap, v) => return number(buf, "Keymap ", v, ""),
+            (s, v) if s.is_keymap() => return number(buf, "Keymap ", v, ""),
             (Setting::Curve, 0) => "Off",
             (Setting::HdrPeak, 0) => "As declared",
             // The tile shows the curve's name.
@@ -678,11 +735,11 @@ impl Settings {
         self.overrides.contains_key(entry) || self.env.contains_key(entry)
     }
 
-    /// Who uses profile `id` of the kind `setting` holds (a keymap): all games, if it is the global
-    /// choice, and the games that chose it.
+    /// Who uses profile `id` of the kind `setting` holds (a keymap, for any player): all games, if it is
+    /// a global choice, and the games that chose it.
     pub fn users(&self, setting: Setting, id: u16) -> crate::profiles::picker::Users {
-        let all_entries = self.global.get(setting) == id;
-        let entries = self.overrides.values().filter(|o| o.get(setting) == Some(id)).count();
+        let all_entries = setting.same_kind().any(|s| self.global.get(s) == id);
+        let entries = self.overrides.values().filter(|o| setting.same_kind().any(|s| o.get(s) == Some(id))).count();
         crate::profiles::picker::Users { all_entries, entries }
     }
 
@@ -690,11 +747,13 @@ impl Settings {
     /// and the games and levels that chose it choose Default. Their choice isn't cleared, since a level
     /// between them and all games, such as their runner, may choose another profile.
     pub fn forget(&mut self, setting: Setting, id: u16) {
-        if self.global.get(setting) == id {
-            self.global.set(setting, 0);
-        }
-        for o in self.overrides.values_mut().filter(|o| o.get(setting) == Some(id)) {
-            o.set(setting, Some(0));
+        for setting in setting.same_kind() {
+            if self.global.get(setting) == id {
+                self.global.set(setting, 0);
+            }
+            for o in self.overrides.values_mut().filter(|o| o.get(setting) == Some(id)) {
+                o.set(setting, Some(0));
+            }
         }
     }
 }

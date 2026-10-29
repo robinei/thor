@@ -9,13 +9,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::bottom::touch::TouchLayout;
+use crate::device_view::controllers::Player;
 use crate::effect::{Effect, Watch};
 use crate::idle::Stage;
 use crate::keymap::screens::Keymapping;
 use crate::library_view::files::{Browse, BrowseCommand};
 use crate::library_view::{LibraryView, ShownList};
 use crate::out::Out;
-use crate::settings::{Setting, Values};
+use crate::settings::Values;
 use crate::{Levels, PadRoute, Running, Thread};
 
 /// What the outside should have as things are now. It is built after every event, so it holds
@@ -54,8 +55,9 @@ pub(crate) struct Wanted<'a> {
     /// The built-in app in front, by [`clamshell_library::BuiltinApp::index`]; what it watches is read
     /// while it is seen (see [`crate::builtin_apps`]), as a tab's is.
     pub(crate) apps: [bool; clamshell_library::BuiltinApp::ALL.len()],
-    /// The keymap in force (see [`Keymapping::version_of`]), and the keymaps it is taken from.
-    pub(crate) keymap: (u16, u64),
+    /// Each player's keymap in force (see [`Keymapping::version_of`]), up to how many players there are,
+    /// and the keymaps they are taken from.
+    pub(crate) keymaps: [Option<(u16, u64)>; Player::MOST],
     pub(crate) keymapping: &'a Keymapping,
     /// Where the pad goes.
     pub(crate) route: PadRoute,
@@ -91,11 +93,12 @@ pub(crate) struct Sent {
     /// Each watch as its threads have it (by [`Watch::ALL`]'s order): on or off as last sent, or as they
     /// start once started again.
     watches: [bool; Watch::ALL.len()],
-    /// The keymap in force as last sent to the pad, by its id and version, or None to send it again.
-    keymap: Option<(u16, u64)>,
-    /// The keymap sent, to check that the id and version stand for it.
+    /// Each player's keymap in force as last sent to the pad, by its id and version, or None to send it
+    /// again (a player past the count is sent nothing, and so is sent its keymap once it is back).
+    keymaps: [Option<(u16, u64)>; Player::MOST],
+    /// The keymaps sent, to check that the id and version stand for them.
     #[cfg(debug_assertions)]
-    keymap_sent: Option<crate::keymap::Keymap>,
+    keymaps_sent: [Option<crate::keymap::Keymap>; Player::MOST],
     /// Where the pad was last sent, or None to send it again.
     route: Option<PadRoute>,
     /// Whether the pad tells of activity, or None to send it again.
@@ -119,9 +122,9 @@ impl Default for Sent {
             outputs: Some((true, true)),
             refresh: 0,
             watches: Watch::ALL.map(Watch::on_at_start),
-            keymap: None,
+            keymaps: [None; Player::MOST],
             #[cfg(debug_assertions)]
-            keymap_sent: None,
+            keymaps_sent: Default::default(),
             route: None,
             pad_activity: Some(false),
             touchpad: Some(None),
@@ -151,7 +154,7 @@ impl Sent {
             Resend::Resumed => self.applied = None,
             Resend::Restarted(thread) => match thread {
                 // The rumble's strength comes with the settings applied.
-                Thread::Pad => (self.keymap, self.route, self.pad_activity, self.applied) = (None, None, None, None),
+                Thread::Pad => (self.keymaps, self.route, self.pad_activity, self.applied) = ([None; Player::MOST], None, None, None),
                 Thread::Tuning => self.applied = None,
                 // The readers start with their watches as at start, which are then sent as they are wanted.
                 // (The system thread reads the time and the account as their views open.)
@@ -209,7 +212,7 @@ impl Sent {
         self.settings(w, out);
         self.refresh(w, out);
         self.watches(w, out);
-        self.keymap(w, out);
+        self.keymaps(w, out);
         self.pad_route(w, out);
         self.touchpad(w, out);
     }
@@ -338,28 +341,35 @@ impl Sent {
         }
     }
 
-    /// The pad gets the keymap in force when it changed.
-    fn keymap(&mut self, w: &Wanted, out: &mut Out) {
-        let id = w.settings.get(Setting::Keymap);
-        if self.keymap == Some(w.keymap) {
-            // Compared in place, since this runs after every event.
+    /// The pad gets each player's keymap in force when it changed, player 1's first.
+    fn keymaps(&mut self, w: &Wanted, out: &mut Out) {
+        for player in Player::ALL {
+            let (i, wanted) = (player.index(), w.keymaps.get(player.index()).copied().flatten());
+            let Some(sent) = self.keymaps.get_mut(i) else { continue };
+            let Some((id, version)) = wanted else {
+                *sent = None;
+                continue;
+            };
+            if *sent == Some((id, version)) {
+                // Compared in place, since this runs after every event.
+                #[cfg(debug_assertions)]
+                debug_assert!(
+                    self.keymaps_sent.get(i).and_then(Option::as_ref).is_some_and(|k| match w.keymapping.keymaps().get(id) {
+                        Some(stored) => k == stored,
+                        None => k.id == 0,
+                    }),
+                    "keymap {id} unchanged by its version"
+                );
+                continue;
+            }
+            *sent = Some((id, version));
+            let keymap = w.keymapping.in_force(id);
             #[cfg(debug_assertions)]
-            debug_assert!(
-                self.keymap_sent.as_ref().is_some_and(|k| match w.keymapping.keymaps().get(id) {
-                    Some(stored) => k == stored,
-                    None => k.id == 0,
-                }),
-                "keymap {id} unchanged by its version"
-            );
-            return;
+            if let Some(slot) = self.keymaps_sent.get_mut(i) {
+                *slot = Some(keymap.clone());
+            }
+            out.effects.push(Effect::Keymap(player, keymap));
         }
-        self.keymap = Some(w.keymap);
-        let keymap = w.keymapping.in_force(id);
-        #[cfg(debug_assertions)]
-        {
-            self.keymap_sent = Some(keymap.clone());
-        }
-        out.effects.push(Effect::Keymap(keymap));
     }
 
     /// The pad goes where it is wanted (see [`crate::Pad::reconcile`]).

@@ -144,7 +144,7 @@ fn value_text(s: &State, setting: Setting, value: u16) -> Fmt<32> {
                 _ => Fmt::of(format_args!("{w}×{h}")),
             }
         }
-        Setting::Keymap => Fmt::of(format_args!("{}", s.keymapping().name(value))),
+        k if k.is_keymap() => Fmt::of(format_args!("{}", s.keymapping().name(value))),
         Setting::Curve => Fmt::of(format_args!("{}", s.curving().name(value))),
         _ => {
             let mut text = Fmt::new();
@@ -196,6 +196,8 @@ fn face(s: &State, tile: Tile) -> Face {
             let text = value_text(s, setting, value);
             // At Integer the picture is nearest-neighbour, whatever Scaling says.
             let overruled = setting == Setting::Scaling && p.tile_value(Setting::Size) == clamshell_state::settings::Size::Integer as u16;
+            // With several players, a keymap tile says whose it is in its corner (Keymap 2).
+            let player = setting.keymap_player().filter(|_| p.players() != clamshell_state::device_view::controllers::Player::ONE);
             Face {
                 id: Id::Settings(SettingsId::Tile(setting)),
                 icon: icons::setting(setting),
@@ -206,7 +208,9 @@ fn face(s: &State, tile: Tile) -> Face {
                     && (setting != Setting::Fan || s.profile().fan.is_some())
                     && !(setting.through_launch() && p.handed_over())
                     && !overruled,
-                note: if setting == Setting::Resolution && s.resolution_waits() {
+                note: if let Some(player) = player {
+                    clamshell_state::device_view::controllers::keymap_label(p.players(), player)
+                } else if setting == Setting::Resolution && s.resolution_waits() {
                     "next start"
                 } else if setting == Setting::Refresh && value == 0 && s.presentation().display_modes().refresh_for(0, p.tile_value(Setting::FpsCap)) != 0 {
                     // As is, but a rate the cap divides while it is set.

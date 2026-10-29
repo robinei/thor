@@ -187,7 +187,8 @@ impl World {
 struct Sent {
     route: Option<PadRoute>,
     pad_activity: bool,
-    keymap: Option<crate::keymap::Keymap>,
+    /// Each player's last Keymap.
+    keymaps: [Option<crate::keymap::Keymap>; crate::device_view::controllers::Player::MOST],
     apply: Option<(Option<Arc<str>>, crate::settings::Values)>,
     status: bool,
     account: bool,
@@ -340,7 +341,8 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
         }
         Tab::Settings => match s.keymapping().screen() {
             None => {
-                ids.extend(Setting::ALL.map(|t| Id::Settings(SettingsId::Tile(t))));
+                let count = s.device_view().controllers().count();
+                ids.extend(Setting::ALL.into_iter().filter(|t| t.keymap_player().is_none_or(|p| p <= count)).map(|t| Id::Settings(SettingsId::Tile(t))));
                 ids.extend([SettingsLevel::Global, SettingsLevel::Runner, SettingsLevel::Content].map(|c| Id::Settings(SettingsId::Scope(c))));
                 ids.extend([SettingsId::Reset, SettingsId::Env].map(Id::Settings));
             }
@@ -991,7 +993,11 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         match e {
             Effect::PadRoute(r) => sent.route = Some(*r),
             Effect::PadActivity(watch) => sent.pad_activity = *watch,
-            Effect::Keymap(k) => sent.keymap = Some(k.clone()),
+            Effect::Keymap(player, k) => {
+                if let Some(slot) = sent.keymaps.get_mut(player.index()) {
+                    *slot = Some(k.clone());
+                }
+            }
             Effect::Apply { entry, settings } => sent.apply = Some((entry.clone(), *settings)),
             Effect::Watch(Watch::Status, on) => sent.status = *on,
             Effect::Watch(w, on) if !matches!(w, Watch::Status | Watch::Account) => {
@@ -1024,8 +1030,12 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     ensure!(keys.iter().enumerate().all(|(i, c)| !keys.iter().skip(i + 1).any(|o| o.key == c.key)), "14: a controller listed twice");
     if started {
         ensure!(sent.route == Some(s.pad().route()), "2: route sent {:?}, state {:?}", sent.route, s.pad().route());
-        let in_force = s.keymapping().in_force(s.in_force().get(Setting::Keymap));
-        ensure!(sent.keymap.as_ref() == Some(&in_force), "2: keymap sent {:?}, in force {}", sent.keymap.as_ref().map(|k| k.id), in_force.id);
+        // Each player's, up to how many there are.
+        for player in s.device_view().controllers().count().up_to() {
+            let in_force = s.keymapping().in_force(s.in_force().get(Setting::keymap(player)));
+            let sent_k = sent.keymaps.get(player.index()).and_then(Option::as_ref);
+            ensure!(sent_k == Some(&in_force), "2: player {}'s keymap sent {:?}, in force {}", player.number(), sent_k.map(|k| k.id), in_force.id);
+        }
         let seen = s.idle().stage() < Stage::Off;
         let by_app = matches!(s.top(), Top::App { app, .. } if seen && crate::builtin_apps::definition(app).watches.contains(&crate::Watch::Account));
         let reads = s.setup().reads_account() || by_app;

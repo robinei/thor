@@ -29,9 +29,9 @@ pub enum Effect {
         entry: Option<Arc<str>>,
         settings: Values,
     },
-    /// The keymap in force changed, and the pad remaps by it. It is the game's own keymap or the one for
-    /// all games. The Default keymap has id 0 and no bindings.
-    Keymap(crate::keymap::Keymap),
+    /// A player's keymap in force changed, and the pad remaps that player's input by it. It is the game's
+    /// own keymap or the one for all games. The Default keymap has id 0 and no bindings.
+    Keymap(crate::device_view::controllers::Player, crate::keymap::Keymap),
     /// Write one of ClamShell's files.
     Save(Save),
     /// The fingers pointing in one touch frame, for the virtual touchpad.

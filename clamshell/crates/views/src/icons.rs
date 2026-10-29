@@ -29,7 +29,14 @@ pub(super) fn setting(s: Setting) -> Icon {
         Setting::BigCores => Icon::Cores,
         Setting::Fan => Icon::Fan,
         Setting::PadMouse => Icon::Mouse,
-        Setting::Keymap => Icon::Buttons,
+        Setting::Keymap
+        | Setting::Keymap2
+        | Setting::Keymap3
+        | Setting::Keymap4
+        | Setting::Keymap5
+        | Setting::Keymap6
+        | Setting::Keymap7
+        | Setting::Keymap8 => Icon::Buttons,
         Setting::Rumble => Icon::Rumble,
         Setting::CpuMax => Icon::Cpu,
         Setting::GpuMax => Icon::Gpu,

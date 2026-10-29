@@ -32,7 +32,9 @@ pub enum Kind {
 
 impl Kind {
     /// The setting that holds the profile chosen for a game or for all games: a profile's id, 0 for
-    /// Default.
+    /// Default. For keymaps it is player 1's; which player's a picker chooses is the settings panel's
+    /// (`Panel::setting_of`). A profile's users are counted, and a deleted one forgotten, in every
+    /// player's (see `Settings::users`).
     pub fn setting(self) -> Setting {
         match self {
             Kind::Keymap => Setting::Keymap,
@@ -43,9 +45,9 @@ impl Kind {
     /// Every kind.
     pub const ALL: [Kind; 2] = [Kind::Keymap, Kind::Curve];
 
-    /// The kind whose setting `setting` is (the keymap's or the curve's), if it is one's.
+    /// The kind whose setting `setting` is (a player's keymap or the curve), if it is one's.
     pub(crate) fn of(setting: Setting) -> Option<Kind> {
-        Kind::ALL.into_iter().find(|k| k.setting() == setting)
+        if setting.is_keymap() { Some(Kind::Keymap) } else { Kind::ALL.into_iter().find(|k| k.setting() == setting) }
     }
 
     /// The kind whose picker's list `list` is, if it is one's.

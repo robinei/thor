@@ -42,7 +42,7 @@ impl State {
 
     /// The settings panel as it is now (see [`Panel::new`]).
     pub fn panel(&self) -> Panel<'_> {
-        Panel::new(self.subject(), &self.session, &self.library_view, &self.prefs, &self.keymapping, &self.curving)
+        Panel::new(self.subject(), &self.session, &self.library_view, &self.prefs, &self.keymapping, &self.curving, self.device_view.controllers().count())
     }
 
     /// Whether the second screen is dark (see [`crate::Bottom::dark`]). A window shown there keeps it lit:

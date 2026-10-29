@@ -130,6 +130,8 @@ pub fn picked(source: Input, tapped: Input) -> Option<Output> {
 #[derive(Debug, Clone, Default)]
 pub struct Keymapping {
     keymaps: Keymaps,
+    /// The player whose keymap tile was pressed last: the picker chooses that player's keymap.
+    player: crate::device_view::controllers::Player,
     open: Option<Screen>,
     edit: EditView,
     undo: Undo,
@@ -167,6 +169,16 @@ impl Keymapping {
 
     pub fn keymaps(&self) -> &Keymaps {
         &self.keymaps
+    }
+
+    /// The player whose keymap the picker chooses: the one whose tile was pressed last.
+    pub fn player(&self) -> crate::device_view::controllers::Player {
+        self.player
+    }
+
+    /// A player's keymap tile was pressed: the picker is for that player's keymap.
+    pub(crate) fn set_player(&mut self, player: crate::device_view::controllers::Player) {
+        self.player = player;
     }
 
     /// The keymaps' screen open over the settings tab, if one is.

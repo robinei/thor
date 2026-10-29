@@ -170,7 +170,7 @@ fn a_game_coming_in_front_gets_its_settings_then_its_keymap_then_the_pad() {
         .iter()
         .filter_map(|e| match e {
             Effect::Apply { .. } => Some("apply"),
-            Effect::Keymap(k) if k.id == 1 => Some("keymap"),
+            Effect::Keymap(_, k) if k.id == 1 => Some("keymap"),
             Effect::PadRoute(PadRoute::Game) => Some("route"),
             _ => None,
         })
@@ -195,7 +195,7 @@ fn a_keymap_and_route_changed_in_one_event_are_sent_keymap_first() {
     s.applied(Event::Home);
     assert_eq!((s.pad().route(), s.in_force().get(Setting::Keymap)), (PadRoute::Ui, 0), "the Library in front, ff6's keymap in force");
     let fx = s.applied(WindowEvent::Activate(7).into());
-    let keymap = fx.iter().position(|e| matches!(e, Effect::Keymap(k) if k.id == 1));
+    let keymap = fx.iter().position(|e| matches!(e, Effect::Keymap(_, k) if k.id == 1));
     let route = fx.iter().position(|e| *e == Effect::PadRoute(PadRoute::Game));
     assert!(keymap.is_some() && route.is_some() && keymap < route, "{fx:?}");
 }
@@ -384,13 +384,13 @@ fn what_the_outside_starts_without_goes_out_at_the_first_event() {
         [
             &Effect::Brightness { level: 40, shares: Vec::new() },
             &Effect::Compositor(Compositor::Refresh(90)),
-            &Effect::Keymap(keymap),
+            &Effect::Keymap(crate::device_view::controllers::Player::ONE, keymap),
             &Effect::PadRoute(PadRoute::Ui),
         ],
         "{fx:?}"
     );
     let fx = s.applied(Event::Start);
-    assert!(!fx.iter().any(|e| matches!(e, Effect::Keymap(_) | Effect::PadRoute(_) | Effect::Brightness { .. })), "{fx:?}");
+    assert!(!fx.iter().any(|e| matches!(e, Effect::Keymap(_, _) | Effect::PadRoute(_) | Effect::Brightness { .. })), "{fx:?}");
 }
 
 /// Back from sleep, which may have reset what the settings set, the settings in force are applied again

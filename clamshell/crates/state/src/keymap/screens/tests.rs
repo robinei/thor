@@ -58,7 +58,7 @@ fn picker(s: &mut State) {
 }
 
 fn sent(fx: &[Effect]) -> Option<&Keymap> {
-    fx.iter().find_map(|e| if let Effect::Keymap(k) = e { Some(k) } else { None })
+    fx.iter().find_map(|e| if let Effect::Keymap(_, k) = e { Some(k) } else { None })
 }
 
 #[test]
@@ -808,4 +808,79 @@ fn an_empty_name_makes_nothing() {
     assert!(!fx.iter().any(|e| matches!(e, Effect::Save(_))), "{fx:?}");
     assert_eq!(s.keymapping().keymaps().list().len(), count);
     assert_eq!((s.keymapping().screen(), s.bottom().editor()), (Some(Screen::Picker(PickerScreen::List)), None));
+}
+
+/// Two players: the settings have a keymap tile for each, and each player's tile chooses that player's
+/// keymap. Each player's keymap in force is sent for that player.
+#[test]
+fn each_player_has_a_keymap_of_its_own() {
+    use crate::device_view::controllers::{ControllerEvent, Player};
+    let two = Player::new(2).unwrap();
+    let mut s = State::new(Init { keymaps: Keymaps::initial(), ..init() });
+    tap(&mut s, Id::Tab(Tab::Settings));
+    let keymap_tiles = |s: &State| s.panel().grid().filter(|t| matches!(t, SettingsId::Tile(t) if t.is_keymap())).count();
+    assert_eq!(keymap_tiles(&s), 1, "one player: one keymap tile");
+    s.applied(Event::Controller(ControllerEvent::StepCount(1)));
+    assert_eq!(keymap_tiles(&s), 2);
+    let grid: Vec<SettingsId> = s.panel().grid().collect();
+    let first = grid.iter().position(|t| *t == SettingsId::Tile(Setting::Keymap));
+    assert_eq!(grid.get(first.unwrap() + 1), Some(&SettingsId::Tile(Setting::Keymap2)), "player 2's after player 1's");
+    // Player 2's picker chooses player 2's keymap.
+    long(&mut s, Id::Settings(SettingsId::Tile(Setting::Keymap2)));
+    assert_eq!(s.keymapping().player(), two);
+    tap(&mut s, row(2));
+    let zelda = s.prefs().settings().overrides_of("zelda-lttp");
+    assert_eq!((zelda.get(Setting::Keymap), zelda.get(Setting::Keymap2)), (None, Some(1)), "player 2's, not player 1's");
+    assert_eq!(s.prefs().settings().users(Setting::Keymap, 1), Users { all_entries: false, entries: 1 }, "users count every player's");
+    // The game running, player 2 gets that keymap; player 1's, Default, was sent before and stands.
+    let fx = crate::testkit::start(&mut s, "zelda-lttp");
+    let sent_to = |fx: &[Effect], p: Player| {
+        fx.iter().find_map(|e| {
+            if let Effect::Keymap(q, k) = e
+                && *q == p
+            {
+                Some(k.id)
+            } else {
+                None
+            }
+        })
+    };
+    assert_eq!((sent_to(&fx, Player::ONE), sent_to(&fx, two)), (None, Some(1)));
+    // A tap on player 1's tile steps player 1's keymap, and leaves player 2's.
+    let fx = tap(&mut s, Id::Settings(SettingsId::Tile(Setting::Keymap)));
+    assert_eq!(s.keymapping().player(), Player::ONE);
+    assert_eq!(s.prefs().settings().overrides_of("zelda-lttp").get(Setting::Keymap2), Some(1));
+    assert!(sent_to(&fx, Player::ONE).is_some() && sent_to(&fx, two).is_none(), "{fx:?}");
+}
+
+/// A player past the count has no keymap tile and is sent no keymap; back within the count, it is sent
+/// its keymap again. A keymap deleted is forgotten for every player.
+#[test]
+fn a_player_back_within_the_count_is_sent_its_keymap_and_a_deleted_one_is_forgotten_for_all() {
+    use crate::device_view::controllers::{ControllerEvent, Player};
+    let two = Player::new(2).unwrap();
+    let mut s = State::new(Init { keymaps: Keymaps::initial(), ..init() });
+    s.settings_mut().set(None, Setting::Keymap2, Some(1));
+    s.sent_at_start();
+    let sent_to = |fx: &[Effect], p: Player| {
+        fx.iter().find_map(|e| {
+            if let Effect::Keymap(q, k) = e
+                && *q == p
+            {
+                Some(k.id)
+            } else {
+                None
+            }
+        })
+    };
+    let fx = s.applied(Event::Controller(ControllerEvent::StepCount(1)));
+    assert_eq!(sent_to(&fx, two), Some(1), "player 2 comes: its keymap");
+    assert!(s.applied(Event::Controller(ControllerEvent::StepCount(-1))).iter().all(|e| !matches!(e, Effect::Keymap(..))), "player 2 goes: nothing");
+    let fx = s.applied(Event::Controller(ControllerEvent::StepCount(1)));
+    assert_eq!(sent_to(&fx, two), Some(1), "back: sent again");
+    s.settings_mut().forget(Setting::Keymap, 1);
+    assert_eq!(s.prefs().settings().global.get(Setting::Keymap2), 0, "forgotten for player 2 too");
+    assert_eq!(crate::device_view::controllers::keymap_label(Player::ONE, Player::ONE), "Keymap");
+    assert_eq!(crate::device_view::controllers::keymap_label(two, Player::ONE), "Keymap 1");
+    assert_eq!(crate::device_view::controllers::keymap_label(two, two), "Keymap 2");
 }

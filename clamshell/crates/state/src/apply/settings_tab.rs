@@ -11,7 +11,15 @@ impl State {
     pub(crate) fn on_settings(&mut self, id: SettingsId, long: bool, out: &mut Out) {
         match id {
             // A long press opens the tile's menu: a profile tile's picker, or the values.
-            SettingsId::Tile(Setting::Keymap) if long => self.keymapping.open_picker(),
+            // A keymap's tile is a player's: its picker, or its tap, is for that player's keymap.
+            SettingsId::Tile(setting) if let Some(player) = setting.keymap_player() => {
+                self.keymapping.set_player(player);
+                if long {
+                    self.keymapping.open_picker();
+                } else {
+                    self.next_profile(ProfileKind::Keymap, out);
+                }
+            }
             SettingsId::Tile(Setting::Curve) if long => self.curving.open_picker(),
             SettingsId::Tile(setting) if long => self.prefs.open_menu(setting),
             SettingsId::Tile(setting) if let Some(kind) = ProfileKind::of(setting) => self.next_profile(kind, out),
@@ -103,7 +111,8 @@ impl State {
     /// Chooses profile `id` of `kind` where the panel edits, and saves the settings.
     fn choose_profile(&mut self, kind: ProfileKind, id: u16, out: &mut Out) {
         let entry = self.panel().editing().map(|g| g.id.clone());
-        self.prefs.choose(entry.as_ref(), kind.setting(), id);
+        let setting = self.panel().setting_of(kind);
+        self.prefs.choose(entry.as_ref(), setting, id);
         out.effects.push(self.prefs.save_effect());
     }
 

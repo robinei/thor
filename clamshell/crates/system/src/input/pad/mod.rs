@@ -48,7 +48,7 @@ use std::time::{Duration, Instant};
 use clamshell_state::Event;
 use clamshell_state::PadRoute;
 use clamshell_state::device_view::SticksEvent;
-use clamshell_state::device_view::controllers::Players;
+use clamshell_state::device_view::controllers::{Player, Players};
 use clamshell_state::keymap::Keymap;
 use clamshell_state::settings::RumbleStrength;
 use rustix::event::{PollFd, PollFlags};
@@ -73,8 +73,8 @@ const RETRY_UNWATCHED: Duration = Duration::from_secs(1);
 pub(crate) enum Command {
     Route(PadRoute),
     WatchActivity(bool),
-    /// The keymap in force. Default has no bindings.
-    Keymap(Box<Keymap>),
+    /// A player's keymap in force. Default has no bindings.
+    Keymap(Player, Box<Keymap>),
     /// Calibrate the gyro from its next samples.
     CalibrateGyro,
     /// The Rumble setting in force: 0 off, 1 low, 2 mid, 3 full.
@@ -147,7 +147,7 @@ pub(crate) fn spawn(
         sink,
         route: PadRoute::default(),
         watch_activity: false,
-        keymap: Keymap::default(),
+        keymaps: Default::default(),
         devices: None,
         effects: Effects::default(),
         rumble_setting: RumbleStrength::default(),
@@ -188,7 +188,8 @@ struct PadThread<S> {
     sink: S,
     route: PadRoute,
     watch_activity: bool,
-    keymap: Keymap,
+    /// Each player's keymap in force.
+    keymaps: [Keymap; Player::MOST],
     devices: Option<VirtualDevices>,
     /// Games' rumble effects on the virtual pad, and the Rumble setting.
     effects: Effects,
@@ -233,12 +234,16 @@ fn find_motion(name: &str, phys: &str, sensor_hub: Option<clamshell_device::gyro
 impl<S: Sink> PadThread<S> {
     fn apply(&mut self, command: Command, router: Option<(&mut PadRouter, &mut Out)>) {
         match command {
-            Command::Keymap(keymap) => {
-                log::info!("pad: keymap {} ({})", keymap.id, if keymap.id == 0 { "Default" } else { keymap.name.as_str() });
-                if let Some((router, out)) = router {
+            Command::Keymap(player, keymap) => {
+                log::info!("pad: player {}'s keymap {} ({})", player.number(), keymap.id, if keymap.id == 0 { "Default" } else { keymap.name.as_str() });
+                if player == Player::ONE
+                    && let Some((router, out)) = router
+                {
                     router.set_keymap((*keymap).clone(), out);
                 }
-                self.keymap = *keymap;
+                if let Some(slot) = self.keymaps.get_mut(player.index()) {
+                    *slot = *keymap;
+                }
             }
             Command::Route(route) => {
                 self.route = route;
@@ -359,7 +364,8 @@ impl<S: Sink> Service for PadThread<S> {
     fn run_while_up(&mut self, c: Controller, commands: &Receiver<Command>) -> Result<(), Ended<io::Error>> {
         let mut c = c;
         let mut out = Out::default();
-        let mut router = PadRouter::new(c.ranges, std::mem::take(&mut c.snapshot), self.route, self.keymap.clone(), &mut out);
+        let keymap = self.keymaps.first().cloned().unwrap_or_default();
+        let mut router = PadRouter::new(c.ranges, std::mem::take(&mut c.snapshot), self.route, keymap, &mut out);
         // The state's watch for game input stands across reconnections, as the route and keymap do.
         router.watch_activity(self.watch_activity);
         let result = self.route_events(&mut c, &mut router, &mut out, commands);

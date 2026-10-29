@@ -49,7 +49,8 @@ pub fn effect(effect: &Effect) -> String {
     match effect {
         Effect::Launch { entry, unit, .. } => format!("Launch {entry} as {}", unit.key),
         Effect::Apply { entry, .. } => format!("Apply settings of {}", entry.as_deref().unwrap_or("all")),
-        Effect::Keymap(k) => format!("Keymap {} {:?}", k.id, k.name),
+        Effect::Keymap(p, k) if *p == clamshell_state::device_view::controllers::Player::ONE => format!("Keymap {} {:?}", k.id, k.name),
+        Effect::Keymap(p, k) => format!("Keymap of player {} {} {:?}", p.number(), k.id, k.name),
         Effect::Save(save) => format!("Save {}", self::save(save)),
         Effect::Touchpad(contacts) => format!("Touchpad {} contacts", contacts.len()),
         Effect::Brightness { level, shares } => format!("Brightness {level} over {} shares", shares.len()),

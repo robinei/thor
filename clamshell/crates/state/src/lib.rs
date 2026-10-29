@@ -385,6 +385,7 @@ impl State {
             prefs: &self.prefs,
             keymapping: &self.keymapping,
             curving: &self.curving,
+            players: self.device_view.controllers().count(),
             radios: &self.radios,
             levels: &self.levels,
             sys: &self.sys,
@@ -716,7 +717,10 @@ impl State {
             account: self.setup.reads_account(),
             apps: clamshell_library::BuiltinApp::ALL.map(|app| matches!(self.top(), Top::App { app: front, .. } if front == app)),
             ui_up: self.ui_up,
-            keymap: self.keymapping.version_of(settings.get(Setting::Keymap)),
+            keymaps: {
+                let count = self.device_view.controllers().count();
+                crate::device_view::controllers::Player::ALL.map(|p| (p <= count).then(|| self.keymapping.version_of(settings.get(Setting::keymap(p)))))
+            },
             keymapping: &self.keymapping,
             route: self.pad.route(),
             pad_activity: self.session.top_window().is_some_and(|w| Some(w.id) != self.session.keyboard_focus()),

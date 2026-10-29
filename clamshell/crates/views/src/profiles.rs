@@ -79,6 +79,15 @@ pub(super) fn draw(f: &mut Frame, kind: Kind, screen: PickerScreen) {
     }
 }
 
+/// What the picker is called: the kind's word, or for keymaps with several players, the player's
+/// keymap (Keymap 2).
+fn title(s: &clamshell_state::State, kind: Kind, w: &Words) -> &'static str {
+    match kind {
+        Kind::Keymap => clamshell_state::device_view::controllers::keymap_label(s.device_view().controllers().count(), s.keymapping().player()),
+        Kind::Curve => w.title,
+    }
+}
+
 /// The picker's header (see [`widgets::header`]): Back, the title, and `right` on the right.
 fn header(f: &mut Frame, kind: Kind, title: &str, right: HeaderRight) -> Rect {
     widgets::header(f, Some(Id::Profile(kind, ProfileId::Back)), title, false, right)
@@ -119,7 +128,7 @@ fn list(f: &mut Frame, kind: Kind, listing: Listing) {
         Listing::Load => (header(f, kind, w.load_title, HeaderRight::None), w.load_hint),
         Listing::Save => (header(f, kind, w.save_title, HeaderRight::None), w.save_hint),
         Listing::Pick => {
-            let title = Fmt::<128>::of(format_args!("{} for {edited}", w.title));
+            let title = Fmt::<128>::of(format_args!("{} for {edited}", title(f.s, kind, &w)));
             (header(f, kind, &title, HeaderRight::Action(Id::Profile(kind, ProfileId::New), "New")), w.pick_hint)
         }
     };
@@ -141,7 +150,7 @@ fn list(f: &mut Frame, kind: Kind, listing: Listing) {
             PickerRow::Named(id, name) => (Some(id), name, users(f, kind, id)),
             PickerRow::Reset => {
                 let below = panel.below_name().unwrap_or("the default");
-                (None, "Reset", Fmt::of(format_args!("to {below}'s: {}", s.profile_name(kind, panel.inherited_value(kind.setting())))))
+                (None, "Reset", Fmt::of(format_args!("to {below}'s: {}", s.profile_name(kind, panel.inherited_value(panel.setting_of(kind))))))
             }
         };
         // A profile that no longer exists counts as Default.

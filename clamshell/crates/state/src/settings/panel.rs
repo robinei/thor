@@ -6,6 +6,7 @@
 use std::sync::Arc;
 
 use crate::bottom::editor::{Editor, Editors, Purpose};
+use crate::device_view::controllers::Player;
 use crate::effect::{Effect, Save};
 use crate::keymap::screens::Keymapping;
 use crate::profiles::picker::{Owner, PickerRow};
@@ -143,7 +144,8 @@ pub const GRID_COLUMNS: usize = 5;
 
 /// The settings grid's tiles, the most used first, in rows of [`GRID_COLUMNS`]: four rows show at once and
 /// the grid scrolls. On a program's tab Reset comes before the last, CPU cores, to show with the others.
-/// The settings for the device rather than a program, the charge limit and idle, are on the battery tab.
+/// The keymap's tile stands for one per player, player 1's first (see [`Panel::grid`]). The settings for
+/// the device rather than a program, the charge limit and idle, are on the battery tab.
 const GRID: [crate::id::SettingsId; 20] = {
     use crate::id::SettingsId::{Env, Tile};
     [
@@ -184,6 +186,8 @@ pub struct Panel<'a> {
     /// The level the edited one takes its settings from before its own, which is its runner's.
     runner: Option<&'a str>,
     handover: bool,
+    /// How many players there are, as the last one: each has a keymap tile.
+    players: Player,
 }
 
 impl<'a> Panel<'a> {
@@ -195,6 +199,7 @@ impl<'a> Panel<'a> {
         prefs: &'a Prefs,
         keymapping: &'a Keymapping,
         curving: &'a crate::curve::screens::Curving,
+        players: Player,
     ) -> Panel<'a> {
         let entry_of = |id: &str| session.entry(library_view.library(), id);
         let context = subject.and_then(|id| entry_of(&id).map(|g| Program { id, title: &g.title }));
@@ -218,7 +223,7 @@ impl<'a> Panel<'a> {
         };
         let runner = editing.as_ref().and_then(|p| entry_of(&p.id)).and_then(|g| g.runner.as_ref()).map(|r| &*r.key);
         let handover = editing.is_some() && entry.and_then(|g| g.runner.as_ref()).is_some_and(|r| r.handover);
-        Panel { prefs, keymapping, curving, context, levels, editing, runner, handover }
+        Panel { prefs, keymapping, curving, context, levels, editing, runner, handover, players }
     }
 
     /// The item the settings panel is about, chosen by what is in front (see [`Panel::new`]). It is
@@ -235,11 +240,22 @@ impl<'a> Panel<'a> {
         &self.levels
     }
 
-    /// The settings grid's tiles, in order (see [`GRID`]).
+    /// The settings grid's tiles, in order (see [`GRID`]), with a keymap tile for each player.
     pub fn grid(&self) -> impl Iterator<Item = crate::id::SettingsId> + Clone + use<> {
+        use crate::id::SettingsId::Tile;
         let (most, last) = GRID.split_at(GRID.len() - 1);
         let reset = self.editing().is_some().then_some(crate::id::SettingsId::Reset);
-        most.iter().copied().chain(reset).chain(last.iter().copied())
+        let players = self.players;
+        let keymaps = move |id: &crate::id::SettingsId| {
+            let each = (*id == Tile(Setting::Keymap)).then(|| players.up_to().map(|p| Tile(Setting::keymap(p))));
+            each.into_iter().flatten().chain((*id != Tile(Setting::Keymap)).then_some(*id))
+        };
+        most.iter().flat_map(keymaps).chain(reset).chain(last.iter().copied())
+    }
+
+    /// How many players there are, as the last one.
+    pub fn players(&self) -> Player {
+        self.players
     }
 
     /// What the panel edits now: the program at the chosen level, or none for All. Content edits the
@@ -375,7 +391,7 @@ impl<'a> Panel<'a> {
             Kind::Keymap => self.keymapping.picker() == Some(PickerScreen::List),
             Kind::Curve => self.curving.screen() == Some(crate::curve::screens::CurveScreen::Picker(PickerScreen::List)),
         };
-        list && self.resettable(kind.setting())
+        list && self.resettable(self.setting_of(kind))
     }
 
     /// Whether row `i` of the picker of `kind` is its Reset row.
@@ -385,7 +401,16 @@ impl<'a> Panel<'a> {
 
     /// The profile of `kind` chosen for the level edited; 0 is Default.
     pub fn profile_chosen(&self, kind: crate::profiles::picker::Kind) -> u16 {
-        self.tile_value(kind.setting())
+        self.tile_value(self.setting_of(kind))
+    }
+
+    /// The setting a picker of `kind` chooses: the keymap of the player whose tile was pressed, or the
+    /// curve.
+    pub fn setting_of(&self, kind: crate::profiles::picker::Kind) -> Setting {
+        match kind {
+            crate::profiles::picker::Kind::Keymap => Setting::keymap(self.keymapping.player()),
+            crate::profiles::picker::Kind::Curve => Setting::Curve,
+        }
     }
 
     pub(crate) fn keymap_rows_len(&self) -> usize {

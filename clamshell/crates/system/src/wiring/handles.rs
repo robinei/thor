@@ -86,7 +86,7 @@ impl Handles {
                 }));
             }
             Effect::Apply { settings, .. } => self.tuning.apply(settings),
-            Effect::Keymap(keymap) => self.tuning.keymap(keymap),
+            Effect::Keymap(player, keymap) => self.tuning.keymap(*player, keymap),
             Effect::CalibrateGyro => self.tuning.calibrate_gyro(),
             Effect::Save(save) => {
                 if let Some(store) = &self.store {

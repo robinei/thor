@@ -119,6 +119,8 @@ pub struct Lists<'a> {
     pub(crate) prefs: &'a Prefs,
     pub(crate) keymapping: &'a Keymapping,
     pub(crate) curving: &'a crate::curve::screens::Curving,
+    /// How many players there are, as the last one: the settings have a keymap tile for each.
+    pub(crate) players: crate::device_view::controllers::Player,
     pub(crate) radios: &'a Radios,
     pub(crate) levels: &'a Levels,
     pub(crate) sys: &'a Sys,
@@ -132,7 +134,7 @@ pub struct Lists<'a> {
 
 impl<'a> Lists<'a> {
     fn panel(&self) -> Panel<'a> {
-        Panel::new(self.subject.clone(), self.session, self.library_view, self.prefs, self.keymapping, self.curving)
+        Panel::new(self.subject.clone(), self.session, self.library_view, self.prefs, self.keymapping, self.curving, self.players)
     }
 
     /// Where `list` is scrolled. For the Library, this is the current collection's position.

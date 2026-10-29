@@ -13,9 +13,9 @@ pub(crate) struct Tuning {
 }
 
 impl Tuning {
-    /// Sends the keymap in force to the pad.
-    pub(crate) fn keymap(&self, keymap: &clamshell_state::keymap::Keymap) {
-        self.pad.send(pad::Command::Keymap(Box::new(keymap.clone())));
+    /// Sends a player's keymap in force to the pad.
+    pub(crate) fn keymap(&self, player: clamshell_state::device_view::controllers::Player, keymap: &clamshell_state::keymap::Keymap) {
+        self.pad.send(pad::Command::Keymap(player, Box::new(keymap.clone())));
     }
 
     /// Calibrates the gyro from its next second of readings.

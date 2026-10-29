@@ -103,7 +103,7 @@ mod tests {
     fn a_restarted_pad_is_sent_its_keymap_route_and_settings() {
         let mut s = started(init());
         let fx = s.applied(Event::Restarted(Thread::Pad));
-        assert!(fx.iter().any(|e| matches!(e, Effect::Keymap(_))), "{fx:?}");
+        assert!(fx.iter().any(|e| matches!(e, Effect::Keymap(_, _))), "{fx:?}");
         assert!(fx.iter().any(|e| matches!(e, Effect::PadRoute(_))), "{fx:?}");
         assert!(fx.iter().any(|e| matches!(e, Effect::PadActivity(_))), "{fx:?}");
         assert!(fx.iter().any(|e| matches!(e, Effect::Apply { .. })), "{fx:?}");

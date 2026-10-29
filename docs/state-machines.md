@@ -382,6 +382,7 @@ LayerPicker, LayerMenu; Undo per keymap since the edit screen opened. One Back f
 | Transition | Test |
 |---|---|
 | Keymap tile → List; a row → chosen for the level edited | `the_picker_chooses_a_keymap_for_the_level_edited` |
+| One keymap setting per player (`Setting::Keymap` for player 1, `Keymap2`..`Keymap8`), each chosen per game, runner and All as player 1's is; the grid has a keymap tile per player up to the count, player 1's first, each marked Keymap 1..N in its corner when there are several (one player: Keymap, as before). A keymap tile's tap or long press makes the keymaps' screens that player's (`Keymapping::player`), so the picker, its Reset and the tile's step choose that player's keymap; a keymap's users are counted, and a deleted one forgotten, in every player's. Sync sends each player's keymap in force up to the count (`Keymap(player, keymap)`, player 1's first), and a player back within the count is sent its own again | `each_player_has_a_keymap_of_its_own`, `a_player_back_within_the_count_is_sent_its_keymap_and_a_deleted_one_is_forgotten_for_all` |
 | Own → made, settings saved then keymaps | `making_a_games_own_keymap_saves_the_settings_then_the_keymaps` |
 | Menu: rename, duplicate, load into own, save as, delete (asks if in use; settings forget it: all games back to Default if it was theirs, and who chose it chooses Default) | `rename_duplicate_and_delete_…`, `a_named_keymap_is_loaded_…`, `a_games_own_keymap_is_saved_…`; settings `forgetting_a_keymap_sets_who_chose_it_to_default` |
 | Edit: select, bind, map to (pick, capture, mouse, layers), toggles, slides, undo, layers | `a_new_keymap_is_named_edited_and_mapped`, `targets_offered_fit_the_input`, `the_hold_and_double_tabs_…`, `parameters_slide_…`, layer tests, `undo_goes_back_…` |
@@ -1673,7 +1674,7 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
 1. **Settle and sync converge:** settling and syncing again (checked every 32nd event, the comparison
    being of the whole state) changes nothing, sends nothing and queues nothing; running sync again
    emits nothing.
-2. **What was sent mirrors the state:** the last PadRoute is `pad().route()`; the last Keymap is the
+2. **What was sent mirrors the state:** the last PadRoute is `pad().route()`; each player's last Keymap (up to the count) is its
    keymap in force; Status is watched iff the screens are on; Account iff the UI is up and the account is
    unread or unreadable, or the Device view or Setup is in front with the screens on; the last Apply is `(program, in_force)`; the last Outputs is (screens on, bottom on);
    the last Refresh is the calibration's rate while it runs, else the rate of the entry launched last

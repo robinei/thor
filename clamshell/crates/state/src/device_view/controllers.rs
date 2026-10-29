@@ -52,9 +52,22 @@ impl Player {
     }
 
     /// The players 1 to `self`, when `self` is the count.
-    pub fn up_to(self) -> impl Iterator<Item = Player> {
+    pub fn up_to(self) -> impl Iterator<Item = Player> + Clone {
         Player::ALL.into_iter().take(usize::from(self.0))
     }
+}
+
+impl Default for Player {
+    fn default() -> Player {
+        Player::ONE
+    }
+}
+
+/// What a player's keymap is called on its tile and its picker: Keymap, with one player, or Keymap 1 to
+/// Keymap 8.
+pub fn keymap_label(count: Player, player: Player) -> &'static str {
+    const LABELS: [&str; Player::MOST] = ["Keymap 1", "Keymap 2", "Keymap 3", "Keymap 4", "Keymap 5", "Keymap 6", "Keymap 7", "Keymap 8"];
+    if count == Player::ONE { "Keymap" } else { LABELS.get(player.index()).copied().unwrap_or("Keymap") }
 }
 
 impl TryFrom<u8> for Player {

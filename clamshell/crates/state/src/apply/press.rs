@@ -189,7 +189,8 @@ impl State {
                 && self.panel().is_profile_reset(kind, i) =>
             {
                 if !long {
-                    self.change(kind.setting(), None, out);
+                    let setting = self.panel().setting_of(kind);
+                    self.change(setting, None, out);
                 }
             }
             ListId::Keymaps => self.on_keymap_row(i, part, long, out),
