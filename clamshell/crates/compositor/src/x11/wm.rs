@@ -523,8 +523,11 @@ impl Wm {
             }
             Some(MAP_REQUEST_EVENT) => {
                 let event = MapRequestEvent::try_parse(bytes).map_err(io::Error::other)?.0;
+                // Only a managed window's map is redirected to us: one created override-redirect has
+                // since cleared it, and is managed now.
                 if let Some(window) = self.windows.iter_mut().find(|w| w.xid == event.window) {
                     window.wants_map = true;
+                    window.override_redirect = false;
                 }
             }
             Some(MAP_NOTIFY_EVENT) => {
@@ -948,6 +951,21 @@ mod tests {
         assert_eq!(wm.popup_owner(&wm.windows[3], Some(parent), None), None, "transient cycles are bounded");
         wm.windows[2].properties.transient = Some(20);
         assert_eq!(wm.popup_owner(&wm.windows[3], Some(other), None), None, "a mapped menu cannot change owner");
+    }
+    /// A window created override-redirect that clears it before mapping asks us to map it, and is
+    /// managed: mapped once its facts are in, rather than left waiting as a menu would.
+    #[test]
+    fn a_window_no_longer_override_redirect_is_managed() {
+        let (_display, mut server) = crate::tests::ServerBuilder::new().build();
+        let (socket, _peer) = UnixStream::pair().unwrap();
+        let mut wire = Transport::new(socket, Instant::now()).unwrap();
+        let mut wm = Wm { root: 1, owner: 2, atoms: Atoms(NAMES.iter().enumerate().map(|(i, name)| (*name, 100 + i as u32)).collect()), ..Wm::default() };
+        wm.discover(10, Rectangle::from_size((400, 300).into()), true, &mut wire, &mut server).unwrap();
+        let event = MapRequestEvent { response_type: MAP_REQUEST_EVENT, parent: 1, window: 10, ..MapRequestEvent::default() };
+        let mut event = Serialize::serialize(&event).to_vec();
+        event.resize(32, 0);
+        wm.event(&event, &mut wire, &mut server).unwrap();
+        assert!(wm.windows[0].wants_map && !wm.windows[0].override_redirect);
     }
     /// A window opens only once its process is identified, off the compositor's thread, so its facts carry
     /// its unit and processes; a window gone before the answer is forgotten with it, and one whose client
