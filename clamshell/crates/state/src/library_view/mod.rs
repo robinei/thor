@@ -696,8 +696,12 @@ impl LibraryView {
         let shown = |s: &LibraryView| s.list().iter().filter_map(|&i| s.library.entries.get(i)).map(|g| g.id.clone()).collect::<Vec<_>>();
         let shown_before = shown(self);
         let before = self.selected().cloned();
-        self.listings.retain(|(id, _)| *id != folder);
-        self.listings.push((folder, entries.clone()));
+        // In its place: a folder's listing stays before those of the folders in it, as a reload applies
+        // them in order.
+        match self.listings.iter_mut().find(|(id, _)| *id == folder) {
+            Some((_, kept)) => kept.clone_from(&entries),
+            None => self.listings.push((folder, entries.clone())),
+        }
         self.library.set_listing(f, entries);
         // Drops the listings of folders that went with it.
         let library = &self.library;

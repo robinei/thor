@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::{BrowseKind, Entry, Meta};
+use crate::{BrowseKind, Details, Entry, Meta};
 
 /// A tab in the Library. It is a tab from library.json's sources, Games (which also holds the games from Steam
 /// and the desktop files), Apps, Recent or Favourites.
@@ -191,7 +191,8 @@ impl Library {
 
     /// Sets the listing of browsed folder `folder` (see [`crate::Browsed`]) to `entries`, in order.
     ///
-    /// An entry that was there before, by id, keeps its slot in `entries` and its own listing. Entries
+    /// An entry that was there before, by id, keeps its slot in `entries`, its own listing and what was
+    /// recorded on it since it was listed (see `keep_recorded`). Entries
     /// that are gone, and everything in them, free their slots for later listings but not for this one's
     /// new entries. That way a slot still held open, such as a removed folder the user is inside, never
     /// becomes another entry's straight away. Entries at the top of the Trash become
@@ -224,11 +225,7 @@ impl Library {
             let i = match old.get(&e.id).copied() {
                 Some(i) => {
                     if let Some(g) = self.entries.get_mut(i) {
-                        // Keep its own listing as it was.
-                        e.items = std::mem::take(&mut g.items);
-                        if let (Some(b), Some(was)) = (e.browsed.as_mut(), g.browsed.as_ref()) {
-                            b.listed = was.listed;
-                        }
+                        keep_recorded(&mut e, g);
                         *g = e;
                     }
                     i
@@ -314,11 +311,32 @@ const MAX_DEPTH: u8 = 8;
 /// Entries in the Recent tab.
 const RECENT: usize = 20;
 
+/// What `was`, an entry listed before, has that its listing again (`e`) doesn't: its own listing, its
+/// plays, where its video was left, whether it is a favourite, and what was fetched about it. The listing
+/// brings only what the folder and the cache say.
+fn keep_recorded(e: &mut Entry, was: &mut Entry) {
+    e.items = std::mem::take(&mut was.items);
+    if let (Some(b), Some(old)) = (e.browsed.as_mut(), was.browsed.as_ref()) {
+        b.listed = old.listed;
+    }
+    e.plays = was.plays;
+    e.favourite |= was.favourite;
+    (e.playback.position, e.playback.at) = (was.playback.position, was.playback.at);
+    if e.box_front.is_none() {
+        e.box_front = was.box_front.take();
+    }
+    let shot = e.details.shot.take().or_else(|| was.details.shot.take());
+    if e.details == Details::default() {
+        e.details = std::mem::take(&mut was.details);
+    }
+    e.details.shot = shot;
+}
+
 #[cfg(test)]
 #[allow(clippy::indexing_slicing, clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::{Browsed, Details, RunnerOf, demo};
+    use crate::{Browsed, RunnerOf, demo};
 
     #[test]
     fn a_folder_queues_its_playlist_else_its_files_of_the_runner() {
@@ -451,6 +469,25 @@ mod tests {
         assert_eq!(free, vec![1, 3]);
         assert!(!lib.has("browse:Home/a/x"));
         assert!(!lib.entries[1].is_group(), "a's place, held open, is no folder now");
+    }
+
+    /// Listed again, an entry keeps what was recorded on it: its plays, where its video was left, and what
+    /// was fetched about it.
+    #[test]
+    fn a_listing_again_keeps_what_was_recorded() {
+        let mut lib = Library { entries: vec![browsed("browse:Home", true)], ..Library::default() };
+        lib.set_listing(0, vec![browsed("browse:Home/film.mkv", false)]);
+        let g = &mut lib.entries[1];
+        g.plays.add(100, 60);
+        g.playback.position = Some(42);
+        g.details.summary = "A film".into();
+        g.box_front = Some("/covers/film.jpg".into());
+        lib.set_listing(0, vec![browsed("browse:Home/film.mkv", false)]);
+        let g = &lib.entries[1];
+        assert_eq!(g.playback.position, Some(42));
+        assert_eq!(g.details.summary, "A film");
+        assert_eq!(g.box_front.as_deref(), Some(std::path::Path::new("/covers/film.jpg")));
+        assert_eq!(g.plays.count, 1);
     }
 
     #[test]

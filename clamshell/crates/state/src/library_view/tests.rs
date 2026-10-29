@@ -384,3 +384,22 @@ fn an_edit_isnt_undone_by_a_read_from_before_it() {
     s.applied(Event::LibraryWritten(Box::new(clamshell_library::demo::library())));
     assert!(!renamed(&s), "both read back: what was read shows");
 }
+
+/// A folder listed again keeps its listing's place before those of the folders in it, so a reload of the
+/// library applies them all.
+#[test]
+fn a_reload_keeps_the_listings_of_folders_in_folders_listed_again() {
+    use crate::library_view::files::FilesEvent;
+    let mut s = state();
+    let entry = |id: &str, title: &str, folder: bool| clamshell_library::Entry {
+        browsed: Some(clamshell_library::Browsed { folder, ..clamshell_library::Browsed::default() }),
+        ..clamshell_library::Entry::new(id, title)
+    };
+    let home = || vec![entry("browse:Files/Home/Shots", "Shots", true)];
+    s.applied(Event::Files(FilesEvent::Listed { folder: "browse:Files/Home".into(), entries: home() }));
+    let shots = vec![entry("browse:Files/Home/Shots/a.png", "a.png", false)];
+    s.applied(Event::Files(FilesEvent::Listed { folder: "browse:Files/Home/Shots".into(), entries: shots }));
+    s.applied(Event::Files(FilesEvent::Listed { folder: "browse:Files/Home".into(), entries: home() }));
+    s.applied(Event::Library(Box::new(clamshell_library::demo::library())));
+    assert!(s.library_view().library().has("browse:Files/Home/Shots/a.png"));
+}
