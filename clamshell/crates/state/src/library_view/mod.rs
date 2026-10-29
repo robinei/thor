@@ -246,7 +246,7 @@ impl LibraryView {
     /// The group open in the current collection (the innermost), if any.
     pub fn group(&self) -> Option<&Entry> {
         let g = *self.navs.get(self.current)?.open.last()?;
-        self.library.entries.get(g)
+        self.library.entries().get(g)
     }
 
     /// Whether there is a place for each collection, the current collection is among them unless there
@@ -291,7 +291,7 @@ impl LibraryView {
         // An archive counts even though it is browsed as a folder, since a ROM's zip is a file in the
         // library.
         let file = self.entry(id).filter(|g| g.browsed.as_ref().is_some_and(|b| !b.folder || b.archive))?.file.as_ref()?;
-        self.library.entries.iter().find(|g| g.browsed.is_none() && !g.is_group() && g.file.as_ref() == Some(file)).map(|g| g.id.clone())
+        self.library.entries().iter().find(|g| g.browsed.is_none() && !g.is_group() && g.file.as_ref() == Some(file)).map(|g| g.id.clone())
     }
 
     /// Collection `c`'s list at its current place: the innermost open group's entries, or else the
@@ -306,7 +306,7 @@ impl LibraryView {
     /// Collection `c`'s list at its current place, all of it, ignoring what is typed.
     fn whole_list_of(&self, c: usize) -> &[usize] {
         match self.navs.get(c).and_then(|n| n.open.last()) {
-            Some(&g) => self.library.entries.get(g).map_or(&[], |g| g.items.as_slice()),
+            Some(&g) => self.library.entries().get(g).map_or(&[], |g| g.items.as_slice()),
             None => self.library.collections.get(c).map_or(&[], |c| c.entries.as_slice()),
         }
     }
@@ -332,7 +332,7 @@ impl LibraryView {
     /// Appends the entries of collection `c`'s whole list whose titles start with `filter`, ignoring case,
     /// to `found`.
     fn found(&self, c: usize, filter: &str, found: &mut Vec<usize>) {
-        let entries = &self.library.entries;
+        let entries = self.library.entries();
         found.extend(self.whole_list_of(c).iter().copied().filter(|&i| entries.get(i).is_some_and(|g| starts_with_ignoring_case(&g.title, filter))));
     }
 
@@ -358,7 +358,7 @@ impl LibraryView {
 
     /// The entry at `position` in the current list.
     pub fn entry_at(&self, position: usize) -> Option<&Entry> {
-        self.library.entries.get(*self.list().get(position)?)
+        self.library.entries().get(*self.list().get(position)?)
     }
 
     /// The selected entry's index in the library.
@@ -372,7 +372,7 @@ impl LibraryView {
 
     /// Where `entry` is in collection `c`'s list.
     fn position_in(&self, c: usize, entry: &str) -> Option<usize> {
-        self.list_of(c).iter().position(|&i| self.library.entries.get(i).is_some_and(|g| &*g.id == entry))
+        self.list_of(c).iter().position(|&i| self.library.entries().get(i).is_some_and(|g| &*g.id == entry))
     }
 
     /// Where the Library is, for telling when it moved (see [`crate::State::follow_library_view`]): the collection, the
@@ -394,7 +394,7 @@ impl LibraryView {
         for (c, nav) in self.navs.iter().enumerate().take(self.library.collections.len()) {
             let list = self.list_of(c);
             let index = nav.places.last().map_or(0, |p| p.index).min(list.len().saturating_sub(1));
-            for g in nav.open.iter().chain(list.get(index)).filter_map(|&g| self.library.entries.get(g)) {
+            for g in nav.open.iter().chain(list.get(index)).filter_map(|&g| self.library.entries().get(g)) {
                 g.id.hash(hasher);
             }
             c.hash(hasher);
@@ -459,7 +459,7 @@ impl LibraryView {
         let ShownList { group, top, rows, selected, .. } = self.view();
         let list = self.list();
         let rows = (top..top + rows + 1).filter(|&p| p != selected);
-        let id = |i: usize| self.library.entries.get(i).map(|g| g.id.clone());
+        let id = |i: usize| self.library.entries().get(i).map(|g| g.id.clone());
         ids.extend(std::iter::once(selected).chain(rows).filter_map(|p| list.get(p).copied()).filter_map(id));
         if let Some(g) = group {
             ids.extend(self.library.groups_of(g).into_iter().chain([g]).filter_map(id));
@@ -472,7 +472,7 @@ impl LibraryView {
         let Some(&g) = self.list().get(self.cursor().index) else {
             return false;
         };
-        if !self.library.entries.get(g).is_some_and(Entry::is_group) {
+        if !self.library.entries().get(g).is_some_and(Entry::is_group) {
             return false;
         }
         if let Some(n) = self.navs.get_mut(self.current) {
@@ -498,7 +498,7 @@ impl LibraryView {
     /// Shows `group` open, in the current collection if that has the group's outermost group, or else in
     /// the first collection that does. Returns whether the group is there.
     pub(crate) fn reveal(&mut self, group: &str) -> bool {
-        let Some(g) = self.library.entries.iter().position(|x| &*x.id == group) else {
+        let Some(g) = self.library.entries().iter().position(|x| &*x.id == group) else {
             return false;
         };
         let mut path = self.library.groups_of(g);
@@ -515,7 +515,7 @@ impl LibraryView {
         if let Some(n) = self.navs.get_mut(c) {
             *n = Nav::default();
         }
-        for id in path.iter().filter_map(|&i| self.library.entries.get(i)).map(|g| g.id.clone()).collect::<Vec<_>>() {
+        for id in path.iter().filter_map(|&i| self.library.entries().get(i)).map(|g| g.id.clone()).collect::<Vec<_>>() {
             self.select(&id);
             self.open();
         }
@@ -598,7 +598,7 @@ impl LibraryView {
         (self.library, self.read, self.current) = (library, true, 0);
         self.listings_shown = self.listings_shown.wrapping_add(1);
         for (folder, entries) in listings {
-            if let Some(f) = self.library.entries.iter().position(|g| g.id == folder) {
+            if let Some(f) = self.library.entries().iter().position(|g| g.id == folder) {
                 self.library.set_listing(f, entries.clone());
                 self.listings.push((folder, entries));
             }
@@ -629,7 +629,7 @@ impl LibraryView {
         let Some(nav) = self.navs.get(c) else {
             return Vec::new();
         };
-        let id = |i: Option<&usize>| i.and_then(|&i| self.library.entries.get(i)).map(|g| g.id.clone());
+        let id = |i: Option<&usize>| i.and_then(|&i| self.library.entries().get(i)).map(|g| g.id.clone());
         nav.places
             .iter()
             .enumerate()
@@ -678,10 +678,10 @@ impl LibraryView {
     /// selected entry is kept by id, and open groups that are gone are closed. Returns whether the
     /// selection changed.
     pub(crate) fn listed(&mut self, folder: Arc<str>, entries: Vec<Entry>) -> bool {
-        let Some(f) = self.library.entries.iter().position(|g| g.id == folder) else {
+        let Some(f) = self.library.entries().iter().position(|g| g.id == folder) else {
             return false;
         };
-        let shown = |s: &LibraryView| s.list().iter().filter_map(|&i| s.library.entries.get(i)).map(|g| g.id.clone()).collect::<Vec<_>>();
+        let shown = |s: &LibraryView| s.list().iter().filter_map(|&i| s.library.entries().get(i)).map(|g| g.id.clone()).collect::<Vec<_>>();
         let shown_before = shown(self);
         let before = self.selected().cloned();
         // In its place: a folder's listing stays before those of the folders in it, as a reload applies
@@ -693,7 +693,7 @@ impl LibraryView {
         self.library.set_listing(f, entries);
         // Drops the listings of folders that went with it.
         let library = &self.library;
-        self.listings.retain(|(id, _)| library.entries.iter().any(|g| g.id == *id));
+        self.listings.retain(|(id, _)| library.entries().iter().any(|g| g.id == *id));
         self.library_changed(before.as_ref());
         if shown(self) != shown_before {
             self.listings_shown = self.listings_shown.wrapping_add(1);
@@ -708,11 +708,11 @@ impl LibraryView {
             let mut list = self.library.collections.get(c).map_or(&[][..], |c| c.entries.as_slice());
             let mut keep = 0;
             for &g in &nav.open {
-                if !list.contains(&g) || !self.library.entries.get(g).is_some_and(Entry::is_group) {
+                if !list.contains(&g) || !self.library.entries().get(g).is_some_and(Entry::is_group) {
                     break;
                 }
                 keep += 1;
-                list = self.library.entries.get(g).map_or(&[], |g| g.items.as_slice());
+                list = self.library.entries().get(g).map_or(&[], |g| g.items.as_slice());
             }
             nav.open.truncate(keep);
             nav.places.truncate(keep + 1);
@@ -721,7 +721,7 @@ impl LibraryView {
 
     /// Records where mpv left a video, at `now`. None means at its end.
     pub(crate) fn set_position(&mut self, id: &str, position: Option<u32>, now: u64) {
-        if let Some(g) = self.library.entries.iter_mut().find(|g| &*g.id == id) {
+        if let Some(g) = self.library.entries_mut().iter_mut().find(|g| &*g.id == id) {
             g.playback.position = position;
             g.playback.at = now;
         }
@@ -729,7 +729,7 @@ impl LibraryView {
 
     /// Applies what was fetched about entry `id`, if it is there (see [`Library::apply_meta`]).
     pub(crate) fn apply_meta(&mut self, id: &str, meta: &crate::Meta) {
-        if let Some(i) = self.library.entries.iter().position(|g| &*g.id == id) {
+        if let Some(i) = self.library.entries().iter().position(|g| &*g.id == id) {
             self.library.apply_meta(i, meta);
         }
     }
@@ -739,7 +739,7 @@ impl LibraryView {
     fn favourite_selected(&mut self) -> Option<bool> {
         let id = self.selected().cloned()?;
         Some(self.relayout(|lib| {
-            if let Some(g) = lib.entries.iter_mut().find(|g| g.id == id) {
+            if let Some(g) = lib.entries_mut().iter_mut().find(|g| g.id == id) {
                 g.favourite = !g.favourite;
             }
             lib.rebuild_derived();
@@ -749,7 +749,7 @@ impl LibraryView {
     /// Counts a play of `entry`, which has ended. Returns whether the selection changed.
     pub(crate) fn add_play(&mut self, entry: &str, start: u64, duration: u64) -> bool {
         self.relayout(|lib| {
-            if let Some(g) = lib.entries.iter_mut().find(|g| &*g.id == entry) {
+            if let Some(g) = lib.entries_mut().iter_mut().find(|g| &*g.id == entry) {
                 g.plays.add(start, duration);
             }
             lib.rebuild_derived();
@@ -781,10 +781,10 @@ impl LibraryView {
             };
             let list = self.list_of(c);
             let index = nav.places.last().map_or(0, |p| p.index).min(list.len().saturating_sub(1));
-            let Some(g) = list.get(index).and_then(|&g| self.library.entries.get(g)) else {
+            let Some(g) = list.get(index).and_then(|&g| self.library.entries().get(g)) else {
                 continue;
             };
-            let mut ids: Vec<String> = nav.open.iter().filter_map(|&o| self.library.entries.get(o)).map(|g| g.id.to_string()).collect();
+            let mut ids: Vec<String> = nav.open.iter().filter_map(|&o| self.library.entries().get(o)).map(|g| g.id.to_string()).collect();
             ids.push(g.id.to_string());
             places.push((coll.name.clone(), ids));
         }

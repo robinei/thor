@@ -132,13 +132,13 @@ impl LibraryView {
         let library = &self.library;
         let root = |i: &usize| {
             library
-                .entries
+                .entries()
                 .get(*i)
                 .and_then(|g| g.browsed.as_ref())
                 .is_some_and(|b| matches!(b.kind, BrowseKind::Root | BrowseKind::Removable(_) | BrowseKind::Trash))
         };
         let in_folder =
-            |c: &clamshell_library::Collection| c.entries.iter().any(|i| root(i) || library.entries.get(*i).is_some_and(|g| g.items.iter().any(root)));
+            |c: &clamshell_library::Collection| c.entries.iter().any(|i| root(i) || library.entries().get(*i).is_some_and(|g| g.items.iter().any(root)));
         library.collections.iter().position(in_folder)
     }
 
@@ -163,10 +163,10 @@ impl LibraryView {
         let files = self.files_tab().and_then(|c| library.collections.get(c)).ok_or("no Files tab")?;
         // The deepest of the tab's folders that has it: at its top, or in one of its groups, as removable
         // storage is.
-        let tops = files.entries.iter().filter_map(|&i| library.entries.get(i));
+        let tops = files.entries.iter().filter_map(|&i| library.entries().get(i));
         let (root, rest) = tops
             .clone()
-            .chain(tops.flat_map(|g| g.items.iter().filter_map(|&i| library.entries.get(i))))
+            .chain(tops.flat_map(|g| g.items.iter().filter_map(|&i| library.entries().get(i))))
             .filter(|g| g.browsed.is_some())
             .filter_map(|g| Some((g, folder.strip_prefix(g.browsed_dir()?).ok()?)))
             .max_by_key(|(_, rest)| std::cmp::Reverse(rest.components().count()))
@@ -197,7 +197,7 @@ impl LibraryView {
                 break;
             };
             let listed = open.browsed.as_ref().is_some_and(|b| b.listed);
-            let found = open.items.iter().filter_map(|&i| self.library.entries.get(i)).find(|g| g.title == next && g.is_group()).map(|g| g.id.clone());
+            let found = open.items.iter().filter_map(|&i| self.library.entries().get(i)).find(|g| g.title == next && g.is_group()).map(|g| g.id.clone());
             match found {
                 Some(id) => {
                     self.select(&id);
@@ -248,7 +248,7 @@ impl LibraryView {
         }
         // Until it is listed, what is in it isn't known.
         let Some(folder) = folder else { return SaveHere::Off };
-        let listed = |n: &str| folder.items.iter().filter_map(|&i| self.library.entries.get(i)).any(|e| e.title == n);
+        let listed = |n: &str| folder.items.iter().filter_map(|&i| self.library.entries().get(i)).any(|e| e.title == n);
         // A hidden file isn't listed while hidden files don't show: it may be there.
         let hidden_unknown = !self.files.hidden();
         let mut there = names.iter().filter(|n| listed(n) || (hidden_unknown && n.starts_with('.')));
@@ -359,12 +359,12 @@ mod tests {
             ..clamshell_library::Entry::new("browse:Files/Home", "Home")
         };
         let config = Config { places: vec![Place { id: "games".into(), name: "Games".into(), ..Place::default() }], ..Config::default() };
-        Library {
-            collections: vec![Collection::new("Games", vec![0]), Collection::new("Files", vec![1])],
-            entries: vec![clamshell_library::Entry::new("zelda", "Zelda"), home],
-            config: Some(Arc::new(config)),
-            ..Library::default()
-        }
+        let mut library = Library::new(
+            vec![Collection::new("Games", vec![0]), Collection::new("Files", vec![1])],
+            vec![clamshell_library::Entry::new("zelda", "Zelda"), home],
+        );
+        library.config = Some(Arc::new(config));
+        library
     }
 
     /// A source's folder is chosen in the Files tab: a folder takes Choose, which fills the form's field
@@ -413,8 +413,8 @@ mod tests {
         if let Some(config) = library.config.as_mut() {
             Arc::make_mut(config).places.push(Place { id: "snes".into(), name: "SNES".into(), within: Some("games".into()), ..Place::default() });
         }
-        library.entries.extend([file("notes.txt"), file("snes.png")]);
-        if let Some(home) = library.entries.get_mut(1) {
+        library.entries_mut().extend([file("notes.txt"), file("snes.png")]);
+        if let Some(home) = library.entries_mut().get_mut(1) {
             home.items = vec![2, 3];
             home.browsed.as_mut().unwrap().listed = true;
         }
@@ -424,10 +424,10 @@ mod tests {
         edit(&mut s, EditId::Picture);
         assert!(s.library_view().pick().is_some(), "SNES, a folder, selected");
         tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
-        let notes = s.library_view().library().entries.iter().position(|g| g.title == "notes.txt").unwrap();
-        let png = s.library_view().library().entries.iter().position(|g| g.title == "snes.png").unwrap();
+        let notes = s.library_view().library().entries().iter().position(|g| g.title == "notes.txt").unwrap();
+        let png = s.library_view().library().entries().iter().position(|g| g.title == "snes.png").unwrap();
         let pick = s.library_view().pick().unwrap().clone();
-        assert!(!pick.takes(s.library_view().library().entries.get(notes).unwrap()) && pick.takes(s.library_view().library().entries.get(png).unwrap()));
+        assert!(!pick.takes(s.library_view().library().entries().get(notes).unwrap()) && pick.takes(s.library_view().library().entries().get(png).unwrap()));
         s.library_view.select("browse:Files/Home/snes.png");
         let fx = tap(&mut s, Id::LibraryView(LibraryViewId::Choose));
         let written = fx.iter().find_map(|e| if let crate::Effect::WriteLibrary(c) = e { Some(c.clone()) } else { None }).unwrap();

@@ -5,7 +5,7 @@ fn shortcut(id: &str, title: &str, argv: &[&str]) -> Entry {
 }
 
 fn library(entries: Vec<Entry>) -> Library {
-    Library { entries, ..Library::default() }
+    Library::new(Vec::new(), entries)
 }
 
 /// A process's command line as `/proc/<pid>/cmdline` has it.

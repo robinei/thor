@@ -309,7 +309,7 @@ mod tests {
         let mut s = state();
         let ids: Vec<std::sync::Arc<str>> =
             // Three rows with the Library's tile, which is always there.
-            s.library_view().library().entries.iter().take(3 * crate::dock::DOCK_COLUMNS - 1).map(|g| g.id.clone()).collect();
+            s.library_view().library().entries().iter().take(3 * crate::dock::DOCK_COLUMNS - 1).map(|g| g.id.clone()).collect();
         for id in &ids {
             s.applied(Event::Entry(id.clone(), EntryAct::TogglePin));
         }

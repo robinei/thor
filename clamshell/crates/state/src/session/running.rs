@@ -253,7 +253,7 @@ impl Session {
             });
             // Its units are named by the wall clock.
             let start = first.min().map_or(now, |secs| now.saturating_sub(unix.saturating_sub(secs)));
-            if let Some(g) = library.entries.iter().find(|g| g.key == key) {
+            if let Some(g) = library.entries().iter().find(|g| g.key == key) {
                 self.running.push(Running { mark: mark_of(library, g), ..Running::of(g, Origin::Ours, start) });
                 continue;
             }
@@ -351,7 +351,7 @@ impl Session {
         // carries, doesn't keep it, and ends once its own window closes; the game is taken here, not a
         // settle later.
         for w in self.windows.iter().filter(|w| !self.running_of(w).is_some_and(|r| r.owns(w))) {
-            let Some(g) = library.entries.iter().find(|g| has_mark(library, g, w)) else {
+            let Some(g) = library.entries().iter().find(|g| has_mark(library, g, w)) else {
                 continue;
             };
             if !self.launching.iter().any(|l| l.entry == g.id) && !new.iter().any(|n| n.id == g.id) {
@@ -512,7 +512,7 @@ impl Session {
         library.entry(id).filter(|g| g.browsed.is_some())?;
         let window = self.windows_of(id).next()?;
         let app = window.app_id.as_str();
-        let entries = &library.entries;
+        let entries = library.entries();
         let program = |g: &&crate::Entry| match &g.launch {
             Launch::Program { argv, .. } => argv.first().and_then(|p| p.rsplit('/').next()).is_some_and(|p| p.eq_ignore_ascii_case(app)),
             _ => false,

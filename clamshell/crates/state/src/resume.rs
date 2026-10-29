@@ -102,7 +102,7 @@ mod tests {
         let resume = s.resume();
         let selected = s.library_view().selected().cloned();
         let mut fresh = started(Init { resume: Some(resume.clone()), library: None, ..init() });
-        assert!(!fresh.library_view().read() && fresh.library_view().library().entries.is_empty());
+        assert!(!fresh.library_view().read() && fresh.library_view().library().entries().is_empty());
         assert_eq!(fresh.bottom().tab(), Tab::Wifi, "the tab at once");
         assert_eq!(fresh.resume(), resume, "saved meanwhile: the place it goes back to");
         let mut tapped = started(Init { resume: Some(resume.clone()), library: None, ..init() });

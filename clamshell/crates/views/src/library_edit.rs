@@ -283,8 +283,8 @@ impl std::fmt::Display for Taken<'_, '_, '_> {
         let Source::Dir(scan) = self.1 else { return Ok(()) };
         let library = self.0.s.library_view().library();
         let ours = |id: &str| id.strip_prefix(scan.id.as_str()).is_some_and(|rest| rest.starts_with(':'));
-        let top = |g: &&clamshell_state::Entry| ours(&g.id) && g.parent.and_then(|p| library.entries.get(p)).is_none_or(|p| !ours(&p.id));
-        write!(f, "{}", library.entries.iter().filter(top).count())
+        let top = |g: &&clamshell_state::Entry| ours(&g.id) && g.parent.and_then(|p| library.entries().get(p)).is_none_or(|p| !ours(&p.id));
+        write!(f, "{}", library.entries().iter().filter(top).count())
     }
 }
 
@@ -298,7 +298,7 @@ fn done(f: &mut Frame, r: Rect, size: f32) {
 fn entries_in(f: &Frame, p: &Place) -> usize {
     let library = f.s.library_view().library();
     match &p.within {
-        Some(_) => library.entries.iter().find(|g| g.id.strip_prefix(clamshell_state::ids::PLACE) == Some(p.id.as_str())).map_or(0, |g| g.items.len()),
+        Some(_) => library.entries().iter().find(|g| g.id.strip_prefix(clamshell_state::ids::PLACE) == Some(p.id.as_str())).map_or(0, |g| g.items.len()),
         None => library.collections.iter().find(|c| c.name == p.name).map_or(0, |c| c.entries.len()),
     }
 }

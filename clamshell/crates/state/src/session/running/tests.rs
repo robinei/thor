@@ -9,7 +9,7 @@ fn launches(fx: &[Effect], id: &str) -> bool {
 
 fn steam_ff6() -> State {
     let mut library = clamshell_library::demo::library();
-    if let Some(g) = library.entries.iter_mut().find(|g| &*g.id == "ff6") {
+    if let Some(g) = library.entries_mut().iter_mut().find(|g| &*g.id == "ff6") {
         g.launch = Launch::Steam { appid: 620 };
     }
     State::new(Init { library: Some(library), ..init() })
@@ -28,7 +28,7 @@ fn has_mark_agrees_with_mark_of() {
     };
     let heroic = Entry { launch: Launch::program(vec!["xdg-open".into(), "heroic://launch?appName=x&runner=gog".into()]), ..Entry::new("desktop:X", "X") };
     let ours = Entry::new("desktop:foot", "Terminal");
-    let library = crate::Library { entries: vec![steam.clone(), handed.clone(), heroic.clone(), ours.clone()], ..crate::Library::default() };
+    let library = crate::Library::new(Vec::new(), vec![steam.clone(), handed.clone(), heroic.clone(), ours.clone()]);
     let marks = ["steam_app_620", "steam_app_62", "org.app", "foot", "heroic:gog:x", ""];
     for g in [&steam, &handed, &heroic, &ours] {
         for mark in marks {
@@ -119,7 +119,7 @@ fn quit_closes_the_windows_then_ends_the_slice_force_kill_at_once() {
 #[test]
 fn a_quit_that_ends_an_entry_runs_its_runners_stop_once() {
     let mut library = clamshell_library::demo::library();
-    let firefox = library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
+    let firefox = library.entries_mut().iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
     let stop = vec!["stop".to_owned(), "{id}".to_owned()].into();
     firefox.runner = Some(clamshell_library::RunnerOf { handover: true, stop, ..clamshell_library::RunnerOf::new("android", "Android", true) });
     let mut s = State::new(Init { library: Some(library), ..init() });
@@ -404,7 +404,7 @@ fn a_launchers_dialog_answered_goes_back_though_the_launcher_has_other_child_win
 #[test]
 fn play_of_a_tool_asks_for_it_and_of_an_unknown_id_does_nothing() {
     let mut library = clamshell_library::demo::library();
-    library.entries.push(Entry { launch: Launch::Tool(clamshell_library::Tool::Rescan), ..Entry::new("tool:rescan", "Rescan") });
+    library.entries_mut().push(Entry { launch: Launch::Tool(clamshell_library::Tool::Rescan), ..Entry::new("tool:rescan", "Rescan") });
     let mut s = state_with(library);
     let fx = s.applied(Event::Entry("tool:rescan".into(), EntryAct::Play));
     assert_eq!(fx, vec![Effect::Tool(clamshell_library::Tool::Rescan)]);
@@ -505,7 +505,7 @@ fn the_program_in_force_falls_back_to_the_last_started() {
 /// A Files tab with a file of its own and one that is a library entry's (zelda's).
 fn files() -> State {
     let mut library = clamshell_library::demo::library();
-    if let Some(zelda) = library.entries.first_mut() {
+    if let Some(zelda) = library.entries_mut().first_mut() {
         zelda.file = Some("/roms/zelda.sfc".into());
     }
     let browsed = |id: &str, file: &str| crate::Entry {
@@ -514,9 +514,9 @@ fn files() -> State {
         browsed: Some(crate::Browsed::default()),
         ..crate::Entry::new(id, file)
     };
-    let n = library.entries.len();
-    library.entries.push(browsed("browse:Home/notes.md", "/h/notes.md"));
-    library.entries.push(browsed("browse:Home/zelda.sfc", "/roms/zelda.sfc"));
+    let n = library.entries().len();
+    library.entries_mut().push(browsed("browse:Home/notes.md", "/h/notes.md"));
+    library.entries_mut().push(browsed("browse:Home/zelda.sfc", "/roms/zelda.sfc"));
     library.collections.insert(0, crate::Collection::new("Files", vec![n, n + 1]));
     crate::testkit::state_with(library)
 }
@@ -579,7 +579,7 @@ fn a_file_handed_to_another_program_runs_by_its_window() {
 #[test]
 fn an_app_handed_over_runs_by_its_window_found_by_its_app_id() {
     let mut library = clamshell_library::demo::library();
-    let firefox = library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
+    let firefox = library.entries_mut().iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
     let stop = vec!["stop".to_owned(), "{id}".to_owned()].into();
     firefox.runner = Some(clamshell_library::RunnerOf { handover: true, stop, ..clamshell_library::RunnerOf::new("android", "Android", true) });
     let mut s = State::new(Init { library: Some(library), ..init() });
@@ -636,7 +636,7 @@ fn launchers() -> State {
         app: argv.len() == 1,
         ..Entry::new(id, title)
     };
-    library.entries.extend([
+    library.entries_mut().extend([
         shortcut("desktop:com.heroicgameslauncher.hgl", "Heroic Games Launcher", &["heroic"]),
         shortcut("desktop:Pattern Game", "Pattern Game", &["xdg-open", "heroic://launch?appName=patterngame&runner=sideload"]),
         shortcut("desktop:net.lutris.Lutris", "Lutris", &["lutris"]),

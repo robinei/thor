@@ -406,8 +406,8 @@ mod tests {
     #[test]
     fn a_folder_on_removable_storage_is_gone_to() {
         let mut library = clamshell_library::demo::library();
-        let sd = library.entries.len();
-        library.entries.push(clamshell_library::Entry {
+        let sd = library.entries().len();
+        library.entries_mut().push(clamshell_library::Entry {
             file: Some("/run/media/thor/SD".into()),
             browsed: Some(clamshell_library::Browsed {
                 folder: true,
@@ -417,11 +417,11 @@ mod tests {
             }),
             ..clamshell_library::Entry::new("browse:Files/Storage/SD", "SD")
         });
-        library.entries.push(clamshell_library::Entry { items: vec![sd], ..clamshell_library::Entry::new("folder:storage", "Storage") });
+        library.entries_mut().push(clamshell_library::Entry { items: vec![sd], ..clamshell_library::Entry::new("folder:storage", "Storage") });
         if let Some(files) = library.collections.iter_mut().find(|c| c.name == "Files") {
             files.entries.push(sd + 1);
         }
-        if let Some(card) = library.entries.get_mut(sd) {
+        if let Some(card) = library.entries_mut().get_mut(sd) {
             card.parent = Some(sd + 1);
         }
         let mut s = state_with(library);

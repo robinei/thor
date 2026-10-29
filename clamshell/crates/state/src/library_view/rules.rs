@@ -84,7 +84,7 @@ impl LibraryView {
     /// Plays the entry that the selected group's Continue points to (see [`crate::Library::to_continue`]).
     pub(crate) fn continue_selected(&self, out: &mut Out) {
         let next = self.selected_index().and_then(|g| self.library().to_continue(g));
-        if let Some(g) = next.and_then(|i| self.library().entries.get(i)) {
+        if let Some(g) = next.and_then(|i| self.library().entries().get(i)) {
             out.events.push(Event::Entry(g.id.clone(), EntryAct::Play));
         }
     }

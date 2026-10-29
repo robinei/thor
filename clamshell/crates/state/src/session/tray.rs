@@ -277,7 +277,7 @@ mod tests {
     #[test]
     fn a_tray_icon_gives_no_process_to_an_entry_found_in_another_programs() {
         let mut library = clamshell_library::demo::library();
-        let firefox = library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
+        let firefox = library.entries_mut().iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
         firefox.runner = Some(clamshell_library::RunnerOf { handover: true, ..clamshell_library::RunnerOf::new("android", "Android", true) });
         let mut s = started(crate::Init { library: Some(library), device_session: true, ..init() });
         launch_now(&mut s, "desktop:firefox");

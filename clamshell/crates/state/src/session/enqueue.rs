@@ -50,7 +50,7 @@ impl LibraryView {
         };
         let runner = target.runner.clone().filter(|r| r.enqueue.is_some())?;
         let library = self.library();
-        let index_of = |id: &str| library.entries.iter().position(|g| &*g.id == id);
+        let index_of = |id: &str| library.entries().iter().position(|g| &*g.id == id);
         // While there is a selection, its entries are queued in the order picked, and the open folder is
         // the entry that plays them.
         let picked = self.files().selected();
@@ -114,7 +114,7 @@ mod tests {
         (a.parent, b.parent) = (Some(0), Some(0));
         let album = Entry { runner: Some(music()), ..album };
         let entries = vec![album, a, b, song("single", "/m/single.mp3")];
-        state_with(Library { collections: vec![Collection::new("Music", vec![0, 3])], entries, ..Library::default() })
+        state_with(Library::new(vec![Collection::new("Music", vec![0, 3])], entries))
     }
 
     #[test]

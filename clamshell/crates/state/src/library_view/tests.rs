@@ -144,7 +144,7 @@ fn a_library_read_without_the_selected_entry_selects_the_first() {
     let mut s = state();
     s.applied(LibraryViewEvent::ListStep(2).into());
     let mut library = clamshell_library::demo::library();
-    library.entries.retain(|g| &*g.id != "mk-ds");
+    library.entries_mut().retain(|g| &*g.id != "mk-ds");
     library.collections = vec![crate::Collection::new("Games", (0..6).collect())];
     s.applied(Event::Library(Box::new(library)));
     assert_eq!(s.library_view().selected().map(|g| &**g), Some("zelda-lttp"));
@@ -224,7 +224,7 @@ fn typing_with_builtin_in_front_finds_entries_by_their_titles_start() {
     tap(&mut s, Id::Tab(crate::Tab::Keyboard));
     let key = |s: &mut State, k| find(k).map(|pos| tap(s, Id::Key(pos))).unwrap_or_default();
     let titles =
-        |s: &State| s.library_view().list().iter().filter_map(|&i| s.library_view().library().entries.get(i)).map(|g| g.title.clone()).collect::<Vec<_>>();
+        |s: &State| s.library_view().list().iter().filter_map(|&i| s.library_view().library().entries().get(i)).map(|g| g.title.clone()).collect::<Vec<_>>();
     assert!(key(&mut s, Key::Char('m')).is_empty(), "not sent to an app: the Library is in front");
     assert_eq!(titles(&s), ["Metroid: Zero Mission", "Mario Kart DS"]);
     key(&mut s, Key::Char('a'));
@@ -267,7 +267,7 @@ fn a_group_opens_and_back_goes_out_to_it() {
     tap(&mut s, Id::LibraryView(LibraryViewId::Collection(2)));
     assert_eq!(tap(&mut s, entry("tv:Cosmos")), vec![], "selected already: opened, nothing launched");
     assert_eq!(s.library_view().group().map(|g| g.title.as_str()), Some("Cosmos"));
-    let titles = |s: &State| s.library_view().list().iter().map(|&i| s.library_view().library().entries[i].title.clone()).collect::<Vec<_>>();
+    let titles = |s: &State| s.library_view().list().iter().map(|&i| s.library_view().library().entries()[i].title.clone()).collect::<Vec<_>>();
     assert_eq!(titles(&s), vec!["Season 1", "Season 2"]);
     s.applied(LibraryViewEvent::ListStep(1).into());
     tap(&mut s, Id::LibraryView(LibraryViewId::Launch));

@@ -37,7 +37,9 @@ impl Collection {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Library {
     pub collections: Vec<Collection>,
-    pub entries: Vec<Entry>,
+    /// Every entry, each in its slot. Read through [`Library::entries`] and changed through
+    /// [`Library::entries_mut`] or the methods here.
+    entries: Vec<Entry>,
     /// Problems found while reading it, such as mistakes in library.json or a source's missing dir, to
     /// show to the user.
     pub problems: Vec<String>,
@@ -68,6 +70,21 @@ pub struct OwnTab {
 }
 
 impl Library {
+    /// A library of `entries`, in the tabs `collections`.
+    pub fn new(collections: Vec<Collection>, entries: Vec<Entry>) -> Library {
+        Library { collections, entries, ..Library::default() }
+    }
+
+    /// Every entry, by slot: [`Collection::entries`] and [`Entry::items`] are indices into it.
+    pub fn entries(&self) -> &[Entry] {
+        &self.entries
+    }
+
+    /// The entries, to change.
+    pub fn entries_mut(&mut self) -> &mut Vec<Entry> {
+        &mut self.entries
+    }
+
     /// The first video frame in folder `i`, searching its entries in order and into subfolders.
     pub fn first_frame(&self, i: usize) -> Option<PathBuf> {
         let g = self.entries.get(i)?;

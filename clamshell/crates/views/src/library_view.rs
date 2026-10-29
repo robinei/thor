@@ -217,7 +217,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     f.list_moves(moves);
     // When there is nothing but ClamShell's own tools, say where games and apps come from, in the middle
     // of the screen. Not while the library is still being read at start, when the Library is empty for a moment.
-    if s.library_view().read() && s.library_view().library().entries.iter().all(|g| matches!(g.launch, Launch::Tool(_) | Launch::Builtin(_))) {
+    if s.library_view().read() && s.library_view().library().entries().iter().all(|g| matches!(g.launch, Launch::Tool(_) | Launch::Builtin(_))) {
         let line = Rect::new(pad, h * 0.5 - h * ROW_H, w - 2.0 * pad, h * ROW_H);
         widgets::centred_text(f, line, h * DETAIL, Tone::Dim, "No games or apps found: see ~/.config/clamshell/library.json");
     }
@@ -297,7 +297,7 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
             let title = Rect::new(tx, r.y, right - tx - pad * 0.3, r.h);
             // Outside its folder, as in Recent or Favourites, the folders it is in go before its title.
             let open = s.library_view().group().map(|g| &g.id);
-            let in_view = entry.parent.and_then(|p| s.library_view().library().entries.get(p)).is_none_or(|p| Some(&p.id) == open);
+            let in_view = entry.parent.and_then(|p| s.library_view().library().entries().get(p)).is_none_or(|p| Some(&p.id) == open);
             if in_view {
                 f.c.text_fit(title, row_h * ROW_TEXT, tone, &entry.title, Keep::Start);
             } else {
@@ -463,7 +463,7 @@ fn actions(f: &mut Frame, entry: &Entry, r: Rect, action_h: f32, pad: f32) -> f3
             Action::Continue => {
                 // The position within it is mpv's.
                 let library = s.library_view().library();
-                let next = library.entries.iter().position(|g| g.id == entry.id).and_then(|g| library.to_continue(g)).and_then(|i| library.entries.get(i));
+                let next = library.entries().iter().position(|g| g.id == entry.id).and_then(|g| library.to_continue(g)).and_then(|i| library.entries().get(i));
                 match next {
                     Some(n) => (Fmt::of(format_args!("Play · {}", Within(s, n, entry))), Tone::Go),
                     None => (Fmt::of(format_args!("Play")), Tone::Go),
@@ -550,7 +550,7 @@ struct Within<'a>(&'a State, &'a Entry, &'a Entry);
 
 impl Display for Within<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let entries = &self.0.library_view().library().entries;
+        let entries = &self.0.library_view().library().entries();
         // The folders from the entry up to the folder, collected bottom up and written top down.
         let mut chain = [None; 8];
         let mut at = self.1.parent;
@@ -575,7 +575,7 @@ struct Inside<'a>(&'a State, &'a Entry);
 
 impl Display for Inside<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let all = &self.0.library_view().library().entries;
+        let all = &self.0.library_view().library().entries();
         let folders = self.1.items.iter().filter(|&&i| all.get(i).is_some_and(Entry::is_group)).count();
         let entries = self.1.items.len() - folders;
         let plural = |n: usize| if n == 1 { "" } else { "s" };
@@ -616,7 +616,7 @@ struct Groups<'a> {
 
 impl Display for Groups<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let entries = &self.s.library_view().library().entries;
+        let entries = &self.s.library_view().library().entries();
         // At most a few levels, walked from the entry up and written from the top down.
         let mut chain = [None; 8];
         let mut at = self.entry.parent;

@@ -143,7 +143,7 @@ impl Session {
         let is_game = || match entry {
             Some(g) => g.is_game(),
             None => {
-                let mut of_runner = library.entries.iter().filter(|g| g.runner.as_ref().is_some_and(|r| &*r.key == id)).peekable();
+                let mut of_runner = library.entries().iter().filter(|g| g.runner.as_ref().is_some_and(|r| &*r.key == id)).peekable();
                 of_runner.peek().is_some() && of_runner.all(Entry::is_game)
             }
         };
@@ -194,7 +194,7 @@ impl Session {
     pub(crate) fn set_pausable_runners(&mut self, library: &Library) {
         let runners = &mut self.background.runners;
         runners.clear();
-        for r in library.entries.iter().filter_map(|g| g.runner.as_ref()).filter(|r| !r.pause.is_empty()) {
+        for r in library.entries().iter().filter_map(|g| g.runner.as_ref()).filter(|r| !r.pause.is_empty()) {
             if !runners.iter().any(|o| o.key == r.key) {
                 runners.push(r.clone());
             }
@@ -352,7 +352,7 @@ mod tests {
             ..clamshell_library::RunnerOf::new("android", "Android", true)
         };
         let mut library = clamshell_library::demo::library();
-        library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap().runner = Some(runner.clone());
+        library.entries_mut().iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap().runner = Some(runner.clone());
         let mut s = State::new(crate::Init { library: Some(library), ..init() });
         s.settings_mut().set(Some(&runner.key), Setting::Background, Some(InBackground::Pauses.value()));
         let (pause, resume) = (Effect::RunnerCommand(vec!["pause".into()]), Effect::RunnerCommand(vec!["resume".into()]));
@@ -389,7 +389,7 @@ mod tests {
             ..clamshell_library::RunnerOf::new("android", "Android", true)
         };
         let mut library = clamshell_library::demo::library();
-        library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap().runner = Some(runner.clone());
+        library.entries_mut().iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap().runner = Some(runner.clone());
         let mut s = State::new(crate::Init { library: Some(library), ..init() });
         s.settings_mut().set(Some(&runner.key), Setting::Background, Some(InBackground::Pauses.value()));
         let pause = Effect::RunnerCommand(vec!["pause".into()]);

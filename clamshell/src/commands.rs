@@ -34,7 +34,7 @@ fn print_tray_menu(entries: &[clamshell_state::session::tray::TrayEntry], depth:
 pub(crate) fn fetch_metadata(paths: &Paths, sources: &Sources) -> Result<(), String> {
     let loaded = library::load(sources);
     let art = paths.art.clone().ok_or("no home dir: nowhere to keep it")?;
-    let titles: std::collections::HashMap<_, _> = loaded.library.entries.iter().map(|g| (g.id.clone(), g.title.clone())).collect();
+    let titles: std::collections::HashMap<_, _> = loaded.library.entries().iter().map(|g| (g.id.clone(), g.title.clone())).collect();
     println!("fetching for {} entries", loaded.wanted.len());
     let (tx, rx) = std::sync::mpsc::channel();
     meta::spawn(meta::Fetch { wanted: loaded.wanted, keys: Some(loaded.keys), art }, &meta::Queue::default(), tx);
@@ -70,7 +70,7 @@ pub(crate) fn print_library(library: &Library) {
 
 /// Prints an entry indented `depth` levels and, for a group, its entries under it.
 fn print_entry(library: &Library, i: usize, depth: usize) {
-    let Some(g) = library.entries.get(i) else {
+    let Some(g) = library.entries().get(i) else {
         return;
     };
     let indent = "  ".repeat(depth);

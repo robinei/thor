@@ -157,7 +157,9 @@ pub fn load(sources: &Sources) -> Loaded {
     let (recent, favourites) = (b.own(content::OwnTab::Recent), b.own(content::OwnTab::Favourites));
     let Builder { games, collections, hows, problems, away, .. } = b;
     let parsed = config_problem_none.then(|| Arc::new(config.clone()));
-    let mut library = Library { collections, entries: games, problems, away, runner_keymaps, order, recent, favourites, config: parsed, ..Library::default() };
+    let mut library = Library::new(collections, games);
+    (library.problems, library.away, library.runner_keymaps, library.order) = (problems, away, runner_keymaps, order);
+    (library.recent, library.favourites, library.config) = (recent, favourites, parsed);
     let wanted = known(&mut library, hows, sources);
     library.rebuild_derived();
     Loaded { library, wanted, keys: config.keys }
@@ -194,7 +196,7 @@ mod tests {
             std::fs::write(root.join("library.json"), json).unwrap();
             let lib = load(&Sources { config: Some(root.join("library.json")), steam: Some(steam.clone()), ..Sources::default() }).library;
             let tab = lib.collections.iter().find(|c| c.name == "Games").unwrap();
-            tab.entries.iter().map(|&i| lib.entries[i].title.clone()).collect::<Vec<_>>()
+            tab.entries.iter().map(|&i| lib.entries()[i].title.clone()).collect::<Vec<_>>()
         };
         assert_eq!(games_tab(&config(r#"{ "type": "steam", "place": "games" }"#)), ["SNES", "Arma", "Zork"], "the folder first, before Arma");
         assert_eq!(games_tab(&config(r#"{ "type": "steam", "place": "steam" }"#)), ["SNES", "Steam"], "Steam's games in their folder");
@@ -205,8 +207,8 @@ mod tests {
         std::fs::write(steam.join("steamapps/appmanifest_30.acf"), manifest(30, "Celeste")).unwrap();
         std::fs::write(root.join("library.json"), config(rules)).unwrap();
         let lib = load(&Sources { config: Some(root.join("library.json")), steam: Some(steam.clone()), ..Sources::default() }).library;
-        let titles = |ids: &[usize]| ids.iter().map(|&i| lib.entries[i].title.clone()).collect::<Vec<_>>();
-        let folder = |title: &str| lib.entries.iter().find(|g| g.title == title).unwrap();
+        let titles = |ids: &[usize]| ids.iter().map(|&i| lib.entries()[i].title.clone()).collect::<Vec<_>>();
+        let folder = |title: &str| lib.entries().iter().find(|g| g.title == title).unwrap();
         assert_eq!(titles(&folder("Steam").items), ["Text", "Celeste"], "Arma hidden");
         assert_eq!(titles(&folder("Text").items), ["Zork"]);
         assert_eq!(folder("Zork").runner.as_ref().map(|r| &*r.key), Some("runner:steam"), "Steam's games: Steam's");
@@ -237,7 +239,7 @@ mod tests {
         let loaded =
             load(&Sources { config: Some(root.join("library.json")), data_dirs: vec![root.join("data")], steam: Some(steam.clone()), ..Sources::default() });
         let lib = &loaded.library;
-        let runner = |title: &str| lib.entries.iter().find(|g| g.title == title).and_then(|g| g.runner.as_ref()).map(|r| r.key.to_string());
+        let runner = |title: &str| lib.entries().iter().find(|g| g.title == title).and_then(|g| g.runner.as_ref()).map(|r| r.key.to_string());
         assert_eq!(runner("Celeste").as_deref(), Some("runner:desktop-games"), "the runner it names");
         assert_eq!(runner("Foot").as_deref(), Some("runner:apps"), "else the first of its type");
         assert!(lib.problems.iter().any(|p| p.ends_with("steamgriddb needs keys.steamgriddb")), "{:?}", lib.problems);
@@ -281,13 +283,13 @@ mod tests {
         std::fs::write(root.join("library.json"), config).unwrap();
         let lib = load(&Sources { config: Some(root.join("library.json")), data_dirs: vec![root.join("data")], ..Sources::default() }).library;
         let tab =
-            |name: &str| lib.collections.iter().find(|c| c.name == name).map(|c| c.entries.iter().map(|&i| lib.entries[i].title.clone()).collect::<Vec<_>>());
+            |name: &str| lib.collections.iter().find(|c| c.name == name).map(|c| c.entries.iter().map(|&i| lib.entries()[i].title.clone()).collect::<Vec<_>>());
         assert_eq!(tab("Games"), Some(vec!["Platformers".to_owned()]), "in its folder");
-        let folder = lib.entries.iter().find(|g| g.title == "Platformers").unwrap();
-        assert_eq!(folder.items.iter().map(|&i| lib.entries[i].title.as_str()).collect::<Vec<_>>(), ["Celeste"]);
+        let folder = lib.entries().iter().find(|g| g.title == "Platformers").unwrap();
+        assert_eq!(folder.items.iter().map(|&i| lib.entries()[i].title.as_str()).collect::<Vec<_>>(), ["Celeste"]);
         assert_eq!(tab("Launchers"), Some(vec!["Lutris".to_owned()]));
         assert_eq!(tab("Apps"), Some(vec!["Foot".to_owned()]), "Uninstall Foo hidden; the rest taken by the last");
-        let entry = |title: &str| lib.entries.iter().find(|g| g.title == title).unwrap();
+        let entry = |title: &str| lib.entries().iter().find(|g| g.title == title).unwrap();
         assert!(entry("Foot").app && !entry("Celeste").app, "Apps says recent: false");
     }
 
@@ -325,22 +327,22 @@ mod tests {
         assert!(lib.problems.iter().all(|p| p.ends_with("isn't installed") || tool_missing(p)), "{:?}", lib.problems);
         assert_eq!(lib.collections.last().map(|c| c.name.as_str()), Some("Mine"), "ClamShell's tools, named and placed as declared");
         assert_eq!((lib.collections[0].name.as_str(), lib.collections[0].icon.as_deref()), ("Games", Some("film")), "listed: its icon; Other has nothing");
-        let games = |ids: &[usize]| ids.iter().map(|&i| lib.entries[i].title.clone()).collect::<Vec<_>>();
+        let games = |ids: &[usize]| ids.iter().map(|&i| lib.entries()[i].title.clone()).collect::<Vec<_>>();
         let tab = lib.collections.iter().find(|c| c.name == "Games").unwrap();
         assert_eq!(games(&tab.entries), ["Handhelds", "SNES", "Doom"], "folders first");
-        let snes = &lib.entries[tab.entries[1]];
+        let snes = &lib.entries()[tab.entries[1]];
         assert_eq!(games(&snes.items), ["Mario", "Zelda"]);
         assert_eq!(snes.box_front, Some(root.join("snes/cover.png")), "its source's dir's art");
-        let zelda = &lib.entries[snes.items[1]];
+        let zelda = &lib.entries()[snes.items[1]];
         assert!(matches!(&zelda.launch, Launch::Program { argv, .. } if argv[0] == "snes9x"));
         assert_eq!(&*zelda.id, "snes:Zelda.sfc", "ids as without the folder");
-        let handhelds = &lib.entries[tab.entries[0]];
-        let gba = &lib.entries[handhelds.items[0]];
+        let handhelds = &lib.entries()[tab.entries[0]];
+        let gba = &lib.entries()[handhelds.items[0]];
         assert_eq!((gba.title.as_str(), games(&gba.items)), ("GBA", vec!["Metroid".to_owned()]));
         assert_eq!(&*gba.id, "place:gba", "a declared place's id");
         assert_eq!(gba.icon.as_deref(), Some(root.join("gba.png").as_path()), "its icon, from library.json's dir");
         assert_eq!(handhelds.id.as_ref(), "place:handhelds");
-        assert!(matches!(&lib.entries[gba.items[0]].launch, Launch::Program { argv, .. } if argv[0] == "mgba"));
+        assert!(matches!(&lib.entries()[gba.items[0]].launch, Launch::Program { argv, .. } if argv[0] == "mgba"));
         assert_eq!(lib.groups_of(gba.items[0]), [tab.entries[0], handhelds.items[0]]);
     }
 
@@ -372,7 +374,7 @@ mod tests {
         let lib = load(&Sources { config: Some(root.join("library.json")), ..Sources::default() }).library;
         let tab = |name: &str| {
             let c = lib.collections.iter().find(|c| c.name == name).unwrap();
-            c.entries.iter().map(|&i| lib.entries[i].title.clone()).collect::<Vec<_>>()
+            c.entries.iter().map(|&i| lib.entries()[i].title.clone()).collect::<Vec<_>>()
         };
         assert_eq!(tab("Games"), ["PlayStation", "Mario", "Zelda"], "the runner's *.sfc and also *.zip, not the notes");
         let psx = lib.entry("place:psx").unwrap();

@@ -74,7 +74,7 @@ impl Rng {
 /// one window.
 fn library() -> Library {
     let mut library = clamshell_library::demo::library();
-    for g in &mut library.entries {
+    for g in library.entries_mut() {
         match &*g.id {
             "ff6" => g.launch = Launch::Steam { appid: 620 },
             "desktop:firefox" => g.runner = Some(RunnerOf { handover: true, ..RunnerOf::new("android", "Android", true) }),
@@ -86,23 +86,25 @@ fn library() -> Library {
         enqueue: Some(r#"{"command": ["loadfile", "{path}", "append-play"]}"#.into()),
         ..RunnerOf::new("music", "Music", true)
     };
-    let n = library.entries.len();
+    let n = library.entries().len();
     let song = |id: &str, file: &str, parent| Entry { file: Some(file.into()), runner: Some(music.clone()), parent, ..Entry::new(id, id) };
-    library.entries.push(Entry { items: vec![n + 1, n + 2], runner: Some(music.clone()), ..Entry::new("album", "Album") });
-    library.entries.push(song("song-a", "/m/Album/a.mp3", Some(n)));
-    library.entries.push(song("song-b", "/m/Album/b.mp3", Some(n)));
-    library.entries.push(song("single", "/m/single.mp3", None));
-    library.entries.push(Entry {
+    library.entries_mut().push(Entry { items: vec![n + 1, n + 2], runner: Some(music.clone()), ..Entry::new("album", "Album") });
+    library.entries_mut().push(song("song-a", "/m/Album/a.mp3", Some(n)));
+    library.entries_mut().push(song("song-b", "/m/Album/b.mp3", Some(n)));
+    library.entries_mut().push(song("single", "/m/single.mp3", None));
+    library.entries_mut().push(Entry {
         file: Some("/h/notes.md".into()),
         launch: Launch::program(vec!["xdg-open".into(), "/h/notes.md".into()]),
         browsed: Some(Browsed::default()),
         ..Entry::new("browse:Home/notes.md", "/h/notes.md")
     });
     let program = |argv: &[&str]| Launch::program(argv.iter().map(|a| (*a).into()).collect());
-    library.entries.push(Entry { launch: program(&["heroic"]), app: true, ..Entry::new("desktop:com.heroicgameslauncher.hgl", "Heroic") });
-    library.entries.push(Entry { launch: program(&["xdg-open", "heroic://launch?appName=hk&runner=legendary"]), ..Entry::new("desktop:hk", "Hollow Knight") });
-    library.entries.push(Entry { launch: program(&["lutris", "lutris:rungameid/3"]), ..Entry::new("desktop:lutris-quake", "Quake") });
-    library.entries.push(Entry { launch: program(&["lutris"]), app: true, ..Entry::new("desktop:net.lutris.Lutris", "Lutris") });
+    library.entries_mut().push(Entry { launch: program(&["heroic"]), app: true, ..Entry::new("desktop:com.heroicgameslauncher.hgl", "Heroic") });
+    library
+        .entries_mut()
+        .push(Entry { launch: program(&["xdg-open", "heroic://launch?appName=hk&runner=legendary"]), ..Entry::new("desktop:hk", "Hollow Knight") });
+    library.entries_mut().push(Entry { launch: program(&["lutris", "lutris:rungameid/3"]), ..Entry::new("desktop:lutris-quake", "Quake") });
+    library.entries_mut().push(Entry { launch: program(&["lutris"]), app: true, ..Entry::new("desktop:net.lutris.Lutris", "Lutris") });
     library.collections.push(Collection::new("Music", vec![n, n + 3]));
     library.collections.push(Collection::new("Files", vec![n + 4]));
     library.collections.push(Collection::new("Stores", vec![n + 5, n + 6, n + 7, n + 8]));
@@ -273,7 +275,7 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
         }
         Top::App { app: BuiltinApp::Library, .. } => {
             let sh = s.library_view();
-            ids.extend(sh.list().iter().filter_map(|&i| sh.library().entries.get(i)).map(|g| Id::LibraryView(LibraryViewId::Entry(g.id.clone()))));
+            ids.extend(sh.list().iter().filter_map(|&i| sh.library().entries().get(i)).map(|g| Id::LibraryView(LibraryViewId::Entry(g.id.clone()))));
             ids.extend((0..sh.library().collections.len() as u16).map(|i| Id::LibraryView(LibraryViewId::Collection(i))));
             ids.extend(
                 [LibraryViewId::Launch, LibraryViewId::Up, LibraryViewId::Favourite, LibraryViewId::Pin, LibraryViewId::Continue, LibraryViewId::Enqueue]
@@ -487,7 +489,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                 // A launcher's game, marked by the launcher on its process: in Steam's scope, a unit of ours
                 // (the launcher's, or its own), or none; known by an app id of its own, or by the mark.
                 3 => {
-                    let marks: Vec<String> = library.entries.iter().filter_map(|g| crate::session::launchers::of_entry(library, g)).collect();
+                    let marks: Vec<String> = library.entries().iter().filter_map(|g| crate::session::launchers::of_entry(library, g)).collect();
                     let game = rng.pick(&marks)?.clone();
                     let unit = match rng.below(3) {
                         0 => Some("app-steam.scope".into()),
@@ -553,7 +555,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             let id = match rng.below(3) {
                 0 => rng.pick(s.session().running_entries())?.id.clone(),
                 1 => rng.pick(s.dock().items())?.id.clone(),
-                _ => rng.pick(&library.entries)?.id.clone(),
+                _ => rng.pick(library.entries())?.id.clone(),
             };
             let act = [
                 EntryAct::Play,
@@ -824,7 +826,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             8 if rng.one_in(10) => Event::Quit,
             // What the metadata thread found for an entry.
             9 => {
-                let id = rng.pick(&library.entries)?.id.clone();
+                let id = rng.pick(library.entries())?.id.clone();
                 Event::Meta { id, meta: crate::Meta { cover: Some("/tmp/cover.png".into()), duration: Some(60), ..crate::Meta::default() } }
             }
             _ => Event::Fetching(rng.one_in(2)),
@@ -1151,7 +1153,7 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         ensure!(cursor < list.len(), "6: cursor {cursor} past {}", list.len());
     }
     let filter = library_view.filter().to_lowercase();
-    for g in list.iter().filter_map(|&i| library_view.library().entries.get(i)) {
+    for g in list.iter().filter_map(|&i| library_view.library().entries().get(i)) {
         ensure!(g.title.to_lowercase().starts_with(&filter), "6: {} listed for {filter:?}", g.id);
     }
 

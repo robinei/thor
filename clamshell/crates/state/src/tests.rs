@@ -256,7 +256,7 @@ fn a_launchs_first_window_is_shown_before_a_window_that_came_back() {
 #[test]
 fn a_steam_game_found_by_its_window_is_launched_not_found_as_a_program() {
     let mut library = clamshell_library::demo::library();
-    if let Some(g) = library.entries.iter_mut().find(|g| &*g.id == "ff6") {
+    if let Some(g) = library.entries_mut().iter_mut().find(|g| &*g.id == "ff6") {
         g.launch = Launch::Steam { appid: 620 };
     }
     let mut s = started(Init { library: Some(library), ..init() });
@@ -544,7 +544,7 @@ fn a_library_read_updates_the_runners_paused_together() {
     };
     s.settings_mut().set(Some(&runner.key), Setting::Background, Some(crate::settings::Choice::value(crate::settings::InBackground::Pauses)));
     let mut library = clamshell_library::demo::library();
-    for g in library.entries.iter_mut() {
+    for g in library.entries_mut().iter_mut() {
         match &*g.id {
             "ff6" => g.launch = clamshell_library::Launch::Steam { appid: 620 },
             "desktop:firefox" => g.runner = Some(runner.clone()),

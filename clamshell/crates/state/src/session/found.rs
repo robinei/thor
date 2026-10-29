@@ -122,7 +122,7 @@ fn library_entry<'a>(library: &'a Library, name: &str) -> Option<&'a Entry> {
     let named = |g: &&Entry| {
         ids::desktop_file(&g.id).is_some_and(|d| d.eq_ignore_ascii_case(name)) || g.wm_class.as_deref().is_some_and(|c| c.eq_ignore_ascii_case(name))
     };
-    library.entries.iter().find(named)
+    library.entries().iter().find(named)
 }
 
 /// The icon to look for, for an entry found by its window.
@@ -240,7 +240,7 @@ mod tests {
     fn a_window_is_found_as_the_desktop_entry_naming_its_class() {
         let mut s = device();
         let mut library = clamshell_library::demo::library();
-        library.entries.push(Entry {
+        library.entries_mut().push(Entry {
             launch: clamshell_library::Launch::program(vec!["heroic".into()]),
             app: true,
             wm_class: Some("heroic".into()),
@@ -298,7 +298,7 @@ mod tests {
     #[test]
     fn a_process_with_another_entrys_windows_is_not_moved() {
         let mut library = clamshell_library::demo::library();
-        let firefox = library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
+        let firefox = library.entries_mut().iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
         firefox.runner = Some(clamshell_library::RunnerOf { handover: true, ..clamshell_library::RunnerOf::new("android", "Android", true) });
         let mut s = State::new(Init { library: Some(library), device_session: true, ..init() });
         launch_now(&mut s, "desktop:firefox");

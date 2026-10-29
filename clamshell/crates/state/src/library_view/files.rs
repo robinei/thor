@@ -286,7 +286,7 @@ impl LibraryView {
 
     /// Whether `entry` is in a folder where nothing can be changed, such as an archive's.
     fn in_locked(&self, entry: &Entry) -> bool {
-        let parent = entry.parent.and_then(|p| self.library().entries.get(p));
+        let parent = entry.parent.and_then(|p| self.library().entries().get(p));
         parent.and_then(|p| p.browsed.as_ref()).is_some_and(|b| b.locked)
     }
 

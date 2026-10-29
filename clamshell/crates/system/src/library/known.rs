@@ -17,7 +17,7 @@ pub(super) fn known(library: &mut Library, hows: Vec<(usize, How)>, sources: &So
         let store = crate::store::Store::open(state);
         let plays = store.plays();
         let favourites = store.favourites();
-        for g in &mut library.entries {
+        for g in library.entries_mut() {
             if let Some(p) = plays.get(&*g.id) {
                 g.plays = *p;
             }
@@ -27,7 +27,7 @@ pub(super) fn known(library: &mut Library, hows: Vec<(usize, How)>, sources: &So
     let now = crate::time::clock::unix_secs();
     let mut wanted = Vec::new();
     for (i, how) in hows {
-        let Some(g) = library.entries.get(i) else {
+        let Some(g) = library.entries().get(i) else {
             continue;
         };
         let fetched = metas.get(&*g.id);
@@ -49,7 +49,7 @@ pub(super) fn known(library: &mut Library, hows: Vec<(usize, How)>, sources: &So
     }
     // For mpv's videos: where mpv left each, its length and a frame of it. The length and frame are probed
     // once, then kept.
-    for g in &mut library.entries {
+    for g in library.entries_mut() {
         let Some(file) = g.mpv_file().map(std::path::Path::to_path_buf) else {
             continue;
         };
@@ -67,11 +67,11 @@ pub(super) fn known(library: &mut Library, hows: Vec<(usize, How)>, sources: &So
         }
     }
     // A folder of videos without art uses the frame of its first video that has one.
-    for i in 0..library.entries.len() {
-        let bare = library.entries.get(i).is_some_and(|g| g.is_group() && g.box_front.is_none() && g.details.shot.is_none());
+    for i in 0..library.entries().len() {
+        let bare = library.entries().get(i).is_some_and(|g| g.is_group() && g.box_front.is_none() && g.details.shot.is_none());
         if bare
             && let Some(frame) = library.first_frame(i)
-            && let Some(g) = library.entries.get_mut(i)
+            && let Some(g) = library.entries_mut().get_mut(i)
         {
             g.details.shot = Some(frame);
         }

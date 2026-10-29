@@ -114,15 +114,11 @@ pub fn library() -> Library {
         Collection::with_icon("Files", "folder", vec![files]),
     ];
     let own = |name: &str, icon: &str| Some(OwnTab { name: name.into(), icon: Some(icon.into()) });
-    Library {
-        collections,
-        entries: games,
-        order: vec!["Recent".into(), "Favourites".into()],
-        recent: own("Recent", "clock"),
-        favourites: own("Favourites", "star"),
-        config: Some(std::sync::Arc::new(config())),
-        ..Library::default()
-    }
+    let mut library = Library::new(collections, games);
+    library.order = vec!["Recent".into(), "Favourites".into()];
+    (library.recent, library.favourites) = (own("Recent", "clock"), own("Favourites", "star"));
+    library.config = Some(std::sync::Arc::new(config()));
+    library
 }
 
 /// A library.json the demo could have been read from: its tabs, a folder per system, and their sources.

@@ -346,7 +346,7 @@ mod tests {
             ..clamshell_library::RunnerOf::new("android", "Android", true)
         };
         let mut library = clamshell_library::demo::library();
-        if let Some(g) = library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox") {
+        if let Some(g) = library.entries_mut().iter_mut().find(|g| &*g.id == "desktop:firefox") {
             g.runner = Some(runner);
         }
         let mut s = State::new(crate::Init { library: Some(library), ..crate::testkit::init() });

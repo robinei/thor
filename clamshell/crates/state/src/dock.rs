@@ -398,7 +398,7 @@ mod tests {
         assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Dock(ids)) if ids.len() == 2)), "saved: {fx:?}");
         // A rescan without ff6 drops its pin too.
         let mut library = clamshell_library::demo::library();
-        library.entries.retain(|g| &*g.id != "ff6");
+        library.entries_mut().retain(|g| &*g.id != "ff6");
         library.collections.iter_mut().for_each(|c| c.entries.clear());
         let fx = s.applied(Event::Library(Box::new(library)));
         assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Dock(ids)) if ids.iter().map(|i| &**i).eq(["builtin:library"]))), "{fx:?}");
@@ -565,7 +565,7 @@ mod tests {
         tap(&mut s, Id::Dock(DockId::Move));
         assert_eq!(s.dock().moving().map(|m| &**m), Some("ff6"));
         let mut library = clamshell_library::demo::library();
-        library.entries.retain(|g| &*g.id != "ff6");
+        library.entries_mut().retain(|g| &*g.id != "ff6");
         library.collections.iter_mut().for_each(|c| c.entries.clear());
         s.applied(Event::Library(Box::new(library)));
         assert_eq!(s.dock().moving(), None);

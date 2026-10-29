@@ -14,7 +14,7 @@ fn files_state() -> State {
     let mut trash = entry("browse:Trash", true, BrowseKind::Trash);
     trash.file = Some("/t/files".into());
     let entries = vec![entry("browse:Home", true, BrowseKind::Root), trash];
-    state_with(Library { collections: vec![Collection::new("Files", vec![0, 1])], entries, ..Library::default() })
+    state_with(Library::new(vec![Collection::new("Files", vec![0, 1])], entries))
 }
 
 /// The effects in `fx` that set the folder to list and watch.

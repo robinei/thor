@@ -56,7 +56,7 @@ fn state_with(settings: &settings::Settings) -> State {
 #[test]
 fn an_entry_takes_its_runners_settings_not_its_folders() {
     let mut library = clamshell_library::demo::library();
-    for g in library.entries.iter_mut().filter(|g| g.id.starts_with("tv:")) {
+    for g in library.entries_mut().iter_mut().filter(|g| g.id.starts_with("tv:")) {
         g.runner = Some(clamshell_library::RunnerOf::new("video", "Video", true));
     }
     let mut settings = settings::Settings::default();
@@ -77,7 +77,7 @@ fn an_entry_takes_its_runners_settings_not_its_folders() {
 #[test]
 fn the_panel_offers_the_items_levels() {
     let mut library = clamshell_library::demo::library();
-    for g in library.entries.iter_mut().filter(|g| g.id.starts_with("tv:")) {
+    for g in library.entries_mut().iter_mut().filter(|g| g.id.starts_with("tv:")) {
         g.runner = Some(clamshell_library::RunnerOf::new("video", "Video", true));
     }
     let mut s = State::new(Init { library: Some(library), ..init() });
@@ -100,7 +100,7 @@ fn the_panel_offers_the_items_levels() {
 #[test]
 fn a_runner_can_leave_its_items_without_settings_of_their_own() {
     let mut library = clamshell_library::demo::library();
-    for g in library.entries.iter_mut() {
+    for g in library.entries_mut().iter_mut() {
         g.runner = Some(clamshell_library::RunnerOf::new("snes", "SNES", false));
     }
     let s = State::new(Init { library: Some(library), ..init() });
@@ -129,7 +129,7 @@ fn a_runner_gets_its_keymap_once() {
 #[test]
 fn a_runners_keymap_given_while_its_item_runs_is_applied() {
     let mut library = clamshell_library::demo::library();
-    for g in library.entries.iter_mut() {
+    for g in library.entries_mut().iter_mut() {
         g.runner = Some(clamshell_library::RunnerOf::new("text", "Text", false));
     }
     let mut s = started(Init { library: Some(library), ..init() });

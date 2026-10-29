@@ -91,7 +91,7 @@ fn rescanner<S: Sink + Clone>(sources: Sources, paths: Paths, queue: meta::Queue
                 },
             }
             let loaded = library::load(&sources);
-            log::info!("rescan: {} entries", loaded.library.entries.len());
+            log::info!("rescan: {} entries", loaded.library.entries().len());
             let library = Box::new(loaded.library);
             let event = if wrote { clamshell_state::Event::LibraryWritten(library) } else { clamshell_state::Event::Library(library) };
             if sink.send(event).is_err() {

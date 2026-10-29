@@ -83,11 +83,11 @@ impl Spender {
     pub fn name<'a>(&'a self, library: &'a Library) -> &'a str {
         match &self.group {
             Group::Launch(unit) => {
-                let entry = library.entries.iter().find(|g| g.key == unit.key);
+                let entry = library.entries().iter().find(|g| g.key == unit.key);
                 entry.map_or(unit.key.as_str(), |g| g.title.as_str())
             }
             Group::App(app) => {
-                let entry = library.entries.iter().find(|g| clamshell_library::ids::desktop_file(&g.id) == Some(app.as_str()));
+                let entry = library.entries().iter().find(|g| clamshell_library::ids::desktop_file(&g.id) == Some(app.as_str()));
                 entry.map_or(app.as_str(), |g| g.title.as_str())
             }
             Group::Process(name) => name,
@@ -213,7 +213,7 @@ mod tests {
     #[test]
     fn an_app_handed_over_is_known_by_its_app_id_and_edited_without_what_it_cant_get() {
         let mut library = clamshell_library::demo::library();
-        let firefox = library.entries.iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
+        let firefox = library.entries_mut().iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap();
         firefox.another = true;
         firefox.runner = Some(clamshell_library::RunnerOf { handover: true, ..clamshell_library::RunnerOf::new("android", "Android", true) });
         let mut s = state_with(library);
