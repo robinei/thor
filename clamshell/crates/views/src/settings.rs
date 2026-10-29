@@ -23,6 +23,7 @@ use clamshell_ui::toolkit::style::{self, Text, Tone};
 use clamshell_ui::toolkit::widgets::{self, TileFace, TileShape};
 
 use super::format::Variables;
+use super::icons;
 
 /// The height of the level tabs' row, as a fraction of the area's height.
 const TABS_H: f32 = 0.1;
@@ -199,7 +200,7 @@ fn face(s: &State, tile: Tile) -> Face {
             let overruled = setting == Setting::Scaling && p.tile_value(Setting::Size) == clamshell_state::settings::Size::Integer as u16;
             Face {
                 id: Id::Settings(SettingsId::Tile(setting)),
-                icon: Icon::for_setting(setting),
+                icon: icons::setting(setting),
                 value: text,
                 impact: setting.impact(value),
                 origin: p.tile_origin(setting),

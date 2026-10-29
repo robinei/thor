@@ -66,7 +66,7 @@ pub enum EditId {
     Picture,
 }
 
-/// The UI's icons that a place may have, by name (clamshell-ui's `Icon::named` draws each).
+/// The UI's icons that a place may have, by name (clamshell-views' `icons::named` gives each its glyph).
 pub const ICONS: [&str; 13] = ["gamepad", "apps", "film", "tv", "music", "star", "clock", "tools", "folder", "archive", "file", "trash", "card"];
 
 /// What the edit mode shows: the tabs' places, the sources or the runners.

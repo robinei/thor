@@ -8,6 +8,7 @@ use clamshell_ui::gfx::icons::Icon;
 use clamshell_ui::toolkit::Frame;
 use clamshell_ui::toolkit::style::Tone;
 
+use super::icons;
 use super::{battery, bluetooth, dock, levels, settings, sysinfo, time, touchpad, wifi};
 
 /// A tab's view and button.
@@ -69,7 +70,7 @@ pub(super) fn view(tab: Tab) -> TabView {
         Tab::Sysinfo => tab_view(sysinfo::draw, |_| plain(Tab::Sysinfo, Icon::Sysinfo)),
         Tab::Wifi => tab_view(wifi::draw, |s| {
             let quality = s.sys().status().wifi;
-            Button { id: Id::Tab(Tab::Wifi), face: Face::Icon(Icon::wifi(quality)), tone: reading(quality.is_some()) }
+            Button { id: Id::Tab(Tab::Wifi), face: Face::Icon(icons::wifi(quality)), tone: reading(quality.is_some()) }
         }),
         // An empty, dim battery when there is none, and the accent colour when low.
         Tab::Battery => tab_view(battery::draw, |s| {

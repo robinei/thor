@@ -1,6 +1,6 @@
 //! Line icons, drawn as paths on a 24x24 grid scaled into a square and blended as cached masks
-//! ([`Painter::icon`]). There is no icon font and there are no image files. The toolkit decides which icon
-//! stands for one of the state's things, such as a tab, a setting or a device (`toolkit::icons`).
+//! ([`Painter::icon`]). There is no icon font and there are no image files. Which icon stands for one of
+//! the state's things, such as a setting or a device, the views decide.
 
 use tiny_skia::{Color, Pixmap};
 
@@ -84,7 +84,7 @@ pub enum Icon {
     Off,
     /// Layers: three sheets stacked.
     Layers,
-    // The Library's tabs, named in library.json (see [`Icon::named`]).
+    // The Library's tabs, named in library.json (see clamshell-views' `icons::named`).
     Film,
     Tv,
     Music,
@@ -115,27 +115,6 @@ pub enum Icon {
 }
 
 impl Icon {
-    /// The Library tab's icon, by the name library.json gives it: `gamepad`, `apps`, `film`, `tv`, `music`,
-    /// `star`, `clock`, `tools`, `folder`, `archive`, `file`, `trash` or `card`. Any other name has none.
-    pub fn named(name: &str) -> Option<Icon> {
-        Some(match name {
-            "gamepad" => Icon::Gamepad,
-            "apps" => Icon::Apps,
-            "film" => Icon::Film,
-            "tv" => Icon::Tv,
-            "music" => Icon::Music,
-            "star" => Icon::Star,
-            "clock" => Icon::Clock,
-            "tools" => Icon::Wrench,
-            "folder" => Icon::Folder,
-            "archive" => Icon::Archive,
-            "file" => Icon::File,
-            "trash" => Icon::Trash,
-            "card" => Icon::Card,
-            _ => return None,
-        })
-    }
-
     /// The icon for a volume (0-100), with a wave per third.
     pub fn volume(level: u8, muted: bool) -> Icon {
         let waves = match level {
@@ -781,16 +760,5 @@ mod tests {
         assert_eq!(Icon::volume(50, true), Icon::Volume { waves: 2, muted: true });
         assert_eq!(Icon::battery(44, false), Icon::Battery { tenths: 4, charging: false });
         assert_eq!(Icon::battery(100, true), Icon::Battery { tenths: 10, charging: true });
-    }
-}
-
-#[cfg(test)]
-mod named_tests {
-    /// Every icon a place may be given in the Library's edit mode is drawn.
-    #[test]
-    fn every_icon_a_place_may_have_is_named() {
-        for name in clamshell_state::library_view::edit::ICONS {
-            assert!(super::Icon::named(name).is_some(), "{name}");
-        }
     }
 }

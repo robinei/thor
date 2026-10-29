@@ -18,6 +18,7 @@ use clamshell_ui::toolkit::{Frame, PadMove, PadUse, widgets};
 
 use super::art;
 use super::format::{Bytes, DaysAgo, PlayTime};
+use super::icons;
 
 /// The tab bar's height and text size, as fractions of the screen's height.
 pub(super) const TABS_H: f32 = 0.08;
@@ -135,7 +136,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     }
     let collections = s.library_view().library().collections.iter().enumerate().filter(|(i, _)| !picking || *i == s.library_view().current());
     let items = collections.map(|(i, coll)| {
-        let icon = coll.icon.as_deref().and_then(Icon::named);
+        let icon = coll.icon.as_deref().and_then(icons::named);
         (Id::LibraryView(LibraryViewId::Collection(i as u16)), icon, coll.name.as_str(), i == s.library_view().current())
     });
     let first = f.targets_drawn();

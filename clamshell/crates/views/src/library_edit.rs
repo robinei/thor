@@ -11,6 +11,7 @@ use clamshell_state::config::{Config, Place, Source};
 use clamshell_state::library_view::edit::{self, Edit, EditId, Form, Panel, Row};
 use clamshell_state::library_view::form::{self, ItemRef, Set};
 
+use super::icons;
 use super::library_view::{ACTION, DETAIL, HEADER_TEXT, LIST_W, ROW_H, ROW_TEXT, TAB_TEXT, TABS_H, TITLE};
 use clamshell_ui::gfx::icons::Icon;
 use clamshell_ui::gfx::{Align, Keep, Rect};
@@ -36,7 +37,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect, edit: &Edit) -> usize {
     // The tabs, + for a new one, and Done.
     let places = edit.panel() == Panel::Places;
     let items = edit::tabs(config).enumerate().map(|(i, p)| {
-        let icon = p.icon.as_deref().and_then(Icon::named);
+        let icon = p.icon.as_deref().and_then(icons::named);
         (EditId::Tab(i as u16).into(), icon, p.name.as_str(), places && i == edit.tab())
     });
     // Room is kept for +, Sources, Runners and Done; the places' tabs have the rest, scrolling if they
@@ -377,7 +378,7 @@ fn details(f: &mut Frame, h: f32, edit: &Edit, config: &Config, place: &Place, r
             let r = Rect::new(r.x + detail + col * r.w / 3.0, y + line * detail * ACTION, r.w / 3.0 - detail, detail * ACTION);
             let current = place.icon.as_deref().unwrap_or("none") == name;
             f.button(EditId::IconChoice(j as u16).into(), r, Look::ROW, |f| {
-                if let Some(glyph) = Icon::named(name) {
+                if let Some(glyph) = icons::named(name) {
                     f.c.icon(glyph, Rect::new(r.x, r.y + r.h * 0.2, r.h * 0.6, r.h * 0.6), Tone::Normal);
                 }
                 f.c.text_fit(Rect::new(r.x + r.h, r.y, r.w - r.h, r.h), detail, if current { Tone::Accent } else { Tone::Fn }, name, Keep::Start);

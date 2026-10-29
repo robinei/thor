@@ -8,8 +8,8 @@ use std::fmt::{self, Display, Formatter};
 use clamshell_state::radios::bluetooth::{Action, Bluetooth, DeviceState, Problem, Reason};
 use clamshell_state::{BtId, Id, ListId, RadioStatus};
 
+use super::icons;
 use super::radio;
-use clamshell_ui::gfx::icons::Icon;
 use clamshell_ui::toolkit::Frame;
 use clamshell_ui::toolkit::format::Fmt;
 use clamshell_ui::toolkit::style::Tone;
@@ -36,7 +36,7 @@ pub(super) fn draw(f: &mut Frame) {
             DeviceState::Paired => ("Paired", Tone::Dim),
             DeviceState::Other => ("", Tone::Dim),
         };
-        let face = RowFace { icon: Icon::for_device(d.kind), name: &d.name, tone: Tone::high_if(d.connected), lock: false, state, state_tone };
+        let face = RowFace { icon: icons::device(d.kind), name: &d.name, tone: Tone::high_if(d.connected), lock: false, state, state_tone };
         widgets::status_row(f, ListId::Bluetooth.row(i as u16), rows.row(i), list.pad, list.size, face);
     }
     list.end(f, rows);

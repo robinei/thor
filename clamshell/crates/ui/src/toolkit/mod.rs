@@ -6,7 +6,6 @@
 
 mod clock;
 pub mod format;
-mod icons;
 pub mod scroll;
 pub mod style;
 pub mod widgets;

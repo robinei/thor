@@ -9,8 +9,8 @@ use clamshell_state::bottom::editor::{Editor, Purpose};
 use clamshell_state::radios::wifi::{NetState, Problem, Wifi};
 use clamshell_state::{Id, ListId, RadioStatus, WifiId};
 
+use super::icons;
 use super::radio;
-use clamshell_ui::gfx::icons::Icon;
 use clamshell_ui::toolkit::Frame;
 use clamshell_ui::toolkit::format::Fmt;
 use clamshell_ui::toolkit::style::Tone;
@@ -48,7 +48,7 @@ pub(super) fn list(f: &mut Frame) {
             NetState::Login => ("Login", Tone::Dim),
             NetState::Other => ("", Tone::Dim),
         };
-        let face = RowFace { icon: Icon::wifi(Some(n.strength)), name: &n.ssid, tone: Tone::high_if(n.connected), lock: n.secure, state, state_tone };
+        let face = RowFace { icon: icons::wifi(Some(n.strength)), name: &n.ssid, tone: Tone::high_if(n.connected), lock: n.secure, state, state_tone };
         widgets::status_row(f, ListId::Wifi.row(i as u16), rows.row(i), list.pad, list.size, face);
     }
     list.end(f, rows);

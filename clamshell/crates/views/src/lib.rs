@@ -22,6 +22,7 @@ mod device;
 mod dock;
 mod editor;
 mod format;
+mod icons;
 mod keyboard;
 mod keymaps;
 mod levels;

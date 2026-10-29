@@ -116,7 +116,7 @@ pub(super) fn icon(c: &mut Canvas, images: &mut Images, entry: &Entry, r: Rect, 
         }
         return;
     }
-    match entry.glyph.as_deref().and_then(Icon::named).or(entry.app.then_some(Icon::App)) {
+    match entry.glyph.as_deref().and_then(super::icons::named).or(entry.app.then_some(Icon::App)) {
         Some(glyph) => {
             let side = r.w.min(r.h) * 0.7;
             c.icon(glyph, Rect::new(r.x + (r.w - side) / 2.0, r.y + (r.h - side) / 2.0, side, side), if grey { Tone::Dim } else { Tone::Normal });
