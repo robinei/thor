@@ -91,6 +91,8 @@ struct Session {
     ours: Option<Arc<Mutex<Watched>>>,
     /// The object path of each icon's menu, by the icon's key, for clicks.
     menus: HashMap<String, String>,
+    /// The bus names of the icons read last: a change of their owner is one of the icons'.
+    names: Vec<String>,
 }
 
 impl<S: Sink> Service for Tray<S> {
@@ -102,25 +104,25 @@ impl<S: Sink> Service for Tray<S> {
     fn connect(&mut self) -> Result<Session, Error> {
         let mut bus = Bus::session()?.with_timeout(CALL_LIMIT);
         let ours = serve_watcher(&mut bus)?;
-        // The icons are read again at any signal from the watcher, an icon or a menu, or when a name's
-        // owner changes because a program is gone.
+        // The icons are read again at any signal from the watcher, an icon or a menu, or when an icon's
+        // bus name's owner changes because its program is gone (see `Session::came`).
         for interface in [WATCHER, ITEM, MENU] {
             bus.add_match(&format!("type='signal',interface='{interface}'"))?;
         }
         bus.add_match(&format!("type='signal',interface='{BUS_NAME}',member='NameOwnerChanged'"))?;
-        Ok(Session { bus, ours, menus: HashMap::new() })
+        Ok(Session { bus, ours, menus: HashMap::new(), names: Vec::new() })
     }
 
     fn run_while_up(&mut self, mut s: Session, commands: &Receiver<TrayCommand>) -> Result<(), Ended<Error>> {
         let mut last = Changed::default();
         let mut dirty = true;
         loop {
-            dirty |= s.came()?;
+            dirty |= s.came(true)?;
             if dirty {
                 std::thread::sleep(SETTLE);
-                s.came()?;
-                dirty = false;
+                s.came(true)?;
                 let keys = registered(&mut s)?;
+                s.names = keys.iter().map(|k| split(k).0.to_owned()).collect();
                 let (items, menus) = read(&mut s.bus, &keys);
                 s.menus = menus;
                 if let Some(items) = last.offer(items) {
@@ -128,7 +130,10 @@ impl<S: Sink> Service for Tray<S> {
                     log::info!("tray: {}", if names.is_empty() { "no icons".to_owned() } else { names.join(", ") });
                     self.sink.send(Event::Tray(items))?;
                 }
-                // Read again in case something came while reading.
+                // Read again in case something came while reading; but not for a menu's signals, which
+                // asking it to be brought up to date (AboutToShow) makes some programs send, again and
+                // again.
+                dirty = s.came(false)?;
                 continue;
             }
             loop {
@@ -142,7 +147,7 @@ impl<S: Sink> Service for Tray<S> {
                     Err(TryRecvError::Disconnected) => return Ok(()),
                 }
             }
-            if s.came()? {
+            if s.came(true)? {
                 dirty = true;
                 continue;
             }
@@ -164,10 +169,11 @@ impl<S: Sink> Service for Tray<S> {
 }
 
 impl Session {
-    /// Whether anything came that changes the icons: a signal, or an icon registered with us, which is
-    /// then signalled.
-    fn came(&mut self) -> dbus::Result<bool> {
+    /// Whether anything came that changes the icons: a signal (a menu's only with `menus`, and of the
+    /// bus's owner changes only an icon's), or an icon registered with us, which is then signalled.
+    fn came(&mut self, menus: bool) -> dbus::Result<bool> {
         let signals = self.bus.signals()?;
+        let changes = signals.iter().any(|m| changes(m, &self.names, menus));
         let registered = self.ours.as_ref().map(|w| std::mem::take(&mut crate::os::lock(w).registered)).unwrap_or_default();
         for key in &registered {
             if let Ok(signal) = Message::new_signal(WATCHER_PATH, WATCHER, "StatusNotifierItemRegistered")
@@ -176,7 +182,17 @@ impl Session {
                 log::warn!("tray: signalling {key} registered: {e}");
             }
         }
-        Ok(!signals.is_empty() || !registered.is_empty())
+        Ok(changes || !registered.is_empty())
+    }
+}
+
+/// Whether signal `m` changes the icons: a menu's only with `menus`, and an owner change only of one of
+/// the icons' bus `names`.
+fn changes(m: &Message, names: &[String], menus: bool) -> bool {
+    match (m.interface().as_deref(), m.member().as_deref()) {
+        (Some(BUS_NAME), Some("NameOwnerChanged")) => m.get1::<String>().is_some_and(|name| names.contains(&name)),
+        (Some(MENU), _) => menus,
+        _ => true,
     }
 }
 
@@ -450,6 +466,18 @@ pub fn read_now() -> Result<Vec<TrayItem>, Error> {
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+
+    /// Of the bus's owner changes only an icon's count, and a menu's signals only when asked for.
+    #[test]
+    fn signals_that_change_the_icons() {
+        let owner = |name: &str| Message::new_signal(BUS_PATH, BUS_NAME, "NameOwnerChanged").unwrap().append3(name, ":1.5", "");
+        let names = vec![":1.5".to_owned()];
+        assert!(changes(&owner(":1.5"), &names, true), "an icon's program gone");
+        assert!(!changes(&owner(":1.99"), &names, true), "another program's");
+        let layout = Message::new_signal("/menu", MENU, "LayoutUpdated").unwrap();
+        assert!(changes(&layout, &names, true) && !changes(&layout, &names, false));
+        assert!(changes(&Message::new_signal("/item", ITEM, "NewIcon").unwrap(), &names, false));
+    }
 
     #[test]
     fn keys_and_labels() {
