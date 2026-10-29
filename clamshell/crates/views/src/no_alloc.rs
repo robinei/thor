@@ -73,6 +73,19 @@ fn device() -> Vec<Event> {
     vec![tap(Id::LibraryView(LibraryViewId::Collection(u16::try_from(tools).unwrap_or(0)))), entry(), entry()]
 }
 
+/// Two players, and two controllers, one on each, the second gone.
+fn controllers() -> Vec<Event> {
+    use clamshell_state::device_view::controllers::ControllerEvent;
+    let connected = |key: &str| Event::Controller(ControllerEvent::Connected { key: key.into(), name: format!("{key} pad") });
+    vec![
+        connected("a"),
+        connected("b"),
+        Event::Controller(ControllerEvent::StepCount(1)),
+        Event::Controller(ControllerEvent::Step(1, 1)),
+        Event::Controller(ControllerEvent::Disconnected("b".into())),
+    ]
+}
+
 /// A sticks calibration as it starts, waiting for the sticks to be let go.
 fn calibrating() -> Progress {
     let rest = StickAxis { low: 0, centre: 0, high: 0 };
@@ -255,6 +268,11 @@ fn warm_frames_do_not_allocate() {
         ),
         ("setup, the password", vec![Event::Reading(Reading::Account(Account::Read { password: false, ssh: false }))]),
         ("keymap picker", vec![tap(Id::Tab(Tab::Settings)), PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Keymap))).into()]),
+        ("the Device view's controllers", [device(), controllers()].concat()),
+        (
+            "two players' keymap tiles, and player 2's picker",
+            [controllers(), vec![tap(Id::Tab(Tab::Settings)), PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Keymap2))).into()]].concat(),
+        ),
         (
             "tile menu",
             vec![

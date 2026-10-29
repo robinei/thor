@@ -703,6 +703,20 @@ Pointer(Activate(LibraryView(Entry("builtin:device"))))
   Watch Account on
 -- device-unavailable.png
 -- device.png
+Controller(..)
+  Save Controllers
+Controller(..)
+  Save Controllers
+Controller(..)
+  Save Controllers
+Controller(StepCount(1))
+  Save Controllers
+  Players(..)
+  Keymap of player 2 0 "Default"
+Controller(Step(1, 1))
+  Save Controllers
+  Players(..)
+-- device-controllers.png
 Pointer(Activate(Device(Sticks)))
   CalibrateSticks
 -- device-sticks.png

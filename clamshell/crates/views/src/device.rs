@@ -4,21 +4,25 @@
 //! login, calibrating the sticks and the gyro, and calibrating the top screen's refresh rate. The last
 //! button is Done at the first start and Close otherwise.
 //!
-//! While the sticks are being calibrated, the right side shows what to do and draws each stick as a
-//! circle with its dot and the extremes reached so far. Off the device, where there is no helper, the
+//! The right side has the Controllers section: how many players there are, then every controller seen
+//! with its player, a disconnected one dimmed (see `clamshell_state::device_view::controllers`). A tap
+//! on a row, or the pad's left and right on it, steps its value; ‹› marks a value there is another to
+//! step to. While the sticks are being calibrated, the right side shows what to do instead, and draws each
+//! stick as a circle with its dot and the extremes reached so far. Off the device, where there is no helper, the
 //! password and remote login show as unavailable.
 
-use clamshell_state::DeviceId;
-use clamshell_state::Id;
 use clamshell_state::device_view::Refresh;
+use clamshell_state::device_view::controllers::{ControllerEvent, Player};
 use clamshell_state::device_view::sticks::{Phase, Progress, StickAxis};
+use clamshell_state::{DeviceId, Event, Id, State};
 
 use super::time::Name;
 use clamshell_ui::gfx::{Align, Column, Keep, Rect};
-use clamshell_ui::toolkit::Frame;
+use clamshell_ui::input::nav::Dir;
 use clamshell_ui::toolkit::format::Fmt;
 use clamshell_ui::toolkit::style::{self, Look, SURFACE_HI, Text, Tone};
 use clamshell_ui::toolkit::widgets;
+use clamshell_ui::toolkit::{Frame, PadMove, PadUse};
 
 /// A row's height as a fraction of the screen's height, and the rows' column width as a fraction of its
 /// width.
@@ -111,8 +115,54 @@ pub(super) fn app(f: &mut Frame, screen: Rect) {
     f.back(Id::Device(DeviceId::Close));
     f.text_button(Id::Device(DeviceId::Close), inner, size, Tone::Fn, "Close", Align::Start);
 
-    if let Some(p) = device.sticks() {
-        draw_sticks(f, right.inset(pad), p, size);
+    match device.sticks() {
+        Some(p) => draw_sticks(f, right.inset(pad), p, size),
+        None => controllers(f, right, row_h, size),
+    }
+}
+
+/// The Controllers section over `area`: its heading, the count of players, and a row per controller.
+fn controllers(f: &mut Frame, area: Rect, row_h: f32, size: f32) {
+    let s = f.s;
+    let c = s.device_view().controllers();
+    let count = c.count();
+    let mut col = Column::new(area);
+    let heading = col.take(row_h);
+    f.c.text_fit(heading.inset(size * 0.4), size, Tone::Normal, "Controllers", Keep::Start);
+    // The pad's left and right step the row it is on.
+    f.list_moves(moves);
+    let first = f.targets_drawn();
+    let players = col.take(row_h);
+    let value = Fmt::<16>::of(format_args!("{}  ‹›", count.number()));
+    f.button(Id::Device(DeviceId::Players), players, Look::ROW, |f| widgets::value_row(f, players, size, "Players", &value, true));
+    for (i, controller) in c.list().iter().enumerate() {
+        let row = col.take(row_h);
+        let more = if count == Player::ONE { "" } else { "  ‹›" };
+        let value = Fmt::<24>::of(format_args!("Player {}{more}", controller.player.number()));
+        let id = Id::Device(DeviceId::Controller(i as u16));
+        // A controller that isn't connected is dimmed, as a value that does nothing now.
+        let tone = if controller.connected { Tone::high_if(true) } else { Tone::Dim };
+        f.button(id, row, Look::ROW, |f| widgets::toned_value_row(f, row, size, &controller.name, &value, tone));
+    }
+    f.pad_use_since(first, PadUse::List);
+    if c.list().is_empty() {
+        let row = col.take(row_h);
+        f.c.text_fit(row.inset(size * 0.4), size, Tone::Dim, "None seen yet", Keep::Start);
+    }
+}
+
+/// What the pad's moves do on the Controllers section: left and right step the focused row's value; the
+/// rest go by direction.
+fn moves(s: &State, m: PadMove) -> Option<Option<Event>> {
+    let by = match m {
+        PadMove::Dir(Dir::Left) => -1,
+        PadMove::Dir(Dir::Right) => 1,
+        _ => return None,
+    };
+    match s.pointer().focus() {
+        Some(Id::Device(DeviceId::Players)) => Some(Some(Event::Controller(ControllerEvent::StepCount(by)))),
+        Some(Id::Device(DeviceId::Controller(i))) => Some(Some(Event::Controller(ControllerEvent::Step(*i, by)))),
+        _ => None,
     }
 }
 

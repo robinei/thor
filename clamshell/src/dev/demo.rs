@@ -292,3 +292,19 @@ pub fn metrics() -> Vec<Event> {
     events.push(Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Sysinfo))));
     events
 }
+
+/// Two players and three controllers: the built-in one and an 8BitDo on player 1, an Xbox controller on
+/// player 2 that has gone.
+pub fn controllers() -> Vec<clamshell_state::Event> {
+    use clamshell_state::Event;
+    use clamshell_state::device_view::controllers::ControllerEvent;
+    let connected = |key: &str, name: &str| Event::Controller(ControllerEvent::Connected { key: key.into(), name: name.into() });
+    vec![
+        connected("2020:3001:AYN Odin2 Gamepad", "AYN Odin2 Gamepad"),
+        connected("045e:0b13:aa:bb:cc:dd:ee:ff", "Xbox Wireless Controller"),
+        connected("2dc8:6003:8BitDo Pro 2", "8BitDo Pro 2"),
+        Event::Controller(ControllerEvent::StepCount(1)),
+        Event::Controller(ControllerEvent::Step(1, 1)),
+        Event::Controller(ControllerEvent::Disconnected("045e:0b13:aa:bb:cc:dd:ee:ff".into())),
+    ]
+}

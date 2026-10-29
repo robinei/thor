@@ -613,13 +613,14 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
             ],
         ),
         // The Device view, opened from the Tools' Device entry in the Library. First off the device, where there is
-        // no helper. Then with an account without a password, a stick calibration in progress, and the
-        // password typed on the bottom screen, shown as dots.
+        // no helper. Then with an account without a password, two players and three controllers (one gone),
+        // a stick calibration in progress, and the password typed on the bottom screen, shown as dots.
         group(
             vec![LibraryViewEvent::Rows(8).into()],
             vec![
                 shot("device-unavailable.png", Top, open_device().into_iter().chain([Reading::Time(demo::time_zones()).into()]).collect()),
                 shot("device.png", Top, vec![Reading::Account(clamshell_state::setup::account::Account::Read { password: true, ssh: false }).into()]),
+                shot("device-controllers.png", Top, demo::controllers()),
                 shot("device-sticks.png", Top, vec![tap(Id::Device(DeviceId::Sticks)), Event::Sticks(SticksEvent::Progress(demo::sticks_progress()))]),
                 shot("device-password.png", Bottom, [tap(Id::Device(DeviceId::Password))].into_iter().chain(control::type_text("secret")?).collect()),
             ],

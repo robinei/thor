@@ -213,3 +213,24 @@ fn a_held_on_a_key_repeats_and_on_a_modifier_long_presses() {
         assert!(held.contains(&Action::Emit(expected.into())), "{key:?}: {held:?}");
     }
 }
+
+/// On the Device view's Controllers section, the pad's left and right step the focused row's value: the
+/// count of players, then a controller's player within it.
+#[test]
+fn left_and_right_step_the_players_and_a_controllers_player() {
+    use clamshell_state::DeviceId;
+    use clamshell_state::device_view::controllers::ControllerEvent;
+    let account = clamshell_state::setup::account::Account::NoHelper;
+    let mut s = State::new(Init { library: Some(clamshell_library::demo::library()), account, ..Init::default() });
+    s.apply(Event::Entry("builtin:device".into(), clamshell_state::EntryAct::Play), &mut Vec::new());
+    s.apply(Event::Controller(ControllerEvent::Connected { key: "pad".into(), name: "pad".into() }), &mut Vec::new());
+    let memory = Screens::default();
+    s.apply(PointerEvent::Focus(Id::Device(DeviceId::Players)).into(), &mut Vec::new());
+    let d = frames(&s);
+    assert_eq!(navigate(&s, &d, &memory, Dir::Right), Some(Event::Controller(ControllerEvent::StepCount(1))));
+    assert_eq!(navigate(&s, &d, &memory, Dir::Left), Some(Event::Controller(ControllerEvent::StepCount(-1))));
+    s.apply(PointerEvent::Focus(Id::Device(DeviceId::Controller(0))).into(), &mut Vec::new());
+    let d = frames(&s);
+    assert_eq!(navigate(&s, &d, &memory, Dir::Right), Some(Event::Controller(ControllerEvent::Step(0, 1))));
+    assert!(matches!(navigate(&s, &d, &memory, Dir::Up), Some(Event::Pointer(PointerEvent::Focus(Id::Device(DeviceId::Players))))), "up goes by direction");
+}
