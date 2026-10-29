@@ -12,40 +12,31 @@ use crate::input::nav::Dir;
 use crate::input::{End, Source};
 
 use super::Core;
-use crate::input;
 
 impl Core {
     /// A finger or button comes down at `position` on `screen`. It presses the topmost target there,
     /// which is the last one drawn, so a button on a tile (such as the dock's "+") wins over the tile.
+    /// With none there, in the screen's content, it presses nothing ([`Id::Blank`]), which may point.
     pub fn press(&mut self, source: Source, screen: Screen, (x, y): (f64, f64), time: u32) {
-        let found = self.screens[screen].frames.retained.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).cloned();
-        // With no target there, below the second screen's bar, the press is on the blank, which may
-        // point.
+        let (x, y) = (x as f32, y as f32);
+        let found = self.screens[screen].frames.retained.targets.iter().rev().find(|t| t.rect.contains(x, y)).cloned();
         let bottom = screen == Screen::Bottom;
         if bottom {
             self.handle(Event::BottomTouched);
         }
-        let below_bar = bottom && self.screens[screen].body.is_some_and(|b| b.contains(x as f32, y as f32));
-        let Some(target) = found.or_else(|| {
-            below_bar.then(|| crate::toolkit::Target {
-                rect: crate::gfx::Rect::default(),
-                id: Id::Blank,
-                drag: None,
-                list: None,
-                item: None,
-                pad: crate::toolkit::PadUse::Touch,
-                hold: clamshell_state::Hold::Long,
-            })
-        }) else {
+        let s = &self.screens[screen];
+        let in_content = s.content.is_some_and(|r| r.contains(x, y));
+        let points = s.point_area.is_some_and(|r| r.contains(x, y));
+        if found.is_none() && !in_content {
             return;
-        };
+        }
         let now = self.clock.at(time);
         let actions = match source {
-            // While the second screen is pointing, a finger put down there points too.
-            Source::Touch(_) if self.state.bottom().pointing() && bottom && input::points(&target.id) => {
-                self.input.point(source, &target, (x as f32, y as f32), now)
+            // While the second screen is pointing, a finger put down where it may point points too.
+            Source::Touch(_) if self.state.bottom().pointing() && points && found.as_ref().is_none_or(|t| t.drag.is_none()) => {
+                self.input.point(source, (x, y), now)
             }
-            _ => self.input.touch(source, &target, (x as f32, y as f32), now),
+            _ => self.input.touch(source, found.as_ref(), points, (x, y), now),
         };
         self.run_actions(actions);
     }

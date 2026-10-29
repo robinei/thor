@@ -128,11 +128,13 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
     f.body = screen;
     if f.s.setup().wizard().is_some() {
         typing(f, screen);
+        // A finger on the keyboard may point, as below the bar.
+        f.out.point_area = Some(screen);
         return;
     }
     if f.s.bottom_dark() {
         dark::draw(f, screen);
-        f.out.touchpad_area = Some(screen);
+        f.out.content = Some(screen);
         return;
     }
     let body = bar::draw(f, screen);
@@ -144,7 +146,8 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
         f.c.fill(body, clamshell_ui::gfx::Rgb(0).alpha(POINTING_FADE));
     }
     bar::draw_slider_over(f, screen, body.y);
-    f.out.touchpad_area = Some(body);
+    // The area below the bar holds the tab, or a window moved down, and is a touchpad.
+    (f.out.content, f.out.point_area) = (Some(body), Some(body));
     // Dimmed when untouched for a while and the pad is in use elsewhere, as the screens are before they
     // go off.
     if f.s.bottom_dimmed() {

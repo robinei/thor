@@ -159,7 +159,7 @@ fn the_keymap_screens_lay_out() {
             }
             assert!(state.keymapping().screen().is_some() || state.bottom().editor().is_some(), "{name}: a keymap screen");
             let (targets, out) = draw_bottom(&state, (w, h), &mut cache);
-            let body = out.touchpad_area.expect("the area below the bar");
+            let body = out.content.expect("the area below the bar");
             let case = format!("{name} at {w}x{h}");
             assert!(targets.iter().any(|t| matches!(t.id, Id::Keymap(_) | Id::Profile(..) | Id::Row { .. } | Id::Editor(_))), "{case}: its buttons");
             if name.starts_with("edit") {
@@ -250,7 +250,7 @@ fn long_lists_scroll_within_their_area() {
                 state.apply(ListEvent::Visible(list, visible).into(), &mut Vec::new());
                 state.apply(ListEvent::Scroll(list, scrolled).into(), &mut Vec::new());
                 let (targets, out) = draw_bottom(&state, (w, h), &mut cache);
-                let body = out.touchpad_area.expect("the area below the bar");
+                let body = out.content.expect("the area below the bar");
                 let case = format!("{tab:?} at {w}x{h} scrolled {scrolled}");
                 let area = targets.iter().find(|t| t.id == Id::List(list)).map(|t| t.rect).expect("the list's area");
                 assert!(visible > 1.0 && (visible - area.h / targets.iter().find_map(|t| t.list).map_or(1.0, |l| l.row_h)).abs() < 1e-3, "{case}: {visible}");
@@ -289,7 +289,7 @@ fn every_tab_lays_out() {
                 state.apply(Event::Pointer(clamshell_state::PointerEvent::Activate(Id::Tab(tab))), &mut Vec::new());
                 let (targets, out) = draw_bottom(&state, (w, h), &mut cache);
                 let screen = Rect::new(0.0, 0.0, w as f32, h as f32);
-                let body = out.touchpad_area.expect("the area below the bar");
+                let body = out.content.expect("the area below the bar");
                 let case = format!("{tab:?} at {w}x{h}{}", if with_data { ", with data" } else { "" });
                 let bar = targets.iter().filter(|t| t.rect.y + t.rect.h <= body.y + 0.5).count();
                 assert!(bar >= 11, "{case}: {bar} bar targets");
@@ -362,7 +362,7 @@ fn a_tap_acts_on_the_item_drawn_under_it() {
     // The pad connects and sorts first before the finger comes down where the buds were drawn.
     state.apply(bt(vec![device("pad", true), device("buds", false)]), &mut Vec::new());
     let (mut input, now) = (Input::default(), std::time::Instant::now());
-    let mut actions = input.touch(Source::Touch(1), first, (first.rect.x + 1.0, first.rect.y + 1.0), now);
+    let mut actions = input.touch(Source::Touch(1), Some(first), true, (first.rect.x + 1.0, first.rect.y + 1.0), now);
     actions.extend(input.up(Source::Touch(1), End::Release, &state, now));
     let mut effects = Vec::new();
     for action in actions {
@@ -372,4 +372,30 @@ fn a_tap_acts_on_the_item_drawn_under_it() {
     }
     assert!(effects.contains(&Effect::Bluetooth(Command::Connect("00:buds".into()))), "{effects:?}");
     assert!(!effects.iter().any(|e| matches!(e, Effect::Bluetooth(Command::Disconnect(_)))), "{effects:?}");
+}
+
+/// A finger may point only below the bar: the bar's targets are outside the point area, and the dark
+/// screen has none.
+#[test]
+fn fingers_point_only_below_the_bar() {
+    use clamshell_state::settings::Setting;
+    use clamshell_state::{LaunchUnit, SettingsId};
+    let mut cache = DrawCache::load();
+    let mut state = demo();
+    let (targets, out) = draw_bottom(&state, (1240, 1080), &mut cache);
+    let area = out.point_area.expect("the area below the bar");
+    let bar: Vec<&Target> = targets.iter().filter(|t| matches!(t.id, Id::Tab(_) | Id::Control(_) | Id::PadMouse)).collect();
+    assert!(!bar.is_empty());
+    for t in bar {
+        let (x, y) = (t.rect.x + t.rect.w / 2.0, t.rect.y + t.rect.h / 2.0);
+        assert!(!area.contains(x, y), "{:?} at {:?} is in {area:?}", t.id, t.rect);
+    }
+    state.apply(Event::Units(vec![LaunchUnit { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 0 }]), &mut Vec::new());
+    // The second screen's setting stepped from Off when idle, past On, to Dark in game.
+    for _ in 0..2 {
+        state.apply(clamshell_state::PointerEvent::Activate(Id::Settings(SettingsId::Tile(Setting::BottomScreen))).into(), &mut Vec::new());
+    }
+    assert!(state.bottom_dark());
+    let (_, out) = draw_bottom(&state, (1240, 1080), &mut cache);
+    assert_eq!(out.point_area, None, "dark: nowhere");
 }

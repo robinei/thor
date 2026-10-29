@@ -15,7 +15,8 @@
 //! row under it is let go without a tap. If it is let go while moving, the list flings on, slowing down,
 //! until it stops or reaches an end.
 //!
-//! Last, a finger on the second screen that would still tap ([`points`]) starts pointing when it moves
+//! Last, a finger that came down where the screen lets fingers point (its view's point area, see
+//! `toolkit::FrameOut`), on a target without a drag, and would still tap, starts pointing when it moves
 //! past [`POINT_START`] (see clamshell-state's `touch`). On nothing, where there is no tap to keep, the
 //! distance is [`BLANK_POINT_START`]. That finger and the other fingers tapping there are let go without
 //! a tap and go to the touchpad. So do fingers that come down there while it points, until no finger has
@@ -98,12 +99,6 @@ pub enum Timer {
     Pointing,
 }
 
-/// Whether a finger on `id` may point. That is anywhere on the second screen below the bar. It excludes
-/// the main screen's targets, where a finger is where it means, and the bar's and the dark screen's.
-pub fn points(id: &Id) -> bool {
-    !id.on_top() && !matches!(id, Id::Tab(_) | Id::Control(_) | Id::PadMouse | Id::Wake)
-}
-
 /// What the caller does.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
@@ -153,9 +148,15 @@ enum Gesture {
 #[derive(Debug, Clone, PartialEq)]
 struct Press {
     id: Id,
+    /// Whether it is on nothing ([`Id::Blank`]): it has no tap to keep.
+    blank: bool,
+    /// Whether it may point: a finger that came down where the screen lets fingers point, on a target
+    /// without a drag.
+    points: bool,
     /// What holding it does, as its target said.
     hold: Hold,
-    /// Where the target is, for a finger or the mouse. It is `None` for the pad's A and Enter.
+    /// Where the target is, for a finger or the mouse. It is `None` for the pad's A and Enter, and on
+    /// nothing.
     rect: Option<Rect>,
     gesture: Gesture,
     down: (f32, f32),
@@ -165,21 +166,46 @@ struct Press {
 }
 
 impl Press {
-    fn new(target: (Id, Hold), rect: Option<Rect>, gesture: Gesture, at: (f32, f32), list: Option<InList>, now: Instant) -> Press {
-        let (id, hold) = target;
-        Press { id, hold, rect, gesture, down: at, at, list, trail: Trail::new(now, at.1) }
+    /// A press of the pad's A or Enter on `id`, which has no place and doesn't point.
+    fn of_pad(id: Id, hold: Hold, now: Instant) -> Press {
+        Press {
+            id,
+            blank: false,
+            points: false,
+            hold,
+            rect: None,
+            gesture: Gesture::Tap,
+            down: (0.0, 0.0),
+            at: (0.0, 0.0),
+            list: None,
+            trail: Trail::new(now, 0.0),
+        }
+    }
+
+    /// A press of a finger or the mouse at `at` on `target`, or on nothing.
+    fn of_touch(target: Option<&Target>, points: bool, gesture: Gesture, at: (f32, f32), now: Instant) -> Press {
+        let (id, hold, rect, list) = match target {
+            Some(t) => (t.id.clone(), t.hold, Some(t.rect), t.list),
+            None => (Id::Blank, Hold::Long, None, None),
+        };
+        let points = points && target.is_none_or(|t| t.drag.is_none());
+        Press { id, blank: target.is_none(), points, hold, rect, gesture, down: at, at, list, trail: Trail::new(now, at.1) }
     }
 
     /// Whether it is still on its target. The mouse must be exactly on it, and a finger within
-    /// [`TOUCH_SLACK`] of it, since a finger rolls a little off a key as it lifts.
+    /// [`TOUCH_SLACK`] of it, since a finger rolls a little off a key as it lifts. Nothing is never a
+    /// target.
     fn on_target(&self, source: Source) -> bool {
+        if self.blank {
+            return false;
+        }
         let slack = if matches!(source, Source::Touch(_)) { TOUCH_SLACK } else { 0.0 };
         self.rect.is_none_or(|r| Rect::new(r.x - slack, r.y - slack, r.w + 2.0 * slack, r.h + 2.0 * slack).contains(self.at.0, self.at.1))
     }
 
-    /// Whether it may point: a finger that would still tap, where pointing is allowed.
+    /// Whether it may point now: a finger that would still tap, where pointing is allowed.
     fn may_point(&self, source: Source) -> bool {
-        matches!(source, Source::Touch(_)) && self.gesture == Gesture::Tap && points(&self.id)
+        matches!(source, Source::Touch(_)) && self.gesture == Gesture::Tap && self.points
     }
 }
 
@@ -213,18 +239,19 @@ impl Input {
         if self.pressed(source) {
             return vec![];
         }
-        self.presses.push((source, Press::new((id.clone(), hold), None, Gesture::Tap, (0.0, 0.0), None, now)));
+        self.presses.push((source, Press::of_pad(id.clone(), hold, now)));
         vec![Action::Emit(PointerEvent::Down(id, None).into()), Action::Arm(source, Timer::Hold, LONG_PRESS)]
     }
 
-    /// A finger or the mouse comes down on `target` at (`x`, `y`). Touch hides the pad's focus ring and
-    /// stops a fling.
-    pub fn touch(&mut self, source: Source, target: &Target, (x, y): (f32, f32), now: Instant) -> Vec<Action> {
+    /// A finger or the mouse comes down on `target`, or on nothing (where the screen's view says a press
+    /// on nothing counts), at (`x`, `y`). With `points`, it came down where the screen lets fingers point.
+    /// Touch hides the pad's focus ring and stops a fling.
+    pub fn touch(&mut self, source: Source, target: Option<&Target>, points: bool, (x, y): (f32, f32), now: Instant) -> Vec<Action> {
         if self.pressed(source) {
             return vec![];
         }
         let mut actions = self.stop_fling();
-        let (gesture, at_once) = match target.drag {
+        let (gesture, at_once) = match target.and_then(|t| t.drag) {
             Some(Drag::Slide { control, track, at_once }) if !self.sliding() => {
                 let at = track.along(x);
                 (Gesture::PendingSlide { control, down_x: at, x: at, track }, at_once)
@@ -232,9 +259,10 @@ impl Input {
             Some(Drag::Level(level, track)) => (Gesture::LevelDrag { level, track }, false),
             _ => (Gesture::Tap, false),
         };
-        let id = target.id.clone();
-        self.presses.push((source, Press::new((id.clone(), target.hold), Some(target.rect), gesture, (x, y), target.list, now)));
-        actions.extend([Action::Emit(PointerEvent::HideFocus.into()), Action::Emit(PointerEvent::Down(id, target.item).into())]);
+        let press = Press::of_touch(target, points, gesture, (x, y), now);
+        let down = PointerEvent::Down(press.id.clone(), target.and_then(|t| t.item));
+        self.presses.push((source, press));
+        actions.extend([Action::Emit(PointerEvent::HideFocus.into()), Action::Emit(down.into())]);
         match gesture {
             // A row with nothing to tap slides at once from where the finger came down. A touch without
             // moving changes nothing.
@@ -253,14 +281,15 @@ impl Input {
         actions
     }
 
-    /// A finger comes down on `target`, a key, while the keyboard points. The finger points too.
-    pub fn point(&mut self, source: Source, target: &Target, at: (f32, f32), now: Instant) -> Vec<Action> {
+    /// A finger comes down at `at` where the screen lets fingers point, while it points, on a target
+    /// without a drag or on nothing. The finger points too, and its target isn't pressed.
+    pub fn point(&mut self, source: Source, at: (f32, f32), now: Instant) -> Vec<Action> {
         if self.pressed(source) {
             return vec![];
         }
         let mut actions = self.stop_fling();
         actions.extend(self.idle.take().map(|s| Action::Disarm(s, Timer::Pointing)));
-        self.presses.push((source, Press::new((target.id.clone(), target.hold), Some(target.rect), Gesture::Pointing, at, None, now)));
+        self.presses.push((source, Press::of_touch(None, true, Gesture::Pointing, at, now)));
         actions.push(Action::Point(source, ContactPhase::Down, at));
         actions
     }
@@ -314,7 +343,7 @@ impl Input {
             ];
         }
         // Pointing is checked last, after the gestures that move something of their own.
-        let start = if press.id == Id::Blank { BLANK_POINT_START } else { POINT_START };
+        let start = if press.blank { BLANK_POINT_START } else { POINT_START };
         if press.may_point(source) && (x - press.down.0).hypot(y - press.down.1) >= start {
             return self.start_pointing();
         }

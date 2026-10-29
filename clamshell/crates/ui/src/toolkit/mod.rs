@@ -161,9 +161,12 @@ pub struct FrameOut {
     /// An event the frame tells the state once it is drawn, such as how many rows a list shows when that
     /// changed. The last reported in a frame wins; each frame's is told.
     pub report: Option<Event>,
-    /// The area below the bar on the second screen, where a finger may point (see clamshell-state's
-    /// `touch`).
-    pub touchpad_area: Option<Rect>,
+    /// Where the screen's content goes, such as the area below the second screen's bar: the host lays
+    /// client windows out in it, and a press there on nothing is a press on [`Id::Blank`].
+    pub content: Option<Rect>,
+    /// Where a finger may point (see `input::press` and clamshell-state's `touch`): one that comes down
+    /// here, on nothing or on a target without a drag, and moves while it would still tap.
+    pub point_area: Option<Rect>,
     /// How many rows each scrolled list drawn shows, indexed by [`ListId::index`]. The state keeps the
     /// lists' offsets and the pad's focus within them.
     pub lists: [Option<f32>; ListId::COUNT],

@@ -7,5 +7,5 @@ pub mod focus;
 pub mod nav;
 pub mod press;
 
-pub use press::{Action, EventClock, Input, Timer, points};
+pub use press::{Action, EventClock, Input, Timer};
 pub use press::{End, Source};

@@ -119,7 +119,8 @@ pub fn record(
             track.x0 += sx;
         }
     }
-    out.touchpad_area = out.touchpad_area.map(|r| r.shifted(sx, sy));
+    out.content = out.content.map(|r| r.shifted(sx, sy));
+    out.point_area = out.point_area.map(|r| r.shifted(sx, sy));
     out
 }
 

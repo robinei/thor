@@ -44,15 +44,17 @@ struct ScreenCore {
     /// What it shows may have changed since it was last recorded, so it is recorded again when a frame
     /// is due.
     stale: bool,
-    /// The second screen's area below the bar in the last frame, in logical pixels.
-    body: Option<Rect>,
+    /// Where the content went in the last frame, in logical pixels (see [`crate::toolkit::FrameOut`]).
+    content: Option<Rect>,
+    /// Where a finger may point in the last frame, in logical pixels.
+    point_area: Option<Rect>,
     /// What the pad's buttons do, as the last frame declared.
     pad: PadOut,
 }
 
 impl Default for ScreenCore {
     fn default() -> Self {
-        ScreenCore { frames: ScreenFrames::default(), size: (1, 1), scale: 1, stale: true, body: None, pad: PadOut::default() }
+        ScreenCore { frames: ScreenFrames::default(), size: (1, 1), scale: 1, stale: true, content: None, point_area: None, pad: PadOut::default() }
     }
 }
 
@@ -327,10 +329,11 @@ impl Core {
         (s.size, s.scale)
     }
 
-    /// The area below the bottom bar in the last recording, in logical pixels. A compositor uses the
-    /// same layout for client windows as the view and its input targets do.
+    /// Where the screen's content went in the last recording, in logical pixels, such as the area below
+    /// the second screen's bar. A compositor uses the same layout for client windows as the view and its
+    /// input targets do.
     pub fn content_bounds(&self, screen: Screen) -> Option<Bounds> {
-        self.screens[screen].body.map(|r| Bounds::new(r.x.ceil() as i32, r.y.ceil() as i32, (r.x + r.w).floor() as i32, (r.y + r.h).floor() as i32))
+        self.screens[screen].content.map(|r| Bounds::new(r.x.ceil() as i32, r.y.ceil() as i32, (r.x + r.w).floor() as i32, (r.y + r.h).floor() as i32))
     }
 
     /// Whether `layer` may have changed since it was last recorded.
@@ -351,7 +354,7 @@ impl Core {
         let at = Placement { size_px, scale: s.scale, drift: render::orbit(self.state.clock().unix()) };
         let mut out = s.frames.record(at, layer, &self.state, &mut self.fonts, &mut self.images, &self.views);
         s.stale = false;
-        s.body = out.touchpad_area;
+        (s.content, s.point_area) = (out.content, out.point_area);
         s.pad = std::mem::take(&mut out.pad);
         self.reports.extend(out.report.take());
         self.reports.extend(render::list_changes(&self.state, &out));
