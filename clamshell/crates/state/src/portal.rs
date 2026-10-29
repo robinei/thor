@@ -66,16 +66,57 @@ impl FileRequest {
 #[derive(Debug, Default)]
 pub(crate) struct Portal {
     /// In the order they came. One may be being picked (see [`crate::library_view::pick::PickFor::App`]).
-    pub(crate) asked: Vec<Waiting>,
+    asked: Vec<Waiting>,
     /// The program whose request is being picked, shown again when it is answered.
-    pub(crate) back: Option<Group>,
+    back: Option<Group>,
+}
+
+impl Portal {
+    /// `request` came from `program`'s process, or none's.
+    pub(crate) fn ask(&mut self, request: FileRequest, program: Option<Group>) {
+        self.asked.push(Waiting { request, program });
+    }
+
+    /// Request `id` is no longer waiting: answered, or closed by its program.
+    pub(crate) fn forget(&mut self, id: u32) {
+        self.asked.retain(|w| w.request.id != id);
+    }
+
+    /// The portal thread started again: the requests it held are gone.
+    pub(crate) fn restarted(&mut self) {
+        self.asked.clear();
+    }
+
+    /// The first request to pick now: one of the program `front`, of no program, or of a program that
+    /// can't come in front (`windowless`).
+    pub(crate) fn next(&self, front: Option<&Group>, windowless: impl Fn(&Group) -> bool) -> Option<&FileRequest> {
+        self.asked.iter().find(|w| w.program.as_ref().is_none_or(|p| Some(p) == front || windowless(p))).map(|w| &w.request)
+    }
+
+    /// Whether request `id` is a program's.
+    pub(crate) fn programs(&self, id: u32) -> bool {
+        self.asked.iter().find(|w| w.request.id == id).is_some_and(|w| w.program.is_some())
+    }
+
+    /// The program shown again when the request being picked is answered.
+    pub(crate) fn back(&self) -> Option<&Group> {
+        self.back.as_ref()
+    }
+
+    pub(crate) fn set_back(&mut self, program: Option<Group>) {
+        self.back = program;
+    }
+
+    pub(crate) fn take_back(&mut self) -> Option<Group> {
+        self.back.take()
+    }
 }
 
 /// A request, and the program that asked: none if no program was in front and the process isn't one's.
 #[derive(Debug)]
-pub(crate) struct Waiting {
-    pub(crate) request: FileRequest,
-    pub(crate) program: Option<Group>,
+struct Waiting {
+    request: FileRequest,
+    program: Option<Group>,
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@
 
 use crate::library_view::pick::PickFor;
 use crate::out::Out;
-use crate::portal::{PortalEvent, Waiting};
+use crate::portal::PortalEvent;
 use crate::{Effect, State};
 
 impl State {
@@ -18,11 +18,11 @@ impl State {
                     );
                 }
                 // In front: the window's program, or while an app's pick shows over it, that app's.
-                let program = program.or_else(|| self.session.top_window().and_then(|w| w.group.clone())).or_else(|| self.portal.back.clone());
-                self.portal.asked.push(Waiting { request, program });
+                let program = program.or_else(|| self.session.top_window().and_then(|w| w.group.clone())).or_else(|| self.portal.back().cloned());
+                self.portal.ask(request, program);
             }
             PortalEvent::Closed(id) => {
-                self.portal.asked.retain(|w| w.request.id != id);
+                self.portal.forget(id);
                 if self.picking_for_app() == Some(id) {
                     self.library_view.end_pick();
                     self.portal_back();
@@ -56,7 +56,7 @@ impl State {
             self.set_pick_aside();
         }
         if let Some((request, paths)) = self.library_view.take_answered() {
-            self.portal.asked.retain(|w| w.request.id != request);
+            self.portal.forget(request);
             out.effects.push(Effect::FileChosen { request, paths });
             self.portal_back();
         }
@@ -67,9 +67,8 @@ impl State {
         // While an app needed now shows (Setup), the requests wait: it is in front of the home app.
         while crate::builtin_apps::needed(self).is_none()
             && self.pick_free()
-            && let Some(i) = self.portal.asked.iter().position(|w| w.program.as_ref().is_none_or(|p| Some(p) == front.as_ref() || windowless(p)))
+            && let Some(request) = self.portal.next(front.as_ref(), windowless).cloned()
         {
-            let Some(request) = self.portal.asked.get(i).map(|w| w.request.clone()) else { break };
             let id = request.id;
             if let crate::portal::Asks::Save { name } = &request.asks
                 && !name.is_empty()
@@ -83,12 +82,12 @@ impl State {
                 {
                     out.log(crate::LogLevel::Info, format!("portal: request {id}: not started in {}: {e}", folder.display()));
                 }
-                self.portal.back = front;
+                self.portal.set_back(front);
                 self.show_app(crate::builtin_apps::home());
                 break;
             }
             out.log(crate::LogLevel::Warn, format!("portal: request {id} answered with nothing: the library has no Files tab to pick in"));
-            self.portal.asked.remove(i);
+            self.portal.forget(id);
             out.effects.push(Effect::FileChosen { request: id, paths: Vec::new() });
         }
     }
@@ -97,18 +96,17 @@ impl State {
     /// is no program's is answered with nothing (it would come straight back).
     pub(crate) fn set_pick_aside(&mut self) {
         let Some(id) = self.picking_for_app() else { return };
-        let programs = self.portal.asked.iter().find(|w| w.request.id == id).is_some_and(|w| w.program.is_some());
-        if programs {
+        if self.portal.programs(id) {
             self.library_view.end_pick();
         } else {
             self.library_view.cancel_pick();
         }
-        self.portal.back = None;
+        self.portal.set_back(None);
     }
 
     /// The portal thread started again: the requests it held are gone, and a pick for one ends.
     pub(crate) fn portal_restarted(&mut self) {
-        self.portal.asked.clear();
+        self.portal.restarted();
         if self.picking_for_app().is_some() {
             self.library_view.end_pick();
             self.portal_back();
@@ -140,7 +138,7 @@ impl State {
     /// Shows again the program whose request was picked, if the Library still shows and the program still
     /// has windows on the top screen.
     fn portal_back(&mut self) {
-        let Some(group) = self.portal.back.take() else { return };
+        let Some(group) = self.portal.take_back() else { return };
         let shown = self.session.windows().iter().any(|w| w.group.as_ref() == Some(&group) && !self.session.below(w.id));
         if shown && self.session.shown_app() == Some(crate::builtin_apps::home()) {
             self.session.focus(&group);
