@@ -250,6 +250,7 @@ impl Wm {
                             client.window.dismiss_x11_popups(&mut server.x11.popup_dismiss, |popup| parent || popup.id == id);
                         }
                         server.windows.retain(|v| v.id != id);
+                        server.windows_changed();
                         server.changed_facts.retain(|v| v.id != id);
                         if opened {
                             server.core.handle(WindowEvent::Closed(id).into());
@@ -336,6 +337,7 @@ impl Wm {
         }
         server.changed_facts.retain(|facts| facts.id != id);
         server.windows.retain(|w| w.id != id);
+        server.windows_changed();
         if server.core.state().session().window(id).is_some() {
             server.core.handle(WindowEvent::Closed(id).into());
         }

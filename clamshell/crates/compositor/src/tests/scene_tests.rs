@@ -64,6 +64,7 @@ fn with_windows(windows: &[Opened], check: impl FnOnce(&mut Server)) {
                 shown: crate::windows::Shown::of(server.core.state(), window.id),
                 frames: Default::default(),
             });
+            server.windows_changed();
         }
         server.core.handle(WindowEvent::Activate(windows[0].id).into());
         server.sync_windows();
@@ -158,9 +159,47 @@ fn the_main_screens_view_takes_touches_until_a_window_is_drawn_over_it() {
         let point = (100.0, 100.0).into();
         assert!(server.scene.covers_top() && server.ui_at(point).is_none(), "the window drawn");
         server.windows[0].mapped = false;
+        server.windows_changed();
         server.place();
         assert!(server.core.state().session().top_window().is_some(), "still in front");
         assert!(!server.scene.covers_top());
         assert_eq!(server.ui_at(point).map(|(screen, _)| screen), Some(clamshell_ui::Screen::Top), "the view drawn and touched");
+    });
+}
+
+/// The scene is placed again only when what it is placed from changed: asked for again with nothing
+/// changed, it is as it was; a commit, a state event, an overlay drawn anew and a resize each place it once.
+#[test]
+fn placing_again_with_nothing_changed_does_nothing() {
+    const WINDOWS: [Opened; 2] = [Opened { id: 1, parent: None, size: (960, 540) }, Opened { id: 2, parent: None, size: (960, 540) }];
+    with_windows(&WINDOWS, |server| {
+        server.core.handle(WindowEvent::Activate(2).into());
+        server.place();
+        let placements = server.scene.placements;
+        for _ in 0..3 {
+            server.place();
+        }
+        assert_eq!(server.scene.placements, placements, "nothing changed");
+        let root = server.windows[0].window.root().unwrap();
+        smithay::wayland::compositor::CompositorHandler::commit(server, &root);
+        server.place();
+        server.place();
+        assert_eq!(server.scene.placements, placements + 1, "a commit");
+        server.core.handle(Event::Overview(OverviewEvent::Toggle));
+        server.place();
+        server.place();
+        assert_eq!(server.scene.placements, placements + 2, "a state event");
+        let overlay = server.core.overlay_area(clamshell_ui::Screen::Top);
+        server.core.record(clamshell_ui::Layer::Overlay(clamshell_ui::Screen::Top), false);
+        assert_ne!(server.core.overlay_area(clamshell_ui::Screen::Top), overlay, "the overview's cells drawn on the overlay");
+        server.place();
+        server.place();
+        assert_eq!(server.scene.placements, placements + 3, "an overlay drawn anew");
+        // (The keyboard's focus follows the overview, which the state is told.)
+        server.sync_windows();
+        let placements = server.scene.placements;
+        server.resize((1600, 540));
+        server.place();
+        assert_eq!(server.scene.placements, placements + 1, "a resize");
     });
 }

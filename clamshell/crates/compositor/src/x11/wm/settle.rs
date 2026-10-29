@@ -158,6 +158,7 @@ impl Window {
                 shown: crate::windows::Shown::of(server.core.state(), self.id),
                 frames: Default::default(),
             });
+            server.windows_changed();
         }
     }
     pub(super) fn configure(&mut self, atoms: &Atoms, wire: &mut Transport, server: &Server) -> io::Result<()> {

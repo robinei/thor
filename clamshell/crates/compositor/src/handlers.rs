@@ -96,6 +96,8 @@ impl CompositorHandler for Server {
         self.colour.surfaces.remove(&smithay::backend::renderer::element::Id::from_wayland_resource(surface));
     }
     fn commit(&mut self, surface: &WlSurface) {
+        // Any surface's commit may change a window's size, picture or mapping, or its popups'.
+        self.windows_changed();
         // Before the buffer handler takes it: a new buffer on a window's own surface is a frame.
         let new_buffer = compositor::with_states(surface, |states| {
             matches!(states.cached_state.get::<compositor::SurfaceAttributes>().current().buffer, Some(compositor::BufferAssignment::NewBuffer(_)))
@@ -204,6 +206,7 @@ impl XdgShellHandler for Server {
             log::info!("compositor: window {id} closes: its toplevel on {:?} is gone", surface.wl_surface().id());
             self.core.handle(WindowEvent::Closed(id).into());
             self.windows.retain(|w| w.id != id);
+            self.windows_changed();
             self.sync_windows();
         }
     }

@@ -74,6 +74,7 @@ impl Server {
             frames: Default::default(),
         });
         self.next_id = next;
+        self.windows_changed();
     }
 
     pub fn facts(&self, surface: &ToplevelSurface, id: i64) -> WindowFacts {

@@ -73,6 +73,7 @@ fn x11_popups_share_parent_scaling_keep_tooltips_passive_and_cancel_dismissed_co
             shown: crate::windows::Shown::of(server.core.state(), 1),
             frames: Default::default(),
         });
+        server.windows_changed();
         server.place();
         let geometry = server.geometry(1).unwrap();
         assert_eq!(geometry.scale, smithay::utils::Scale::from(0.75));

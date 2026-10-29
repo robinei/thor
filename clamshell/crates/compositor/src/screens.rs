@@ -107,6 +107,7 @@ impl Server {
                 self.tell_game_mode(&output);
             }
         }
+        self.windows_changed();
         self.sync_windows();
     }
 

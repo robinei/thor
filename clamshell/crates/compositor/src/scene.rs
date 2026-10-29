@@ -9,9 +9,10 @@
 //! drawn. The list is kept and refilled: placing allocates nothing once it has held the most there have
 //! been.
 //!
-//! It is placed again after anything that may move what is shown: the state changing
-//! ([`Server::sync_windows`]), a commit (a window's size or picture), and before drawing. In debug builds
-//! each read of a window's place through [`Server::shown`] is checked against a fresh placement, so that a
+//! It is placed on demand: each reader asks for it ([`Server::place`]), and it is placed again only if
+//! what it is placed from changed since (the state, a window's commit or one added or gone, the screens'
+//! areas, the overlays'); otherwise asking costs a comparison and the cursor's place. In debug builds each
+//! read of a window's place through [`Server::shown`] is checked against a fresh placement, so that a
 //! missed one fails the tests rather than leaving a window drawn where it isn't touched.
 
 use clamshell_ui::{Bounds, Layer, Screen};
@@ -58,6 +59,22 @@ pub(crate) struct Scene {
     /// The element ids of the dim layers, the `n`th for the `n`th in the list, kept so that each keeps
     /// its damage from frame to frame.
     dims: Vec<smithay::backend::renderer::element::Id>,
+    /// What it was last placed from (see [`Server::place`]).
+    placed_from: Option<PlacedFrom>,
+    /// How many times it was placed, for the tests to count.
+    #[cfg(test)]
+    pub placements: usize,
+}
+
+/// What the scene is placed from, apart from the cursor: the state, the windows as their clients left
+/// them, the screens' areas for windows and the overlays' areas. While these are the same, so is the
+/// scene.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PlacedFrom {
+    revision: u64,
+    windows: u64,
+    areas: [Rectangle<i32, Logical>; 2],
+    overlays: [Option<Bounds>; 2],
 }
 
 impl Scene {
@@ -102,6 +119,25 @@ impl Server {
     pub(crate) fn place(&mut self) {
         // Order: the windows are placed by their presentations, which must be the state's as it is now.
         self.refresh_shown();
+        let from = PlacedFrom {
+            revision: self.core.state_revision(),
+            windows: self.windows_epoch,
+            areas: [self.area(false), self.area(true)],
+            overlays: [self.core.overlay_area(Screen::Top), self.core.overlay_area(Screen::Bottom)],
+        };
+        if self.scene.placed_from != Some(from) {
+            self.place_all();
+            self.scene.placed_from = Some(from);
+        }
+        self.place_cursor();
+    }
+
+    /// Places all but the cursor (see [`Server::place`]).
+    fn place_all(&mut self) {
+        #[cfg(test)]
+        {
+            self.scene.placements += 1;
+        }
         let mut shown = std::mem::take(&mut self.scene.shown);
         shown.clear();
         self.place_windows(&mut shown);
@@ -118,10 +154,28 @@ impl Server {
             }
         }
         self.scene.shown = shown;
-        // Once the windows are placed: what the cursor shows is the client's under it.
-        if self.pointer.cursor_activity.visible(std::time::Instant::now()) && self.effective_cursor() != CursorImageStatus::Hidden {
-            self.scene.shown.insert(0, Shown::Cursor { at: self.pointer.location });
+    }
+
+    /// The cursor in front of all, while it shows: placed on every call, since its showing goes by time and
+    /// what it shows is the client's under it, once the windows are placed.
+    fn place_cursor(&mut self) {
+        let cursor = (self.pointer.cursor_activity.visible(std::time::Instant::now()) && self.effective_cursor() != CursorImageStatus::Hidden)
+            .then_some(Shown::Cursor { at: self.pointer.location });
+        let shown = &mut self.scene.shown;
+        match (shown.first_mut(), cursor) {
+            (Some(first @ Shown::Cursor { .. }), Some(cursor)) => *first = cursor,
+            (Some(Shown::Cursor { .. }), None) => {
+                shown.remove(0);
+            }
+            (_, Some(cursor)) => shown.insert(0, cursor),
+            (_, None) => {}
         }
+    }
+
+    /// The windows changed as their clients or the window manager left them (one added or gone, a commit):
+    /// the scene is placed again when next asked for.
+    pub(crate) fn windows_changed(&mut self) {
+        self.windows_epoch = self.windows_epoch.wrapping_add(1);
     }
 
     /// Places the windows shown, front first, into `shown`: the top screen's stack, or while the overview

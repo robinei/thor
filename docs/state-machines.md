@@ -779,13 +779,17 @@ What is shown where is placed in one list, the scene (`scene.rs`), front first: 
 shows, the UI's software surfaces (its overlays and screens, with the part of each shown) and the windows
 shown, each with its `Geometry` and whether input reaches it (not the overview's on the top screen, which
 the overlay's cells take); a window's popups and subsurfaces are drawn and hit with it. Drawing makes its elements from it; `hit`, frame callbacks and presentation feedback, popups and
-idle inhibition read the windows' places from it. It is placed again after the state changes
-(`sync_windows`), after every commit, after the X11 window manager's events, and before drawing, frame
-pacing and idle read it; the list is kept, so placing allocates nothing once it has held the most there
-have been. In debug builds each read of a window's place is compared with a fresh placement and panics
+idle inhibition read the windows' places from it. Each reader asks for it to be placed (`Server::place`),
+and it is placed again only when what it is placed from changed: the state's revision, the windows as
+their clients left them (`windows_epoch`: any commit, a window added, bound or gone, a resize), the
+screens' areas for windows and the overlays' areas; otherwise asking costs a comparison, and the cursor's
+place, which goes by time and is redone on every ask. The list is kept, so placing allocates nothing once
+it has held the most there have been. In debug builds each read of a window's place is compared with a fresh placement and panics
 on a difference, so a stale scene fails the tests and the nested harness. Tests: the whole compositor
 suite and `tests/nested-compositor.py` run with the check; `the_overviews_cells_are_targets_in_place_of_the_arrows`
-(the overlay's cells are the compositor's, unmoved by the burn-in drift).
+(the overlay's cells are the compositor's, unmoved by the burn-in drift),
+`placing_again_with_nothing_changed_does_nothing` (a commit, a state event, an overlay drawn anew and a
+resize each place it once).
 
     window --role or limits Changed--> the same place and selection, a new presentation [configure]
     window --moved below or above--> a new area [configure to it; until the client answers, its old buffer is fitted]

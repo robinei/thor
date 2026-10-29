@@ -72,6 +72,9 @@ pub(crate) struct Server {
     /// Windows' facts as they changed since the last frame, X11's as the window manager read them,
     /// told to the state at the frame (see [`Server::flush_facts`]).
     pub changed_facts: Vec<clamshell_state::session::windows::WindowFacts>,
+    /// Counts the changes to the windows as their clients and the window manager left them, which the
+    /// scene is placed from (see [`Server::windows_changed`]).
+    pub windows_epoch: u64,
     /// The id the next window gets, Wayland's and X11's alike.
     pub next_id: i64,
     pub x11: crate::x11::Bridge,
@@ -133,6 +136,7 @@ impl Server {
             on_effect: Box::new(on_effect),
             identities,
             changed_facts: Vec::new(),
+            windows_epoch: 0,
             next_id: 1,
             x11: Default::default(),
         };
