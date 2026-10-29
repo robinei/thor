@@ -917,6 +917,11 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         .iter()
         .find(|w| w.group.is_none() && !s.session().launching().iter().any(|l| l.mark.as_deref().is_some_and(|mark| w.marked(mark))));
     ensure!(unplaced.is_none(), "window {:?} has no group after the settle", unplaced.map(|w| w.id));
+    // A window's group is the one its facts give it (see `Session::home_of`): the group stored and the
+    // owner worked out don't disagree once the event is settled.
+    let library = s.library_view().library();
+    let misplaced = s.session().windows().iter().find(|w| w.group.as_ref().is_some_and(|g| !s.session().home_of(w, library).is(g)));
+    ensure!(misplaced.is_none(), "window {:?} is in group {:?}, not its own", misplaced.map(|w| w.id), misplaced.and_then(|w| w.group.clone()));
     ensure!(s.session().keyboard_focus().is_none_or(|id| s.session().window(id).is_some()), "keyboard focus names a closed window");
     let session = s.session();
     // The keyboard focus is on a window shown, on either screen: it is computed so (see
