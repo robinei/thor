@@ -8,10 +8,20 @@ pkgdesc="The AYN Thor's handheld session: the game Library, second screen, gamep
 arch=(aarch64 x86_64)
 url=https://github.com/robinei/thor
 license=('MIT OR Apache-2.0')
-# (libseat, libinput, libudev and libgbm with EGL: its compositor, `clamshell --drm`.)
-depends=(libxkbcommon dbus gcc-libs glibc seatd libinput systemd-libs mesa)
+# (libseat, libinput, libudev and libgbm with EGL: its compositor, `clamshell --drm`; systemd: its
+# launches, as services of the user manager; Xwayland: X programs; fontconfig: the fonts for characters
+# its own lacks.) What the programs it runs for a feature give is optional: crates/system's
+# library::NEEDED says what goes without each, at the start.
+depends=(libxkbcommon dbus gcc-libs glibc seatd libinput systemd systemd-libs mesa xorg-xwayland fontconfig)
 makedepends=(cargo git python)
-optdepends=('waydroid: Android apps (clamshell-android)')
+optdepends=('waydroid: Android apps (clamshell-android)'
+            'wireplumber: the volume set (wpctl)'
+            'pipewire: the volume and the sound tab read (pw-dump)'
+            'curl: covers and details fetched'
+            'libarchive: archives extracted (bsdtar)'
+            'ratarmount: archives browsed'
+            'fuse3: archives browsed (fusermount3)'
+            'polkit: the account changed from the Device view (pkexec)')
 install=clamshell.install
 options=(!lto)
 
