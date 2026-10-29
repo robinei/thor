@@ -557,6 +557,9 @@ impl Wm {
                     if bytes.first().map(|v| v & 0x7f) == Some(DESTROY_NOTIFY_EVENT) {
                         self.forget(id, server);
                     } else if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
+                        // Unmapped by its client, a managed window is withdrawn (ICCCM 4.1.4): it may be
+                        // mapped again as new.
+                        let withdrawn = w.configured.is_some() && !w.override_redirect && !w.input_only;
                         let opened = w.opened;
                         w.wants_map = false;
                         w.opened = false;
@@ -572,6 +575,9 @@ impl Wm {
                         server.x11.changes.retain(|v| v.id != id);
                         if opened {
                             server.core.handle(WindowEvent::Closed(id).into());
+                        }
+                        if withdrawn {
+                            Self::property(&self.atoms, wire, xid, "WM_STATE", self.atoms.get("WM_STATE"), &[0, 0])?;
                         }
                     }
                 }
