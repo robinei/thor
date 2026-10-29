@@ -3,10 +3,11 @@
 //! [`Image`].
 //!
 //! The view asks for what it draws. An image that isn't loaded is requested once and drawn as a
-//! placeholder until it arrives. When the cache goes over its budget, the images drawn least recently on
+//! placeholder until it arrives. One whose file changed since (an entry's new art) is loaded again, the
+//! old one drawn meanwhile, and one that couldn't be read is asked for again after a while. When the cache goes over its budget, the images drawn least recently on
 //! either screen are dropped, but never one the latest frame of a screen drew.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender};
@@ -48,9 +49,17 @@ pub struct Request {
     pub path: PathBuf,
 }
 
+/// How many frames after a file couldn't be read it is asked for again, if still drawn: it may be there
+/// by then, such as art being fetched.
+const RETRY_FRAMES: u64 = 600;
+
 struct Entry {
-    /// `None` if the file couldn't be read. It is not asked for again.
+    /// `None` if the file couldn't be read.
     pixmap: Option<Pixmap>,
+    /// The file it was loaded from.
+    path: PathBuf,
+    /// The frame it was loaded in.
+    loaded: u64,
     /// The frame it was last drawn in, counting the frames of both screens.
     used: u64,
     /// Whether each screen's latest frame drew it.
@@ -83,7 +92,8 @@ pub struct Images {
     /// Where each image is kept in `entries`. A slot left by a dropped image is reused.
     index: HashMap<Key, usize>,
     entries: Vec<Option<Entry>>,
-    pending: HashSet<Key>,
+    /// Asked of the worker, each with its file.
+    pending: HashMap<Key, PathBuf>,
     /// Where requests go. `None` decodes at once, which snapshots use.
     worker: Option<Sender<Request>>,
     /// The worker is gone, so nothing more is asked of it, and images not loaded stay placeholders. That
@@ -101,19 +111,23 @@ impl Images {
 
     /// Decodes on request, in the calling thread.
     pub fn synchronous() -> Self {
-        Images { index: HashMap::new(), entries: Vec::new(), pending: HashSet::new(), worker: None, gone: false, frame: 0, generation: 0 }
+        Images { index: HashMap::new(), entries: Vec::new(), pending: HashMap::new(), worker: None, gone: false, frame: 0, generation: 0 }
     }
 
     /// The image of `id` in `slot` fitted into `w`x`h` pixels, if it is loaded. If not, it is asked for.
     pub fn get(&mut self, id: &Arc<str>, slot: Slot, path: &Path, w: u32, h: u32) -> Option<Image> {
         let key = Key { id: id.clone(), slot, w, h };
-        if !self.index.contains_key(&key) {
+        let frame = self.frame;
+        let kept = self.index.get(&key).and_then(|&i| self.entries.get(i)).and_then(Option::as_ref);
+        // Not loaded, loaded from another file, or not read and due again.
+        let wanted = kept.is_none_or(|e| e.path != path || (e.pixmap.is_none() && frame.saturating_sub(e.loaded) >= RETRY_FRAMES));
+        if wanted {
             match &self.worker {
                 Some(worker) => {
-                    if !self.gone && !self.pending.contains(&key) {
+                    if !self.gone && !self.pending.contains_key(&key) {
                         match worker.send(Request { key: key.clone(), path: path.to_path_buf() }) {
                             Ok(()) => {
-                                self.pending.insert(key);
+                                self.pending.insert(key.clone(), path.to_path_buf());
                             }
                             Err(_) => {
                                 log::warn!("images: the decoding thread is gone: images not loaded yet are left out");
@@ -121,11 +135,12 @@ impl Images {
                             }
                         }
                     }
-                    return None;
+                    // What was loaded before, if anything, is drawn until the new one arrives.
+                    kept?;
                 }
                 None => {
                     let pixmap = load(path, w, h, slot == Slot::Thumb);
-                    self.insert(key.clone(), pixmap);
+                    self.insert(key.clone(), path.to_path_buf(), pixmap);
                 }
             }
         }
@@ -142,9 +157,9 @@ impl Images {
         (entry.generation == image.generation).then_some(entry.pixmap.as_ref()).flatten()
     }
 
-    fn insert(&mut self, key: Key, pixmap: Option<Pixmap>) {
+    fn insert(&mut self, key: Key, path: PathBuf, pixmap: Option<Pixmap>) {
         self.generation = self.generation.wrapping_add(1);
-        let entry = Entry { pixmap, used: self.frame, in_latest: Screens::default(), generation: self.generation };
+        let entry = Entry { pixmap, path, loaded: self.frame, used: self.frame, in_latest: Screens::default(), generation: self.generation };
         match self.index.get(&key).copied().or_else(|| self.entries.iter().position(Option::is_none)) {
             Some(i) => {
                 if let Some(slot) = self.entries.get_mut(i) {
@@ -161,8 +176,9 @@ impl Images {
 
     /// A decoded image arrived from the worker.
     pub fn arrived(&mut self, key: Key, pixmap: Option<Pixmap>) {
-        self.pending.remove(&key);
-        self.insert(key, pixmap);
+        if let Some(path) = self.pending.remove(&key) {
+            self.insert(key, path, pixmap);
+        }
     }
 
     /// Called after a frame of `screen`. While the cache is over budget, drops the image drawn least
@@ -303,6 +319,27 @@ mod tests {
         assert_eq!(rx.try_iter().count(), 1);
     }
 
+    /// An image whose file changed is asked for again, the old one drawn meanwhile; one that couldn't be
+    /// read is asked for again after a while.
+    #[test]
+    fn a_changed_file_is_loaded_again_and_a_failed_one_later() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut images = Images::new(tx);
+        let id: Arc<str> = "game".into();
+        let key = Key { id: id.clone(), slot: Slot::Art, w: 10, h: 10 };
+        assert!(images.get(&id, Slot::Art, Path::new("/old.png"), 10, 10).is_none());
+        images.arrived(key.clone(), Pixmap::new(10, 10));
+        assert!(images.get(&id, Slot::Art, Path::new("/new.png"), 10, 10).is_some(), "the old one meanwhile");
+        let asked: Vec<PathBuf> = rx.try_iter().map(|r| r.path).collect();
+        assert_eq!(asked, [PathBuf::from("/old.png"), PathBuf::from("/new.png")]);
+        images.arrived(key.clone(), None);
+        assert!(images.get(&id, Slot::Art, Path::new("/new.png"), 10, 10).is_none());
+        assert_eq!(rx.try_iter().count(), 0, "not read: not asked again at once");
+        images.frame += RETRY_FRAMES;
+        images.get(&id, Slot::Art, Path::new("/new.png"), 10, 10);
+        assert_eq!(rx.try_iter().count(), 1, "asked again later");
+    }
+
     #[test]
     fn eviction_drops_the_least_recently_drawn_and_keeps_both_screens_latest() {
         let mut images = Images::synchronous();
@@ -312,7 +349,7 @@ mod tests {
         let draw = |images: &mut Images, n: usize| {
             let key = image(n);
             if !images.index.contains_key(&key) {
-                images.insert(key.clone(), Pixmap::new(side, side));
+                images.insert(key.clone(), PathBuf::from("/x.png"), Pixmap::new(side, side));
             }
             let entry = images.index.get(&key).and_then(|&i| images.entries.get_mut(i)).and_then(Option::as_mut).unwrap();
             entry.used = images.frame;
