@@ -151,14 +151,7 @@ impl<S: Sink> Service for Tray<S> {
                 continue;
             }
             // Sleep until a command, a signal or a call comes.
-            let mut fds = [
-                rustix::event::PollFd::from_borrowed_fd(self.bell.fd(), rustix::event::PollFlags::IN),
-                rustix::event::PollFd::from_borrowed_fd(s.bus.fd(), rustix::event::PollFlags::IN),
-            ];
-            if let Err(e) = rustix::event::poll(&mut fds, None) {
-                log::debug!("tray: waiting: {e}");
-            }
-            self.bell.clear();
+            s.bus.wait_with(&self.bell, "tray");
         }
     }
 

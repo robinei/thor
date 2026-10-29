@@ -151,14 +151,7 @@ impl<S: Sink + Clone> Service for Server<S> {
                 }
             }
             // Sleep until a command or a call comes.
-            let mut fds = [
-                rustix::event::PollFd::from_borrowed_fd(self.bell.fd(), rustix::event::PollFlags::IN),
-                rustix::event::PollFd::from_borrowed_fd(bus.fd(), rustix::event::PollFlags::IN),
-            ];
-            if let Err(e) = rustix::event::poll(&mut fds, None) {
-                log::debug!("portal: waiting: {e}");
-            }
-            self.bell.clear();
+            bus.wait_with(&self.bell, "portal");
         }
     }
 

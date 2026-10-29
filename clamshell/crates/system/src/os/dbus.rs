@@ -153,6 +153,23 @@ impl Bus {
     }
 
     /// Calls `method` of `interface` on `path` at `dest` with `args`, and returns the reply's values.
+    /// Sleeps until `bell` rings (a command for `who`'s thread) or something comes on the bus, then clears
+    /// the bell. A wait that fails is logged and the thread rests a moment, rather than going round at once.
+    pub(crate) fn wait_with(&self, bell: &crate::os::worker::Bell, who: &str) {
+        let mut fds = [
+            rustix::event::PollFd::from_borrowed_fd(bell.fd(), rustix::event::PollFlags::IN),
+            rustix::event::PollFd::from_borrowed_fd(self.fd(), rustix::event::PollFlags::IN),
+        ];
+        match rustix::event::poll(&mut fds, None) {
+            Ok(_) | Err(rustix::io::Errno::INTR) => {}
+            Err(e) => {
+                log::warn!("{who}: waiting: {e}");
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+        }
+        bell.clear();
+    }
+
     /// Asks for the well-known name `name`, not waiting in line behind another owner. Whether it is ours.
     pub(crate) fn request_name(&mut self, name: &str) -> Result<bool> {
         // Flag 4 is DBUS_NAME_FLAG_DO_NOT_QUEUE. Reply 1 means we are the primary owner, 4 that we already were.
