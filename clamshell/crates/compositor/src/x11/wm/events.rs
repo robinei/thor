@@ -161,7 +161,7 @@ impl Wm {
             surface: None,
             size: (u16::try_from(geometry.size.w).unwrap_or(1), u16::try_from(geometry.size.h).unwrap_or(1)),
             configured: None,
-            sent: None,
+            parent: None,
             dirty: true,
             refresh: 0,
             shown: None,
@@ -242,7 +242,6 @@ impl Wm {
                         let opened = w.opened;
                         w.wants_map = false;
                         w.opened = false;
-                        w.sent = None;
                         w.serial = None;
                         w.surface = None;
                         w.configured = None;

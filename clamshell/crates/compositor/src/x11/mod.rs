@@ -57,13 +57,14 @@ pub(crate) struct Bridge {
 }
 
 impl Server {
-    /// Tells the state the X11 windows' changes since the last frame.
+    /// Tells the state the X11 windows' changes since the last frame, where they differ from what it has
+    /// (see [`crate::windows::differ`]), with the colour of the surface each is bound to.
     pub(crate) fn flush_x11_changes(&mut self) {
-        for mut facts in self.x11.changes.drain(..) {
+        let mut changes = std::mem::take(&mut self.x11.changes);
+        for mut facts in changes.drain(..) {
+            facts.colour = self.windows.iter().find(|w| w.id == facts.id).and_then(|w| self.window_colour(&w.window));
             let Some(old) = self.core.state().session().window(facts.id) else { continue };
-            let title_changed = old.title != facts.title;
-            let changed =
-                old.app_id != facts.app_id || old.parent != facts.parent || old.limits != facts.limits || old.role != facts.role || old.colour != facts.colour;
+            let (changed, title_changed) = crate::windows::differ(old, &facts);
             let title = title_changed.then(|| WindowEvent::Title { window: facts.id, title: std::mem::take(&mut facts.title) });
             match (changed, title) {
                 (true, Some(title)) => self.core.handle(clamshell_state::Event::WindowBatch(vec![WindowEvent::Changed(facts), title])),
@@ -72,6 +73,8 @@ impl Server {
                 (false, None) => {}
             }
         }
+        // (Kept, with what it holds, for the next frame's.)
+        self.x11.changes = changes;
     }
 }
 

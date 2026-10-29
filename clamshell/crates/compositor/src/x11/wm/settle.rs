@@ -124,27 +124,28 @@ impl Wm {
 }
 
 impl Window {
+    /// Opens the window with its facts, or queues them for the frame when a property or its parent changed
+    /// (see `Server::flush_x11_changes`, which compares them with the state's).
     pub(super) fn sync_facts(&mut self, parent: Option<i64>, server: &mut Server) {
-        if !self.opened || self.dirty || self.sent.as_ref().is_some_and(|old| old.parent != parent) {
-            let facts = self.properties.facts(self.id, parent, self.process.clone());
-            if !self.opened {
-                server.core.handle(WindowEvent::Opened(facts.clone()).into());
-                let focused = server.core.state().session().top_window().is_some_and(|w| w.id == self.id);
-                log::info!("compositor: X11 window {} opens: {:?} {:?}, focused {focused}, limits {:?}", self.id, facts.app_id, facts.title, facts.limits);
-                self.opened = true;
-                self.sent = Some(facts);
-            } else if self.sent.as_ref().is_none_or(|old| {
-                old.app_id != facts.app_id || old.title != facts.title || old.parent != facts.parent || old.limits != facts.limits || old.role != facts.role
-            }) {
-                if let Some(pending) = server.x11.changes.iter_mut().find(|old| old.id == facts.id) {
-                    *pending = facts.clone();
-                } else {
-                    server.x11.changes.push(facts.clone());
-                }
-                self.sent = Some(facts);
-            }
-            self.dirty = false;
+        if self.opened && !self.dirty && self.parent == parent {
+            return;
         }
+        let facts = self.properties.facts(self.id, parent, self.process.clone());
+        if self.opened {
+            if let Some(pending) = server.x11.changes.iter_mut().find(|old| old.id == facts.id) {
+                *pending = facts;
+            } else {
+                server.x11.changes.push(facts);
+            }
+        } else {
+            let (id, app_id, title, limits) = (self.id, facts.app_id.clone(), facts.title.clone(), facts.limits);
+            server.core.handle(WindowEvent::Opened(facts).into());
+            let focused = server.core.state().session().top_window().is_some_and(|w| w.id == id);
+            log::info!("compositor: X11 window {id} opens: {app_id:?} {title:?}, focused {focused}, limits {limits:?}");
+            self.opened = true;
+        }
+        self.parent = parent;
+        self.dirty = false;
     }
     pub(super) fn bind_surface(&self, server: &mut Server) {
         if let Some(surface) = self.surface.clone()

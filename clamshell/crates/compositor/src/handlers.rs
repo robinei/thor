@@ -245,10 +245,10 @@ impl smithay::wayland::shell::xdg::dialog::XdgDialogHandler for Server {
 
 impl Server {
     fn identity_changed(&mut self, surface: ToplevelSurface) {
-        if let Some(id) = self.surface_id(surface.wl_surface())
-            && self.core.state().session().window(id).is_some()
-        {
-            self.core.handle(WindowEvent::Changed(self.facts(&surface, id)).into());
+        let Some(id) = self.surface_id(surface.wl_surface()) else { return };
+        let facts = self.facts(&surface, id);
+        if self.core.state().session().window(id).is_some_and(|old| crate::windows::differ(old, &facts).0) {
+            self.core.handle(WindowEvent::Changed(facts).into());
         }
     }
 }

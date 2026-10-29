@@ -81,7 +81,8 @@ struct Window {
     surface: Option<WlSurface>,
     size: (u16, u16),
     configured: Option<Rectangle<i32, smithay::utils::Logical>>,
-    sent: Option<clamshell_state::session::windows::WindowFacts>,
+    /// The parent its facts were last given with: it is looked up again at each settle, until it opens.
+    parent: Option<i64>,
     dirty: bool,
     refresh: u16,
     /// How the state shows it, and the state's revision that was read at (see [`crate::windows::Shown`]):
@@ -499,6 +500,50 @@ mod tests {
                 wm.pair_surfaces(server);
                 assert_eq!(wm.windows[0].surface.as_ref(), Some(&surface));
                 assert!(super::super::shell::take(server, 0x1_0000_0007).is_none(), "taken once");
+            },
+        );
+        assert_eq!(checked, 1);
+    }
+
+    /// An X11 window's colour is its surface's, as a Wayland window's is: told with its next facts once its
+    /// surface is bound.
+    #[test]
+    fn an_x11_window_reports_its_surfaces_colour() {
+        use smithay::reexports::wayland_protocols::xwayland::shell::v1::client::xwayland_shell_v1;
+        use wayland_client::{Proxy, protocol::wl_compositor};
+        let (mut display, mut server) = crate::tests::ServerBuilder::new().build();
+        let xwayland = crate::clients::ClientState { xwayland: true, ..crate::clients::ClientState::default() };
+        let client = crate::tests::spawn_client(&mut display, xwayland, |globals, mut queue, steps| {
+            let qh = queue.handle();
+            let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
+            let shell: xwayland_shell_v1::XwaylandShellV1 = globals.bind(&qh, 1..=1, ()).unwrap();
+            let surface = compositor.create_surface(&qh, ());
+            shell.get_xwayland_surface(&surface, &qh, ()).set_serial(7, 0);
+            surface.commit();
+            queue.roundtrip(&mut crate::tests::Client::default()).unwrap();
+            steps.step(surface.id().protocol_id());
+        });
+        let (socket, _peer) = UnixStream::pair().unwrap();
+        let mut wire = Transport::new(socket, Instant::now()).unwrap();
+        let mut wm = Wm { root: 1, owner: 2, atoms: Atoms(NAMES.iter().enumerate().map(|(i, name)| (*name, 100 + i as u32)).collect()), ..Wm::default() };
+        wm.discover(10, Rectangle::from_size((400, 300).into()), false, &mut wire, &mut server).unwrap();
+        (wm.windows[0].outstanding, wm.windows[0].wants_map, wm.windows[0].serial) = (0, true, Some(7));
+        let id = wm.windows[0].id;
+        let peer = client.peer.clone();
+        let colour = clamshell_state::colour::ColourDescription { transfer: clamshell_state::colour::TransferFunction::Pq, ..Default::default() };
+        let checked = client.serve(
+            &mut display,
+            &mut server,
+            |_| {},
+            |_, server, surface| {
+                let surface: WlSurface = peer.object_from_protocol_id(&server.dh, surface).unwrap();
+                wm.settle(&mut wire, server).unwrap();
+                assert_eq!(server.core.state().session().window(id).map(|w| w.colour.clone()), Some(None), "opened before its surface");
+                server.colour.surfaces.insert(smithay::backend::renderer::element::Id::from_wayland_resource(&surface), std::sync::Arc::new(colour));
+                wm.windows[0].dirty = true;
+                wm.settle(&mut wire, server).unwrap();
+                server.frame();
+                assert_eq!(server.core.state().session().window(id).and_then(|w| w.colour.as_deref().copied()), Some(colour));
             },
         );
         assert_eq!(checked, 1);

@@ -243,3 +243,11 @@ impl Server {
         }
     }
 }
+
+/// What differs between the facts the state has of a window, `old`, and its facts as they are now, `new`:
+/// whether any it takes from `Changed` (app id, parent, limits, role, colour; the process is the state's
+/// own), and whether its title, which has an event of its own.
+pub(crate) fn differ(old: &WindowFacts, new: &WindowFacts) -> (bool, bool) {
+    let changed = old.app_id != new.app_id || old.parent != new.parent || old.limits != new.limits || old.role != new.role || old.colour != new.colour;
+    (changed, old.title != new.title)
+}
