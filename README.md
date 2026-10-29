@@ -214,7 +214,7 @@ updates, the boot, the firmware, pacnew files and health.
 
 From a checkout, on an Arch Linux PC, everything is built here and nothing needs the virtual machines:
 
-    tools/host-check.sh kernel packages image  # what this PC lacks, and the pacman line that adds it
+    tools/host-check.sh packages image  # what this PC lacks, and the pacman line that adds it
     tools/image/image.sh                       # the Thor's SD card image: the packages (the kernel
                                                # among them), then pacstrap through qemu-user (sudo)
     tools/image/image.sh vm                    # the same system for x86_64, to try the first boot:
