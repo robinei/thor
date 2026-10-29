@@ -16,6 +16,7 @@ clamshell-ui.workspace = true
 clamshell-library = { workspace = true, features = ["demo"] }
 clamshell-ui = { workspace = true, features = ["dev"] }
 tiny-skia.workspace = true
+xkeysym.workspace = true
 
 [lints]
 workspace = true

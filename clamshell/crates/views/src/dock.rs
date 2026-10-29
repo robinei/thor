@@ -42,7 +42,7 @@ pub(super) fn moving_input(input: PadInput) -> Option<Event> {
         PadInput::Down => DockId::Step(Step::Down),
         PadInput::Left => DockId::Step(Step::Left),
         PadInput::Right => DockId::Step(Step::Right),
-        PadInput::A(true) | PadInput::B => DockId::Done,
+        PadInput::A(true) | PadInput::B | PadInput::Back => DockId::Done,
         _ => return None,
     };
     Some(PointerEvent::Activate(Id::Dock(id)).into())

@@ -121,8 +121,12 @@ impl Core {
     pub(crate) fn pad(&mut self, input: PadInput) {
         self.handle(Event::PadActive);
         self.fresh();
+        // A held A lets go wherever it was pressed, a mode or not, so no press is left held.
+        if input == PadInput::A(false) {
+            self.up(Source::PadA, End::Release, std::time::Instant::now());
+        }
         // A mode drawn takes the pad's buttons first: a dock tile being moved, or the overview.
-        if let Some(mode) = self.screens.bottom.pad.mode.or(self.overlays.top.pad.mode) {
+        if let Some(mode) = self.mode() {
             if let Some(event) = mode(input) {
                 self.handle(event);
             }
@@ -141,7 +145,7 @@ impl Core {
         }
         match input {
             PadInput::A(true) => self.press_focus(Source::PadA),
-            PadInput::A(false) => self.up(Source::PadA, End::Release, std::time::Instant::now()),
+            PadInput::A(false) => {}
             // The Back button is B on ClamShell's screens.
             PadInput::B | PadInput::Back => self.handle_all(focus::back(&self.state, &self.screens)),
             PadInput::Y | PadInput::X | PadInput::Start => self.handle_all(focus::shortcut(&self.state, &self.screens, input)),
@@ -180,9 +184,18 @@ impl Core {
         }
     }
 
-    /// A key on a desktop, where keys stand in for the pad (see `focus::desktop_key`).
+    /// The mode a frame drew that takes the pad's buttons, if one did: the overlays' first, as they are over
+    /// the screens, and the main screen's only while the pad may use it (it isn't drawn under a window).
+    fn mode(&self) -> Option<fn(PadInput) -> Option<Event>> {
+        let top = self.state.pad().on_top().then_some(self.screens.top.pad.mode).flatten();
+        self.overlays.top.pad.mode.or(self.overlays.bottom.pad.mode).or(self.screens.bottom.pad.mode).or(top)
+    }
+
+    /// A key on a desktop, where keys stand in for the pad (see `focus::desktop_key`). Enter is A: in a
+    /// mode, the mode's.
     pub fn key(&mut self, sym: Keysym, down: bool) {
         match focus::desktop_key(sym) {
+            Some(PadInput::A(_)) if self.mode().is_some() => self.pad(PadInput::A(down)),
             Some(PadInput::A(_)) if down => self.press_focus(Source::Enter),
             Some(PadInput::A(_)) => self.up(Source::Enter, End::Release, std::time::Instant::now()),
             Some(input) if down => self.pad(input),

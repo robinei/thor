@@ -343,6 +343,7 @@ dependencies = [
  "clamshell-state",
  "clamshell-ui",
  "tiny-skia",
+ "xkeysym",
 ]
 
 [[package]]

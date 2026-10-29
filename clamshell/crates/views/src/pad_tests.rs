@@ -164,3 +164,29 @@ fn the_librarys_list_takes_the_pads_moves() {
     let below = navigate(&s, &d, &memory, Dir::Down);
     assert!(matches!(&below, Some(Event::Pointer(PointerEvent::Focus(id))) if !matches!(id, Id::LibraryView(_))), "{below:?}");
 }
+
+/// While a dock tile is moved, the mode the dock draws takes the pad's buttons: Back ends the move as B
+/// does, and on a desktop so does Enter, rather than pressing what is focused underneath.
+#[test]
+fn a_dock_tiles_move_takes_back_and_enter() {
+    use clamshell_state::DockId;
+    let account = clamshell_state::setup::account::Account::NoHelper;
+    let state = State::new(Init { library: Some(clamshell_library::demo::library()), account, ..Init::default() });
+    let mut core = clamshell_ui::Core::new(state, crate::VIEWS, || {}).expect("a core");
+    for screen in Screen::BOTH {
+        core.resize(screen, (1280, 720), 1);
+    }
+    let start_moving = |core: &mut clamshell_ui::Core| {
+        core.handle(PointerEvent::Activate(Id::Tab(Tab::Dock)).into());
+        core.handle(PointerEvent::LongPress(Id::Dock(DockId::Entry(0))).into());
+        core.handle(PointerEvent::Activate(Id::Dock(DockId::Move)).into());
+        assert!(core.state().dock().moving().is_some());
+    };
+    start_moving(&mut core);
+    core.handle(Event::Pad(PadInput::Back));
+    assert!(core.state().dock().moving().is_none(), "Back: done");
+    start_moving(&mut core);
+    core.key(xkeysym::Keysym::Return, true);
+    core.key(xkeysym::Keysym::Return, false);
+    assert!(core.state().dock().moving().is_none(), "Enter: done");
+}
