@@ -37,7 +37,9 @@ pub fn run(
     mut on_capture: impl FnMut(Result<clamshell_state::ScreenshotPixels, String>) + 'static,
     quit: crate::QuitSignals,
 ) -> Result<(), Error> {
-    let mut base = Base::new(state, config, false, identify, on_effect, quit)?;
+    // The host's raw motion comes through winit (a captured pointer's camera motion), so clients are
+    // offered relative motion and pointer constraints here too.
+    let mut base = Base::new(state, config, true, identify, on_effect, quit)?;
     let server = &mut base.server;
     // The screens are the device's own pixels, on its panels, if the profile knows their size.
     let profile = *server.core.state().profile();
