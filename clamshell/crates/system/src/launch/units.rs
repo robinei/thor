@@ -122,7 +122,8 @@ impl<S: Sink> Service for Units<S> {
         let mut bus = Bus::session()?;
         bus.add_match(&format!("type='signal',sender='{SYSTEMD}',path='{MANAGER_PATH}',interface='{MANAGER}'"))?;
         call::<()>(&mut bus, "Subscribe", ())?;
-        if !std::mem::replace(&mut self.looked, true) {
+        // (Noted as looked only once the listing has worked: a connection lost partway looks again.)
+        if !self.looked {
             let slices = units(&mut bus, &[&format!("{}*.slice", clamshell_state::session::launch_unit::SLICE_PREFIX)])?;
             let frozen = slices.into_iter().filter(|row| {
                 bus.get::<String>(SYSTEMD, &row.6, "org.freedesktop.systemd1.Unit", "FreezerState")
@@ -134,6 +135,7 @@ impl<S: Sink> Service for Units<S> {
                     .filter_map(|row| Some(row.0.strip_prefix(clamshell_state::session::launch_unit::SLICE_PREFIX)?.strip_suffix(".slice")?.into()))
                     .collect(),
             );
+            self.looked = true;
         }
         Ok(bus)
     }
