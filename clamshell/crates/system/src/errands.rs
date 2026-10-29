@@ -72,17 +72,26 @@ fn carry_out(command: Command, screenshots: Option<&PathBuf>, calibration: Optio
             }
             sink.send(Event::Screenshot(saved))
         }
-        // Busy means something is working that the user left running, such as a download or a build.
-        Command::Sleep => match sleep::busy() {
-            Some(why) => {
-                log::info!("sleep: not now, {why}");
-                sink.send(Event::Idle(IdleEvent::Busy))
-            }
-            None => {
-                sleep::suspend();
-                Ok(())
-            }
-        },
+        // Busy means something is working that the user left running, such as a download or a build. It is
+        // measured over seconds, so on a thread of its own, as the suspend that follows.
+        Command::Sleep => {
+            in_background(
+                "sleep",
+                sink,
+                || match sleep::busy() {
+                    Some(why) => {
+                        log::info!("sleep: not now, {why}");
+                        vec![Event::Idle(IdleEvent::Busy)]
+                    }
+                    None => {
+                        sleep::suspend();
+                        vec![]
+                    }
+                },
+                Vec::new,
+            );
+            Ok(())
+        }
         Command::AskAwake(argv) => {
             in_background("awake", sink, move || if awake(&argv) { vec![Event::Idle(IdleEvent::KeptAwake)] } else { vec![] }, Vec::new);
             Ok(())
