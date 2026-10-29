@@ -8,14 +8,10 @@
 //! circle with its dot and the extremes reached so far. Off the device, where there is no helper, the
 //! password and remote login show as unavailable.
 
-use std::fmt::{self, Display, Formatter, Write};
-
 use clamshell_state::DeviceId;
 use clamshell_state::Id;
-use clamshell_state::bottom::editor::{Editor, Purpose};
 use clamshell_state::device_view::Refresh;
 use clamshell_state::device_view::sticks::{Phase, Progress, StickAxis};
-use clamshell_state::setup::account::PasswordStep;
 
 use super::time::Name;
 use clamshell_ui::gfx::{Align, Column, Keep, Rect};
@@ -147,32 +143,4 @@ fn draw_sticks(f: &mut Frame, area: Rect, p: &Progress, size: f32) {
 
 fn axis(p: &Progress, i: usize) -> StickAxis {
     p.seen.get(i).copied().unwrap_or(StickAxis { low: 0, centre: 0, high: 0 })
-}
-
-/// The password editor on the second screen's keyboard tab: what is asked, and the text as dots.
-pub(super) fn draw_password(f: &mut Frame) {
-    let Some(Editor { purpose: Purpose::AccountPassword(step), text }) = f.s.bottom().editor() else {
-        return;
-    };
-    let (title, save) = match step {
-        PasswordStep::Current => ("Current password", "Next"),
-        PasswordStep::New { current: Some(_) } => ("New password (8 characters at least)", "Next"),
-        PasswordStep::New { current: None } => ("A password, for sudo and remote login (8 characters at least)", "Next"),
-        PasswordStep::Again { .. } => ("The same password again", "Set"),
-    };
-    let dots = Fmt::<256>::of(format_args!("{}", Dots(text.chars().count())));
-    let cancel = (Id::Editor(clamshell_state::EditorId::Cancel), "Cancel");
-    super::editor::field(f, title, &dots, cancel, (Id::Editor(clamshell_state::EditorId::Save), save));
-}
-
-/// A password as dots, one per character.
-struct Dots(usize);
-
-impl Display for Dots {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        for _ in 0..self.0 {
-            f.write_char('•')?;
-        }
-        Ok(())
-    }
 }

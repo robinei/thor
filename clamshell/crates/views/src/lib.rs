@@ -51,8 +51,6 @@ mod no_alloc;
 mod pad_tests;
 
 use clamshell_state::Top;
-use clamshell_state::bottom::editor::Purpose;
-use clamshell_state::library_view::files::FileName;
 
 use clamshell_ui::gfx::Rect;
 use clamshell_ui::toolkit::Frame;
@@ -84,23 +82,12 @@ pub fn overlay(f: &mut Frame, screen: Rect, which: clamshell_ui::Screen) {
     }
 }
 
-/// The keyboard, or over it the editor open: what it edits says how it is titled.
+/// The keyboard, or over it the editor open in the tab shown.
 fn typing(f: &mut Frame, body: Rect) {
-    match f.s.bottom().editor().map(|e| &e.purpose) {
-        Some(Purpose::FileName(FileName::Rename(_))) => editor::draw(f, "New name", "Rename"),
-        Some(Purpose::FileName(FileName::NewFolder(_))) => editor::draw(f, "New folder's name", "Make"),
-        Some(Purpose::FileName(FileName::Extract(_))) => editor::draw(f, "Extract to", "Extract"),
-        Some(Purpose::AccountPassword(_)) => device::draw_password(f),
-        Some(Purpose::PlaceName(clamshell_state::library_view::edit::PlaceName::Rename(_))) => editor::draw(f, "New name", "Rename"),
-        Some(Purpose::PlaceName(clamshell_state::library_view::edit::PlaceName::New(None))) => editor::draw(f, "New tab's name", "Make"),
-        Some(Purpose::PlaceName(clamshell_state::library_view::edit::PlaceName::New(Some(_)))) => editor::draw(f, "New folder's name", "Make"),
-        Some(Purpose::FormField(field, _)) => editor::draw(f, field.label(), "Set"),
-        Some(Purpose::SaveName) => editor::draw(f, "Save as", "Set"),
-        Some(Purpose::Password { ssid }) => {
-            let title = clamshell_ui::toolkit::format::Fmt::<128>::of(format_args!("Password for {ssid}"));
-            editor::draw(f, &title, "Join");
-        }
-        _ => keyboard::draw(f, body),
+    if f.s.bottom().editor().is_some() {
+        editor::draw(f);
+    } else {
+        keyboard::draw(f, body);
     }
 }
 

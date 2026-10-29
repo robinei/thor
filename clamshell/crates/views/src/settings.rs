@@ -9,8 +9,6 @@
 //! Those tiles carry a dot, and the rest show the default's value dimmed. Changes reach a running game at
 //! once. The environment tile opens an editor over the on-screen keyboard.
 
-use clamshell_state::bottom::editor::{Editor, KeymapName, Purpose};
-use clamshell_state::profiles::picker::ProfileName;
 use clamshell_state::settings::{Impact, Setting};
 use clamshell_state::{GRID_COLUMNS, Id, ListId, SettingsId, SettingsLevel, State, TileOrigin};
 
@@ -60,7 +58,7 @@ impl Tile {
 pub(super) fn draw(f: &mut Frame) {
     let body = f.body();
     if f.s.bottom().editor().is_some() {
-        return editor(f);
+        return super::editor::draw(f);
     }
     if let Some(screen) = f.s.keymapping().screen() {
         return super::keymaps::draw(f, screen);
@@ -258,34 +256,4 @@ fn draw_tile(f: &mut Frame, r: Rect, tile: Tile) {
         };
         f.c.icon(face.icon, TILE.square(r), color);
     });
-}
-
-/// The editor over the settings, for the environment or a keymap's name, using the shared editor (field,
-/// Cancel and Save, keyboard).
-fn editor(f: &mut Frame) {
-    let s = f.s;
-    let title = match s.bottom().editor() {
-        Some(Editor { purpose: Purpose::Env { entry }, .. }) => {
-            let title = match entry {
-                Some(id) => s.entry(id).map_or("this game", |g| g.title.as_str()),
-                None => "all games",
-            };
-            Fmt::<160>::of(format_args!("Environment for {title}: KEY=value, space-separated"))
-        }
-        Some(Editor { purpose: Purpose::ProfileName(kind, name), .. }) => match name {
-            ProfileName::New => Fmt::of(format_args!("Name of the new {}", kind.noun())),
-            ProfileName::Rename(id) => Fmt::of(format_args!("New name for {}", s.profile_name(*kind, *id))),
-            ProfileName::Duplicate(id) => Fmt::of(format_args!("Name of the copy of {}", s.profile_name(*kind, *id))),
-            ProfileName::SaveAs(_) => Fmt::of(format_args!("A name for the copy (other games can use it)")),
-        },
-        Some(Editor { purpose: Purpose::KeymapName(name), .. }) => match name {
-            KeymapName::NewLayer(..) => Fmt::of(format_args!("Name of the new layer")),
-            KeymapName::RenameLayer(id, layer) => {
-                let name = s.keymapping().keymaps().get(*id).and_then(|k| k.layer_name(*layer)).unwrap_or("the layer");
-                Fmt::of(format_args!("New name for {name}"))
-            }
-        },
-        _ => return,
-    };
-    super::editor::draw(f, &title, "Save");
 }

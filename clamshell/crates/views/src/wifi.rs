@@ -5,7 +5,6 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use clamshell_state::bottom::editor::{Editor, Purpose};
 use clamshell_state::radios::wifi::{NetState, Problem, Wifi};
 use clamshell_state::{Id, ListId, RadioStatus, WifiId};
 
@@ -17,9 +16,9 @@ use clamshell_ui::toolkit::style::Tone;
 use clamshell_ui::toolkit::widgets::{self, RowFace};
 
 pub(super) fn draw(f: &mut Frame) {
-    if let Some(Editor { purpose: Purpose::Password { ssid }, .. }) = f.s.bottom().editor() {
-        let title = Fmt::<128>::of(format_args!("Password for {ssid}"));
-        return super::editor::draw(f, &title, "Join");
+    // A network's password.
+    if f.s.bottom().editor().is_some() {
+        return super::editor::draw(f);
     }
     list(f);
 }
