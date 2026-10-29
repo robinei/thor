@@ -27,7 +27,7 @@ pub(crate) struct ClientWindow {
 
 /// How the state says a window is shown: its presentation and its entry's settings for the picture.
 /// Each is a search of the library for the window's entry, so they are read once per state revision
-/// ([`Server::sync_windows`]), not on every frame and commit.
+/// ([`Server::refresh_shown`], as the scene is placed), not on every frame and commit.
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct Shown {
     pub presentation: Option<clamshell_state::presentation::WindowPresentation>,
@@ -156,7 +156,8 @@ impl Server {
         }
     }
 
-    pub fn sync_windows(&mut self) {
+    /// Reads again what the state says of how each window is shown, if the state changed since.
+    pub(crate) fn refresh_shown(&mut self) {
         let revision = self.core.state_revision();
         if self.presentation_revision != Some(revision) {
             for client in &mut self.windows {
@@ -164,6 +165,9 @@ impl Server {
             }
             self.presentation_revision = Some(revision);
         }
+    }
+
+    pub fn sync_windows(&mut self) {
         self.place();
         self.sync_x11_popups();
         self.validate_capture();

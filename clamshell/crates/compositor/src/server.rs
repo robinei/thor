@@ -59,7 +59,7 @@ pub(crate) struct Server {
     /// When the server began, the time frame callbacks and cursor animations count from.
     pub started: Instant,
     pub idle: crate::idle::Idle,
-    /// The state's revision the windows' `shown` was last worked out at (see [`Server::sync_windows`]).
+    /// The state's revision the windows' `shown` was last worked out at (see [`Server::refresh_shown`]).
     pub presentation_revision: Option<u64>,
     /// The last window events, dumped by `Compositor::DumpWindowEvents` (see `trace`).
     pub trace: std::rc::Rc<std::cell::RefCell<crate::trace::Ring>>,

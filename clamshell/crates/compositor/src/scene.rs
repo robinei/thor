@@ -100,6 +100,8 @@ impl Server {
     /// while it shows them), the top screen's while no window covers it, and the overlays where they draw;
     /// and in front of all the cursor, while it shows.
     pub(crate) fn place(&mut self) {
+        // Order: the windows are placed by their presentations, which must be the state's as it is now.
+        self.refresh_shown();
         let mut shown = std::mem::take(&mut self.scene.shown);
         shown.clear();
         self.place_windows(&mut shown);

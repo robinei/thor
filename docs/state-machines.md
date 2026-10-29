@@ -811,10 +811,11 @@ mode) fill the top screen at each Resolution, Scaling, anti-aliasing and Sharpen
 ### The presentation cache (windows.rs)
 
 Each window keeps what the state says of it (`Shown`: presentation, clarity, curve, HDR peak, frame rate
-cap). `sync_windows` reads it again only when Core's state revision changed, which every applied event
-does, the UI's own included; frames, configures and hit tests read the cached values.
+cap). Placing the scene (`refresh_shown`, first thing in `place`) reads it again only when Core's state
+revision changed, which every applied event does, the UI's own included; so the windows are never placed by
+an old presentation, and frames, configures and hit tests read the cached values.
 
-    cached at revision r --an event applied--> stale --sync_windows--> cached at r+1
+    cached at revision r --an event applied--> stale --the scene placed--> cached at r+1
 
 Test: `a_windows_presentation_is_worked_out_again_only_when_the_state_changes` (ten repeated syncs keep the
 revision; a role changed to Utility gives Centred, back to Normal Fullscreen).
