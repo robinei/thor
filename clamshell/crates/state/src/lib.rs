@@ -441,7 +441,7 @@ impl State {
             Event::Slide(slide) => self.on_slide(slide, out),
             Event::Level(e) => self.on_level(e, out),
             Event::LibraryView(e) => self.library_view.on_event(e, &mut self.pointer, out),
-            Event::Launch(e) => self.on_launch_event(e),
+            Event::Launch(e) => self.on_launch_event(e, out),
             Event::Window(event) => {
                 self.window_event(event, out);
                 self.session.remember_front();
@@ -578,7 +578,7 @@ impl State {
     ///     found in this pass ([`State::follow_library_view`]); then the scrolled lists keep their top items
     ///     where they are ([`State::follow_lists`]).
     fn settle(&mut self, out: &mut Out) {
-        if self.session.follow_units(&self.clock, self.library_view.library(), self.bottom.notice_mut(), &mut self.plays) {
+        if self.session.follow_units(&self.clock, self.library_view.library(), self.bottom.notice_mut(), &mut self.plays, out) {
             self.bottom.unwake();
         }
         self.record_plays(out);

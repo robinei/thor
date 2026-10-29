@@ -32,12 +32,12 @@ impl State {
         }
     }
 
-    pub(crate) fn on_launch_event(&mut self, event: LaunchEvent) {
+    pub(crate) fn on_launch_event(&mut self, event: LaunchEvent, out: &mut Out) {
         match event {
             LaunchEvent::Position { entry, position } => self.library_view.set_position(&entry, position, self.clock.unix()),
             // A launch that never started doesn't change what runs, but it is no longer starting.
             LaunchEvent::LaunchFailed { entry, unit } => {
-                self.session.launch_failed(entry, &unit, self.library_view.library(), &self.clock, self.bottom.notice_mut())
+                self.session.launch_failed(entry, &unit, self.library_view.library(), &self.clock, self.bottom.notice_mut(), out)
             }
         }
     }

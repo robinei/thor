@@ -217,8 +217,10 @@ fn a_launch_failure_after_it_was_given_up_says_nothing() {
     s.applied(Event::tick(100));
     tap(&mut s, entry("zelda-lttp"));
     tap(&mut s, entry("zelda-lttp"));
+    s.take_log().for_each(drop);
     s.applied(Event::tick(100 + super::LAUNCH_WAIT));
     assert!(matches!(notice(&s), Some(crate::bottom::notice::NoticeKind::NotStarted(_))), "{:?}", notice(&s));
+    assert!(s.take_log().any(|(_, line)| line.contains("zelda-lttp") && line.contains("given up")), "the notice's reason is in the log");
     s.applied(Event::tick(200));
     assert_eq!(notice(&s), None);
     crate::testkit::launch_failed(&mut s, "zelda-lttp");

@@ -29,7 +29,7 @@ use clamshell_library::{Launch, ids};
 
 use crate::bottom::notice::{NoticeKind, NoticeSlot};
 use crate::effect::Effect;
-use crate::out::Out;
+use crate::out::{LogLevel, Out};
 use crate::session::found::window_entry;
 use crate::session::launch_unit::LaunchUnit;
 use crate::session::launchers;
@@ -208,7 +208,7 @@ impl Session {
     /// found by its tray icon whose process is now in a scope of ours runs as a launch. Then the entries
     /// whose launches have ended are handled (see [`Session::follow_ours`]). Returns whether a launch of
     /// ours started, which may let a second screen tapped awake go dark again.
-    pub(crate) fn follow_units(&mut self, clock: &Clock, library: &Library, notice: &mut NoticeSlot, plays: &mut Vec<Play>) -> bool {
+    pub(crate) fn follow_units(&mut self, clock: &Clock, library: &Library, notice: &mut NoticeSlot, plays: &mut Vec<Play>, out: &mut Out) -> bool {
         let (now, unix) = (clock.mono(), clock.unix());
         // The entries of launches whose unit is there run as launches of ours, including one that was
         // handed over to its windows and launched again. (Taken one at a time, so that nothing is
@@ -235,6 +235,7 @@ impl Session {
                 self.front_launch = None;
             }
             let title = library.entry(&l.entry).map_or_else(|| l.entry.to_string(), |g| g.title.clone());
+            out.log(LogLevel::Warn, format!("{}: no answer from the launcher in {LAUNCH_WAIT} s: given up", l.entry));
             notice.show(NoticeKind::NotStarted(title), now);
         }
         self.follow_adopted();
@@ -263,7 +264,7 @@ impl Session {
             };
             self.running.push(Running::of(&Entry { key: key.to_owned(), ..g }, Origin::Ours, start));
         }
-        self.follow_ours(clock.mono(), library, notice, plays);
+        self.follow_ours(clock.mono(), library, notice, plays, out);
         any_started
     }
 
@@ -272,7 +273,7 @@ impl Session {
     /// units listed too. Once there are none, an entry known by its app id whose windows are open or may
     /// still come, or a browsed file's entry soon after it started, runs on by its windows (see
     /// [`Origin::Windows`]). The rest have ended, and their plays are added to `plays`.
-    fn follow_ours(&mut self, now: u64, library: &Library, notice: &mut NoticeSlot, plays: &mut Vec<Play>) {
+    fn follow_ours(&mut self, now: u64, library: &Library, notice: &mut NoticeSlot, plays: &mut Vec<Play>, out: &mut Out) {
         let mut ended = Vec::new();
         let mut handed = Vec::new();
         let mut unstarted = Vec::new();
@@ -294,6 +295,7 @@ impl Session {
                 // It ended without ever having a window and without being quit, so it didn't start, as
                 // with a Steam game that never came.
                 if !r.seen && !self.is_quitting(&r.id, now) {
+                    out.log(LogLevel::Warn, format!("{}: ended without a window: didn't start (journalctl --user -u its launch)", r.id));
                     unstarted.push(r.entry.as_ref().map_or_else(|| r.id.to_string(), |g| g.title.clone()));
                 }
             }
@@ -315,7 +317,7 @@ impl Session {
     /// known by its app id, waits for its window (see [`Origin::Windows`]). A failure of no launch waiting
     /// is a late answer to one already given up ([`LAUNCH_WAIT`]), which said so then, and is ignored: a
     /// newer launch of the same entry waits on.
-    pub(crate) fn launch_failed(&mut self, entry: Arc<str>, unit: &LaunchUnit, library: &Library, clock: &Clock, notice: &mut NoticeSlot) {
+    pub(crate) fn launch_failed(&mut self, entry: Arc<str>, unit: &LaunchUnit, library: &Library, clock: &Clock, notice: &mut NoticeSlot, out: &mut Out) {
         let Some(i) = self.launching.iter().position(|l| l.entry == entry && l.unit == *unit) else {
             return;
         };
@@ -324,6 +326,7 @@ impl Session {
             // There is nothing to wait for, so it didn't start, and a notice says so.
             let title = library.entry(&entry).map_or_else(|| entry.to_string(), |g| g.title.clone());
             if self.running(&entry).is_none() {
+                out.log(LogLevel::Warn, format!("{entry}: its launch didn't start"));
                 notice.show(NoticeKind::NotStarted(title), clock.mono());
             }
             return;
