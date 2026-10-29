@@ -78,7 +78,7 @@ event-sequence test checks these after every event, including lifecycle, activat
 The allocation test includes repeated lifecycle events, Home-held changes, controller focus and activation with live bottom rules.
 
 The compositor's tests check placement before the first configure with real clients
-(`xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu`), and
+(`an_xdg_window_is_placed_and_configured_before_its_first_buffer`), and
 `tests/nested-compositor.py` moves between the screens with real programs; the VM suite checks session
 adoption, input routes and services. A dialog takes its parent's group and its parent's screen; a window of the process and app id of one open takes its group, whatever its client was identified as (`a_found_programs_next_window_joins_its_group_after_the_move`).
 
@@ -432,7 +432,7 @@ curve screens and slides their parameters.
 | tap selects, tap again opens a group or plays; Up leaves a group | `selecting_then_activating_again_launches`, `a_group_opens_and_back_goes_out_to_it` |
 | tap on an entry not in the list does nothing, the focus included | `a_tap_on_an_entry_not_in_the_list_does_nothing` |
 | long press on the selected entry, by touch or pad: its actions open, the focus ring on the first | `a_held_on_the_selected_entry_opens_its_actions` |
-| typing filters; Enter activates; Clear | `typing_with_library_view_in_front_finds_entries_…` |
+| typing filters; Enter activates; Clear | `typing_with_builtin_in_front_finds_entries_by_their_titles_start` |
 | favourite on/off: relayout by name and id, `Save(Favourites)`; a focus in the list follows the selection | `a_favourite_shows_in_its_collection_…`, `a_favourite_removed_moves_the_focus_with_the_selection`, `the_favourites_tab_goes_with_its_last_entry` |
 | a play recorded: relayout (a focus in the list follows the selection), `RecordPlay`, `ReadPosition` for videos | tests `a_launchs_start_and_end…`, `a_video_ended_asks_where_it_was_left`; the Library `a_play_recorded_keeps_library_views_place_and_focus` |
 | a relayout closes a group no longer in its collection (Recent, Favourites) | `a_group_that_leaves_its_collection_is_closed_there` |
@@ -725,9 +725,11 @@ the X11 adapter.
 
 Changed keeps placement, selection, keyboard focus, title and `x11`.
 
-Tests: `xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu` (opened before the first
-buffer, configured at 960×540, its unit identified, unmapped and remapped under the same id, a fixed-size
-child with its parent, close); `a_toplevel_marked_a_dialog_has_the_dialog_role`; in the state
+Tests: `an_xdg_window_is_placed_and_configured_before_its_first_buffer` (opened before the first buffer,
+configured at 960×540, its unit identified), `an_unmapped_window_leaves_the_state_and_comes_back_on_top`
+(unmapped and remapped under the same id), `a_dialog_of_a_window_below_shows_over_it_there_at_its_fixed_size`
+(a fixed-size child with its parent), `a_destroyed_window_leaves_the_state_and_the_server` (close);
+`a_toplevel_marked_a_dialog_has_the_dialog_role`; in the state
 `presentation_facts_and_colour_do_not_change_placement_or_selection`, `backend_changes_keep_the_placement`,
 `stale_identity_facts_cannot_undo_a_placement`, `changed_facts_keep_a_window_x11`,
 `lifecycle_messages_keep_one_window_and_ignore_late_messages`.
@@ -803,7 +805,7 @@ does, the UI's own included; frames, configures and hit tests read the cached va
 
     cached at revision r --an event applied--> stale --sync_windows--> cached at r+1
 
-Test: `xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu` (ten repeated syncs keep the
+Test: `a_windows_presentation_is_worked_out_again_only_when_the_state_changes` (ten repeated syncs keep the
 revision; a role changed to Utility gives Centred, back to Normal Fullscreen).
 
 ### Titles (windows.rs, server.rs)
@@ -817,7 +819,7 @@ title differs from the state's. A title set before Opened comes with Opened's fa
     dirty --frame, the same title--> clean
     dirty --unmap--> clean
 
-Test: `xdg_clients_are_placed_before_configure_and_follow_state_without_a_gpu` sends 101 titles in one
+Test: `a_burst_of_titles_reaches_the_state_once_per_frame` sends 101 titles in one
 dispatch and then 100 identical ones, and finds one Title record in the event ring and the last title in
 the state.
 
@@ -923,7 +925,7 @@ outside the window touched (see Popup menus).
 |---|---|---|---|---|
 | none | down on a target of the screen's overlay as last drawn (`Core::press_overlay`) | ignored | the target acts once: a Home arrow switches the window, a notification is tapped, its close mark dismisses it | `touching_a_home_arrow_switches_once_and_consumes_home_release`, `touching_a_notification_taps_it_and_its_close_mark_dismisses_it` |
 | none | down on a mapped, visible window's surface (not the black around it) | client | `WindowEvent::Activate`; wl_touch down in surface coordinates | `touch_contacts_keep_independent_surfaces_and_native_coordinates` |
-| none | down on the bottom screen's UI, the bar over a window below included | UI (bottom) | Core press; keyboard focus kept | same; `the_bottom_keyboard_commits_text_and_sends_shortcuts_without_stealing_focus` |
+| none | down on the bottom screen's UI, the bar over a window below included | UI (bottom) | Core press; keyboard focus kept | same; `a_text_field_opens_the_keyboard_and_takes_its_characters_as_text` |
 | none | down on the top screen's UI (no top window) | UI (top) | `KeyboardFocus(None)`; Core press | GAP |
 | none | down on black | ignored | — | `touch_contacts_…` |
 | any | down on a slot already active | every contact cancelled, then the down as above | as cancel | GAP |
@@ -974,10 +976,12 @@ list or a pick, not the edit mode, Device or Setup: nothing) or the window in fr
   skip the filter above, so an on-screen F12 reaches the client;
 - a modifier alone, Caps, F13 and above, or a key with no keycode: nothing (debug).
 
-Touching the bottom screen's UI keeps the client's keyboard focus. Test:
-`the_bottom_keyboard_commits_text_and_sends_shortcuts_without_stealing_focus` (commit strings and serials,
-modifier order, keys before enable and after disable, a physical Shift kept, F12 delivered, the tab given
-back, silence after Home). `tests/nested-compositor.py`: an X11 client receives whole strokes, a no-input
+Touching the bottom screen's UI keeps the client's keyboard focus. Tests (tests/keyboard_tests.rs):
+`the_bottom_keyboards_strokes_reach_the_focused_client_as_keys` (modifier order, keys before enable, a
+physical Shift kept, F12 delivered), `a_text_field_opens_the_keyboard_and_takes_its_characters_as_text`
+(commit strings and serials, focus kept on a touch of the bottom UI),
+`a_text_field_deactivated_closes_the_keyboard_and_characters_are_keys_again` (keys after disable, the tab
+given back), `home_takes_the_keyboard_from_a_text_field_and_closes_the_keyboard` (silence after Home). `tests/nested-compositor.py`: an X11 client receives whole strokes, a no-input
 client none; the VM suite's `keyboard_points` types into foot.
 
 ### Idle and inhibitors (idle.rs)
@@ -998,7 +1002,7 @@ Tests: `quiet_input_and_inhibition_report_only_transitions_and_restart_the_timeo
 `inhibitors_count_individually_and_only_mapped_visible_surfaces_keep_idle_off`, and the state's
 `the_compositor_holds_idle_off_while_it_sees_input_or_an_app_asks`. The screens' power follows the state's
 `Compositor::Outputs`: DRM turns them off and on
-(`a_screen_turned_on_is_drawn_whole_and_one_switched_has_no_frame_queued`); the nested host ignores it.
+(`a_screen_turned_on_is_drawn_whole`); the nested host ignores it.
 
 ### The pad's activity watch (state/lib.rs, sync.rs; system/input/pad/)
 
@@ -1033,10 +1037,13 @@ A menu belongs to its root toplevel and never becomes a window of the state. The
 | menu | a press (touch, or a first pointer button) outside the root window | none | dismissed, grabs released, then the press routed |
 | menu | Home; keyboard focus to another window; the root hidden, unmapped or destroyed | none | dismissed, grabs released; Home still clears focus and shows the Library |
 
-Test: `menus_keep_popup_focus_and_dismiss_on_outside_touch_home_or_client_destroy` (hit coordinates and
-focus, an outside touch, Home, a submenu keeping its live keyboard grab, which pins the order, and giving
-focus back to its parent, the parent unmapped and mapped again, one window in the state throughout and none
-while unmapped, a menu releasing a pointer lock). Another seat, a conflicting grab and focus moved to
+Tests (tests/popup_tests.rs; each checks one window in the state throughout and none while unmapped):
+`opening_a_menu_releases_the_pointer_capture_and_takes_the_keyboard` (hit coordinates and focus, a menu
+releasing a pointer lock), `a_touch_outside_a_menu_dismisses_it_and_gives_back_the_keyboard`,
+`home_dismisses_a_menu_and_takes_the_keyboard_from_its_window`,
+`a_submenu_destroyed_leaves_its_parent_menu_the_grab` (a submenu keeping its live keyboard grab, which pins
+the order, and giving focus back to its parent), `unmapping_a_menus_window_dismisses_the_menu` (the parent
+unmapped and mapped again). Another seat, a conflicting grab and focus moved to
 another window: GAP.
 
 ### The cursor (cursor.rs)
@@ -1078,10 +1085,14 @@ nothing.
 Activation follows the state's ordinary selection: it never moves a window between the screens, and Home
 settled in the same dispatch wins. The token's app id is not used. A refusal is not a protocol error.
 
-Test: `activation_tokens_require_focus_expire_are_single_use_and_cannot_undo_home` (missing and old serials,
-another connection borrowing the serial, Home before the seat's sync at creation and at redemption,
-success, reuse, expiry before pruning, an unknown surface, activating a window below without moving it, an
-unmapped target); the state's activation tests pin the effects.
+Tests (tests/activation_tests.rs): `a_token_needs_the_focused_clients_own_recent_input_serial` (missing
+and old serials, another connection borrowing the serial), `home_voids_a_token_and_an_activation_in_flight`
+(Home before the seat's sync at creation and at redemption), `a_token_activates_its_window_once` (success,
+reuse), `an_expired_token_is_refused_and_dropped` (expiry before pruning),
+`a_token_for_a_surface_of_no_window_does_nothing` (an unknown surface),
+`activating_a_window_below_gives_it_the_keyboard_and_leaves_it_below`,
+`a_token_for_a_window_unmapped_meanwhile_does_nothing` (an unmapped target); the state's activation tests
+pin the effects.
 
 ### Relative pointer and constraints (pointer.rs)
 
@@ -1104,11 +1115,16 @@ Motion never changes the state. Capture is settled each frame:
 Locked, the cursor stays put and hidden; confined, a step outside keeps whichever axis stays inside.
 Cursor position hints are not applied. DRM captures by itself and never refuses.
 
-Tests: `relative_motion_and_constraints_follow_geometry_home_regions_and_host_focus` (a free cursor moved
-by relative motion, scaled deltas, 100 events without a state revision, a locked cursor fixed and hidden, a
-persistent lock again after remapping, confinement, Home, region commits, one-shot, host focus lost, a
-refused capture, the exact sequence of host modes), `a_host_that_cannot_release_capture_ends_the_unusable_session`,
-and the popup test (a menu releases a lock). `tests/nested-compositor.py` checks that the nested host offers
+Tests (tests/pointer_tests.rs; each checks the exact sequence of host modes):
+`a_relative_only_device_moves_the_free_cursor`, `a_locked_pointer_stays_put_and_its_motion_goes_to_the_window`
+(scaled deltas, 100 events without a state revision, the cursor fixed and hidden),
+`unmapping_ends_a_lock_and_a_persistent_lock_resumes_once_mapped_again`, `a_lock_destroyed_frees_the_hosts_pointer`,
+`a_confined_pointer_stays_in_its_region_until_home`,
+`a_confinement_resumes_with_the_keyboard_and_ends_when_its_region_leaves_the_pointer` (region commits),
+`a_oneshot_lock_ends_with_the_hosts_focus_and_does_not_come_back`,
+`a_capture_the_host_refuses_disconnects_its_client_not_the_session`,
+`a_host_that_cannot_release_capture_ends_the_unusable_session`, and the popup test
+`opening_a_menu_releases_the_pointer_capture_and_takes_the_keyboard` (a menu releases a lock). `tests/nested-compositor.py` checks that the nested host offers
 no capture. A real mouse's relative motion: on the device.
 
 ## Frames, buffers, screenshots and the clipboard (compositor/)
@@ -1157,7 +1173,7 @@ Each DRM screen, each turn of the loop (`drm.rs`, `step`, `screen_turn`):
     pending --no flip for 1 s--> dirty [buffers reset, warn]                        a_frame_without_its_flip_for_a_second_is_lost
     idle --its part of the scene changed, screen on--> pending [presented, commits answered]   a_changed_screen_shows_a_frame_if_on_and_an_idle_one_answers_at_most_once_a_refresh
     idle --commits unanswered, a refresh since the last answer--> idle [frame callbacks]       same
-    on --the state turns it off--> off [nothing pending]                            a_screen_turned_on_is_drawn_whole_and_one_switched_has_no_frame_queued
+    on --the state turns it off--> off [nothing pending]                            a_screen_turned_on_is_drawn_whole
     off --the state turns it on--> dirty [buffers reset]                            same
     both off --turn--> both off [no compose unless a screenshot waits; dmabuf imports still run]   no unit test
     any --the seat resumed (back from another VT)--> dirty [pending cleared, buffers reset, the whole scene drawn]   on the device
@@ -1352,7 +1368,7 @@ or malformed clears its fact.
 |---|---|---|---|---|
 | — | CreateNotify on the root | known | PropertyChange selected; no queries | wm `outstanding_…` |
 | known | MapRequest | querying | attributes, nine properties, the PID (waiting for room under the 256) | same |
-| querying | every reply | placed | Opened; ConfigureWindow (the presentation's geometry; _NET_WM_STATE fullscreen or empty; WM_STATE Normal); MapWindow; then focus | wm `placement_is_committed_and_configured_before_mapping_and_focus` (the request order; nothing again when unchanged) |
+| querying | every reply | placed | Opened; ConfigureWindow (the presentation's geometry; _NET_WM_STATE fullscreen or empty; WM_STATE Normal); MapWindow; then focus | wm `placement_is_configured_before_mapping_and_focus_waits_for_the_servers_time` (the request order), `an_unchanged_window_sends_no_x11_requests` (nothing again when unchanged) |
 | querying or placed | an error reply to its query | removed | Closed if open | GAP |
 | placed | WL_SURFACE_SERIAL (two 32-bit halves) and the surface committed with that serial through `xwayland_shell_v1` | drawable | the surface bound once; drawn, hit and paced as a Wayland one. A serial is never reused, unlike a surface's id; serial 0 is a protocol error | wm `a_window_is_paired_with_the_surface_committed_with_its_serial`; `a_committed_serial_pairs_its_surface_once_and_only_xwayland_sees_the_shell` |
 | placed | PropertyNotify of a property it reads | placed | the property read again (once more if it changes meanwhile); changes held to the frame, then Changed and Title (one batch when both), the state's unit and processes kept | wm `placement_…`; nested "X11 property changes enter the ordinary window-event ring" |
