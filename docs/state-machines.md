@@ -474,6 +474,7 @@ State: `panel` (Places, Sources, Runners), `tab`, `open` (folder ids), `cursor`,
 | Icon → the icons, one chosen written; Picture → a pick of an image | `a_folders_picture_and_icon_are_chosen` |
 | Sources, Runners: a row opens its form (`opened` counted), the last row a new one; Move up/down; Remove (a runner only while no source names it, by its id or its name's) | `sources_and_runners_are_edited_in_forms`, `saving_keeps_ids_apart` |
 | a form field: typed (editor for that form, `FormField(field, opened)`; for a form closed since, dropped and logged), chosen (its options; the type it has kept), toggled; Choose… → a pick for it | form tests, `a_sources_folder_is_chosen_in_the_files_tab`, `choosing_a_sources_own_type_keeps_it`, `words_with_quotes_round_trip` |
+| a key typed: not found in the Library's list behind | `typing_in_the_edit_mode_finds_nothing` |
 | Save: a scan without an id gets one from its folder, others' kept apart; a runner's id must be its own, and changed, the sources naming it follow; refused, the form stays with `problem` | `saving_keeps_ids_apart` |
 
 ### Pick mode (the Library/pick.rs)
@@ -956,7 +957,8 @@ The state's side: `a_text_field_brings_up_the_keyboard_and_back`,
 `a_text_field_doesnt_take_the_screen_from_an_open_editor`,
 `a_keyboard_a_text_field_brought_up_isnt_saved_as_the_tab`.
 
-An on-screen key goes to an open editor, the keymap's capture or the Library's find; otherwise it becomes
+An on-screen key goes to an open editor, the keymap's capture, or by `State::top()` the Library's find (its
+list or a pick, not the edit mode, Device or Setup: nothing) or the window in front as
 `Compositor::Key(stroke)`, which `Server::stroke` carries out:
 
 - no client has the seat's keyboard: nothing;

@@ -246,6 +246,21 @@ fn typing_with_builtin_in_front_finds_entries_by_their_titles_start() {
     assert_eq!(s.library_view().filter(), "c", "the series' list as it was left");
 }
 
+/// The edit mode shows in the Library's place: what is typed doesn't find in the list behind it, and Enter
+/// doesn't launch its selection.
+#[test]
+fn typing_in_the_edit_mode_finds_nothing() {
+    use crate::bottom::keyboard::{Named, find};
+    let mut s = state();
+    s.library_view.start_edit();
+    tap(&mut s, Id::Tab(crate::Tab::Keyboard));
+    let key = |s: &mut State, k| find(k).map(|pos| tap(s, Id::Key(pos))).unwrap_or_default();
+    assert!(key(&mut s, Key::Char('z')).is_empty());
+    assert_eq!(s.library_view().filter(), "");
+    let fx = key(&mut s, Key::Named(Named::Enter));
+    assert!(!fx.iter().any(|e| matches!(e, Effect::Launch { .. })), "{fx:?}");
+}
+
 #[test]
 fn a_group_opens_and_back_goes_out_to_it() {
     let mut s = state();

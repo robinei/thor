@@ -121,8 +121,8 @@ impl State {
             Id::Control(_) | Id::Level(_) | Id::List(_) | Id::Blank => {}
             Id::Key(pos) => {
                 let stroke = self.keyboard.press(pos, long);
-                // The key goes to the editor while it is open, to finding an entry while the Library is in
-                // front, and otherwise to the focused app.
+                // The key goes to the editor while it is open, to finding an entry while the Library's list
+                // shows, and otherwise to the focused app. The edit mode's list isn't found in.
                 match stroke {
                     Some(stroke) if self.bottom.editor().is_some() => {
                         if let Some(done) = self.bottom.edit(stroke) {
@@ -134,10 +134,11 @@ impl State {
                     Some(stroke) if self.keymapping.capturing(self.bottom.tab(), self.bottom.editor().is_some()) => {
                         self.keymapping.captured(crate::keymap::screens::chord(stroke), out);
                     }
-                    Some(stroke) if self.session.shown_builtin() == Some(clamshell_library::Builtin::Library) => {
-                        self.library_view.find(stroke, out);
-                    }
-                    Some(stroke) => out.effects.push(Effect::Compositor(Compositor::Key(stroke))),
+                    Some(stroke) => match self.top() {
+                        crate::Top::Library(crate::LibraryMode::Browse | crate::LibraryMode::Pick) => self.library_view.find(stroke, out),
+                        crate::Top::Window { .. } => out.effects.push(Effect::Compositor(Compositor::Key(stroke))),
+                        crate::Top::Library(crate::LibraryMode::Edit) | crate::Top::Device | crate::Top::Setup(_) => {}
+                    },
                     None => {}
                 }
             }
