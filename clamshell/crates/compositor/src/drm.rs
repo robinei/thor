@@ -252,6 +252,10 @@ pub fn run(
     let shown = [Some((ScreenRole::Top, &top, 0)), bottom.as_ref().map(|b| (ScreenRole::Bottom, b, top_size.w))];
     for (role, chosen, x) in shown.into_iter().flatten() {
         let surface = drm.create_surface(chosen.crtc, chosen.mode, &[chosen.connector]).map_err(|e| format!("drm: {role:?} screen: {e}"))?;
+        // A screen turned on or off, or to another refresh, is a modeset, which on the panels' power
+        // sequences takes tens to hundreds of ms: it doesn't wait for it, so neither do the other screen's
+        // frames and the input. A commit made before it is done is busy and tried again.
+        surface.set_nonblocking_modesets(true);
         let allocator = GbmAllocator::new(gbm.clone(), GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT);
         // Ten bits a channel where the screen takes them, for HDR later; else eight.
         let renderer_formats: Vec<_> = renderer_formats.iter().copied().collect();
