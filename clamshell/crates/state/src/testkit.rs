@@ -232,3 +232,8 @@ impl State {
         self.bottom.editor_mut()
     }
 }
+
+/// Whether the Library is in front: no window, and the Library rather than another app.
+pub fn on_library(s: &State) -> bool {
+    matches!(s.top(), crate::Top::App { app: clamshell_library::BuiltinApp::Library, .. })
+}

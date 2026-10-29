@@ -429,7 +429,7 @@ mod tests {
         assert!(s.session().suspendable("zelda-lttp", s.clock().mono()));
         // Applied whole: its window is still shown when the event's steps follow, which doesn't thaw it.
         let fx = s.applied(Event::Entry("zelda-lttp".into(), crate::EntryAct::Suspend));
-        assert!(fx.contains(&freeze(&key, true)) && s.session().shown_app().is_some(), "{fx:?}");
+        assert!(fx.contains(&freeze(&key, true)) && crate::testkit::on_library(&s), "{fx:?}");
         assert!(!fx.contains(&freeze(&key, false)), "{fx:?}");
         assert!(s.session().suspended("zelda-lttp") && !s.session().suspendable("zelda-lttp", s.clock().mono()));
         // Hidden, it stays frozen and isn't frozen twice.

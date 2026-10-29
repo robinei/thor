@@ -396,7 +396,7 @@ mod tests {
         // A tap on it opens it in the Library.
         tap(&mut s, Id::LibraryView(LibraryViewId::Collection(0)));
         assert!(tap(&mut s, dock(0)).is_empty());
-        assert!(s.session().shown_app().is_some());
+        assert!(crate::testkit::on_library(&s));
         assert_eq!(s.library_view().group().map(|g| &*g.id), Some("tv:Cosmos"));
         // Unpinned from the Library, it is removed, since it doesn't run.
         tap(&mut s, Id::LibraryView(LibraryViewId::Up));
@@ -506,7 +506,7 @@ mod tests {
         let slice = LaunchUnit::slice_of(&clamshell_library::key_of("zelda-lttp"));
         let fx = tap(&mut s, Id::Dock(DockId::Suspend));
         assert_eq!(fx, vec![Effect::Freeze { slice: slice.clone(), frozen: true }, closed(), Effect::PadRoute(crate::PadRoute::Ui)]);
-        assert!(s.session().shown_app().is_some());
+        assert!(crate::testkit::on_library(&s));
         assert!(s.session().suspended("zelda-lttp"));
         long(&mut s, dock(0));
         let fx = tap(&mut s, Id::Dock(DockId::Suspend));

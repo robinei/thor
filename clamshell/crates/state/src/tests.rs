@@ -244,7 +244,7 @@ fn a_launchs_first_window_is_shown_before_a_window_that_came_back() {
     s.observed(vec![zelda_window.clone()]);
     // Its window closes with nothing else in front: the Library is shown, and the group remembered.
     s.observed(vec![]);
-    assert!(s.session().shown_app().is_some());
+    assert!(crate::testkit::on_library(&s));
     let ff6 = launch(&mut s, "ff6");
     let ff6_window = win_of(4, "ff6", &ff6);
     s.observed(vec![zelda_window, ff6_window]);

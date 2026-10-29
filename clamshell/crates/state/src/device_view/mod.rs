@@ -214,7 +214,6 @@ mod tests {
         let effects = launch_now(&mut s, "builtin:device");
         assert_eq!(s.top(), crate::Top::App { app: crate::BuiltinApp::Device, view: 0 });
         assert!(effects.is_empty());
-        assert!(s.session().shown_app().is_some());
         let effects = tap(&mut s, DeviceId::Close);
         assert_eq!(s.top(), crate::Top::App { app: crate::BuiltinApp::Library, view: 0 });
         assert!(!effects.contains(&Effect::Save(Save::FirstStartDone)), "not the first start: nothing saved");
@@ -292,10 +291,10 @@ mod tests {
         launch_now(&mut s, "builtin:device");
         assert_eq!(s.top(), crate::Top::App { app: crate::BuiltinApp::Device, view: 0 });
         s.applied(Event::Home);
-        assert!(s.session().shown_app().is_some(), "nothing shown but the Library");
+        assert!(crate::testkit::on_library(&s), "nothing shown but the Library");
         assert_eq!(s.top(), crate::Top::App { app: crate::BuiltinApp::Library, view: 0 });
         s.applied(Event::Home);
-        assert!(s.session().shown_app().is_some());
+        assert!(crate::testkit::on_library(&s));
     }
 
     /// The account is read while the view is in front and seen, from when the UI is up (and once at start,
