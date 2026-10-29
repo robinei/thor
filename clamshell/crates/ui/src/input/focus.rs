@@ -97,7 +97,8 @@ pub fn switch_screen(s: &State, d: &impl Drawn, memory: &mut Screens<Option<Id>>
     memory[from] = s.pointer().focus().cloned();
     let drawn = |id: &Id| drawn_on(d, Some(to), id);
     let remembered = memory[to].clone().filter(drawn);
-    let first = d.targets(to).first().map(|t| t.id.clone());
+    // (Failing those, the first the pad moves to there: not one only touch reaches, or one reached by holding A.)
+    let first = d.targets(to).iter().find(|t| matches!(t.pad, PadUse::Moves | PadUse::List)).map(|t| t.id.clone());
     let target = remembered.or_else(|| default_focus(d, to).filter(drawn)).or(first)?;
     Some(PointerEvent::Focus(target).into())
 }
@@ -384,6 +385,20 @@ mod tests {
         // Down again, to the tile it was on.
         assert_eq!(switch_screen(&s, &d, &mut memory), Some(PointerEvent::Focus(tile).into()));
         assert_eq!(memory.top, Some(entry(&s, 0)));
+    }
+
+    /// With nothing remembered or declared to start at, View goes to the first target the pad moves to,
+    /// past ones only touch reaches.
+    #[test]
+    fn view_goes_to_the_first_target_the_pad_moves_to() {
+        let mut s = state();
+        let mut d = drawn(&s);
+        d.1.bottom.start = None;
+        let touch = Target { pad: PadUse::Touch, ..t(0.0, 0.0, Id::Tab(Tab::Wifi)) };
+        d.0.bottom.insert(0, touch);
+        let g = entry(&s, 0);
+        focus(&mut s, g);
+        assert_eq!(switch_screen(&s, &d, &mut Screens::default()), Some(PointerEvent::Focus(Id::Tab(Tab::Settings)).into()));
     }
 
     #[test]
