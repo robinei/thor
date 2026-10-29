@@ -23,7 +23,7 @@ use crate::session::windows::WindowCommand;
 use crate::{Entry, Library};
 use clamshell_library::Builtin;
 use launch_unit::LaunchUnit;
-use running::{Front, Launching, Running};
+use running::{Launching, Running};
 use windows::{Group, Window, WindowFacts, WindowPlace};
 
 /// What was in front, as [`Session::follow_front`] goes back to it.
@@ -452,15 +452,6 @@ impl Session {
 
     pub fn units(&self) -> &[LaunchUnit] {
         &self.units
-    }
-
-    /// What is in front on the main screen: a built-in, a running entry's window, or another.
-    pub fn front(&self) -> Front {
-        match self.top_window() {
-            Some(w) if self.running_of(w).is_some() => Front::Program,
-            Some(_) => Front::Other,
-            None => Front::Builtin(self.builtin),
-        }
     }
 
     /// The built-in shown on the main screen, if no window is in front.

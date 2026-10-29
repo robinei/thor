@@ -168,7 +168,7 @@ fn home_cancels_a_launchs_late_request_to_take_the_front() {
     s.applied(Event::Home);
     assert!(s.session().front_launch().is_none());
     s.applied(WindowEvent::Opened(win_of(7, "zelda3", &unit)).into());
-    assert_eq!(s.session().front(), crate::session::running::Front::Builtin(clamshell_library::Builtin::Library));
+    assert_eq!(s.top(), crate::Top::Library(crate::LibraryMode::Browse));
 }
 
 #[test]

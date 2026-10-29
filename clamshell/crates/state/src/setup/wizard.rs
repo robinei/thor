@@ -109,7 +109,6 @@ impl Step {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::setup::TopView;
     use crate::setup::account::{Account, AccountCommand, DIFFERENT};
     use crate::testkit::*;
     use crate::{EditorId, Init, Reading, State};
@@ -142,7 +141,7 @@ mod tests {
     #[test]
     fn setup_goes_password_wifi_zone_and_done_ends_it_for_good() {
         let mut s = first_start();
-        assert_eq!((s.top_view(), s.setup().wizard()), (TopView::Setup, Some(Step::Password)));
+        assert_eq!((s.top(), s.setup().wizard()), (crate::Top::Setup(Step::Password), Some(Step::Password)));
         assert_eq!(s.pointer().focus(), Some(&Id::Setup(SetupId::Password)));
         account(&mut s, true, false);
         tap(&mut s, SetupId::Next);
@@ -168,7 +167,7 @@ mod tests {
         tap(&mut s, SetupId::Next);
         let fx = tap(&mut s, SetupId::Next);
         assert!(fx.contains(&Effect::Save(Save::FirstStartDone)), "{fx:?}");
-        assert_eq!((s.top_view(), s.bottom().tab()), (TopView::LibraryView, Tab::default()));
+        assert_eq!((s.top(), s.bottom().tab()), (crate::Top::Library(crate::LibraryMode::Browse), Tab::default()));
         assert_eq!(s.pointer().focus(), Some(&entry("zelda-lttp")));
     }
 

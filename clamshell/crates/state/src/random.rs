@@ -32,8 +32,9 @@ use crate::session::overview::OverviewEvent;
 use crate::session::windows::WindowFacts;
 use crate::settings::Setting;
 use crate::settings::panel::SettingsLevel;
-use crate::setup::{SticksEvent, TopView};
+use crate::setup::SticksEvent;
 use crate::*;
+use crate::{LibraryMode, Top};
 
 /// The seeds that run with the other tests, and the events in each.
 /// (828: a Steam game's window freed by a found program ending, checked after every event.)
@@ -245,8 +246,8 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
     if s.bottom_dark() {
         ids.push(Id::Wake);
     }
-    match s.top_view() {
-        TopView::Device => ids.extend(
+    match s.top() {
+        Top::Device => ids.extend(
             [
                 DeviceId::Wifi,
                 DeviceId::Zone,
@@ -261,9 +262,9 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
             .map(Id::Device),
         ),
         // The step's own; the tab's below are the step's tab's.
-        TopView::Setup => ids.extend([SetupId::Password, SetupId::Next, SetupId::Back].map(Id::Setup)),
+        Top::Setup(_) => ids.extend([SetupId::Password, SetupId::Next, SetupId::Back].map(Id::Setup)),
         // The edit mode's: its tabs, its rows, and its actions.
-        TopView::LibraryView if s.session().shown_builtin().is_some() && s.library_view().edit().is_some() => {
+        Top::Library(LibraryMode::Edit | LibraryMode::Pick) if s.library_view().edit().is_some() => {
             use crate::library_view::edit::EditId;
             ids.extend((0..4).map(EditId::Tab).chain((0..6).map(EditId::Row)).map(Id::from));
             ids.extend([EditId::NewTab, EditId::Up, EditId::Done, EditId::Rename, EditId::Cut, EditId::Paste, EditId::Remove].map(Id::from));
@@ -271,7 +272,7 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
             ids.extend((0..9).map(EditId::Field).chain((0..4).map(EditId::Choice)).chain((0..3).map(EditId::IconChoice)).map(Id::from));
             ids.extend([EditId::Pick(2), EditId::Pick(4), EditId::Icon, EditId::Picture].map(Id::from));
         }
-        TopView::LibraryView if s.session().shown_builtin().is_some() => {
+        Top::Library(_) => {
             let sh = s.library_view();
             ids.extend(sh.list().iter().filter_map(|&i| sh.library().entries.get(i)).map(|g| Id::LibraryView(LibraryViewId::Entry(g.id.clone()))));
             ids.extend((0..sh.library().collections.len() as u16).map(|i| Id::LibraryView(LibraryViewId::Collection(i))));
@@ -282,7 +283,7 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
             // A pick's own (see `crate::library_view::pick`).
             ids.extend([LibraryViewId::Choose, LibraryViewId::CancelPick, LibraryViewId::SaveHere, LibraryViewId::SaveAs].map(Id::LibraryView));
         }
-        TopView::LibraryView => {}
+        Top::Window { .. } => {}
     }
     if s.bottom().editor().is_some() {
         ids.extend([EditorId::Save, EditorId::Cancel, EditorId::Insert(0), EditorId::Insert(2)].map(Id::Editor));
@@ -1032,8 +1033,8 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     let claimant = if s.pad().mouse_on() {
         PadRoute::Mouse
     } else {
-        match (s.session().front(), s.bottom().tab()) {
-            (Front::Builtin(_), _) => PadRoute::Ui,
+        match (s.top(), s.bottom().tab()) {
+            (Top::Setup(_) | Top::Device | Top::Library(_), _) => PadRoute::Ui,
             (_, Tab::Keyboard) => PadRoute::Keys,
             _ => PadRoute::Game,
         }

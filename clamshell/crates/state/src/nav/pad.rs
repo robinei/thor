@@ -20,7 +20,7 @@
 //! the user switched it in the meantime.
 
 use crate::bottom::Tab;
-use crate::session::running::Front;
+use crate::shown::Top;
 
 /// Where the controller's input goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -120,14 +120,14 @@ impl Pad {
         self.last_claimant == Some(Claimant::LibraryView)
     }
 
-    fn claimant(&self, front: Front, tab: Tab) -> Option<Claimant> {
+    fn claimant(&self, top: Top, tab: Tab) -> Option<Claimant> {
         if self.mouse_on() {
             return Some(Claimant::Mouse);
         }
-        match (front, tab) {
-            (Front::Builtin(_), _) => Some(Claimant::LibraryView),
-            (Front::Program | Front::Other, Tab::Keyboard) => Some(Claimant::Typing),
-            (Front::Program | Front::Other, _) => Some(Claimant::Game),
+        match (top, tab) {
+            (Top::Setup(_) | Top::Device | Top::Library(_), _) => Some(Claimant::LibraryView),
+            (Top::Window { .. }, Tab::Keyboard) => Some(Claimant::Typing),
+            (Top::Window { .. }, _) => Some(Claimant::Game),
         }
     }
 
@@ -145,8 +145,8 @@ impl Pad {
 
     /// Runs after anything changed. Works out the claimant from what is in front and the tab, and then
     /// where the pad goes. Returns the new route if it changed.
-    pub(crate) fn reconcile(&mut self, front: Front, tab: Tab, listening: bool, stepping: bool) -> Option<PadRoute> {
-        let claimant = self.claimant(front, tab);
+    pub(crate) fn reconcile(&mut self, top: Top, tab: Tab, listening: bool, stepping: bool) -> Option<PadRoute> {
+        let claimant = self.claimant(top, tab);
         if claimant != self.last_claimant {
             // The Library has both screens, so a later claimant gets the pad again.
             self.moved_to_ui &= claimant != Some(Claimant::LibraryView);

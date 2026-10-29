@@ -10,7 +10,9 @@ use clamshell_state::bottom::keyboard;
 use clamshell_state::levels::Level;
 use clamshell_state::library_view::edit::EditId;
 use clamshell_state::profiles::picker::{Kind, ProfileId};
-use clamshell_state::{DockId, EditorId, Event, Id, LevelEvent, LibraryViewEvent, LibraryViewId, PadInput, PointerEvent, RowPart, State, Tab};
+use clamshell_state::{
+    DockId, EditorId, Event, Id, LevelEvent, LibraryMode, LibraryViewEvent, LibraryViewId, PadInput, PointerEvent, RowPart, State, Tab, Top,
+};
 use xkeysym::Keysym;
 
 use crate::gfx::Rect;
@@ -249,8 +251,7 @@ pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
 
 /// Whether the pad is on the Library, rather than on a view shown in its place.
 fn on_library_view(s: &State, d: &impl Drawn) -> bool {
-    let editing = s.library_view().edit().is_some() && s.library_view().pick().is_none();
-    s.pad().on_top() && focus_screen(s, d) == Screen::Top && s.top_view() == clamshell_state::setup::TopView::LibraryView && !editing
+    s.pad().on_top() && focus_screen(s, d) == Screen::Top && matches!(s.top(), Top::Library(LibraryMode::Browse | LibraryMode::Pick))
 }
 
 /// L2 and R2 go to the Library's first or last entry.
@@ -312,7 +313,7 @@ pub(crate) fn back(s: &State) -> Option<Event> {
     }
     // A pick is left as it was.
     // Only while the Library is in front: with a window there, its edit mode or pick is behind it.
-    let library_shown = s.top_view() == clamshell_state::setup::TopView::LibraryView && s.session().shown_builtin() == Some(clamshell_state::Builtin::Library);
+    let library_shown = matches!(s.top(), Top::Library(_));
     if s.library_view().pick().is_some() && library_shown {
         return Some(PointerEvent::Activate(Id::LibraryView(LibraryViewId::CancelPick)).into());
     }
@@ -327,11 +328,11 @@ pub(crate) fn back(s: &State) -> Option<Event> {
         return Some(PointerEvent::Activate(id.into()).into());
     }
     // Setup goes back a step, where it can.
-    if s.top_view() == clamshell_state::setup::TopView::Setup {
+    if matches!(s.top(), Top::Setup(_)) {
         return Some(PointerEvent::Activate(Id::Setup(clamshell_state::SetupId::Back)).into());
     }
     // The Device view in the Library's place goes back to the Library.
-    if s.top_view() == clamshell_state::setup::TopView::Device {
+    if s.top() == Top::Device {
         return Some(PointerEvent::Activate(Id::Device(clamshell_state::DeviceId::Close)).into());
     }
     // On the Library's actions, which holding A led to, go back to the entry in the list.

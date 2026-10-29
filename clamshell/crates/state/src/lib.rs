@@ -76,6 +76,7 @@ pub(crate) mod resume;
 pub mod session;
 pub mod settings;
 pub mod setup;
+pub mod shown;
 pub mod status;
 pub(crate) mod sync;
 #[cfg(test)]
@@ -123,8 +124,9 @@ pub use radios::{RadioStatus, Radios};
 pub use session::Session;
 pub use session::dock::{Dock, DockItem};
 pub use session::launch_unit::LaunchUnit;
-pub use session::running::{Front, Launching, Origin, Running};
+pub use session::running::{Launching, Origin, Running};
 pub use settings::panel::{GRID_COLUMNS, Panel, Prefs, Program, SettingsLevel, Source, TileOrigin};
+pub use shown::{LibraryMode, Top};
 pub use status::time::{ClockField, TimePage, TimeRow, TimeZones};
 pub use status::{Status, Sys};
 
@@ -370,6 +372,7 @@ impl State {
             sys: &self.sys,
             dock: &self.dock,
             pointer: &self.pointer,
+            top: self.top(),
             menu_rows: self.menu_rows_len(),
         }
     }
@@ -661,7 +664,7 @@ impl State {
     fn reconcile_pad(&mut self) -> Option<PadRoute> {
         let listening = self.listening();
         let stepping = (self.dock.moving().is_some() && self.bottom.tab() == Tab::Dock) || self.session.overview().is_some();
-        self.pad.reconcile(self.session.front(), self.bottom.tab(), listening, stepping)
+        self.pad.reconcile(self.top(), self.bottom.tab(), listening, stepping)
     }
 
     /// What the outside should have as things are now. The second screen watches what the open tab

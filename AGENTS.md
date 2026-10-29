@@ -70,6 +70,8 @@ readings, ticks, windows, units ─▶ Event ───┤
   diffs what the outside should have (`Wanted`) against what it was last sent. What can be computed from
   state is computed, not stored and kept in step.
 - Outside code reads areas through `State`'s accessors and changes state only through events.
+- What a screen shows is answered in one place, `State::top()` (`shown.rs`). Read it rather than
+  combining the areas' facts again.
 - Naming: an event that reports what happened is named for it, a noun or the past tense (`Reading`,
   `Resumed`, `LaunchFailed`); one that asks the state for something, and every effect, which asks the
   outside, is imperative (`ChooseTab`, `Launch`, `Freeze`). An area's events are an enum named for it

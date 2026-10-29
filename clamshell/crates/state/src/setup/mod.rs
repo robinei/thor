@@ -1,5 +1,5 @@
 //! The Device view, where the device is set up: a built-in entry ([`clamshell_library::Builtin::Device`]),
-//! which the session runs and shows on the main screen ([`TopView`]). It is opened from Tools or the
+//! which the session runs and shows on the main screen ([`crate::Top::Device`]). It is opened from Tools or the
 //! dock, and runs until Close, B or Quit closes it; Home goes to the Library and leaves it running. The
 //! first start's steps are Setup's ([`wizard`]).
 //!
@@ -24,16 +24,6 @@ use crate::effect::{Effect, Save};
 use crate::out::Out;
 use account::{Account, AccountCommand, PasswordStep};
 use sticks::{Calibrations, Progress, Sticks};
-
-/// What the main screen shows of ClamShell's own.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum TopView {
-    #[default]
-    LibraryView,
-    Device,
-    /// The first start's steps (see [`wizard`]).
-    Setup,
-}
 
 /// The refresh rate's calibration.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -264,12 +254,12 @@ mod tests {
     fn the_device_entry_opens_it_and_close_goes_back_to_library_view() {
         let mut s = State::new(init());
         let effects = launch_now(&mut s, "builtin:device");
-        assert_eq!(s.top_view(), TopView::Device);
+        assert_eq!(s.top(), crate::Top::Device);
         assert!(effects.is_empty());
         assert!(s.session().shown_builtin().is_some());
         assert_eq!(s.pointer().focus(), Some(&Id::Device(DeviceId::Wifi)));
         let effects = tap(&mut s, DeviceId::Close);
-        assert_eq!(s.top_view(), TopView::LibraryView);
+        assert_eq!(s.top(), crate::Top::Library(crate::LibraryMode::Browse));
         assert!(!effects.contains(&Effect::Save(Save::FirstStartDone)), "not the first start: nothing saved");
     }
 
@@ -283,20 +273,20 @@ mod tests {
         s.applied(Event::Entry("builtin:device".into(), crate::EntryAct::Play));
         assert!(on_dock(&s));
         s.applied(Event::Home);
-        assert_eq!(s.top_view(), TopView::LibraryView);
+        assert_eq!(s.top(), crate::Top::Library(crate::LibraryMode::Browse));
         assert!(on_dock(&s), "still running");
         let tile = s.dock().items().iter().position(|i| &*i.id == "builtin:device").and_then(|i| u16::try_from(i).ok());
         s.applied(Event::Pointer(crate::PointerEvent::Activate(Id::Dock(crate::DockId::Entry(tile.unwrap_or(u16::MAX))))));
-        assert_eq!(s.top_view(), TopView::Device);
+        assert_eq!(s.top(), crate::Top::Device);
         // A program launched from it, whose window closes, goes back to it.
         let zelda = launch(&mut s, "zelda-lttp");
         s.observed(vec![crate::testkit::win_of(3, "zelda3", &zelda)]);
-        assert_eq!(s.top_view(), TopView::LibraryView, "a window in front");
+        assert_eq!(s.top(), crate::Top::Window { program: true }, "a window in front");
         s.observed(vec![]);
         s.applied(Event::tick(1100));
-        assert_eq!(s.top_view(), TopView::Device, "back where it was launched from");
+        assert_eq!(s.top(), crate::Top::Device, "back where it was launched from");
         s.applied(Event::Entry("builtin:device".into(), crate::EntryAct::Quit));
-        assert_eq!(s.top_view(), TopView::LibraryView);
+        assert_eq!(s.top(), crate::Top::Library(crate::LibraryMode::Browse));
         assert!(!on_dock(&s), "closed");
     }
 
@@ -311,7 +301,7 @@ mod tests {
         let fx = tap(&mut s, DeviceId::Zone);
         assert_eq!(s.bottom().tab(), Tab::Time);
         assert!(fx.contains(&Effect::Watch(crate::Watch::Wifi, false)) && fx.contains(&Effect::Watch(crate::Watch::Time, true)), "{fx:?}");
-        assert_eq!(s.top_view(), TopView::Device, "the view stays open");
+        assert_eq!(s.top(), crate::Top::Device, "the view stays open");
     }
 
     /// Home closes the Device view back to the Library. Repeated Home stays on the Library.
@@ -322,10 +312,10 @@ mod tests {
         let zelda = launch(&mut s, "zelda-lttp");
         s.observed(vec![crate::testkit::win_of(3, "zelda3", &zelda)]);
         launch_now(&mut s, "builtin:device");
-        assert_eq!(s.top_view(), TopView::Device);
+        assert_eq!(s.top(), crate::Top::Device);
         s.applied(Event::Home);
         assert!(s.session().shown_builtin().is_some(), "nothing shown but the Library");
-        assert_eq!(s.top_view(), TopView::LibraryView);
+        assert_eq!(s.top(), crate::Top::Library(crate::LibraryMode::Browse));
         assert_eq!(s.pointer().focus(), Some(&crate::testkit::entry("zelda-lttp")), "the focus on the Library's selection");
         s.applied(Event::Home);
         assert!(s.session().shown_builtin().is_some());

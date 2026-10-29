@@ -34,9 +34,9 @@ mod time;
 mod touchpad;
 mod wifi;
 
-use clamshell_state::Tab;
 use clamshell_state::bottom::editor::Purpose;
 use clamshell_state::library_view::files::FileName;
+use clamshell_state::{LibraryMode, Tab, Top};
 
 use crate::gfx::Rect;
 use crate::toolkit::Frame;
@@ -48,16 +48,18 @@ const POINTING_FADE: f32 = 0.7;
 /// The frame starts black (see `render`).
 pub fn top(f: &mut Frame, screen: Rect) {
     f.body = screen;
-    match f.s.top_view() {
-        clamshell_state::setup::TopView::LibraryView => {
-            // Picking shows the Library, in the edit mode too.
-            f.out.list_rows = Some(match f.s.library_view().edit().filter(|_| f.s.library_view().pick().is_none()) {
-                Some(edit) => library_edit::draw(f, screen, edit),
-                None => library_view::draw(f, screen),
-            });
+    match f.s.top() {
+        Top::Library(LibraryMode::Edit) => {
+            if let Some(edit) = f.s.library_view().edit() {
+                f.out.list_rows = Some(library_edit::draw(f, screen, edit));
+            }
         }
-        clamshell_state::setup::TopView::Device => device::draw(f, screen),
-        clamshell_state::setup::TopView::Setup => setup::draw(f, screen),
+        // Picking shows the Library, in the edit mode too.
+        Top::Library(LibraryMode::Browse | LibraryMode::Pick) => f.out.list_rows = Some(library_view::draw(f, screen)),
+        Top::Device => device::draw(f, screen),
+        Top::Setup(_) => setup::draw(f, screen),
+        // The window is shown over the view, which isn't drawn.
+        Top::Window { .. } => {}
     }
 }
 

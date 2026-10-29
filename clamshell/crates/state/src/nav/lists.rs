@@ -122,13 +122,15 @@ pub struct Lists<'a> {
     pub(crate) sys: &'a Sys,
     pub(crate) dock: &'a Dock,
     pub(crate) pointer: &'a Pointer,
+    /// What the main screen shows.
+    pub(crate) top: crate::Top,
     /// The open tile menu's rows (see [`crate::State::menu_row`]).
     pub(crate) menu_rows: usize,
 }
 
 impl<'a> Lists<'a> {
     fn panel(&self) -> Panel<'a> {
-        Panel::new(self.session, self.library_view, self.prefs, self.keymapping, self.curving)
+        Panel::new(self.top, self.session, self.library_view, self.prefs, self.keymapping, self.curving)
     }
 
     /// Where `list` is scrolled. For the Library, this is the current collection's position.

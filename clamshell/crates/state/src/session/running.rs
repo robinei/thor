@@ -39,17 +39,6 @@ use crate::session::windows::{Group, Window, WindowFacts};
 use crate::settings::Settings;
 use crate::{Clock, Entry, Library, Session};
 
-/// What is in front on the main screen.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Front {
-    /// One of ClamShell's own screens: no window is in front.
-    Builtin(clamshell_library::Builtin),
-    /// A window of a running entry.
-    Program,
-    /// Another window, not one of ours.
-    Other,
-}
-
 /// How a running entry runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Origin {
