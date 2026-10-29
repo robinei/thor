@@ -67,11 +67,8 @@ impl Effects {
     /// Answers the virtual pad's waiting force-feedback requests, uploads and erases, and follows its play
     /// and stop events, at `now`. The virtual pad's file is non-blocking.
     pub(crate) fn serve(&mut self, pad: &mut VirtualDevice, now: Instant) -> io::Result<()> {
-        let events: Vec<InputEvent> = match pad.fetch_events() {
-            Ok(events) => events.collect(),
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(()),
-            Err(e) => return Err(e),
-        };
+        let Some(events) = crate::os::ready(pad.fetch_events())? else { return Ok(()) };
+        let events: Vec<InputEvent> = events.collect();
         for event in events {
             match event.destructure() {
                 // Each request on its own: one that fails doesn't leave the rest unanswered, which would

@@ -84,8 +84,7 @@ pub(crate) struct Grabbed {
 impl Grabbed {
     pub(crate) fn new(mut device: RawDevice) -> io::Result<Grabbed> {
         device.grab()?;
-        let flags = rustix::fs::fcntl_getfl(&device)?;
-        rustix::fs::fcntl_setfl(&device, flags | rustix::fs::OFlags::NONBLOCK)?;
+        crate::os::set_nonblocking(&device)?;
         Ok(Grabbed { device, skipping: false })
     }
 
@@ -97,11 +96,7 @@ impl Grabbed {
     /// buffer overran (SYN_DROPPED). In that case what was read no longer adds up to the device's state
     /// (see [`Grabbed::state`]). The partial report after a drop is left out, as the kernel asks.
     pub(crate) fn fetch(&mut self, out: &mut Vec<Raw>) -> io::Result<bool> {
-        let events = match self.device.fetch_events() {
-            Ok(events) => events,
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(false),
-            Err(e) => return Err(e),
-        };
+        let Some(events) = crate::os::ready(self.device.fetch_events())? else { return Ok(false) };
         let mut dropped = false;
         for raw in events.map(Raw::from) {
             if raw.kind == EventType::SYNCHRONIZATION && raw.code == SynchronizationCode::SYN_DROPPED.0 {

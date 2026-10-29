@@ -41,8 +41,7 @@ impl AuxiliaryKey {
         let device = evdev::raw_stream::enumerate()
             .map(|(_, device)| device)
             .find(|device| device.name() == Some(hint.device_name) && device.supported_keys().is_some_and(|keys| keys.contains(code)))?;
-        let nonblocking = rustix::fs::fcntl_getfl(&device).and_then(|f| rustix::fs::fcntl_setfl(&device, f | rustix::fs::OFlags::NONBLOCK));
-        if let Err(e) = nonblocking {
+        if let Err(e) = crate::os::set_nonblocking(&device) {
             log::warn!("pad: AYN button: {e}");
             return None;
         }
@@ -56,16 +55,11 @@ impl AuxiliaryKey {
 
     /// Appends the AYN button's waiting presses, each with its report.
     pub(crate) fn fetch(&mut self, out: &mut Vec<Raw>) -> io::Result<()> {
-        match self.device.fetch_events() {
-            Ok(events) => {
-                for e in events.filter(|e| e.event_type() == evdev::EventType::KEY && e.code() == self.code.0) {
-                    out.extend([Raw { kind: evdev::EventType::KEY, code: AYN_KEY.0, value: e.value() }, Raw::REPORT]);
-                }
-                Ok(())
-            }
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(()),
-            Err(e) => Err(e),
+        let Some(events) = crate::os::ready(self.device.fetch_events())? else { return Ok(()) };
+        for e in events.filter(|e| e.event_type() == evdev::EventType::KEY && e.code() == self.code.0) {
+            out.extend([Raw { kind: evdev::EventType::KEY, code: AYN_KEY.0, value: e.value() }, Raw::REPORT]);
         }
+        Ok(())
     }
 }
 
@@ -244,8 +238,7 @@ fn virtual_pad(caps: &Capabilities, controls: Controls) -> io::Result<VirtualDev
         builder = builder.with_absolute_axis(&UinputAbsSetup::new(code, info))?;
     }
     let pad = builder.build()?;
-    let flags = rustix::fs::fcntl_getfl(&pad)?;
-    rustix::fs::fcntl_setfl(&pad, flags | rustix::fs::OFlags::NONBLOCK)?;
+    crate::os::set_nonblocking(&pad)?;
     Ok(pad)
 }
 

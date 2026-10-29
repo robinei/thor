@@ -217,8 +217,7 @@ impl EvdevMotion {
         let info = |axis: AbsoluteAxisCode| abs.get(usize::from(axis.0)).copied();
         let resolution = GYRO.map(|g| info(g).map_or(1.0, |i| i.resolution.max(1) as f32));
         let raw = GYRO.map(|g| info(g).map_or(0, |i| i.value));
-        let flags = rustix::fs::fcntl_getfl(&device)?;
-        rustix::fs::fcntl_setfl(&device, flags | rustix::fs::OFlags::NONBLOCK)?;
+        crate::os::set_nonblocking(&device)?;
         log::info!("pad: gyro from {}", device.name().unwrap_or("a motion sensor"));
         Ok(EvdevMotion { device, resolution, raw, stamp: None })
     }
@@ -230,11 +229,7 @@ impl MotionSource for EvdevMotion {
     }
 
     fn fetch(&mut self, out: &mut Vec<Sample>) -> io::Result<()> {
-        let events = match self.device.fetch_events() {
-            Ok(events) => events,
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(()),
-            Err(e) => return Err(e),
-        };
+        let Some(events) = crate::os::ready(self.device.fetch_events())? else { return Ok(()) };
         for e in events {
             match e.event_type() {
                 EventType::ABSOLUTE => {

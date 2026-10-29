@@ -366,7 +366,7 @@ fn read_text(read: OwnedFd, wait: Duration) -> Option<String> {
 /// Writes `text` to a pipe, for up to `wait` while its reader doesn't take it.
 fn write_text(fd: OwnedFd, text: &[u8], wait: Duration) -> io::Result<()> {
     let until = Instant::now() + wait;
-    rustix::fs::fcntl_setfl(&fd, rustix::fs::OFlags::NONBLOCK)?;
+    crate::os::set_nonblocking(&fd)?;
     let mut file = File::from(fd);
     let mut left = text;
     while !left.is_empty() {

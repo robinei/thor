@@ -58,8 +58,7 @@ impl Watched {
         if device.properties().contains(PropType::ACCELEROMETER) {
             return None;
         }
-        let nonblocking = rustix::fs::fcntl_getfl(&device).and_then(|f| rustix::fs::fcntl_setfl(&device, f | rustix::fs::OFlags::NONBLOCK));
-        if let Err(e) = nonblocking {
+        if let Err(e) = crate::os::set_nonblocking(&device) {
             log::debug!("input watch: {}: {e}", path.display());
             return None;
         }
@@ -181,9 +180,9 @@ fn watch(take_keys: bool, power_key: Option<&'static str>, sink: &impl Sink) -> 
         let mut keys = Vec::new();
         devices.retain_mut(|d| {
             raws.clear();
-            match d.device.fetch_events() {
-                Ok(events) => raws.extend(events.map(Raw::from)),
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
+            match crate::os::ready(d.device.fetch_events()) {
+                Ok(Some(events)) => raws.extend(events.map(Raw::from)),
+                Ok(None) => {}
                 // Unplugged.
                 Err(e) => {
                     log::debug!("input watch: {}: {e}", d.path.display());

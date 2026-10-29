@@ -28,6 +28,22 @@ pub(crate) mod text;
 pub mod worker;
 pub(crate) mod xdg;
 
+/// What a non-blocking read gave: None when nothing was waiting (`WouldBlock`).
+pub(crate) fn ready<T>(read: std::io::Result<T>) -> std::io::Result<Option<T>> {
+    match read {
+        Ok(value) => Ok(Some(value)),
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+/// Makes reads and writes of `fd` return at once, with `WouldBlock`, rather than wait.
+pub(crate) fn set_nonblocking(fd: impl std::os::fd::AsFd) -> std::io::Result<()> {
+    let flags = rustix::fs::fcntl_getfl(&fd)?;
+    rustix::fs::fcntl_setfl(&fd, flags | rustix::fs::OFlags::NONBLOCK)?;
+    Ok(())
+}
+
 /// Locks `m`. Nothing here panics while holding a lock, since the workspace's lints rule panics out. A
 /// lock that is poisoned anyway still holds usable data, so it is taken as it is.
 pub(crate) fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
