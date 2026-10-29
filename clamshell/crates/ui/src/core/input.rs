@@ -14,7 +14,8 @@ use super::Core;
 impl Core {
     /// A finger or button comes down at `position` on `screen`. It presses the topmost target there,
     /// which is the last one drawn, so a button on a tile (such as the dock's "+") wins over the tile.
-    /// With none there, in the screen's content, it presses nothing ([`clamshell_state::Id::Blank`]), which may point.
+    /// With none there, in the screen's content, it presses nothing ([`clamshell_state::Id::Blank`]),
+    /// which may point.
     pub fn press(&mut self, source: Source, screen: Screen, (x, y): (f64, f64), time: u32) {
         let (x, y) = (x as f32, y as f32);
         let found = self.screens[screen].frames.retained.targets.iter().rev().find(|t| t.rect.contains(x, y)).cloned();
@@ -48,13 +49,12 @@ impl Core {
     }
 
     /// The wheel on `screen` at `position`, by `notches`. Over a scrolled list it scrolls by a row per
-    /// notch. Elsewhere on the main screen, it is the view's list's (see `toolkit::PadOut::moves`), as the
-    /// Library's, which it scrolls by a game per notch.
+    /// notch. Elsewhere on the screen, it is the view's list's, if the screen declared one (see
+    /// `toolkit::PadOut::moves`).
     pub fn wheel(&mut self, screen: Screen, (x, y): (f64, f64), notches: i32) {
         let list = self.screens[screen].frames.retained.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).and_then(|t| t.list);
         if list.is_none()
-            && screen == Screen::Top
-            && let Some(Some(event)) = self.screens.top.pad.moves.and_then(|moves| moves(&self.state, crate::toolkit::PadMove::Scroll(notches)))
+            && let Some(Some(event)) = self.screens[screen].pad.moves.and_then(|moves| moves(&self.state, crate::toolkit::PadMove::Scroll(notches)))
         {
             return self.handle(event);
         }
@@ -89,11 +89,10 @@ impl Core {
     /// the program's windows is open, which take the D-pad, A and B:
     /// - directions move focus;
     /// - A acts on the focused target, and B goes back (see `focus::back`);
-    /// - Y, X and Start do the Library details' actions while the pad is on the Library (see
-    ///   `focus::shortcut`). On the keyboard, X is Backspace;
-    /// - the shoulders page through the Library or step through the second screen's tabs;
-    /// - the triggers go to the Library's first or last entry;
-    /// - View moves focus to the other screen while the Library is in front. Otherwise it moves the pad
+    /// - Y, X and Start press what their badges show on the screen the pad is on (see `focus::shortcut`);
+    /// - the shoulders page through a view's list or step through the second screen's tabs;
+    /// - the triggers go to a view's list's first or last row;
+    /// - View moves focus to the other screen while the pad may use both. Otherwise it moves the pad
     ///   between the second screen and whatever else wants it, such as the pad mouse or typing. The pad
     ///   thread sends View from there too.
     pub(crate) fn pad(&mut self, input: PadInput) {

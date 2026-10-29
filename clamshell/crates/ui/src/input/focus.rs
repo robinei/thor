@@ -2,9 +2,10 @@
 //! what it is on, the shoulders and View, and on a desktop, keys that stand in for the pad. These are pure
 //! functions of the state and what the last frames drew ([`Drawn`]), and they answer with events.
 //!
-//! [`PadScope`] says where the pad may go. With the Library in front, it may go anywhere on both screens, and
-//! in the Library's list up and down step through the games. With anything else in front, it stays on the
-//! second screen.
+//! Where the pad may go: anywhere on both screens while it may use the main screen (one of ClamShell's
+//! apps is in front, see clamshell-state's `Pad::on_top`), and otherwise on the second screen only. On a
+//! view's list ([`PadUse::List`]) the list takes the pad's moves as it declared ([`PadOut::moves`]); on
+//! targets reached by holding A ([`PadUse::Held`]) the pad stays among them.
 
 use clamshell_state::{Event, Hold, Id, LevelEvent, PadInput, PointerEvent, RowPart, State};
 use xkeysym::Keysym;
@@ -22,37 +23,31 @@ pub trait Drawn {
     fn pad(&self, screen: Screen) -> &PadOut;
 }
 
-/// Where the pad's focus may go.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PadScope {
-    /// The pad may use both screens and the focus is on a view's list, whose moves are its own (see
-    /// [`PadOut::moves`]).
-    List,
-    /// One of ClamShell's apps is in front, and the focus may go anywhere on both screens.
-    BothScreens,
-    /// Something else is in front, and the focus stays on the second screen.
-    BottomOnly,
+/// Whether the pad may use `screen`: the second screen always, the main one while one of ClamShell's apps
+/// is in front.
+fn usable(s: &State, screen: Screen) -> bool {
+    screen == Screen::Bottom || s.pad().on_top()
 }
 
-/// Whether the pad is on targets reached by holding A, such as the Library's actions (see [`PadUse::Held`]).
-/// Only while the pad may use the top screen: with anything else in front the Library isn't shown, and the
-/// pad goes to the second screen even if the focus was left on an action, as it is after one that starts
-/// a game.
-fn on_actions(s: &State, d: &impl Drawn) -> bool {
-    s.pad().on_top() && d.targets(Screen::Top).iter().any(|t| t.pad == PadUse::Held && s.pointer().focused(&t.id))
+/// The screen, among those the pad may use, where the focus is on a target marked `pad`.
+fn focused_on(s: &State, d: &impl Drawn, pad: PadUse) -> Option<Screen> {
+    let on = |screen: Screen| d.targets(screen).iter().any(|t| t.pad == pad && s.pointer().focused(&t.id));
+    Screen::BOTH.into_iter().filter(|&screen| usable(s, screen)).find(|&screen| on(screen))
 }
 
-pub fn scope(s: &State, d: &impl Drawn) -> PadScope {
-    let in_list = d.targets(Screen::Top).iter().any(|t| t.pad == PadUse::List && s.pointer().focus() == Some(&t.id));
-    match (s.pad().on_top(), in_list) {
-        (true, true) => PadScope::List,
-        (true, false) => PadScope::BothScreens,
-        (false, _) => PadScope::BottomOnly,
-    }
+/// The screen where the pad is on targets reached by holding A (see [`PadUse::Held`]). Only on a screen
+/// the pad may use: when it may not use the main screen, it goes to the second screen even if the focus
+/// was left on such a target there, as it is after one that starts a game.
+fn on_held(s: &State, d: &impl Drawn) -> Option<Screen> {
+    focused_on(s, d, PadUse::Held)
 }
 
-/// Where the focus goes on `screen` when nothing better is known, as the screen declared: such as the
-/// Library's selected game, or the open tab's button.
+/// The screen where the focus is on a view's list (see [`PadUse::List`]), whose moves are its own.
+pub fn in_list(s: &State, d: &impl Drawn) -> Option<Screen> {
+    focused_on(s, d, PadUse::List)
+}
+
+/// Where the focus goes on `screen` when nothing better is known, as the screen declared.
 pub fn default_focus(d: &impl Drawn, screen: Screen) -> Option<Id> {
     d.pad(screen).start.clone()
 }
@@ -99,9 +94,9 @@ fn first_moved_to(d: &impl Drawn, screen: Screen) -> Option<Id> {
     d.targets(screen).iter().find(|t| matches!(t.pad, PadUse::Moves | PadUse::List)).map(|t| t.id.clone())
 }
 
-/// Moves the focus to the other screen, with the Library in front. It goes where it last was on that screen if
-/// that is still drawn, else to the screen's default, else to the first thing drawn there. Where it was
-/// is remembered in `memory`.
+/// Moves the focus to the other screen, while the pad may use both. It goes where it last was on that
+/// screen if that is still drawn, else to the screen's default, else to the first thing drawn there. Where
+/// it was is remembered in `memory`.
 pub fn switch_screen(s: &State, d: &impl Drawn, memory: &mut Screens<Option<Id>>) -> Option<Event> {
     let from = focus_screen(s, d);
     let to = from.other();
@@ -113,18 +108,14 @@ pub fn switch_screen(s: &State, d: &impl Drawn, memory: &mut Screens<Option<Id>>
 }
 
 /// The targets the pad may move between, each with its screen, as the views marked them (see [`PadUse`]).
-/// On targets reached by holding A, they are those alone. Otherwise they are the targets it moves to on
-/// the screens the pad may use.
+/// On targets reached by holding A, they are those on their screen alone. Otherwise they are the targets
+/// it moves to on the screens the pad may use.
 pub fn candidates<'d>(s: &State, d: &'d impl Drawn) -> Vec<(Screen, &'d Target)> {
-    let (screens, pad): (&[Screen], PadUse) = if on_actions(s, d) {
-        (&[Screen::Top], PadUse::Held)
-    } else if scope(s, d) == PadScope::BottomOnly {
-        (&[Screen::Bottom], PadUse::Moves)
-    } else {
-        (&Screen::BOTH, PadUse::Moves)
-    };
+    let held = on_held(s, d);
+    let pad = if held.is_some() { PadUse::Held } else { PadUse::Moves };
+    let on = |screen: &Screen| held.map_or(usable(s, *screen), |h| h == *screen);
     let reached = |t: &Target| t.pad == pad || (pad == PadUse::Moves && t.pad == PadUse::List);
-    screens.iter().flat_map(|&screen| d.targets(screen).iter().map(move |t| (screen, t))).filter(|(_, t)| reached(t)).collect()
+    Screen::BOTH.into_iter().filter(on).flat_map(|screen| d.targets(screen).iter().map(move |t| (screen, t))).filter(|(_, t)| reached(t)).collect()
 }
 
 /// `t` on `screen` placed in the plane [`nav::step`] works in.
@@ -141,24 +132,24 @@ fn placed(d: &impl Drawn, screen: Screen, t: &Target) -> NavTarget {
 /// Pad-style focus movement over the screens' targets, as if the second screen were right below the
 /// main one.
 pub fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, dir: Dir) -> Option<Event> {
-    // On the Library's actions, reached by holding A, up and down move through them only.
-    if on_actions(s, d) {
+    // On targets reached by holding A, up and down move through them only.
+    if on_held(s, d).is_some() {
         let rows: Vec<NavTarget> = candidates(s, d).into_iter().map(|(screen, t)| placed(d, screen, t)).collect();
         return match dir {
             Dir::Up | Dir::Down => nav::step(&rows, s.pointer().focus(), dir).map(|id| PointerEvent::Focus(id).into()),
             Dir::Left | Dir::Right => None,
         };
     }
-    let scope = scope(s, d);
-    // On a view's list, its moves are its own; one it doesn't take goes by direction, as down past the
-    // Library's last game goes on to the second screen.
-    if scope == PadScope::List
-        && let Some(taken) = d.pad(Screen::Top).moves.and_then(|moves| moves(s, PadMove::Dir(dir)))
+    // On a view's list, its moves are its own; one it doesn't take goes by direction, as down past a
+    // list's last row may go on to the other screen.
+    if let Some(screen) = in_list(s, d)
+        && let Some(taken) = d.pad(screen).moves.and_then(|moves| moves(s, PadMove::Dir(dir)))
     {
         return taken;
     }
-    // Away from the Library, only the second screen is used. If the focus is elsewhere, it moves there first.
-    if scope == PadScope::BottomOnly && focus_screen(s, d) != Screen::Bottom {
+    // Without the main screen, only the second screen is used. If the focus is elsewhere, it moves there
+    // first.
+    if !usable(s, Screen::Top) && focus_screen(s, d) != Screen::Bottom {
         return focus_bottom(s, d, memory);
     }
     // On a drawn target that sets a level, left and right step the level.
@@ -202,7 +193,7 @@ pub enum PadPress {
 }
 
 pub fn press(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>) -> Option<PadPress> {
-    let screen = (scope(s, d) == PadScope::BottomOnly).then_some(Screen::Bottom);
+    let screen = (!usable(s, Screen::Top)).then_some(Screen::Bottom);
     match s.pointer().focus() {
         Some(id) if let Some(t) = drawn_in(d, screen, id) => Some(PadPress::Press(id.clone(), t.hold)),
         _ if s.pad().on_top() => default_focus(d, Screen::Top).map(|id| PadPress::Focus(PointerEvent::Focus(id).into())),
@@ -210,11 +201,12 @@ pub fn press(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>) -> Option<
     }
 }
 
-/// The shoulders. On the Library they move a page through the list. Elsewhere they step through the tabs
-/// the second screen declared (see [`PadOut::tabs`]), from the open one, opening and focusing each.
+/// The shoulders. On a screen whose view's list pages, they move a page through it. Elsewhere they step
+/// through the tabs the second screen declared (see [`PadOut::tabs`]), from the open one, opening and
+/// focusing each.
 pub fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
-    // On the Library's actions, the Library stays where it is.
-    if on_actions(s, d) {
+    // On targets reached by holding A, what they act on stays where it is.
+    if on_held(s, d).is_some() {
         return vec![];
     }
     // On a screen with a list that pages, a page.
@@ -234,15 +226,14 @@ pub fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     }
 }
 
-/// What the top screen's list does with `m` while the pad is on that screen, if it takes it.
+/// What the list of the screen the pad is on (see [`pad_screen`]) does with `m`, if it takes it.
 fn list_moves(s: &State, d: &impl Drawn, m: PadMove) -> Option<Option<Event>> {
-    let on_top = s.pad().on_top() && focus_screen(s, d) == Screen::Top;
-    d.pad(Screen::Top).moves.filter(|_| on_top).and_then(|moves| moves(s, m))
+    d.pad(pad_screen(s, d)).moves.and_then(|moves| moves(s, m))
 }
 
-/// L2 and R2 go to the Library's first or last entry.
+/// L2 and R2 go to the first or last row of the list of the screen the pad is on, if it takes them.
 pub fn trigger(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
-    if on_actions(s, d) {
+    if on_held(s, d).is_some() {
         return vec![];
     }
     if let Some(taken) = list_moves(s, d, PadMove::End(step)) {
@@ -251,9 +242,8 @@ pub fn trigger(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     vec![]
 }
 
-/// Y, X and Start press what their badges show on the screen the pad is on (see [`pad_screen`]): on the
-/// Library the details' actions (favourite, on the dock and Continue; for a browsed file Copy, Paste and
-/// Select), picking Save here and Save as; with a keyboard drawn, X is Backspace. Elsewhere they do nothing.
+/// Y, X and Start press what their badges show on the screen the pad is on (see [`pad_screen`]), as the
+/// screen declared them (see [`PadOut::keys`]). Elsewhere they do nothing.
 pub fn shortcut(s: &State, d: &impl Drawn, button: PadInput) -> Vec<Event> {
     let i = match button {
         PadInput::Y => 0,
@@ -265,19 +255,17 @@ pub fn shortcut(s: &State, d: &impl Drawn, button: PadInput) -> Vec<Event> {
     keys.get(i).cloned().flatten().map(|id| PointerEvent::Activate(id).into()).into_iter().collect()
 }
 
-/// B, and the Back button, go back as the screens declared: an editor's Cancel first, on either screen
-/// the pad may use; otherwise the back of the screen the pad is on (see [`pad_screen`]), such as a tab's
-/// page or menu, the edit mode's form or folder, a pick's Cancel, Setup's step, the Device view's Close,
-/// or the Library's actions, typed search or open group.
+/// B, and the Back button, go back as the screens declared (see [`PadOut::back`]): a back over the whole
+/// screen first, such as an editor's Cancel, on either screen the pad may use; otherwise the back of the
+/// screen the pad is on (see [`pad_screen`]).
 pub fn back(s: &State, d: &impl Drawn) -> Option<Event> {
-    let usable = |screen: &Screen| *screen == Screen::Bottom || s.pad().on_top();
-    let over = Screen::BOTH.into_iter().filter(usable).find_map(|screen| d.pad(screen).back.as_ref().filter(|(_, over)| *over));
+    let over = Screen::BOTH.into_iter().filter(|&screen| usable(s, screen)).find_map(|screen| d.pad(screen).back.as_ref().filter(|(_, over)| *over));
     over.or(d.pad(pad_screen(s, d)).back.as_ref()).map(|(event, _)| event.clone())
 }
 
 /// On a desktop, keys stand in for the pad. The arrows move the focus, Enter or Space is A (press and
 /// hold), Tab is View, Backspace is B, Q and E are the shoulders, Home and End the triggers, F is Y, P is
-/// X and C is Start. This is not done on the device, where keys reaching the Library's window are typing.
+/// X and C is Start. This is not done on the device, where keys are typing.
 const DESKTOP_KEYS: [(Keysym, PadInput); 16] = [
     (Keysym::Left, PadInput::Left),
     (Keysym::Right, PadInput::Right),
@@ -390,7 +378,7 @@ mod tests {
         assert_eq!(to_bottom, Some(PointerEvent::Focus(Id::Tab(s.bottom().tab())).into()));
         let tile = Id::Settings(SettingsId::Tile(Setting::Power));
         focus(&mut s, tile.clone());
-        assert_eq!(scope(&s, &d), PadScope::BothScreens);
+        assert_eq!(in_list(&s, &d), None);
         // Back up, to the game it was on.
         assert_eq!(switch_screen(&s, &d, &mut memory), Some(PointerEvent::Focus(entry(&s, 1)).into()));
         let g = entry(&s, 0);
@@ -520,10 +508,33 @@ mod tests {
         let g = entry(&s, 0);
         focus(&mut s, g);
         let memory = Screens::default();
-        assert_eq!(scope(&s, &d), PadScope::List);
+        assert_eq!(in_list(&s, &d), Some(Screen::Top));
         assert_eq!(navigate(&s, &d, &memory, Dir::Up), Some(Event::Home), "taken");
         assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(PointerEvent::Focus(entry(&s, 1)).into()), "declined: by direction");
         assert_eq!((shoulder(&s, &d, 1), trigger(&s, &d, 1)), (vec![Event::HomeTap], vec![Event::HomeTap]));
+    }
+
+    /// A list on the second screen takes the pad's moves as one on the main screen does, and the shoulders
+    /// and triggers there are its pages and ends.
+    #[test]
+    fn a_list_on_the_second_screen_takes_the_pads_moves() {
+        let mut s = state();
+        let mut d = drawn(&s);
+        d.0.bottom.push(list(t(0.0, 70.0, Id::Settings(SettingsId::Env))));
+        d.1.bottom.moves = Some(|_, m| match m {
+            PadMove::Dir(Dir::Up) => Some(Some(Event::Home)),
+            PadMove::Dir(_) => None,
+            PadMove::Page(_) | PadMove::End(_) | PadMove::Scroll(_) => Some(Some(Event::HomeTap)),
+        });
+        focus(&mut s, Id::Settings(SettingsId::Env));
+        let memory = Screens::default();
+        assert_eq!(in_list(&s, &d), Some(Screen::Bottom));
+        assert_eq!(navigate(&s, &d, &memory, Dir::Up), Some(Event::Home), "taken");
+        assert_eq!((shoulder(&s, &d, 1), trigger(&s, &d, 1)), (vec![Event::HomeTap], vec![Event::HomeTap]));
+        // Off the list, the directions go by direction.
+        focus(&mut s, Id::Tab(Tab::Sysinfo));
+        assert_eq!(in_list(&s, &d), None);
+        assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(PointerEvent::Focus(Id::Settings(SettingsId::Tile(Setting::Power))).into()));
     }
 
     #[test]
