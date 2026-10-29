@@ -27,7 +27,8 @@ readings, ticks, windows, units ─▶ Event ───┤
   applying events and looking at the effects.
 - Two paths go beside the cycle, each for a reason:
   - **Identifying a client:** the compositor asks the system crate which process connected (its unit,
-    and the game its launcher marked it with), on a thread per process, before it takes the client in, so that the client's
+    and the game its launcher marked it with), on a thread per process being read (what asks for one
+    already being read joins that read), before it takes the client in, so that the client's
     first request is already answered as its game's (`identify`, `src/session.rs`).
   - **A screenshot's pixels** go from the compositor straight to the system's errands thread, which saves
     them; only the result comes back as an event. The pixels are too large to pass through the state.

@@ -67,7 +67,9 @@ pub(crate) enum Waiting {
 /// Processes identified off the compositor's thread: reading `/proc/<pid>/environ` takes the process's
 /// mmap lock, which a process stuck in a page fault (on a FUSE archive, say) can hold for long. Each
 /// process is read on a short-lived thread of its own, so one stuck process holds up only what waits
-/// for it, and the answers come back to [`Server::turn`].
+/// for it, and the answers come back to [`Server::turn`]. What asks for a process already being read
+/// joins that read, so the threads are bounded by the processes being read at once: a stuck process
+/// costs one, however often its program connects or maps windows meanwhile.
 pub(crate) struct Identities {
     identify: Arc<dyn Fn(u32) -> Process + Send + Sync>,
     /// Wakes the event loop for an answer.
@@ -75,21 +77,36 @@ pub(crate) struct Identities {
     /// Each answer, by the token it was asked with.
     send: mpsc::Sender<(u64, Process)>,
     answers: mpsc::Receiver<(u64, Process)>,
-    waiting: Vec<(u64, Waiting)>,
+    /// The reads under way, each with what waits for it.
+    asks: Vec<Ask>,
+    /// What waited for a read answered, with the answer, not yet handed out.
+    answered: Vec<(Waiting, Process)>,
     next: u64,
+}
+
+/// A read of process `pid` under way, asked with `token`, and what waits for it.
+struct Ask {
+    pid: u32,
+    token: u64,
+    waiting: Vec<Waiting>,
 }
 
 impl Identities {
     pub(crate) fn new(identify: impl Fn(u32) -> Process + Send + Sync + 'static, wake: Arc<dyn Fn() + Send + Sync>) -> Identities {
         let (send, answers) = mpsc::channel();
-        Identities { identify: Arc::new(identify), wake, send, answers, waiting: Vec::new(), next: 0 }
+        Identities { identify: Arc::new(identify), wake, send, answers, asks: Vec::new(), answered: Vec::new(), next: 0 }
     }
 
-    /// Identifies process `pid` for `waiting`, which [`Identities::answered`] gives back with the answer.
+    /// Identifies process `pid` for `waiting`, which [`Identities::answered`] gives back with the answer:
+    /// joining the read of it under way, if there is one, else starting one.
     pub(crate) fn ask(&mut self, pid: u32, waiting: Waiting) {
+        if let Some(ask) = self.asks.iter_mut().find(|ask| ask.pid == pid) {
+            ask.waiting.push(waiting);
+            return;
+        }
         let token = self.next;
         self.next = self.next.wrapping_add(1);
-        self.waiting.push((token, waiting));
+        self.asks.push(Ask { pid, token, waiting: vec![waiting] });
         let (identify, sender, wake) = (self.identify.clone(), self.send.clone(), self.wake.clone());
         // At the ordinary priority, not the compositor thread's raised one (see `clamshell_ui::threads`).
         let spawned = clamshell_ui::threads::start("identify", move || {
@@ -103,14 +120,17 @@ impl Identities {
         }
     }
 
-    /// The next answer that came, with what waited for it.
+    /// The next thing that waited for a process that was identified, with the answer.
     pub(crate) fn answered(&mut self) -> Option<(Waiting, Process)> {
-        while let Ok((token, process)) = self.answers.try_recv() {
-            if let Some(index) = self.waiting.iter().position(|(t, _)| *t == token) {
-                return Some((self.waiting.swap_remove(index).1, process));
+        while self.answered.is_empty()
+            && let Ok((token, process)) = self.answers.try_recv()
+        {
+            if let Some(index) = self.asks.iter().position(|ask| ask.token == token) {
+                let ask = self.asks.swap_remove(index);
+                self.answered.extend(ask.waiting.into_iter().map(|waiting| (waiting, process.clone())));
             }
         }
-        None
+        self.answered.pop()
     }
 }
 

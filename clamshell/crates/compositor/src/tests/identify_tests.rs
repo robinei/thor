@@ -93,32 +93,33 @@ fn a_games_client_is_answered_as_the_games_once_identified() {
     assert_eq!(told(&server), Some(Resolution::Half));
 }
 
-/// A client gone before its process is identified is taken in and ends at once, and a client whose
-/// process can't be read yet holds up no other.
+/// Two clients of a process whose read is stuck both wait on that one read, and hold up neither a client of
+/// another process nor one gone before its process is identified, which is taken in and ends at once.
 #[test]
 fn a_client_gone_or_stuck_while_identified_holds_up_nothing() {
-    // The first process read is stuck until the test ends.
+    // The test's own process, whose ends of the socket pairs are the clients', is read until the test ends;
+    // the others (given to `ask` directly, as no client of theirs can connect here) at once.
+    let stuck = std::process::id();
     let (_open, gate) = mpsc::channel::<()>();
     let gate = Mutex::new(gate);
     let calls = Arc::new(AtomicUsize::new(0));
     let called = calls.clone();
     let (mut display, mut server) = running(move |pid| {
-        if called.fetch_add(1, Ordering::SeqCst) == 0 {
+        called.fetch_add(1, Ordering::SeqCst);
+        if pid == stuck {
             let _ = gate.lock().unwrap().recv();
         }
         Process { pids: vec![pid], ..Process::default() }
     });
-    let (stuck, _stuck_peer) = UnixStream::pair().unwrap();
-    server.admit(stuck);
-    let until = Instant::now() + Duration::from_secs(5);
-    while calls.load(Ordering::SeqCst) == 0 && Instant::now() < until {
-        std::thread::sleep(Duration::from_millis(1));
-    }
+    let (first, _first_peer) = UnixStream::pair().unwrap();
+    let (second, _second_peer) = UnixStream::pair().unwrap();
+    server.admit(first);
+    server.admit(second);
     let (gone, gone_peer) = UnixStream::pair().unwrap();
-    server.admit(gone);
+    server.identities.ask(stuck + 1, crate::clients::Waiting::Client(gone));
     drop(gone_peer);
     let (server_socket, client_socket) = UnixStream::pair().unwrap();
-    server.admit(server_socket);
+    server.identities.ask(stuck + 2, crate::clients::Waiting::Client(server_socket));
     let client = std::thread::spawn(move || {
         let connection = Connection::from_socket(client_socket).unwrap();
         registry_queue_init::<Client>(&connection).unwrap();
@@ -130,6 +131,46 @@ fn a_client_gone_or_stuck_while_identified_holds_up_nothing() {
     display.dispatch_clients(&mut server).unwrap();
     let mut clients = 0;
     server.dh.backend_handle().with_all_clients(|_| clients += 1);
-    assert_eq!(clients, 1, "the client gone ended, and the stuck one isn't taken in yet");
+    assert_eq!(clients, 1, "the client gone ended, and the stuck ones aren't taken in yet");
+    assert_eq!(calls.load(Ordering::SeqCst), 3, "one read of the stuck process for its two clients");
     assert_eq!(told(&server), Some(Resolution::Half));
+}
+
+/// What asks for a process already being read joins that read: one call of `identify`, every asker
+/// answered with its process; another process is read apart, not held up by it.
+#[test]
+fn asks_for_one_process_share_its_read() {
+    let (open, gate) = mpsc::channel::<()>();
+    let gate = Mutex::new(gate);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let called = calls.clone();
+    let mut identities = crate::clients::Identities::new(
+        move |pid| {
+            called.fetch_add(1, Ordering::SeqCst);
+            if pid == 1 {
+                let _ = gate.lock().unwrap().recv();
+            }
+            Process { pids: vec![pid], ..Process::default() }
+        },
+        Arc::new(|| {}),
+    );
+    for (pid, window) in [(1, 10), (1, 11), (2, 20)] {
+        identities.ask(pid, crate::clients::Waiting::X11Window(window));
+    }
+    let answered = |identities: &mut crate::clients::Identities, count| {
+        let until = Instant::now() + Duration::from_secs(5);
+        let mut answered = Vec::new();
+        while answered.len() < count && Instant::now() < until {
+            while let Some((crate::clients::Waiting::X11Window(window), process)) = identities.answered() {
+                answered.push((window, process.pids));
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        answered.sort_unstable();
+        answered
+    };
+    assert_eq!(answered(&mut identities, 1), [(20, vec![2])], "the other process, while the first is stuck");
+    open.send(()).unwrap();
+    assert_eq!(answered(&mut identities, 2), [(10, vec![1]), (11, vec![1])]);
+    assert_eq!(calls.load(Ordering::SeqCst), 2, "one read each");
 }
