@@ -164,8 +164,7 @@ impl Wm {
             sent: None,
             dirty: true,
             refresh: 0,
-            revision: None,
-            policy: None,
+            shown: None,
         });
         wire.request(
             ChangeWindowAttributesRequest { window: xid, value_list: Cow::Owned(ChangeWindowAttributesAux::new().event_mask(EventMask::PROPERTY_CHANGE)) },

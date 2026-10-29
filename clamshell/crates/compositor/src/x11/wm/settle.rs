@@ -172,14 +172,13 @@ impl Window {
     }
     pub(super) fn configure(&mut self, atoms: &Atoms, wire: &mut Transport, server: &Server) -> io::Result<()> {
         let Some(model) = server.core.state().session().window(self.id) else { return Ok(()) };
-        if self.revision != Some(server.core.state_revision()) {
-            self.policy = server.core.state().window_presentation(self.id);
-            self.revision = Some(server.core.state_revision());
-        }
+        let revision = server.core.state_revision();
+        let shown = match self.shown {
+            Some((at, shown)) if at == revision => shown,
+            _ => crate::windows::Shown::of(server.core.state(), self.id),
+        };
+        self.shown = Some((revision, shown));
         let area = server.area(server.core.state().session().below(self.id));
-        // (Its clarity as read for its window this revision, else from the state while it has none yet.)
-        let clarity = server.windows.iter().find(|w| w.id == self.id).map_or_else(|| server.core.state().window_clarity(self.id), |w| w.shown.clarity);
-        let shown = crate::windows::Shown { presentation: self.policy, clarity, ..Default::default() };
         let own = (i32::from(self.size.0), i32::from(self.size.1)).into();
         // A fullscreen game that switched mode is configured to it, so that Xwayland emulates it: the window
         // at the mode's size is scaled to the screen, and comes to us as a smaller buffer scaled by a viewport.

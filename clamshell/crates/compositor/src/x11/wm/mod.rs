@@ -84,8 +84,9 @@ struct Window {
     sent: Option<clamshell_state::session::windows::WindowFacts>,
     dirty: bool,
     refresh: u16,
-    revision: Option<u64>,
-    policy: Option<clamshell_state::presentation::WindowPresentation>,
+    /// How the state shows it, and the state's revision that was read at (see [`crate::windows::Shown`]):
+    /// read again only when the state changed, as a Wayland window's is.
+    shown: Option<(u64, crate::windows::Shown)>,
 }
 #[derive(Default)]
 pub(super) struct Wm {
