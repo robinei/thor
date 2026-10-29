@@ -71,11 +71,11 @@ impl Session {
             WindowCommand::Show(b) => {
                 self.keys = super::Keys::Top;
                 self.top = None;
-                self.builtin = *b;
+                self.app = *b;
                 if let Some(open) = self.open.get_mut(b.index()) {
                     *open = true;
                 }
-                self.remember_in_front(super::InFront::Builtin(*b));
+                self.remember_in_front(super::InFront::App(*b));
             }
             WindowCommand::Down(id) => {
                 // A dialog goes with its main window: the stack goes down (see [`Session::stack`]).

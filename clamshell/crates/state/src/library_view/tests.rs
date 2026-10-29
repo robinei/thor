@@ -287,7 +287,7 @@ fn a_group_started_from_elsewhere_opens_in_library_view() {
     let mut s = state();
     let fx = launch_now(&mut s, "tv:Cosmos/Season 1");
     assert!(fx.is_empty());
-    assert!(s.session().shown_builtin().is_some());
+    assert!(s.session().shown_app().is_some());
     assert_eq!(s.library_view().collection().map(|c| c.name.as_str()), Some("TV"));
     assert_eq!(s.library_view().group().map(|g| &*g.id), Some("tv:Cosmos/Season 1"));
     assert_eq!(s.library_view().selected().map(|g| &**g), Some("tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv"));

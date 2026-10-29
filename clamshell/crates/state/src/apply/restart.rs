@@ -174,7 +174,7 @@ mod tests {
     fn a_restarted_system_thread_is_sent_the_account_watch() {
         let mut s = started(crate::Init { first_start: true, ..init() });
         s.applied(Event::tick(1));
-        assert!(s.session().runs_builtin(crate::BuiltinApp::Setup), "Setup runs, and reads the account");
+        assert!(s.session().runs_app(crate::BuiltinApp::Setup), "Setup runs, and reads the account");
         let fx = s.applied(Event::Restarted(Thread::System));
         assert!(fx.contains(&Effect::Watch(Watch::Account, true)), "{fx:?}");
         assert!(!s.applied(Event::Restarted(Thread::Pad)).contains(&Effect::Watch(Watch::Account, true)), "only the readers' restart");

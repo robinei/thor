@@ -15,6 +15,8 @@
 //! - [`levels`]: volume and brightness, and the slider that sets them;
 //! - [`radios`]: Wi-Fi and Bluetooth;
 //! - [`settings`]: the settings table and panel, the environment variables, and the fan mode;
+//! - [`builtin_apps`]: what each of ClamShell's own apps on the main screen does (see
+//!   [`builtin_apps::BuiltinAppDefinition`]);
 //! - [`device_view`]: the Device view: stick, gyro and refresh calibration, and remote login's answer;
 //! - [`setup`]: Setup, the first start's steps, and the account;
 //! - [`idle`]: the screens dimmed and off, and sleep, with no input ([`Idle`]);
@@ -702,7 +704,7 @@ impl State {
             bottom_seen: !self.bottom.shows_windows(&self.session) && !bottom_off && !self.bottom_dark(),
             tab,
             account: self.setup.reads_account(),
-            apps: clamshell_library::BuiltinApp::ALL.map(|app| self.session.runs_builtin(app)),
+            apps: clamshell_library::BuiltinApp::ALL.map(|app| self.session.runs_app(app)),
             ui_up: self.ui_up,
             keymap: self.keymapping.version_of(settings.get(Setting::Keymap)),
             keymapping: &self.keymapping,

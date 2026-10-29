@@ -899,7 +899,7 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     // The user's programs aren't started while the account holds them: unread, unreadable or without a
     // password (see `crate::setup::wizard`). And Setup, while it shows, is in front.
     ensure!(!(s.setup().holds_programs() && effects.iter().any(|e| matches!(e, Effect::Launch { .. }))), "launched while the account holds programs");
-    ensure!(s.setup().wizard().is_none() || s.session().shown_builtin() == Some(clamshell_library::BuiltinApp::Setup), "Setup is needed but not in front");
+    ensure!(s.setup().wizard().is_none() || s.session().shown_app() == Some(clamshell_library::BuiltinApp::Setup), "Setup is needed but not in front");
     // 4. Live window ids are unique.
     for (i, window) in s.session().windows().iter().enumerate() {
         ensure!(!s.session().windows().iter().skip(i + 1).any(|other| other.id == window.id), "duplicate window id {}", window.id);
@@ -982,7 +982,7 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         ensure!(sent.keymap.as_ref() == Some(&in_force), "2: keymap sent {:?}, in force {}", sent.keymap.as_ref().map(|k| k.id), in_force.id);
         let by_app = clamshell_library::BuiltinApp::ALL
             .into_iter()
-            .any(|app| s.session().runs_builtin(app) && crate::builtin_apps::definition(app).watches.contains(&crate::Watch::Account));
+            .any(|app| s.session().runs_app(app) && crate::builtin_apps::definition(app).watches.contains(&crate::Watch::Account));
         let reads = s.setup().reads_account() || by_app;
         ensure!(sent.account == reads, "2: account watched {}, read {reads}", sent.account);
     }
@@ -1132,7 +1132,7 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         ensure!(items.iter().any(|i| i.id == r.id), "5: {} runs off the dock", r.id);
     }
     let on_dock = |b: &clamshell_library::BuiltinApp| crate::builtin_apps::definition(*b).dock != crate::builtin_apps::DockPlace::Never;
-    for b in clamshell_library::BuiltinApp::ALL.into_iter().filter(|b| session.runs_builtin(*b) && on_dock(b)) {
+    for b in clamshell_library::BuiltinApp::ALL.into_iter().filter(|b| session.runs_app(*b) && on_dock(b)) {
         ensure!(items.iter().any(|i| &*i.id == b.id()), "5: built-in {b:?} runs off the dock");
     }
 

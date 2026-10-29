@@ -84,7 +84,7 @@ impl State {
                     out.log(crate::LogLevel::Info, format!("portal: request {id}: not started in {}: {e}", folder.display()));
                 }
                 self.portal.back = front;
-                self.show_builtin(crate::builtin_apps::home());
+                self.show_app(crate::builtin_apps::home());
                 break;
             }
             out.log(crate::LogLevel::Warn, format!("portal: request {id} answered with nothing: the library has no Files tab to pick in"));
@@ -142,7 +142,7 @@ impl State {
     fn portal_back(&mut self) {
         let Some(group) = self.portal.back.take() else { return };
         let shown = self.session.windows().iter().any(|w| w.group.as_ref() == Some(&group) && !self.session.below(w.id));
-        if shown && self.session.shown_builtin() == Some(crate::builtin_apps::home()) {
+        if shown && self.session.shown_app() == Some(crate::builtin_apps::home()) {
             self.session.focus(&group);
         }
     }

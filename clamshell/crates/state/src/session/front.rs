@@ -38,12 +38,12 @@ impl Session {
     pub(crate) fn go_back(&mut self) {
         let shown = |group: &Group| self.windows.iter().any(|w| w.group.as_ref() == Some(group) && !self.below(w.id));
         let back = self.recent.iter().find(|was| match was {
-            InFront::Builtin(_) => true,
+            InFront::App(_) => true,
             InFront::Group(group) => shown(group),
         });
         match back.cloned() {
             Some(InFront::Group(group)) => self.focus(&group),
-            Some(InFront::Builtin(b)) => self.command(WindowCommand::Show(b)),
+            Some(InFront::App(b)) => self.command(WindowCommand::Show(b)),
             None => self.command(WindowCommand::Show(crate::builtin_apps::home())),
         }
     }
@@ -61,7 +61,7 @@ impl Session {
     pub(crate) fn home(&mut self) {
         self.cancel_front_launch();
         let home = crate::builtin_apps::home();
-        if self.shown_builtin() != Some(home) {
+        if self.shown_app() != Some(home) {
             self.command(WindowCommand::Show(home));
         }
     }
@@ -98,7 +98,7 @@ mod tests {
         assert!(s.applied(Event::Home).is_empty());
         s.observed(vec![win(7, "app")]);
         assert_eq!(s.applied(Event::Home), vec![Effect::PadRoute(crate::PadRoute::Ui)]);
-        assert!(s.session().shown_builtin().is_some());
+        assert!(s.session().shown_app().is_some());
         assert!(s.applied(Event::Home).is_empty());
     }
 
@@ -114,7 +114,7 @@ mod tests {
         s.observed(vec![win_of(2, "heroic", &launcher), win_of(3, "zelda", &game)]);
         s.applied(WindowEvent::Activate(3).into());
         s.observed(vec![win_of(2, "heroic", &launcher)]);
-        assert!(s.session().shown_builtin().is_some(), "where it was launched from");
+        assert!(s.session().shown_app().is_some(), "where it was launched from");
         // Started from the launcher, it goes back there.
         s.applied(WindowEvent::Activate(2).into());
         s.observed(vec![win_of(2, "heroic", &launcher), win_of(3, "zelda", &game)]);
@@ -137,7 +137,7 @@ mod tests {
         assert_eq!(s.session().top_window().map(|w| w.id), Some(2));
         // When the terminal quits, the Library comes back.
         s.observed(vec![]);
-        assert!(s.session().shown_builtin().is_some());
+        assert!(s.session().shown_app().is_some());
         // When a program's window closes, its other window comes in front.
         s.observed(vec![win_of(3, "retroarch", &zelda), win_of(4, "retroarch", &zelda)]);
         s.applied(WindowEvent::Activate(3).into());
@@ -155,14 +155,14 @@ mod tests {
         // Its window closes and the Library shows. Another window comes in its group, not in front, and the
         // group is shown again.
         s.observed(vec![]);
-        assert!(s.session().shown_builtin().is_some());
+        assert!(s.session().shown_app().is_some());
         s.observed(vec![win_of(3, "waydroid.org.fdroid.fdroid", &app)]);
         assert_eq!(s.session().top_window().map(|w| w.id), Some(3));
         // Later than that, it isn't.
         s.observed(vec![]);
         s.applied(Event::tick(103));
         s.observed(vec![win_of(4, "waydroid.org.fdroid.fdroid", &app)]);
-        assert!(s.session().shown_builtin().is_some(), "too late: it stays behind");
+        assert!(s.session().shown_app().is_some(), "too late: it stays behind");
     }
 
     /// A program still running whose window in front closed, as Steam's update dialog does before its
@@ -176,7 +176,7 @@ mod tests {
         let window = |id| win_of(id, "zelda3", &zelda);
         s.observed(vec![window(3)]);
         s.observed(vec![]);
-        assert!(s.session().shown_builtin().is_some());
+        assert!(s.session().shown_app().is_some());
         s.applied(Event::tick(1010));
         assert!(!opening_focus(&s, &foot()), "another program's window opens behind");
         s.observed(vec![window(4)]);
@@ -185,7 +185,7 @@ mod tests {
         s.observed(vec![]);
         s.applied(Event::tick(1011 + super::REWAIT_SECS));
         s.observed(vec![window(5)]);
-        assert!(s.session().shown_builtin().is_some(), "too late: it stays behind");
+        assert!(s.session().shown_app().is_some(), "too late: it stays behind");
     }
 
     #[test]
@@ -196,7 +196,7 @@ mod tests {
         // With its window moved to the bottom screen and the Library in front, there is nothing to go back to on
         // the main screen.
         s.applied(Event::HardwareKey(crate::HardwareKey::WindowDown));
-        assert!(s.session().shown_builtin().is_some());
+        assert!(s.session().shown_app().is_some());
         assert_eq!(s.applied(Event::Home), vec![]);
     }
 
@@ -206,6 +206,6 @@ mod tests {
         s.observed(vec![foot()]);
         s.applied(Event::Home);
         assert!(s.applied(Event::Home).is_empty());
-        assert!(s.session().shown_builtin().is_some());
+        assert!(s.session().shown_app().is_some());
     }
 }

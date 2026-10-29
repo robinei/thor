@@ -73,7 +73,7 @@ impl State {
 
     /// Shows built-in `b` on the main screen, with the pad's focus on it: the Device view's first row, or the
     /// Library's selection.
-    pub(crate) fn show_builtin(&mut self, b: BuiltinApp) {
+    pub(crate) fn show_app(&mut self, b: BuiltinApp) {
         self.session.cancel_front_launch();
         self.session.command(WindowCommand::Show(b));
     }
@@ -84,14 +84,14 @@ impl State {
         let needed = crate::builtin_apps::needed(self);
         for app in BuiltinApp::ALL {
             let shows_by_need = crate::builtin_apps::definition(app).needed.is_some();
-            if shows_by_need && needed != Some(app) && self.session.runs_builtin(app) {
+            if shows_by_need && needed != Some(app) && self.session.runs_app(app) {
                 self.close_app(app);
             }
         }
         if let Some(app) = needed
-            && self.session.shown_builtin() != Some(app)
+            && self.session.shown_app() != Some(app)
         {
-            self.show_builtin(app);
+            self.show_app(app);
         }
     }
 
@@ -120,8 +120,8 @@ impl State {
         let launched = self.session.launch(request, self.library_view.library(), self.prefs.settings(), &self.clock, out);
         match launched {
             Launched::Yes => out.effects.push(Effect::Save(Save::Resume(self.resume()))),
-            Launched::Instead(Instead::Builtin(b)) => self.show_builtin(b),
-            Launched::Instead(Instead::Group) if self.library_view.reveal(&entry) => self.show_builtin(BuiltinApp::Library),
+            Launched::Instead(Instead::App(b)) => self.show_app(b),
+            Launched::Instead(Instead::Group) if self.library_view.reveal(&entry) => self.show_app(BuiltinApp::Library),
             Launched::Instead(Instead::Show) => self.show(&entry, out),
             Launched::Instead(Instead::Group) | Launched::No => {}
         }

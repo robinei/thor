@@ -33,7 +33,7 @@ fn a_window_opens_in_front_as_its_opening_focus_says() {
     let one = launch_of("one");
     // The first window of a launch with no launch waiting for it opens behind.
     assert!(s.applied(WindowEvent::Opened(win_of(7, "one", &one)).into()).is_empty());
-    assert!(s.session().shown_builtin().is_some());
+    assert!(s.session().shown_app().is_some());
     s.applied(WindowEvent::Activate(7).into());
     // A later window of the program in front comes in front, with the keyboard.
     s.applied(WindowEvent::Opened(win_of(8, "one", &one)).into());
@@ -111,7 +111,7 @@ fn lifecycle_close_falls_back_once_and_retains_the_other_windows() {
     s.applied(WindowEvent::Activate(7).into());
     assert_eq!(s.applied(WindowEvent::Closed(7).into()), vec![Effect::PadRoute(crate::PadRoute::Ui)]);
     assert_eq!(facts(&s), std::slice::from_ref(&other));
-    assert!(s.session().shown_builtin().is_some());
+    assert!(s.session().shown_app().is_some());
     assert!(s.applied(WindowEvent::Closed(7).into()).is_empty());
     assert_eq!(facts(&s), &[other]);
 }
@@ -183,7 +183,7 @@ fn lifecycle_open_and_close_follow_launch_ownership() {
     assert!(s.session().front_launch().is_none());
     assert_eq!(s.applied(WindowEvent::Closed(7).into()), vec![Effect::PadRoute(crate::PadRoute::Ui)]);
     assert!(s.session().windows_of("zelda-lttp").next().is_none());
-    assert!(s.session().shown_builtin().is_some());
+    assert!(s.session().shown_app().is_some());
 }
 
 #[test]
@@ -229,7 +229,7 @@ fn lifecycle_title_applies_a_bottom_rule_once() {
     let effects = s.applied(event());
     assert_eq!(effects, vec![Effect::Watch(crate::Watch::Metrics, false), Effect::PadRoute(crate::PadRoute::Ui)]);
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
-    assert!(s.session().shown_builtin().is_some());
+    assert!(s.session().shown_app().is_some());
     assert_eq!(s.session().windows().first().map(|w| w.title.as_str()), Some("second"));
     assert!(s.bottom().shows_windows(s.session()));
     assert!(s.applied(event()).is_empty());
@@ -429,12 +429,12 @@ fn touching_a_home_arrow_consumes_the_release_but_direct_home_still_shows_librar
     assert!(s.applied(Event::HomeTap).is_empty());
     assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
     s.applied(Event::Home);
-    assert!(s.session().shown_builtin().is_some());
+    assert!(s.session().shown_app().is_some());
     s.applied(WindowEvent::Activate(8).into());
     s.applied(Event::HomeHeld(true));
     s.applied(Event::HomeHeld(false));
     s.applied(Event::HomeTap);
-    assert!(s.session().shown_builtin().is_some());
+    assert!(s.session().shown_app().is_some());
 }
 
 #[test]
@@ -564,7 +564,7 @@ fn moving_the_top_window_does_not_require_keyboard_focus_there() {
     s.applied(Event::HardwareKey(HardwareKey::WindowDown));
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
     assert_eq!(s.session().place(8), Some(WindowPlace::Top(Some(&group_of(&launch_of("bottom"))))));
-    assert!(s.session().shown_builtin().is_some());
+    assert!(s.session().shown_app().is_some());
 }
 
 /// A dialog that closes brings back its parent, not the window its group shows last: the parent is

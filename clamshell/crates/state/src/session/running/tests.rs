@@ -364,17 +364,17 @@ fn a_launchers_dialog_comes_in_front_while_its_game_starts_and_goes_back_after()
     launch(&mut s, "ff6");
     let main2 = win_of(6, "steam", &steam);
     s.observed(vec![main.clone(), main2.clone()]);
-    assert!(s.session().shown_builtin().is_some(), "Steam's main windows stay behind");
+    assert!(s.session().shown_app().is_some(), "Steam's main windows stay behind");
     let dialog = WindowFacts { role: crate::presentation::WindowRole::Dialog, ..win_of(7, "steam", &steam) };
     s.observed(vec![main.clone(), main2.clone(), dialog.clone()]);
     assert_eq!(s.session().top_window().map(|w| w.id), Some(7), "its dialog in front");
     s.observed(vec![main.clone(), main2.clone()]);
-    assert!(s.session().shown_builtin().is_some(), "answered: back to the Library, not Steam");
+    assert!(s.session().shown_app().is_some(), "answered: back to the Library, not Steam");
     s.observed(vec![main.clone(), main2.clone(), dialog.clone()]);
     s.observed(vec![main.clone(), main2.clone(), dialog, win(8, "steam_app_620")]);
     assert_eq!(s.session().top_window().map(|w| w.id), Some(8), "the game in front");
     s.observed(vec![main.clone(), main2.clone()]);
-    assert!(s.session().shown_builtin().is_some(), "the game quit: the Library, not Steam");
+    assert!(s.session().shown_app().is_some(), "the game quit: the Library, not Steam");
 }
 
 /// A child window Steam had open before the launch (its friends list) doesn't keep Steam in front once
@@ -394,7 +394,7 @@ fn a_launchers_dialog_answered_goes_back_though_the_launcher_has_other_child_win
     s.observed(vec![main.clone(), friends.clone(), dialog]);
     assert_eq!(s.session().top_window().map(|w| w.id), Some(7), "its dialog in front");
     s.observed(vec![main, friends]);
-    assert!(s.session().shown_builtin().is_some(), "answered: back to the Library, not Steam's friends list");
+    assert!(s.session().shown_app().is_some(), "answered: back to the Library, not Steam's friends list");
 }
 
 /// Another tool than the Device view is asked of the system; an id the library doesn't have plays
@@ -681,7 +681,7 @@ fn a_heroic_game_is_launched_by_heroic_and_runs_as_its_own_entry() {
     assert!(!s.session().starting("desktop:Pattern Game"), "started");
     s.applied(Event::tick(1300));
     s.observed(vec![]);
-    assert!(s.session().shown_builtin().is_some(), "back where it was launched from");
+    assert!(s.session().shown_app().is_some(), "back where it was launched from");
     let fx = s.applied(Event::tick(1300 + REOPEN_SECS + 1));
     assert!(fx.contains(&Effect::RecordPlay { entry: "desktop:Pattern Game".into(), start: 1000, duration: 300 + REOPEN_SECS + 1 }), "{fx:?}");
     assert!(s.session().running("desktop:com.heroicgameslauncher.hgl").is_some(), "Heroic runs on");
@@ -713,7 +713,7 @@ fn a_game_handed_over_to_its_running_launcher_is_known_by_the_launchers_mark() {
     assert_eq!(s.session().window(7).and_then(|w| w.group.clone()), Some(Group::entry(&key("desktop:net.lutris.cave-1"))), "the game's, not Lutris's");
     assert_eq!(s.session().top_window().map(|w| w.id), Some(7), "in front");
     s.observed(vec![win_of(5, "net.lutris.Lutris", &lutris)]);
-    assert!(s.session().shown_builtin().is_some(), "back to the Library, where it was launched from");
+    assert!(s.session().shown_app().is_some(), "back to the Library, where it was launched from");
 }
 
 /// A game whose launcher ran it in the launch's own unit, as Lutris does when it isn't running, ends with
@@ -804,12 +804,12 @@ fn show_of_an_entry_whose_windows_are_all_below_shows_them_there() {
     show(&mut s, "zelda-lttp");
     assert!(s.bottom().shows_windows(s.session()));
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(3));
-    assert!(s.session().shown_builtin().is_some());
+    assert!(s.session().shown_app().is_some());
     s.applied(Event::HardwareKey(crate::HardwareKey::BottomView));
     assert!(!s.bottom().shows_windows(s.session()));
     tap(&mut s, Id::Dock(DockId::Entry(1)));
     assert!(s.bottom().shows_windows(s.session()), "the dock tile's tap: the same");
-    assert!(s.session().shown_builtin().is_some());
+    assert!(s.session().shown_app().is_some());
     // The bottom screen turned off by hand comes on again for them.
     s.applied(Event::HardwareKey(crate::HardwareKey::BottomPower));
     assert!(s.bottom_off());

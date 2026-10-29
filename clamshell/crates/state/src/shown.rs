@@ -27,7 +27,7 @@ impl State {
         if let Some(w) = self.session.top_window() {
             return Top::Window { program: self.session.running_of(w).is_some() };
         }
-        let app = self.session.shown_builtin().unwrap_or_else(crate::builtin_apps::home);
+        let app = self.session.shown_app().unwrap_or_else(crate::builtin_apps::home);
         Top::App { app, view: (crate::builtin_apps::definition(app).view)(self) }
     }
 

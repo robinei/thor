@@ -30,7 +30,7 @@ use windows::{Group, Window, WindowFacts, WindowPlace};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum InFront {
     /// One of ClamShell's own screens, with no window in front.
-    Builtin(BuiltinApp),
+    App(BuiltinApp),
     Group(Group),
 }
 
@@ -121,8 +121,8 @@ pub struct Session {
     /// What was in front, most recent first: groups, and the built-ins once something put them in front
     /// ([`WindowCommand::Show`]), so that a closed window goes back to where it was opened from.
     recent: Vec<InFront>,
-    /// The built-in shown while no window is in front (see [`Session::shown_builtin`]).
-    builtin: BuiltinApp,
+    /// The built-in shown while no window is in front (see [`Session::shown_app`]).
+    app: BuiltinApp,
     /// The apps that run while open (see [`crate::builtin_apps::Runs`]) that are: shown, or on the dock
     /// behind what is in front, until closed. By [`BuiltinApp::index`].
     open: [bool; BuiltinApp::ALL.len()],
@@ -160,7 +160,7 @@ pub struct Session {
     device_session: bool,
 }
 
-/// Whether built-in `b` runs, with `open` the apps open (see [`Session::runs_builtin`]).
+/// Whether built-in `b` runs, with `open` the apps open (see [`Session::runs_app`]).
 fn runs(open: &[bool; BuiltinApp::ALL.len()], b: BuiltinApp) -> bool {
     crate::builtin_apps::definition(b).runs == crate::builtin_apps::Runs::Always || open.get(b.index()).copied().unwrap_or(false)
 }
@@ -468,18 +468,18 @@ impl Session {
     }
 
     /// The built-in shown on the main screen, if no window is in front.
-    pub fn shown_builtin(&self) -> Option<BuiltinApp> {
-        self.top_window().is_none().then_some(self.builtin)
+    pub fn shown_app(&self) -> Option<BuiltinApp> {
+        self.top_window().is_none().then_some(self.app)
     }
 
     /// Whether built-in `b` runs: always, or while it is open, as its definition says.
-    pub fn runs_builtin(&self, b: BuiltinApp) -> bool {
+    pub fn runs_app(&self, b: BuiltinApp) -> bool {
         runs(&self.open, b)
     }
 
     /// Whether entry `id` runs: a launch or a program found, or a built-in.
     pub fn runs(&self, id: &str) -> bool {
-        self.running(id).is_some() || BuiltinApp::of(id).is_some_and(|b| self.runs_builtin(b))
+        self.running(id).is_some() || BuiltinApp::of(id).is_some_and(|b| self.runs_app(b))
     }
 
     /// Closes `app`, which runs while open. If it showed, the home shows in its place.
@@ -487,9 +487,9 @@ impl Session {
         if let Some(open) = self.open.get_mut(app.index()) {
             *open = false;
         }
-        self.recent.retain(|was| *was != InFront::Builtin(app));
-        if self.builtin == app {
-            self.builtin = crate::builtin_apps::home();
+        self.recent.retain(|was| *was != InFront::App(app));
+        if self.app == app {
+            self.app = crate::builtin_apps::home();
         }
     }
 
@@ -694,7 +694,7 @@ impl Session {
         let present = |group: &Group| self.windows.iter().any(|w| w.group.as_ref() == Some(group));
         let open = self.open;
         self.recent.retain(|was| match was {
-            InFront::Builtin(b) => runs(&open, *b),
+            InFront::App(b) => runs(&open, *b),
             InFront::Group(group) => present(group),
         });
         if let Some(group) = self.top_window().and_then(|w| w.group.clone()).filter(|g| !self.promoted(g)) {

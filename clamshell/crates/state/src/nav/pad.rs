@@ -82,7 +82,7 @@ pub enum PadMouse {
 /// What claims the pad besides the second screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Claimant {
-    LibraryView,
+    App,
     Game,
     /// Typing into the app in front, while the keyboard tab is open.
     Typing,
@@ -117,7 +117,7 @@ impl Pad {
     /// Whether the pad, while on ClamShell's screens, may go to the Library's screen or only to the second
     /// screen. It may go to the Library's when the Library is in front and nothing else has the pad.
     pub fn on_top(&self) -> bool {
-        self.last_claimant == Some(Claimant::LibraryView)
+        self.last_claimant == Some(Claimant::App)
     }
 
     fn claimant(&self, top: Top, tab: Tab) -> Option<Claimant> {
@@ -125,7 +125,7 @@ impl Pad {
             return Some(Claimant::Mouse);
         }
         match (top, tab) {
-            (Top::App { .. }, _) => Some(Claimant::LibraryView),
+            (Top::App { .. }, _) => Some(Claimant::App),
             (Top::Window { .. }, Tab::Keyboard) => Some(Claimant::Typing),
             (Top::Window { .. }, _) => Some(Claimant::Game),
         }
@@ -135,7 +135,7 @@ impl Pad {
     /// nothing claims it, it goes to the second screen.
     fn wanted_route(&self) -> PadRoute {
         match self.last_claimant {
-            None | Some(Claimant::LibraryView) => PadRoute::Ui,
+            None | Some(Claimant::App) => PadRoute::Ui,
             Some(_) if self.moved_to_ui => PadRoute::Ui,
             Some(Claimant::Game) => PadRoute::Game,
             Some(Claimant::Typing) => PadRoute::Keys,
@@ -149,7 +149,7 @@ impl Pad {
         let claimant = self.claimant(top, tab);
         if claimant != self.last_claimant {
             // The Library has both screens, so a later claimant gets the pad again.
-            self.moved_to_ui &= claimant != Some(Claimant::LibraryView);
+            self.moved_to_ui &= claimant != Some(Claimant::App);
             self.last_claimant = claimant;
         }
         let route = match self.wanted_route() {

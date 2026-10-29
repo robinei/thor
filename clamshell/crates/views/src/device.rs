@@ -34,7 +34,7 @@ const STICK: f32 = 0.36;
 const DOT: f32 = 0.07;
 
 /// The view, over all of `screen`.
-pub(super) fn draw(f: &mut Frame, screen: Rect) {
+pub(super) fn app(f: &mut Frame, screen: Rect) {
     let s = f.s;
     let device = s.device_view();
     let (pad, size) = (f.pad(), f.text(Text::Body));

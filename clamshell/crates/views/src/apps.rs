@@ -12,7 +12,7 @@ use clamshell_ui::toolkit::Frame;
 pub(super) fn view(app: BuiltinApp) -> fn(&mut Frame, Rect) {
     match app {
         BuiltinApp::Library => library_view::app,
-        BuiltinApp::Device => device::draw,
-        BuiltinApp::Setup => setup::draw,
+        BuiltinApp::Device => device::app,
+        BuiltinApp::Setup => setup::app,
     }
 }

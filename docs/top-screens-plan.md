@@ -322,7 +322,7 @@ touches the session or the outside.
   `InFront::Shelf` and `TopView` gone.
   Done as: `Launch::Builtin`, the entries in Tools (the loader puts them there until step 4's `builtin`
   source); the session keeps which built-in shows with no window in front and whether Device runs, so the
-  front, its history and Home go by built-ins (`InFront::Builtin`, `Front::Builtin`,
+  front, its history and Home go by built-ins (`InFront::App`, `Front::Builtin`,
   `WindowCommand::Show`). `TopView` stays, worked out by State. The Library's tile is first on the dock
   whenever it isn't pinned (it always runs), so no starter pin is needed for position 0; once pinned it
   stays pinned, and can be moved. The code wasn't regrouped into `builtin::` modules.

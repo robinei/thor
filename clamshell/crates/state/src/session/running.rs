@@ -581,7 +581,7 @@ pub(crate) enum Launched {
 /// Library, or show the entry, which runs already.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Instead {
-    Builtin(clamshell_library::BuiltinApp),
+    App(clamshell_library::BuiltinApp),
     Group,
     Show,
 }
@@ -672,7 +672,7 @@ impl Session {
                 return Launched::No;
             }
             // ClamShell's own screens, on the main screen.
-            Some(Launch::Builtin(b)) => return Launched::Instead(Instead::Builtin(*b)),
+            Some(Launch::Builtin(b)) => return Launched::Instead(Instead::App(*b)),
             _ => {}
         }
         if command.is_none() && library.entry(&entry).is_some_and(Entry::is_group) {

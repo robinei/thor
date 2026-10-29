@@ -17,7 +17,7 @@ const STEPS_H: f32 = 0.07;
 const PANEL_W: f32 = 0.6;
 const BUTTONS_H: f32 = 0.09;
 
-pub(super) fn draw(f: &mut Frame, screen: Rect) {
+pub(super) fn app(f: &mut Frame, screen: Rect) {
     let Some(step) = f.s.setup().wizard() else {
         return;
     };
