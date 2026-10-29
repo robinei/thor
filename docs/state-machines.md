@@ -171,7 +171,7 @@ the device.
 | Home, the Library in front | stays; close Device view first if open | same; device `home_goes_to_the_library_from_the_device_view` |
 | WindowPrevious / WindowNext | wrap within the selected top program's stacks, skipping the bottom slot; absent/single/the Library do nothing | windows `top_window_switching_wraps_within_the_program_and_skips_the_bottom_slot`, `top_window_switching_steps_over_whole_stacks` |
 | dock tap on the entry in front with two or more top-level windows on the top screen | Overview open, the window in front chosen (a dialog's root); the window in front stays; again closes it | overview `a_tap_on_the_entry_in_front_shows_its_windows_and_the_pad_picks_one`, `one_window_and_its_dialog_open_no_overview` |
-| Overview: Step(dir) / Choose or Pick(id) / Close | the choice moves within the grid; the window comes in front and it closes; it closes | overview `the_entry_again_or_b_goes_back_and_a_tapped_window_comes_in_front` |
+| Overview: Step(dir) / Choose or Pick(id) (a window pressed, as `PointerEvent::Act`) / Close | the choice moves within the grid; the window comes in front and it closes; it closes | overview `the_entry_again_or_b_goes_back_and_a_tapped_window_comes_in_front`, `a_window_of_the_overview_pressed_comes_in_front` |
 | settle: Overview open, its group not in front or one window left | closed; a chosen window gone leaves the first chosen | overview `it_closes_with_its_group_out_of_front_or_one_window_left` |
 | HomeHeld(bool) | the button's state, by which the overlay draws the window arrows (with another top window); a new hold starts unused, so the HomeTap after a Home-held arrow is taken by it; repeated values do nothing | windows `pad_activity_returns_keyboard_focus_to_top_without_moving_windows` |
 | PadActive | keyboard focus returns to selected top content; placement stays | same |
@@ -369,7 +369,7 @@ routing, tab switching and bottom-slot swaps.
 Home + right stick press switches to the windows' tab and back; Home + Start controls bottom power; Home + R1
 takes a screenshot; Home + B closes or quits. Select and the D-pad don't move windows or switch the bottom
 view. Tests: `home_chords_use_the_right_stick_and_not_select_or_the_dpad`, and the B and R1 chord tests. The UI's overlay over the top screen's window draws the window arrows while Home is held
-(`Id::WindowArrow`); a press on one sends the same `HardwareKey` event as the pad's window keys, as it comes down.
+(`Id::WindowArrow`); a press on one sends `PointerEvent::Act` as it comes down, which the state turns into the same `HardwareKey` event as the pad's window keys (`a_window_arrow_pressed_steps_as_the_window_key`).
 
 ## Keymaps (keymap/)
 
@@ -628,9 +628,10 @@ bottom screen on (`Bottom::light`: off by hand or by itself, or dark for a game)
 `a_critical_notification_wakes_the_screens_and_turns_the_bottom_screen_on`,
 `a_critical_notification_lights_a_screen_dark_for_a_game`). A tap on one is input and a use of the
 bottom screen. Taps reach the state from the bottom screen's overlay as the press comes down
-(`Core::press_overlay`), not through the pointer's presses; the overlay draws them, and so offers them to
-touch, only while the bottom screen is lit (ui
-`the_newest_three_show_below_the_bar_each_with_its_close_mark`).
+(`Core::press_overlay`), as `PointerEvent::Act`, which the state turns into `Tapped` or `Dismissed`
+without moving the focus (`a_notification_pressed_is_tapped_and_its_close_mark_dismisses_it`), not
+through the pointer's presses; the overlay draws them, and so offers them to touch, only while the bottom
+screen is lit (ui `the_newest_three_show_below_the_bar_each_with_its_close_mark`).
 
 What the bus thread does (the name, `Notify` answered with the id, `replaces_id`, the signals) is checked
 by its parsing tests, a live test by hand (`a_notify_call_is_answered_and_sent_on`), and the nested

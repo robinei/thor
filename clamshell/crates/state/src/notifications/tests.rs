@@ -99,6 +99,20 @@ fn the_screens_going_off_by_idle_hold_its_time_too() {
     assert_eq!(held(&s), [bus(1)], "the one that stays until dismissed is kept");
 }
 
+/// A press on a notification or its close mark, through the overlay, taps or dismisses it, and moves no
+/// focus.
+#[test]
+fn a_notification_pressed_is_tapped_and_its_close_mark_dismisses_it() {
+    let mut s = ticking();
+    notify(&mut s, Notification { action: Some("default".into()), ..note(1, Urgency::Normal, 0) });
+    notify(&mut s, note(2, Urgency::Normal, 0));
+    let focus = s.pointer().focus().cloned();
+    let act = |id, close| crate::PointerEvent::Act(crate::Id::Notification { id, close }).into();
+    assert_eq!(s.applied(act(bus(1), false)), [Effect::ActionInvoked { id: 1, key: "default".into() }, closed(1, CloseReason::Dismissed)]);
+    assert_eq!(s.applied(act(bus(2), true)), [closed(2, CloseReason::Dismissed)]);
+    assert_eq!(s.pointer().focus().cloned(), focus, "no focus moved");
+}
+
 #[test]
 fn a_program_closes_its_own_and_an_unknown_id_closes_nothing() {
     let mut s = ticking();

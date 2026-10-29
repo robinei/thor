@@ -354,6 +354,21 @@ fn top_window_switching_steps_over_whole_stacks() {
     assert!(!s.session().has_other_top_window(), "a window and its dialog: nothing to step to");
 }
 
+/// A press on a window arrow of the overlay acts as the pad's window key, and moves no focus.
+#[test]
+fn a_window_arrow_pressed_steps_as_the_window_key() {
+    let mut s = state();
+    let one = launch_of("one");
+    s.observed(vec![win_of(7, "one", &one), win_of(8, "one", &one)]);
+    s.applied(WindowEvent::Activate(7).into());
+    let focus = s.pointer().focus().cloned();
+    s.applied(crate::PointerEvent::Act(crate::Id::WindowArrow { next: true }).into());
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(8));
+    s.applied(crate::PointerEvent::Act(crate::Id::WindowArrow { next: false }).into());
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
+    assert_eq!(s.pointer().focus().cloned(), focus, "no focus moved");
+}
+
 /// A dialog of the window in front takes the input over it at once, though another program's launch
 /// waits to come in front: the screen shows it over its parent either way.
 #[test]

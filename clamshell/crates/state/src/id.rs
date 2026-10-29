@@ -68,18 +68,19 @@ pub enum Id {
     /// The battery tab's list of what is using the machine (see [`crate::status::battery`]).
     Battery(BatteryId),
     /// An arrow at an edge of the main screen while Home is held: the previous window of the program shown
-    /// there, or with `next` its next. The UI acts on it as it is pressed, with the same event as the pad's
-    /// (`HardwareKey::WindowPrevious`, `HardwareKey::WindowNext`), so it is never tapped.
+    /// there, or with `next` its next. A press acts on it as it comes down ([`crate::PointerEvent::Act`]),
+    /// as the pad's window keys do (`HardwareKey::WindowPrevious`, `HardwareKey::WindowNext`), so it is
+    /// never tapped.
     WindowArrow {
         next: bool,
     },
-    /// A window in the overview of the program in front's windows (see [`crate::session::overview`]). The
-    /// UI acts on it as it is pressed, with [`crate::session::overview::OverviewEvent::Pick`], so it is
-    /// never tapped.
+    /// A window in the overview of the program in front's windows (see [`crate::session::overview`]). A
+    /// press acts on it as it comes down ([`crate::PointerEvent::Act`]), with
+    /// [`crate::session::overview::OverviewEvent::Pick`], so it is never tapped.
     OverviewWindow(i64),
-    /// A notification over the second screen, or with `close` its close mark. The UI acts on it as it is
-    /// pressed, with [`crate::NotificationEvent::Tapped`] or [`crate::NotificationEvent::Dismissed`], so
-    /// it is never tapped.
+    /// A notification over the second screen, or with `close` its close mark. A press acts on it as it
+    /// comes down ([`crate::PointerEvent::Act`]), with [`crate::NotificationEvent::Tapped`] or
+    /// [`crate::NotificationEvent::Dismissed`], so it is never tapped.
     Notification {
         id: crate::notifications::NotificationId,
         close: bool,

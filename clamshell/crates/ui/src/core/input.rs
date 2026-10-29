@@ -1,9 +1,7 @@
 //! Routes input, by the screen it is on, to the pure machines: presses, the wheel, pointer motion and
 //! releases, the pad and keys.
 
-use clamshell_state::HardwareKey;
-use clamshell_state::session::overview::OverviewEvent;
-use clamshell_state::{Event, Id, ListEvent, NotificationEvent, PadInput, State};
+use clamshell_state::{Event, ListEvent, PadInput, PointerEvent, State};
 use xkeysym::Keysym;
 
 use crate::Screen;
@@ -16,7 +14,7 @@ use super::Core;
 impl Core {
     /// A finger or button comes down at `position` on `screen`. It presses the topmost target there,
     /// which is the last one drawn, so a button on a tile (such as the dock's "+") wins over the tile.
-    /// With none there, in the screen's content, it presses nothing ([`Id::Blank`]), which may point.
+    /// With none there, in the screen's content, it presses nothing ([`clamshell_state::Id::Blank`]), which may point.
     pub fn press(&mut self, source: Source, screen: Screen, (x, y): (f64, f64), time: u32) {
         let (x, y) = (x as f32, y as f32);
         let found = self.screens[screen].frames.retained.targets.iter().rev().find(|t| t.rect.contains(x, y)).cloned();
@@ -41,21 +39,11 @@ impl Core {
 
     /// A finger or button comes down at `position` on `screen`: it presses the target of the screen's
     /// overlay there, if there is one, and says whether there was. Overlay targets act as they are
-    /// pressed: the window arrows as the pad's window keys do, a window of the overview comes in front, a
-    /// notification is tapped, and its close mark dismisses it.
+    /// pressed ([`PointerEvent::Act`]).
     pub fn press_overlay(&mut self, screen: Screen, (x, y): (f64, f64)) -> bool {
         let found = self.overlays[screen].frames.retained.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).map(|t| t.id.clone());
         let Some(id) = found else { return false };
-        match id {
-            Id::WindowArrow { next } => {
-                let key = if next { HardwareKey::WindowNext } else { HardwareKey::WindowPrevious };
-                self.handle(Event::HardwareKey(key));
-            }
-            Id::OverviewWindow(window) => self.handle(Event::Overview(OverviewEvent::Pick(window))),
-            Id::Notification { id, close: false } => self.handle(NotificationEvent::Tapped(id).into()),
-            Id::Notification { id, close: true } => self.handle(NotificationEvent::Dismissed(id).into()),
-            _ => {}
-        }
+        self.handle(PointerEvent::Act(id).into());
         true
     }
 

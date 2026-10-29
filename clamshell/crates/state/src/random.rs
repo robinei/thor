@@ -719,13 +719,23 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             ];
             Event::HardwareKey(*rng.pick(&keys)?)
         }
-        87..=89 => match rng.below(7) {
+        87..=89 => match rng.below(8) {
             0 => Event::Home,
             1 => Event::PadSwitch,
             2 => Event::TextInput(rng.one_in(2)),
             3 => Event::BottomTouched,
             4 => Event::Paste,
             5 => Event::Overview(OverviewEvent::Toggle),
+            // A press on an overlay's target.
+            6 => PointerEvent::Act(match rng.below(3) {
+                0 => Id::WindowArrow { next: rng.one_in(2) },
+                1 => Id::OverviewWindow(rng.pick(s.session().windows())?.id),
+                _ => {
+                    let held: Vec<_> = s.notifications().iter().map(|n| n.id).collect();
+                    Id::Notification { id: *rng.pick(&held)?, close: rng.one_in(2) }
+                }
+            })
+            .into(),
             _ => Event::Overview(match rng.below(4) {
                 0 => OverviewEvent::Step(*rng.pick(&[Dir::Up, Dir::Down, Dir::Left, Dir::Right])?),
                 1 => OverviewEvent::Pick(rng.pick(s.session().windows())?.id),

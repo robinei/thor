@@ -86,6 +86,21 @@ fn the_entry_again_or_b_goes_back_and_a_tapped_window_comes_in_front() {
     assert_eq!((top(&s), s.session().overview()), (Some(3), None));
 }
 
+/// A press on a window of the overview, through the overlay, brings it in front as Pick does, and moves
+/// no focus.
+#[test]
+fn a_window_of_the_overview_pressed_comes_in_front() {
+    let mut s = running(&[(3, None), (4, None)]);
+    tap(&mut s, dock(0));
+    tap(&mut s, dock(0));
+    tap(&mut s, dock(0));
+    assert!(s.session().overview().is_some());
+    let focus = s.pointer().focus().cloned();
+    s.applied(crate::PointerEvent::Act(Id::OverviewWindow(3)).into());
+    assert_eq!((top(&s), s.session().overview()), (Some(3), None));
+    assert_eq!(s.pointer().focus().cloned(), focus, "no focus moved");
+}
+
 /// With one window on the top screen the tap shows it as before; a dialog doesn't count, and is left out.
 #[test]
 fn one_window_and_its_dialog_open_no_overview() {

@@ -2,9 +2,12 @@
 //! target or a list's row does.
 
 use crate::bottom::editor::Done;
+use crate::notifications::NotificationEvent;
+use crate::out::LogLevel;
 use crate::out::Out;
 use crate::profiles::picker::{Kind as ProfileKind, Owner};
-use crate::{BtId, Compositor, Control, EditorId, Effect, Id, ListId, PointerEvent, RowPart, State, Tab, WifiId};
+use crate::session::overview::OverviewEvent;
+use crate::{BtId, Compositor, Control, EditorId, Effect, Event, HardwareKey, Id, ListId, PointerEvent, RowPart, State, Tab, WifiId};
 
 /// How a target was pressed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,6 +20,9 @@ impl State {
     /// A touch or a pad focus change. Focusing or pressing a target on the second screen counts as using
     /// that screen.
     pub(crate) fn on_pointer(&mut self, event: PointerEvent, out: &mut Out) {
+        if let PointerEvent::Act(id) = event {
+            return Self::act(id, out);
+        }
         let used = match &event {
             PointerEvent::Focus(id) | PointerEvent::Activate(id) | PointerEvent::LongPress(id) | PointerEvent::Down(id, _) => !id.on_top(),
             _ => false,
@@ -59,7 +65,20 @@ impl State {
                     self.keyboard.up(pos);
                 }
             }
+            PointerEvent::Act(_) => {}
         }
+    }
+
+    /// An overlay's target pressed (see [`PointerEvent::Act`]): the event it stands for is queued.
+    fn act(id: Id, out: &mut Out) {
+        let event = match id {
+            Id::WindowArrow { next } => Event::HardwareKey(if next { HardwareKey::WindowNext } else { HardwareKey::WindowPrevious }),
+            Id::OverviewWindow(window) => Event::Overview(OverviewEvent::Pick(window)),
+            Id::Notification { id, close: false } => NotificationEvent::Tapped(id).into(),
+            Id::Notification { id, close: true } => NotificationEvent::Dismissed(id).into(),
+            id => return out.log(LogLevel::Warn, format!("a press acted on {id:?}, which isn't an overlay's: nothing done")),
+        };
+        out.events.push(event);
     }
 
     /// A tap or long press on `id`, resolved to what the press landed on. It gets the focus, and its
@@ -154,6 +173,7 @@ impl State {
             Id::Wake => {
                 self.bottom.wake();
             }
+            // An overlay's targets act through `PointerEvent::Act`.
             Id::WindowArrow { .. } | Id::OverviewWindow(_) | Id::Notification { .. } => {}
         }
     }

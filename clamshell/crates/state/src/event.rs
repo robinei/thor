@@ -247,6 +247,11 @@ pub enum PointerEvent {
     /// The main screen shows something else, and the focus starts on `id`, where its view says. The ring
     /// stays as it was, and it isn't input.
     Start(Id),
+    /// A target of an overlay pressed, which acts as the press comes down: a window arrow as the pad's
+    /// window key, a window of the overview comes in front, a notification is tapped or its close mark
+    /// dismisses it. It moves no focus and isn't itself counted as input or a use of the second screen;
+    /// the event it stands for says what it counts as.
+    Act(Id),
 }
 
 /// A finger sliding on a bar control. `x` is in the second screen's layout units, and the control is
