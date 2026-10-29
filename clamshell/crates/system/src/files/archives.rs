@@ -56,11 +56,7 @@ impl Mounts {
                 detach(&dir);
             }
             let entries = fs::read_dir(root).inspect_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    log::debug!("archives: {}: {e}", root.display());
-                } else {
-                    log::warn!("archives: {}: {e}", root.display());
-                }
+                crate::os::log_unread("archives", root, e);
             });
             for e in entries.into_iter().flatten().flatten() {
                 if let Err(err) = fs::remove_dir(e.path()) {

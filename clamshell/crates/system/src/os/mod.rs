@@ -28,6 +28,17 @@ pub(crate) mod text;
 pub mod worker;
 pub(crate) mod xdg;
 
+/// Logs that `path` couldn't be read, for `context` (a module's name, or none): at debug when it isn't
+/// there, which is an ordinary case (a file not made yet, a program not installed), else as a warning.
+pub(crate) fn log_unread(context: &str, path: &std::path::Path, e: &std::io::Error) {
+    let context = if context.is_empty() { String::new() } else { format!("{context}: ") };
+    if e.kind() == std::io::ErrorKind::NotFound {
+        log::debug!("{context}{}: {e}", path.display());
+    } else {
+        log::warn!("{context}{}: {e}", path.display());
+    }
+}
+
 /// What a non-blocking read gave: None when nothing was waiting (`WouldBlock`).
 pub(crate) fn ready<T>(read: std::io::Result<T>) -> std::io::Result<Option<T>> {
     match read {

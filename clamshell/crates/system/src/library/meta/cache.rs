@@ -63,11 +63,7 @@ impl Cache {
     fn read_all<T: DeserializeOwned>(&self, suffix: &str) -> Vec<(PathBuf, T)> {
         let entries = fs::read_dir(&self.dir)
             .inspect_err(|e| {
-                if e.kind() == io::ErrorKind::NotFound {
-                    log::debug!("meta: {}: {e}", self.dir.display());
-                } else {
-                    log::warn!("meta: {}: {e}", self.dir.display());
-                }
+                crate::os::log_unread("meta", &self.dir, e);
             })
             .into_iter()
             .flatten()

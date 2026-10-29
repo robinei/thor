@@ -197,11 +197,7 @@ fn list(dir: &Path, folder: &str, runners: &[Runner], home: Option<&Path>, hidde
     let read = match fs::read_dir(dir) {
         Ok(read) => read,
         Err(e) => {
-            if e.kind() == io::ErrorKind::NotFound {
-                log::debug!("browse: {}: {e}", dir.display());
-            } else {
-                log::warn!("browse: {}: {e}", dir.display());
-            }
+            crate::os::log_unread("browse", dir, &e);
             return Vec::new();
         }
     };

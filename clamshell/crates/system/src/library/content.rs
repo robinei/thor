@@ -196,11 +196,7 @@ pub(crate) fn place(place: &str) -> (&str, &str) {
 /// what is wrong with it is returned too.
 pub(crate) fn read_config(file: &Path) -> (Config, Option<String>) {
     let Ok(text) = fs::read_to_string(file).inspect_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            log::debug!("library: {}: {e}", file.display());
-        } else {
-            log::warn!("library: {}: {e}", file.display());
-        }
+        crate::os::log_unread("library", file, e);
     }) else {
         return (Config::default(), None);
     };

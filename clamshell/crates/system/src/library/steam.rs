@@ -18,11 +18,7 @@ pub(crate) fn games(root: &Path) -> Vec<Entry> {
     let mut libraries = vec![root.to_path_buf()];
     let folders = root.join("steamapps/libraryfolders.vdf");
     if let Ok(text) = fs::read_to_string(&folders).inspect_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            log::debug!("steam: {}: {e}", folders.display());
-        } else {
-            log::warn!("steam: {}: {e}", folders.display());
-        }
+        crate::os::log_unread("steam", &folders, e);
     }) {
         for path in steam::library_folders(&parse_vdf(&text)) {
             if !libraries.contains(&path) {
@@ -34,11 +30,7 @@ pub(crate) fn games(root: &Path) -> Vec<Entry> {
     for lib in libraries {
         let apps = lib.join("steamapps");
         let Ok(entries) = fs::read_dir(&apps).inspect_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                log::debug!("steam: {}: {e}", apps.display());
-            } else {
-                log::warn!("steam: {}: {e}", apps.display());
-            }
+            crate::os::log_unread("steam", &apps, e);
         }) else {
             continue;
         };

@@ -76,11 +76,7 @@ pub(crate) fn spawn(runtime: Option<&std::path::Path>, display: Option<std::path
             .and_then(|path| {
                 std::fs::read_to_string(path)
                     .inspect_err(|e| {
-                        if e.kind() == io::ErrorKind::NotFound {
-                            log::debug!("clipboard: {}: {e}", path.display());
-                        } else {
-                            log::warn!("clipboard: {}: {e}", path.display());
-                        }
+                        crate::os::log_unread("clipboard", path, e);
                     })
                     .ok()
             })

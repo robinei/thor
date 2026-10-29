@@ -69,11 +69,7 @@ pub(crate) fn entries(dirs: &[PathBuf]) -> Vec<Desktop> {
         let apps = dir.join("applications");
         let mut files: Vec<PathBuf> = fs::read_dir(&apps)
             .inspect_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    log::debug!("desktop: {}: {e}", apps.display());
-                } else {
-                    log::warn!("desktop: {}: {e}", apps.display());
-                }
+                crate::os::log_unread("desktop", &apps, e);
             })
             .map(|d| d.flatten().map(|e| e.path()).collect())
             .unwrap_or_default();
@@ -87,11 +83,7 @@ pub(crate) fn entries(dirs: &[PathBuf]) -> Vec<Desktop> {
                 continue;
             }
             let Ok(text) = fs::read_to_string(&path).inspect_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    log::debug!("desktop: {}: {e}", path.display());
-                } else {
-                    log::warn!("desktop: {}: {e}", path.display());
-                }
+                crate::os::log_unread("desktop", &path, e);
             }) else {
                 continue;
             };

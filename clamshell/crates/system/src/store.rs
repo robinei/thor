@@ -155,11 +155,7 @@ impl Store {
         let text = match fs::read_to_string(&path) {
             Ok(text) => text,
             Err(e) => {
-                if e.kind() == io::ErrorKind::NotFound {
-                    log::debug!("{}: {e}", path.display());
-                } else {
-                    log::warn!("{}: {e}", path.display());
-                }
+                crate::os::log_unread("", &path, &e);
                 return out;
             }
         };
@@ -315,11 +311,7 @@ impl Store {
 fn read_folder<T: DeserializeOwned>(dir: &Path) -> HashMap<String, T> {
     let entries = fs::read_dir(dir)
         .inspect_err(|e| {
-            if e.kind() == io::ErrorKind::NotFound {
-                log::debug!("{}: {e}", dir.display());
-            } else {
-                log::warn!("{}: {e}", dir.display());
-            }
+            crate::os::log_unread("", dir, e);
         })
         .into_iter()
         .flatten();
