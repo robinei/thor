@@ -63,8 +63,14 @@ impl State {
 
     /// The library was read again. New problems are reported once and the Library is reloaded. Then what
     /// depends on its entries is updated: runners' pauses and keymaps, and pins of entries that are
-    /// gone. The Library's entries shown are asked for first again.
-    pub(crate) fn library_read(&mut self, library: Library, out: &mut Out) {
+    /// gone. The Library's entries shown are asked for first again. A runner's keymap that ClamShell has
+    /// none of is a problem too.
+    pub(crate) fn library_read(&mut self, mut library: Library, out: &mut Out) {
+        for (key, preset) in &library.runner_keymaps {
+            if crate::keymap::preset(preset).is_none() {
+                library.problems.push(format!("{key}: there is no keymap \"{preset}\""));
+            }
+        }
         let problems = &library.problems;
         if !problems.is_empty() && *problems != self.library_view.library().problems {
             let first = problems.first().cloned().unwrap_or_default();

@@ -82,11 +82,16 @@ fn new_library_problems_are_said_once() {
         library.problems = problems.iter().map(|p| (*p).to_owned()).collect();
         Event::Library(Box::new(library))
     };
-    s.applied(with(&["grim isn't installed: no screenshots", "x: no launch command"]));
-    assert_eq!(notice(&s), Some(crate::bottom::notice::NoticeKind::Problems("grim isn't installed: no screenshots".into(), 2)));
+    s.applied(with(&["wpctl isn't installed: the volume can't be set", "x: no launch command"]));
+    assert_eq!(notice(&s), Some(crate::bottom::notice::NoticeKind::Problems("wpctl isn't installed: the volume can't be set".into(), 2)));
     s.applied(Event::tick(10_000));
-    s.applied(with(&["grim isn't installed: no screenshots", "x: no launch command"]));
+    s.applied(with(&["wpctl isn't installed: the volume can't be set", "x: no launch command"]));
     assert_eq!(notice(&s), None, "the same again: not said");
+    // A runner's keymap that ClamShell has none of is a problem of the library's.
+    let mut library = clamshell_library::demo::library();
+    library.runner_keymaps = vec![("runner:snes".into(), "viewer".into()), ("runner:nes".into(), "typo".into())];
+    s.applied(Event::Library(Box::new(library)));
+    assert_eq!(s.library_view().library().problems, ["runner:nes: there is no keymap \"typo\""]);
 }
 
 #[test]
