@@ -363,6 +363,8 @@ fn warm_frames_do_not_allocate() {
                     }],
                     busy: Some("00:11".into()),
                     error: None,
+                    // (A keyboard's code shown in the header, drawn without allocating too.)
+                    code: Some("123456".into()),
                 })),
             ],
         ),

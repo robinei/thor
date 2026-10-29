@@ -178,6 +178,7 @@ pub fn bluetooth() -> Bluetooth {
         .to_vec(),
         busy: None,
         error: None,
+        code: None,
     }
 }
 

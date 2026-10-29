@@ -1,5 +1,5 @@
-//! The Bluetooth tab. The header shows what Bluetooth is doing (connected, connecting, or what went
-//! wrong) next to the radio's switch. Below it is one row per device, with an icon for its kind, its name,
+//! The Bluetooth tab. The header shows what Bluetooth is doing (connected, connecting, the code a
+//! keyboard being paired wants typed on it, or what went wrong) next to the radio's switch. Below it is one row per device, with an icon for its kind, its name,
 //! and whether it is connected, connecting or paired. A tap connects, pairing a new device first, or
 //! disconnects. A long press forgets a paired device. While the tab is open, it scans for new devices.
 
@@ -61,7 +61,11 @@ impl Display for Status<'_> {
             RadioStatus::Error(problem) => write!(f, "{}", ProblemText(problem)),
             RadioStatus::NoDevice => f.write_str("No Bluetooth adapter"),
             RadioStatus::Off => f.write_str("Bluetooth is off"),
-            RadioStatus::Busy(name) => write!(f, "Connecting {name}"),
+            RadioStatus::Busy(name) => match &self.0.code {
+                // A keyboard pairing by a code typed on it.
+                Some(code) => write!(f, "Type {code} on {name}, then Enter"),
+                None => write!(f, "Connecting {name}"),
+            },
             RadioStatus::Connected(name) => write!(f, "Connected to {name}"),
             RadioStatus::Many(n) => write!(f, "{n} devices connected"),
             RadioStatus::Idle => f.write_str("Nothing connected"),

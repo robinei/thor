@@ -87,6 +87,9 @@ pub struct Bluetooth {
     pub busy: Option<String>,
     /// Why the last attempt failed, until the next one.
     pub error: Option<Problem>,
+    /// A code to type on the device being paired, then Enter, while its pairing waits for it: a
+    /// keyboard's.
+    pub code: Option<String>,
 }
 
 /// What a device's row says about it.
@@ -241,7 +244,7 @@ mod tests {
         let mut s = state();
         let bt = |busy: Option<&str>, error: Option<Problem>, connected: bool| {
             let busy = busy.map(str::to_owned);
-            Reading::Bluetooth(Bluetooth { present: true, on: true, devices: vec![dev("pad", true, connected)], busy, error })
+            Reading::Bluetooth(Bluetooth { present: true, on: true, devices: vec![dev("pad", true, connected)], busy, error, code: None })
         };
         let refused = || Some(Problem { action: Action::Connect, reason: Reason::Bus("refused".into()) });
         read(&mut s, bt(None, refused(), false));

@@ -97,6 +97,8 @@ struct BtState {
     watching: bool,
     busy: Option<String>,
     error: Option<Problem>,
+    /// The code the device being paired wants typed on it (see [`bluez::agent`]).
+    code: Option<String>,
 }
 
 #[derive(Clone, Default)]
@@ -178,7 +180,8 @@ fn connecting_worker(shared: Shared) -> io::Result<Worker<String>> {
             shared.lock().busy = Some(address.clone());
             let connected = match bus.take().map_or_else(system, Ok) {
                 Ok(mut b) => {
-                    b.serve(Box::new(bluez::agent));
+                    let codes = shared.clone();
+                    b.serve(Box::new(move |call| bluez::agent(call, &mut |code| codes.lock().code = code)));
                     let connected = connect(&mut b, &address);
                     bus = Some(b);
                     connected
@@ -194,7 +197,7 @@ fn connecting_worker(shared: Shared) -> io::Result<Worker<String>> {
                 }
                 shared.lock().error = Some(failure(Action::Connect, &e));
             }
-            shared.lock().busy = None;
+            (shared.lock().busy, shared.lock().code) = (None, None);
         }
     })
 }
@@ -215,7 +218,9 @@ fn connect(bus: &mut Bus, address: &str) -> Result<(), Error> {
 /// asks it while the pairing call waits.
 fn pair(bus: &mut Bus, device: &str) -> dbus::Result<()> {
     let agent = Path::from(AGENT_PATH);
-    bus.call::<()>(SERVICE, "/org/bluez", AGENT_MANAGER, "RegisterAgent", (agent.clone(), "NoInputNoOutput"))?;
+    // A screen to show a code on, and (by its yes) a way to confirm one: so a keyboard that wants a code
+    // typed on it can be paired, and a device without either still pairs without one.
+    bus.call::<()>(SERVICE, "/org/bluez", AGENT_MANAGER, "RegisterAgent", (agent.clone(), "DisplayYesNo"))?;
     let paired = bus.call::<()>(SERVICE, device, DEVICE, "Pair", ());
     if let Err(e) = bus.call::<()>(SERVICE, "/org/bluez", AGENT_MANAGER, "UnregisterAgent", (agent,)) {
         log::warn!("bluetooth: unregistering the pairing agent: {e}");
@@ -255,7 +260,7 @@ fn read(objects: &ManagedObjects, state: &BtState) -> Bluetooth {
         })
         .collect();
     bluetooth::sort(&mut devices);
-    Bluetooth { present: true, on: adapter.flag("Powered"), devices, busy: state.busy.clone(), error: state.error.clone() }
+    Bluetooth { present: true, on: adapter.flag("Powered"), devices, busy: state.busy.clone(), error: state.error.clone(), code: state.code.clone() }
 }
 
 impl<S: Sink> BtThread<S> {
