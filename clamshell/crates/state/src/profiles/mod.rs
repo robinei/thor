@@ -165,9 +165,15 @@ impl<B: Clone + Default + PartialEq> Profiles<B> {
     /// A name no profile has: `name`, or else `name` with a number after it. It is cleaned up the way the
     /// file name is (see clamshell-system's `store`): a `/` becomes `-`, and it is cut at 64 characters.
     pub fn unique_name(&self, name: &str) -> String {
+        self.unique_name_beside(name, None)
+    }
+
+    /// As [`Profiles::unique_name`], but the name of profile `own`, if given, isn't taken: it is the one
+    /// being renamed.
+    fn unique_name_beside(&self, name: &str, own: Option<u16>) -> String {
         let name: String = name.trim().replace('/', "-").chars().take(64).collect();
         let name = name.trim();
-        let taken = |n: &str| self.list.iter().any(|p| p.name == n);
+        let taken = |n: &str| self.list.iter().any(|p| Some(p.id) != own && p.name == n);
         if !taken(name) {
             return name.to_owned();
         }
@@ -194,15 +200,15 @@ impl<B: Clone + Default + PartialEq> Profiles<B> {
     /// Renames profile `id`. A name another profile has is made unique. Returns whether the profile was
     /// there.
     pub fn rename(&mut self, id: u16, name: &str) -> bool {
-        if self.get(id).is_some_and(|p| p.name == name.trim()) {
-            return true;
+        let name = self.unique_name_beside(name, Some(id));
+        match self.get(id) {
+            None => false,
+            Some(p) if p.name == name => true,
+            Some(_) => {
+                self.edit(id, |p| replace(&mut p.name, name));
+                true
+            }
         }
-        let name = self.unique_name(name);
-        if self.get(id).is_none() {
-            return false;
-        }
-        self.edit(id, |p| replace(&mut p.name, name));
-        true
     }
 
     pub fn remove(&mut self, id: u16) -> bool {

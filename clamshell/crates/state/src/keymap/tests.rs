@@ -245,6 +245,8 @@ fn adding_renaming_duplicating_removing() {
     assert_eq!(maps.get(a).map(|k| k.name.as_str()), Some("Rally"));
     let slash = maps.add(" A/B ").unwrap();
     assert_eq!(maps.get(slash).map(|k| k.name.as_str()), Some("A-B"), "a name that makes a file name");
+    assert!(maps.rename(slash, "A/B"));
+    assert_eq!(maps.get(slash).map(|k| k.name.as_str()), Some("A-B"), "renamed to its own name as cleaned up: not \"A-B 2\"");
     maps.remove(slash);
     assert!(maps.remove(copy) && !maps.remove(copy));
     assert_eq!(maps.add("New"), Some(4), "ids are never taken twice while the highest stays");
