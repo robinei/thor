@@ -230,8 +230,7 @@ fn draw(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Event {
     }
 }
 
-const TABS: [Tab; 11] =
-    [Tab::Settings, Tab::Dock, Tab::Keyboard, Tab::Touchpad, Tab::Sysinfo, Tab::Volume, Tab::Brightness, Tab::Wifi, Tab::Bluetooth, Tab::Battery, Tab::Time];
+const TABS: [Tab; 12] = Tab::ALL;
 
 /// The bar's targets, always shown.
 fn bar() -> Vec<Id> {
