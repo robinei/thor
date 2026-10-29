@@ -74,6 +74,12 @@ impl DrawCache {
         self.glyphs.get(&key)
     }
 
+    /// The room kept for `ch` while it waits for a font (see [`DrawCache::glyph`]): the built-in font's
+    /// for a character it lacks, so that text is laid out about as it will be.
+    pub(super) fn waiting_advance(&self, ch: char, px: f32) -> f32 {
+        self.font.as_ref().map_or(0.0, |f| f.metrics(ch, px).advance_width)
+    }
+
     /// The font to draw `ch` with. It is the built-in one, unless that lacks `ch` and another font has it.
     pub(super) fn face(&mut self, ch: char) -> Face {
         if ch.is_control() || self.font.as_ref().is_none_or(|f| f.lookup_glyph_index(ch) != 0) {

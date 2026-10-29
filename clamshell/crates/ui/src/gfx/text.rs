@@ -28,7 +28,8 @@ const ELLIPSIS: &str = "…";
 pub const WRAP_LINE: f32 = 1.3;
 
 impl Painter<'_> {
-    /// Draws one line of text with its top at `y`. A character waiting for a font ends it.
+    /// Draws one line of text with its top at `y`. A character waiting for a font is left out, its room
+    /// kept (see `DrawCache::waiting_advance`).
     pub fn text(&mut self, x: f32, y: f32, size: f32, color: impl Into<Color>, text: &str) {
         let px = size * self.scale;
         let baseline = (self.py(y) + self.cache.ascent(px)).round();
@@ -36,7 +37,8 @@ impl Painter<'_> {
         let color = color.into().premultiply().to_color_u8();
         for ch in text.chars() {
             let Some((metrics, coverage)) = self.cache.glyph(ch, px) else {
-                return;
+                pen += self.cache.waiting_advance(ch, px);
+                continue;
             };
             let gx = (pen + metrics.xmin as f32).round() as i32;
             let gy = (baseline - metrics.height as f32 - metrics.ymin as f32) as i32;
@@ -47,19 +49,18 @@ impl Painter<'_> {
 }
 
 impl Canvas<'_> {
-    /// Draws one line of text with its top at `y`; returns its width, or 0 if a character in it is
-    /// waiting for a font. The glyphs drawn are where the painter puts them (see [`Painter::text`]).
+    /// Draws one line of text with its top at `y`; returns its width. A character waiting for a font is
+    /// drawn when it comes (the fonts' generation is in the op), its room kept meanwhile. The glyphs drawn are where the painter puts them (see [`Painter::text`]).
     pub fn text(&mut self, x: f32, y: f32, size: f32, color: impl Into<Color>, text: &str) -> f32 {
         let px = size * self.scale;
         let baseline = (self.py(y) + self.cache.ascent(px)).round();
         let start = self.px(x);
         let mut pen = start;
         let mut ink = Bounds::EMPTY;
-        let mut waiting = false;
         for ch in text.chars() {
             let Some((metrics, _)) = self.cache.glyph(ch, px) else {
-                waiting = true;
-                break;
+                pen += self.cache.waiting_advance(ch, px);
+                continue;
             };
             if metrics.width > 0 && metrics.height > 0 {
                 let gx = (pen + metrics.xmin as f32).round() as i32;
@@ -70,7 +71,7 @@ impl Canvas<'_> {
         }
         let op = Op::Text { x: Px::new(x), y: Px::new(y), size: Px::new(size), color: color.into().into(), start: 0, len: 0, fonts: self.cache.generation };
         self.record_text(op, text, ink);
-        if waiting { 0.0 } else { (pen - start) / self.scale }
+        (pen - start) / self.scale
     }
 
     /// Draws one line of text centred vertically in `r` and placed horizontally as `align` says. The
@@ -194,9 +195,10 @@ impl Canvas<'_> {
         let px = size * self.scale;
         let mut width = 0.0;
         for ch in text.chars() {
-            if let Some((metrics, _)) = self.cache.glyph(ch, px) {
-                width += metrics.advance_width;
-            }
+            width += match self.cache.glyph(ch, px) {
+                Some((metrics, _)) => metrics.advance_width,
+                None => self.cache.waiting_advance(ch, px),
+            };
         }
         width / self.scale
     }
@@ -272,5 +274,19 @@ mod tests {
         let tail = text.get(start..).unwrap();
         assert!(c.text_width(20.0, tail) <= width && tail.ends_with("Past"), "{tail:?}");
         assert!(c.text_fit(Rect::new(0.0, 0.0, width, 30.0), 20.0, rgb(0xffffff), text, Keep::Start) <= width + 0.5);
+    }
+
+    /// A character waiting for its font keeps its room: the line drawn is as wide as measured, and the
+    /// text after it is placed where it will stay.
+    #[test]
+    fn a_character_waiting_for_its_font_keeps_its_room() {
+        let (requests, _unanswered) = std::sync::mpsc::channel();
+        let mut cache = DrawCache::with_finder(requests);
+        assert_eq!(cache.face('あ'), Face::Waiting);
+        let mut rec = Recording::default();
+        let mut c = Canvas::new(&mut rec, (400, 50), 1.0, &mut cache);
+        let (measured, ends) = (c.text_width(20.0, "AあB"), c.text_width(20.0, "AB"));
+        assert!(measured > ends);
+        assert_eq!(c.text(0.0, 0.0, 20.0, rgb(0xffffff), "AあB"), measured);
     }
 }
