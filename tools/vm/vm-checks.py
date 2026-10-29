@@ -1151,10 +1151,12 @@ class Checks:
         game_route = logged(since, "PadRoute(Game)")
         if not self.check("pad: a game in front, the pad goes to it", launched and game_route, f"front {front()!r}"):
             return
+        since = now()
         subprocess.run([sys.executable, str(Path(vm.__file__)), "pad", "unplug"], check=True)
-        time.sleep(1.5)
+        # (Once ClamShell has let go of the controller: the virtual pad is still there after that.)
+        let_go = logged(since, "pad: clamshell fake pad let go", 5)
         self.check("  unplugging the controller mid-game leaves the virtual pad",
-                   bool(device("clamshell pad (Xbox 360)")) and not device("clamshell fake pad"))
+                   let_go and bool(device("clamshell pad (Xbox 360)")) and not device("clamshell fake pad"), f"let go logged {let_go}")
         self.check("  plugged in again: grabbed again", plug_pad() and bool(device("clamshell pad (Xbox 360)")))
 
     def pad_guide(self):
