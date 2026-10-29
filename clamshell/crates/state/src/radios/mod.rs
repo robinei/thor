@@ -18,8 +18,8 @@ pub struct Radios {
     wifi_attempt: Option<Attempt<wifi::Problem>>,
     bluetooth_attempt: Option<Attempt<bluetooth::Problem>>,
     /// A network found here to need a login (an enterprise one not saved), by SSID, until the system's own
-    /// error, a connection to it or another attempt answers it.
-    login: Option<String>,
+    /// error (not one from before), a connection to it or another attempt answers it, as an attempt's.
+    login: Option<Attempt<wifi::Problem>>,
     /// What the tabs show: worked out from the above (see [`Radios::show_wifi`]).
     wifi: Wifi,
     bluetooth: Bluetooth,
@@ -79,8 +79,8 @@ impl Radios {
         if let Some(a) = &self.wifi_attempt {
             self.wifi.busy = Some(a.target.clone());
             self.wifi.error = None;
-        } else if let Some(ssid) = &self.login {
-            self.wifi.error = Some(wifi::Problem::NeedsLogin { ssid: ssid.clone() });
+        } else if let Some(login) = &self.login {
+            self.wifi.error = Some(wifi::Problem::NeedsLogin { ssid: login.target.clone() });
         }
     }
 
@@ -101,7 +101,7 @@ impl Radios {
             self.wifi_attempt = None;
             answered = true;
         }
-        if self.login.as_deref().is_some_and(|ssid| wifi.error.is_some() || connected(ssid)) {
+        if self.login.as_ref().is_some_and(|l| l.answered(None, connected(&l.target), wifi.error.as_ref())) {
             self.login = None;
             answered = true;
         }
@@ -163,7 +163,7 @@ impl Radios {
 
     /// Network `ssid` was found here to need a login.
     fn needs_login(&mut self, ssid: String) {
-        self.login = Some(ssid);
+        self.login = Some(Attempt { target: ssid, since: None, before: self.wifi_read.error.clone() });
         self.show_wifi();
     }
 }

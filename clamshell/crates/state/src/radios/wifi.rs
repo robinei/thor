@@ -339,6 +339,16 @@ mod tests {
         tap(&mut s, ListId::Wifi.row(0));
         read(&mut s, reading());
         assert_eq!(s.radios().wifi().status(), RadioStatus::Error(&Problem::NeedsLogin { ssid: "work".into() }), "a reading doesn't know of it");
+        // Nor does one with an error from before it.
+        let failed = Problem::NoAnswer { ssid: "cafe".into() };
+        let with_error = |error: &Problem| match reading() {
+            Reading::Wifi(w) => Reading::Wifi(Wifi { error: Some(error.clone()), ..w }),
+            r => r,
+        };
+        read(&mut s, with_error(&failed));
+        tap(&mut s, ListId::Wifi.row(0));
+        read(&mut s, with_error(&failed));
+        assert_eq!(s.radios().wifi().status(), RadioStatus::Error(&Problem::NeedsLogin { ssid: "work".into() }), "an error from before");
         tap(&mut s, ListId::Wifi.row(1));
         assert_eq!(s.radios().wifi().status(), RadioStatus::Busy("cafe"), "the next attempt");
     }
