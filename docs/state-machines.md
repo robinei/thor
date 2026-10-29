@@ -704,7 +704,7 @@ The compositor's side of the windows: `windows.rs` (facts, configure, the presen
 `scene.rs` (what is shown where), `software.rs` (surfaces drawn on the CPU), `input.rs` (`hit`, `ui_at`),
 `render.rs`, `server.rs` (its turn, `frame`, `reject_client`), `clients.rs`,
 `trace.rs`; in the state, `presentation/` (the presentation policy) and `Session::opening_focus`.
-They run the same way under the nested host (`nested.rs`) and the DRM host (`drm.rs`). The state's side of
+They run the same way under the nested host (`nested.rs`) and the DRM host (`drm/`). The state's side of
 the same windows is under Session, "Window lifecycle and placement".
 
 ### Lifecycle and facts (windows.rs, handlers.rs)
@@ -1129,13 +1129,13 @@ no capture. A real mouse's relative motion: on the device.
 
 ## Frames, buffers, screenshots and the clipboard (compositor/)
 
-Two hosts show the scene: the DRM host (`drm.rs`) on the device's screens, and the nested host
+Two hosts show the scene: the DRM host (`drm/`) on the device's screens, and the nested host
 (`nested.rs`), a winit window on a desktop that redraws at each of the desktop compositor's frames. The
 protocol tests (`tests.rs`, `tests/*.rs`) run real clients over a socket pair against a `Server`;
 `tests/nested-compositor.py` runs the nested host in a headless sway, with software rendering, or with
 `--gpu` on GLES and hardware EGL (vkcube needed too).
 
-### Frame pacing (pacing.rs, frames.rs, drm.rs)
+### Frame pacing (pacing.rs, frames.rs, drm/)
 
 Each window has its `Frames`: `fresh` (a new buffer committed to its root surface and not yet shown), a
 ring of the times of its last 256 frames shown, and, under a frame rate cap, when its next frame callback
@@ -1166,7 +1166,7 @@ A frame is shown, on DRM, at the next refresh after the top screen's last flip, 
 is already queued (`a_frame_is_shown_at_the_next_refresh_after_the_last_flip`); nested, a host refresh from
 now.
 
-Each DRM screen, each turn of the loop (`drm.rs`, `step`, `screen_turn`):
+Each DRM screen, each turn of the loop (`drm/mod.rs` `step`, `drm/turn.rs` `screen_turn`):
 
     pending --any turn--> pending [no callbacks, frame or wake]                     a_queued_frame_waits_for_its_flip_without_turning_the_loop
     pending --flip--> idle [frame shown, feedback, frame callbacks]                 on the device; the VM suite draws through it
@@ -1496,7 +1496,7 @@ backpressure, a new owner replacing one whose TARGETS were pending, an old owner
 replacement, Latin-1 STRING into UTF-8, the keeper keeping the text after the X11 owner quits, X11's copies
 kept from the desktop's clipboard.
 
-## Device facts (crates/device, system/profile.rs, compositor/drm.rs)
+## Device facts (crates/device, system/profile.rs, compositor/drm/)
 
 What a profile holds and why is in `device-profiles.md`. This part is how the profile is chosen, which
 wins between what is detected and the profile's hints, and the machines that depend on them.
@@ -1514,7 +1514,7 @@ function; `State` gets the profile in `Init` (`State::profile`).
 | `start --otherwise--> generic` | same; system `kernel_identity_is_read_from_the_supplied_root_and_unknown_overrides_fail` |
 | `start --an unknown CLAMSHELL_DEVICE--> exit [the error names it]` | both |
 | `start --an identity file missing--> read as empty`; unreadable otherwise: ClamShell logs it and reads it as empty, the fan daemon exits 1 | the system test (missing files); the fan daemon: GAP |
-| `generic --clamshell --drm--> exit [no connector for the top screen]`, as for a named connector absent or not connected (`drm.rs` `choose`) | GAP; the VM suite runs the DRM session with the vm profile |
+| `generic --clamshell --drm--> exit [no connector for the top screen]`, as for a named connector absent or not connected (`drm/mod.rs` `choose`) | GAP; the VM suite runs the DRM session with the vm profile |
 
 ### What is detected, and the profile's hints
 
@@ -1523,15 +1523,15 @@ the fact stays unknown and its UI is dimmed, not hidden.
 
 | Fact | Precedence | Test |
 |---|---|---|
-| the screens (`drm.rs` `choose`) | the connector the profile names; the mode the kernel set, else the preferred one, else the first; turned by the profile's rotation | the VM suite (Virtual-1 and -2); on the device (DSI-2, DSI-1) |
+| the screens (`drm/mod.rs` `choose`) | the connector the profile names; the mode the kernel set, else the preferred one, else the first; turned by the profile's rotation | the VM suite (Virtual-1 and -2); on the device (DSI-2, DSI-1) |
 | each screen's size in millimetres (`screens.rs` `shown_millimetres`), and from it the second screen's density, the virtual touchpad's resolution (`Panel::pixels_per_mm`) | the connector's millimetres, else the profile's (the Thor's bottom panel only, 65 by 75), turned as the screen is; else none, and no virtual touchpad; nested, the profile's only. The density is the longer side's, pixels taken as square | compositor `a_panels_millimetres_are_its_connectors_else_the_profiles_turned_as_shown`, state `a_panels_density_is_its_longer_sides_taking_pixels_as_square`; VM `touchpad` |
 | a backlight's label (`levels` `backlight_label`) | the backlights found; one named as the profile's top or bottom hint reads "Top screen" or "Bottom screen", any other its kernel name | levels `the_thors_backlights_by_their_screens` |
-| an absolute input device's screen (`drm.rs` `screen_of`) | the profile's entry for it; else, for a touchscreen, the profile's catch-all; else the top screen | compositor `an_input_device_is_on_the_screen_the_profile_names_it_on` |
+| an absolute input device's screen (`drm/input_areas.rs` `screen_of`) | the profile's entry for it; else, for a touchscreen, the profile's catch-all; else the top screen | compositor `an_input_device_is_on_the_screen_the_profile_names_it_on` |
 | the auxiliary button (`system/input/pad/device.rs`) | an evdev device of the profile's name and key, looked for when a controller opens; its presses become the auxiliary role; without the hint, none | device `physical_back_codes_are_normalised_and_missing_auxiliary_controls_stay_absent`; VM `pad_guide` |
 | Back | the profile's physical code becomes the Back role, in events and on resynchronisation, and is kept off the virtual pad | system `control_normalisation_preserves_other_keys_and_axis_codes`, device `physical_back_codes_…` |
 | X and Y | the controller's driver read from its sysfs link; a driver in the profile's `letter_code_drivers` swaps them | device `button_conventions_are_facts_about_the_detected_driver`, system `x_and_y_swap_between_letters_and_places` |
 | motion (`pad/mod.rs` `find_motion`) | the controller's evdev motion sensor, else the profile's sensor hub (QRTR service, rate, clock, axes), else none; looked for again after waking | device `only_the_physical_profile_claims_a_sensor_hub`, sensor hub `the_thors_frame_is_turned_a_quarter`; VM `gyro_sleep` (evdev); the hub on the device |
-| the panels' colour (`drm.rs`, `nested.rs`) | DRM: the profile's description of each screen; nested: the host's, once its colour management answers, else sRGB | device `panel_facts_preserve_the_documented_headroom_without_claiming_a_ten_bit_link`, `tests/device_profiles.rs` `panel_queries_follow_the_selected_profile`; which one is used: GAP |
+| the panels' colour (`drm/`, `nested.rs`) | DRM: the profile's description of each screen; nested: the host's, once its colour management answers, else sRGB | device `panel_facts_preserve_the_documented_headroom_without_claiming_a_ten_bit_link`, `tests/device_profiles.rs` `panel_queries_follow_the_selected_profile`; which one is used: GAP |
 | the canvas (`src/session.rs`, `server.rs` `resize`) | DRM: the screens' modes, turned; nested: the profile's preview size; a host resize keeps the screens' width ratio, at least 4×4 and 2 px a screen | compositor `requested_preview_geometry_sets_the_initial_canvas_and_resize_ratio` |
 
 ### Refresh calibration without the profile's entry (system/display/refresh.rs)
@@ -1562,7 +1562,7 @@ and the OEM switches again at each settings application and every 30 s while the
 
 Whether the firmware honours a write is checked on the device.
 
-### Display modes and the Refresh tile (state/presentation/modes.rs, state/apply/settings_tab.rs, compositor/drm.rs)
+### Display modes and the Refresh tile (state/presentation/modes.rs, state/apply/settings_tab.rs, compositor/drm/)
 
 `DisplayModes` holds at most 32 sorted, unique rates (1 to 1000 Hz) and the rate at start; the profile gives
 none.
