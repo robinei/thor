@@ -1,7 +1,8 @@
 //! Input from a host (the desktop window's events, or libinput's on the device): keys, the pointer, touch.
-//! A key goes to ClamShell's view while no window has the keyboard, else to the window; the desktop keys
-//! (F12 the Home button, F11 and F10 a window down to the second screen and back, Ctrl+Alt+F1..F12 a VT)
-//! go to the state whatever has the keyboard. A click goes to the window shown under it, or to the view's
+//! A key goes to ClamShell's view while no window has the keyboard, else to the window. Ctrl+Alt+F1..F12
+//! switch the VT whatever has the keyboard; on a desktop host, where its keyboard is all there is, F12
+//! stands for the Home button and F11 and F10 move a window down to the second screen and back. (On the
+//! device, Home is the controller's, and F10 to F12 reach the window like other keys.) A click goes to the window shown under it, or to the view's
 //! target there. Touch continues in `touch`, the pointer's capture in `pointer`.
 
 use crate::server::Server;
@@ -29,6 +30,9 @@ pub(crate) struct Host {
     pub absolute_cursor: bool,
     /// Whether the host ends each touch frame; winit doesn't, so each of its touch events is one.
     pub touch_frames: bool,
+    /// A desktop's keyboard standing in for the device's buttons: F12 as Home, F11 and F10 a window down
+    /// and up.
+    pub desktop_keys: bool,
 }
 
 pub(crate) struct Hit {
@@ -83,8 +87,8 @@ impl Server {
                     keyboard.input::<(), _>(self, event.key_code(), event.state(), SERIAL_COUNTER.next_serial(), event.time(), |server, _, key| {
                         let sym = key.modified_sym();
                         let down = event.state() == KeyState::Pressed;
-                        // F12 is the Thor's Home button.
-                        if sym == Keysym::F12 {
+                        // On a desktop, F12 stands for the Home button.
+                        if host.desktop_keys && sym == Keysym::F12 {
                             if down != server.keyboard_home {
                                 server.keyboard_home = down;
                                 server.core.handle(StateEvent::HomeHeld(down));
@@ -102,8 +106,8 @@ impl Server {
                             return FilterResult::Intercept(());
                         }
                         let action = match sym {
-                            Keysym::F11 => Some(StateEvent::HardwareKey(HardwareKey::WindowDown)),
-                            Keysym::F10 => Some(StateEvent::HardwareKey(HardwareKey::WindowUp)),
+                            Keysym::F11 if host.desktop_keys => Some(StateEvent::HardwareKey(HardwareKey::WindowDown)),
+                            Keysym::F10 if host.desktop_keys => Some(StateEvent::HardwareKey(HardwareKey::WindowUp)),
                             _ => None,
                         };
                         if let Some(action) = action {

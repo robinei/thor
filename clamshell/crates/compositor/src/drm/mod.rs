@@ -427,7 +427,7 @@ pub fn run(
                     tap(&mut device.clone());
                 }
             }
-            server.input(event, crate::input::Host { absolute_cursor: false, touch_frames: true }, |device| areas.of(device));
+            server.input(event, crate::input::Host { absolute_cursor: false, touch_frames: true, desktop_keys: false }, |device| areas.of(device));
             if let Some(n) = server.vt_switch.take()
                 && let Err(error) = vt.borrow_mut().change_vt(n)
             {

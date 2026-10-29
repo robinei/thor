@@ -162,8 +162,9 @@ or unpins it; a pinned folder (a series) opens in the Library from the dock.
 
 On a desktop, keys stand in for the pad while no window has the keyboard: arrows move the focus, Enter or
 Space is A, Backspace B, Tab View, Q and E the shoulders, F is Y, P is X, C Start, Home and End the
-triggers. Whatever has the keyboard, F12 is the Thor's Home button (a tap shows the Library), F11 moves the window
-in front down to the second screen and F10 brings it back up. A controller's Guide button is Home too.
+triggers. Whatever has the keyboard, F12 stands for the Home button (a tap shows the Library), F11 moves the window
+in front down to the second screen and F10 brings it back up. A controller's Guide button is Home too. (On the
+device these keys are a keyboard's like any other: Home is the controller's.)
 
 `clamshell ctl screenshot`, or Home+R1, saves a screenshot of both screens. `clamshell ctl window events
 FILE` writes the windows and the last 256 window events as JSON, which

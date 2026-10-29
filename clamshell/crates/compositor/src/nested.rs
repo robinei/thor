@@ -85,7 +85,9 @@ pub fn run(
                     WinitEvent::Input(event) => {
                         // The window is the whole scene, its touch and pointer positions within it.
                         let whole = Rectangle::from_size((f64::from(server.screens.size.0), f64::from(server.screens.size.1)).into());
-                        server.input(event, crate::input::Host { absolute_cursor: true, touch_frames: false }, |_| (whole, Transform::Normal));
+                        server.input(event, crate::input::Host { absolute_cursor: true, touch_frames: false, desktop_keys: true }, |_| {
+                            (whole, Transform::Normal)
+                        });
                     }
                     // Through the state's quit, which saves where the Library and the second screen are.
                     WinitEvent::CloseRequested => server.core.handle(clamshell_state::Event::Quit),

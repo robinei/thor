@@ -45,7 +45,7 @@ pub(crate) struct Server {
     pub screens: crate::screens::Screens,
     pub pointer: crate::pointer::Pointer,
     pub touch: crate::touch::Touches,
-    /// Whether the desktop's Home key (F12) is down.
+    /// Whether the desktop's Home key (F12, on a desktop host) is down.
     pub keyboard_home: bool,
     /// A VT asked for with Ctrl+Alt+F1..F12, for the host whose seat can switch.
     pub vt_switch: Option<i32>,
