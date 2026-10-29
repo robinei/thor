@@ -618,17 +618,21 @@ impl Session {
         false
     }
 
-    /// Whether a launch of entry `id` was asked for and hasn't started.
-    /// The launcher games waiting for their launcher's launch that has now started or failed, to be
-    /// launched, each with how it starts.
-    pub(crate) fn due_after_launchers(&mut self) -> Vec<(Arc<str>, Start)> {
+    /// The launcher games waiting for their launcher's launch that has now started or failed, added to
+    /// `due` to be launched, each with how it starts. Those still waiting stay, in place: nothing is
+    /// allocated while one waits.
+    pub(crate) fn due_after_launchers(&mut self, due: &mut Vec<(Arc<str>, Start)>) {
         let launching = &self.launching;
-        let (due, waiting): (Vec<_>, Vec<_>) =
-            std::mem::take(&mut self.after_launcher).into_iter().partition(|(_, launcher, _)| !launching.iter().any(|l| l.entry == *launcher));
-        self.after_launcher = waiting;
-        due.into_iter().map(|(game, _, start)| (game, start)).collect()
+        self.after_launcher.retain(|(game, launcher, start)| {
+            let waits = launching.iter().any(|l| l.entry == *launcher);
+            if !waits {
+                due.push((game.clone(), *start));
+            }
+            waits
+        });
     }
 
+    /// Whether a launch of entry `id` was asked for and hasn't started.
     pub(crate) fn is_launching(&self, id: &str) -> bool {
         self.launching.iter().any(|l| &*l.entry == id)
     }

@@ -598,7 +598,9 @@ impl State {
             self.launch(id, None, Start::Background, out);
         }
         // Launcher games asked for while their launcher's launch was starting, now that it has.
-        for (id, start) in self.session.due_after_launchers() {
+        let mut after = Vec::new();
+        self.session.due_after_launchers(&mut after);
+        for (id, start) in after {
             self.launch(id, None, start, out);
         }
         let mut steam = Vec::new();
