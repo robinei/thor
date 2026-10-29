@@ -427,7 +427,13 @@ impl Keymap {
 
     /// [`Keymap::lookup`] for `act`.
     pub fn lookup_of(&self, input: Input, act: Actuation, on: &[Layer]) -> Option<&Binding> {
-        on.iter().rev().find_map(|l| self.get_of(*l, input, act)).or_else(|| self.get_of(Layer::BASE, input, act))
+        self.lookup_in(input, act, on.iter().copied())
+    }
+
+    /// As [`Keymap::lookup_of`], with the layers on as an iterator, oldest first, so that a caller holding
+    /// them otherwise needn't collect them.
+    pub fn lookup_in(&self, input: Input, act: Actuation, on: impl DoubleEndedIterator<Item = Layer>) -> Option<&Binding> {
+        on.rev().find_map(|l| self.get_of(l, input, act)).or_else(|| self.get_of(Layer::BASE, input, act))
     }
 
     /// Binds `input` in Base; none puts it back to what it does on the pad. See [`Keymap::set_in`].

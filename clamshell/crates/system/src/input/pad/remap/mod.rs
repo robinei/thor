@@ -433,12 +433,8 @@ impl Remap {
     }
 
     /// The layers that are on, in the order they came on.
-    fn layers_on(&self) -> Vec<Layer> {
-        self.activations
-            .iter()
-            .filter(|a| a.span != Span::Cancelled)
-            .filter_map(|a| if let Output::Layer(l) = a.binding.output { Some(l) } else { None })
-            .collect()
+    fn layers_on(&self) -> impl DoubleEndedIterator<Item = Layer> + '_ {
+        self.activations.iter().filter(|a| a.span != Span::Cancelled).filter_map(|a| if let Output::Layer(l) = a.binding.output { Some(l) } else { None })
     }
 
     /// `input`'s binding for `act` in force. If the input is turning a layer on, that binding. Otherwise
@@ -447,7 +443,7 @@ impl Remap {
         if let Some(a) = self.activations.iter().find(|a| a.input == input && a.act == act) {
             return Some(&a.binding);
         }
-        self.keymap.lookup_of(input, act, &self.layers_on())
+        self.keymap.lookup_in(input, act, self.layers_on())
     }
 
     /// Like [`Remap::find`], but a press without a binding acts as on the pad.
