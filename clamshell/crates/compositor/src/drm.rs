@@ -97,6 +97,8 @@ struct Screen {
     layers_dirty: bool,
     /// Whether its commits fail for a while now (busy, or failing otherwise), logged at the first.
     failing: bool,
+    /// Whether turning it off fails, tried again each turn: logged at the first.
+    off_failing: bool,
 }
 
 impl Screen {
@@ -198,24 +200,30 @@ pub fn run(
     let mut renderer = gles(gbm.clone())?;
 
     let top = choose(&drm, &profile, ScreenRole::Top, None)?;
-    let bottom = choose(&drm, &profile, ScreenRole::Bottom, Some(top.crtc))?;
+    // Without the second screen (a broken panel, an output missing), ClamShell runs on the top screen: the
+    // second is laid out as usual, but shown nowhere.
+    let bottom = choose(&drm, &profile, ScreenRole::Bottom, Some(top.crtc)).inspect_err(|e| log::error!("{e}: running on the top screen alone")).ok();
     if scanout {
-        crate::scanout::report(&drm, &[("the top screen", top.crtc), ("the second screen", bottom.crtc)]);
+        let mut crtcs = vec![("the top screen", top.crtc)];
+        crtcs.extend(bottom.as_ref().map(|b| ("the second screen", b.crtc)));
+        crate::scanout::report(&drm, &crtcs);
     }
     let logical = |chosen: &Chosen, role: ScreenRole| {
         let (w, h) = chosen.mode.size();
         let turned = transform(profile.screen(role).rotation).transform_size(Size::<i32, Physical>::from((i32::from(w), i32::from(h))));
         Size::<i32, Logical>::from((turned.w, turned.h))
     };
-    let (top_size, bottom_size) = (logical(&top, ScreenRole::Top), logical(&bottom, ScreenRole::Bottom));
+    let top_size = logical(&top, ScreenRole::Top);
+    let bottom_size = bottom.as_ref().map_or(top_size, |b| logical(b, ScreenRole::Bottom));
     config.top_size = (top_size.w as u32, top_size.h as u32);
     config.bottom_size = (bottom_size.w as u32, bottom_size.h as u32);
 
     let mut base = Base::new(state, config, true, identify, on_effect, quit)?;
     let server = &mut base.server;
+    let bottom_millimetres = bottom.as_ref().and_then(|b| b.millimetres);
     server.screens.millimetres =
-        [crate::screens::shown_millimetres(top.millimetres, &profile.top), crate::screens::shown_millimetres(bottom.millimetres, &profile.bottom)];
-    log::info!("drm: the screens' millimetres {:?} (connector {:?}, {:?})", server.screens.millimetres, top.millimetres, bottom.millimetres);
+        [crate::screens::shown_millimetres(top.millimetres, &profile.top), crate::screens::shown_millimetres(bottom_millimetres, &profile.bottom)];
+    log::info!("drm: the screens' millimetres {:?} (connector {:?}, {:?})", server.screens.millimetres, top.millimetres, bottom_millimetres);
     // No host window takes the focus away: pointer capture is always possible.
     server.pointer.host_focused = true;
     server.screens.refresh = i32::try_from(top.mode.vrefresh()).unwrap_or(60).saturating_mul(1000);
@@ -239,7 +247,8 @@ pub fn run(
 
     let renderer_formats = renderer.dmabuf_formats();
     let mut screens = Vec::new();
-    for (role, chosen, x) in [(ScreenRole::Top, &top, 0), (ScreenRole::Bottom, &bottom, top_size.w)] {
+    let shown = [Some((ScreenRole::Top, &top, 0)), bottom.as_ref().map(|b| (ScreenRole::Bottom, b, top_size.w))];
+    for (role, chosen, x) in shown.into_iter().flatten() {
         let surface = drm.create_surface(chosen.crtc, chosen.mode, &[chosen.connector]).map_err(|e| format!("drm: {role:?} screen: {e}"))?;
         let allocator = GbmAllocator::new(gbm.clone(), GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT);
         // Ten bits a channel where the screen takes them, for HDR later; else eight.
@@ -281,6 +290,7 @@ pub fn run(
             layers: None,
             layers_dirty: false,
             failing: false,
+            off_failing: false,
         });
     }
     // With CLAMSHELL_SCANOUT=1, each screen's own buffers, for while it shows only ClamShell.
@@ -817,21 +827,30 @@ fn outputs(drawing: &mut Drawing, server: &mut Server) {
         let index = usize::from(screen.role == ScreenRole::Bottom);
         let wanted = server.screens.on.get(index).copied().unwrap_or(true);
         if let Some(power) = switched(Power { on: screen.on, dirty: screen.dirty }, wanted) {
-            log::info!("drm: {:?} screen {}", screen.role, if wanted { "on" } else { "off" });
-            Power { on: screen.on, dirty: screen.dirty } = power;
             if wanted {
+                log::info!("drm: {:?} screen on", screen.role);
+                Power { on: screen.on, dirty: screen.dirty } = power;
                 // The next frame turns it back on.
                 screen.reset_buffers();
             } else {
+                // Off only once the screen is: a failure leaves it on, and it is tried again next turn
+                // rather than left lit with nothing composed on it.
                 match screen.surface.surface().clear() {
                     Ok(()) => {
+                        log::info!("drm: {:?} screen off", screen.role);
+                        Power { on: screen.on, dirty: screen.dirty } = power;
+                        screen.off_failing = false;
                         screen.surface.off();
                         screen.feedback.discard();
                         if let Some(layers) = &mut screen.layers {
                             layers.screen_off();
                         }
                     }
-                    Err(error) => log::warn!("drm: turning the {:?} screen off: {error}", screen.role),
+                    Err(error) if !screen.off_failing => {
+                        screen.off_failing = true;
+                        log::warn!("drm: turning the {:?} screen off: {error}: trying again", screen.role);
+                    }
+                    Err(error) => log::debug!("drm: turning the {:?} screen off: {error}", screen.role),
                 }
             }
         }
