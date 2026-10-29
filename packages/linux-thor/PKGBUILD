@@ -22,11 +22,11 @@
 # (/usr/lib/modules/<release>), where thor-boot (thor-system) takes them for both ways the card boots.
 pkgname=linux-thor
 _kver=7.2.6
-_armada=d2bcf6fd33435f670f59a164c926842af91730f1
+_armada=664da8c6d73c05b3dc55d7c7286dee33f61124a5
 # (Armada's commit's time: the version after the kernel's, so that their newer commit is a newer package.)
-_armada_time=202610202319
+_armada_time=202610291947
 pkgver=$_kver.$_armada_time
-pkgrel=7
+pkgrel=1
 pkgdesc="Armada's Linux kernel for the AYN Thor (SM8550), with its modules and device trees"
 arch=(aarch64)
 url=https://github.com/armada-os/armada
@@ -40,7 +40,8 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         config.thor
         # Ours, in this order (each made against the tree the ones before it leave). pbos-*: PB-OS's
         # (github.com/project-barry/pb-os, external-and-mods/kernel-sm8650/sm8550, at 8ea4653; each one's
-        # header says what of it is ours and where it was tried: on a Thor for 0620, 0630 and 0560, on a
+        # header says what of it is ours and where it was tried: on a Thor for 0620, 0630 and 0560 (ours
+        # rebased onto Armada's FastRPC context-leak fix, lore v3 by Anandu Krishnan E), on a
         # Retroid Pocket Nova for 0545 (not yet on a Thor), 0546 and 0505's wake, on a KONKR Pocket FIT
         # for 0547): the battery firmware's own charge switches (ClamShell's CLAMSHELL_CHARGE_LIMIT=
         # firmware), the bottom panel's brightness, the bottom touchscreen's lost contacts, the battery's
@@ -48,10 +49,11 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         # and no battery notifications while asleep (0505 changes deep sleep only; 0547 any sleep).
         # thor-*: the body's motor as an LRA (PB-OS's device tree lines, tried on a Thor), the gamepad
         # MCU's joystick frame settable, the sensor hub's device tree nodes (PB-OS's), FastRPC's legacy
-        # mappings refused without a session, the top panel's frame length calibrated per unit
-        # (ROCKNIX's 0509, tried on a Thor). rocknix-*: ROCKNIX's (ROCKNIX/distribution, packages/linux/
-        # patches/7.2, at 86d6ef9c76, PR #3495, tried on a Thor): the panels held in reset while the
-        # display clocks are handed over at boot, so the bootloader's splash doesn't glitch.
+        # mappings refused without a session. (The top panel's frame length calibrated per unit,
+        # ROCKNIX's, is Armada's 0518 since their 664da8c; it was our thor-0005.) rocknix-*: ROCKNIX's
+        # (ROCKNIX/distribution, packages/linux/patches/7.2, at 86d6ef9c76, PR #3495, tried on a Thor):
+        # the panels held in reset while the display clocks are handed over at boot, so the
+        # bootloader's splash doesn't glitch.
         pbos-0545-power-supply-qcom_battmgr-retroid-charge-controls.patch
         thor-0001-dts-thor-lra-haptics.patch
         pbos-0620-drm-panel-ch13726a-thor-16-bit-brightness-high-byte-first.patch
@@ -63,11 +65,10 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         pbos-0505-mailbox-qcom-ipcc-let-a-doorbell-wake-the-system-once-it-is-down.patch
         pbos-0547-power-supply-qcom_battmgr-no-battery-notifications-while-asleep.patch
         thor-0004-fastrpc-legacy-mmap-needs-a-session.patch
-        thor-0005-icna35xx-frame-length-calibration.patch
         rocknix-0017-clk-qcom-blank-dsi-panels-before-dispcc-park.patch)
 sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             SKIP
-            b0503999564862cd2abeec1a920581f5943e36e5a179bb91bb8eec85c2670c38
+            cdbe93282683496da781d8ffc750614b8e02d4edf9c883497488469f9f61a185
             5f8748337364f21c693756e4f0ad918db70d3638f2b547d0bc3cdce3755b67cc
             2c5748b2e5eacd95d8bea920173137e94e185c0243e222e29792050407355679
             e04f90d36e37fda0cfd779f3bb9fba63d74fa44262a9031c7d9ebe82d9bd622b
@@ -75,12 +76,11 @@ sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             c013993c636a58b53ac13e79f2e3cc053e2b2dbf4be2c4bbdc3c72a8ab30cc82
             659f5142f8e34fcaf9dc970b9ff612a23ce766a5e40e6750cc4762001fc63be6
             28a66e81b378e90d2dd996a750d3bd3da64cd8ce8f40c873fd98d3b7ac289ba0
-            1c0e051714030f45da3cbb051d6bb155b2578a67c4cf76973d6ded9ec1f15be1
+            c5c3784a3a6330813a1fb1bf0b5e1017e48262918b8903da867ba4bf9161c801
             9a49eff03726996373b65c9bddb70933b0da31ff323d20536e65aac5c14129d4
             57ea5d13bcb9b00609bb02da07ba0b38398960f4ba17f9fadbdd79ae9677d966
             ffeb7c26a9e482734553faa4bb08b035b41a16ac9c4172334bbbf736ad2afa30
             b76d35f52f1c936ed0d01eacb8a41ce6149fec324a896bfbc5f0ec9da297cfd1
-            296e9648d47e133a6781a5bb661f1996f2d0f6848beb583c492baf64ad56e504
             2b8592031f6d51b30b82e2d4960098eac10c39050b8ec9d8779f4a7a7c908a71)
 # Linus Torvalds', Greg Kroah-Hartman's (keys/pgp, as Arch's linux has them).
 validpgpkeys=(ABAF11C65A2970B130ABE3C479BE3E4300411886

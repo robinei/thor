@@ -18,10 +18,18 @@ Port to Linux 7.2.8 of MaSi's SteamOS-ARM-SM8550 patch 1025 (adapted
 there from suckbluefrog's Batocera Qualcomm builds). Without the DT
 properties it behaves like upstream, except that a session is taken at
 the first ioctl.
+
+Ours: rebased onto Armada's backport of Anandu Krishnan E's v3 "misc:
+fastrpc: fix context leak and hang on signal-interrupted invoke"
+(lore 20261002-anandu-fastrpc-interrupted-invoke-v3), which removes the
+channel's invoke_interrupted_mmaps and adds fl->interrupted; only the
+context of five hunks changed, not the code. None of this patch is in
+that one or elsewhere in Armada's series (their 0623 adds the remote
+heap's device tree nodes, not the driver's handling of it).
 ---
 --- a/drivers/misc/Kconfig
 +++ b/drivers/misc/Kconfig
-@@ -301,8 +301,10 @@
+@@ -301,8 +301,10 @@ config QCOM_COINCELL
  config QCOM_FASTRPC
  	tristate "Qualcomm FastRPC"
  	depends on ARCH_QCOM || COMPILE_TEST
@@ -160,7 +168,7 @@ the first ioctl.
  #define miscdev_to_fdevice(d) container_of(d, struct fastrpc_device, miscdev)
  
  struct fastrpc_phy_page {
-@@ -253,6 +363,7 @@
+@@ -256,6 +366,7 @@ struct fastrpc_invoke_ctx {
  struct fastrpc_session_ctx {
  	struct device *dev;
  	int sid;
@@ -168,19 +176,18 @@ the first ioctl.
  	bool used;
  	bool valid;
  };
-@@ -280,7 +391,11 @@
+@@ -283,6 +394,10 @@ struct fastrpc_channel_ctx {
  	struct fastrpc_device *secure_fdevice;
  	struct fastrpc_device *fdevice;
  	struct fastrpc_buf *remote_heap;
 +	bool remote_heap_assigned;
- 	struct list_head invoke_interrupted_mmaps;
 +	struct pdr_handle *sensors_pdr;
 +	wait_queue_head_t sensors_pd_waitq;
 +	atomic_t sensors_pd_up;
  	bool secure;
  	bool unsigned_support;
  	u64 dma_mask;
-@@ -306,6 +421,7 @@
+@@ -309,6 +424,7 @@ struct fastrpc_user {
  	int client_id;
  	int pd;
  	bool is_secure_dev;
@@ -188,7 +195,7 @@ the first ioctl.
  	/* Lock for lists */
  	spinlock_t lock;
  	/* lock for allocations */
-@@ -332,6 +448,8 @@
+@@ -335,6 +451,8 @@ static inline u64 fastrpc_sid_offset(struct fastrpc_channel_ctx *cctx,
  	return (u64)sctx->sid << cctx->soc_data->sid_pos;
  }
  
@@ -197,7 +204,7 @@ the first ioctl.
  static void fastrpc_free_map(struct kref *ref)
  {
  	struct fastrpc_map *map;
-@@ -1338,6 +1456,37 @@
+@@ -1410,6 +1528,37 @@ static bool is_session_rejected(struct fastrpc_user *fl, bool unsigned_pd_reques
  	return false;
  }
  
@@ -235,7 +242,7 @@ the first ioctl.
  static int fastrpc_init_create_static_process(struct fastrpc_user *fl,
  					      char __user *argp)
  {
-@@ -1346,7 +1495,6 @@
+@@ -1418,7 +1567,6 @@ static int fastrpc_init_create_static_process(struct fastrpc_user *fl,
  	struct fastrpc_phy_page pages[1];
  	char *name;
  	int err;
@@ -243,7 +250,7 @@ the first ioctl.
  	struct {
  		int client_id;
  		u32 namelen;
-@@ -1397,7 +1545,7 @@
+@@ -1469,7 +1617,7 @@ static int fastrpc_init_create_static_process(struct fastrpc_user *fl,
  					fl->cctx->remote_heap->size, err);
  				goto err_map;
  			}
@@ -252,7 +259,7 @@ the first ioctl.
  			inbuf.pageslen = 1;
  		}
  	}
-@@ -1431,22 +1579,13 @@
+@@ -1503,22 +1651,13 @@ static int fastrpc_init_create_static_process(struct fastrpc_user *fl,
  
  	return 0;
  err_invoke:
@@ -282,7 +289,7 @@ the first ioctl.
  	}
  err_map:
  	fastrpc_buf_free(fl->cctx->remote_heap);
-@@ -1575,8 +1714,7 @@
+@@ -1647,8 +1786,7 @@ err:
  	return err;
  }
  
@@ -292,7 +299,7 @@ the first ioctl.
  {
  	struct fastrpc_channel_ctx *cctx = fl->cctx;
  	struct fastrpc_session_ctx *session = NULL;
-@@ -1584,18 +1722,62 @@
+@@ -1656,18 +1794,62 @@ static struct fastrpc_session_ctx *fastrpc_session_alloc(
  	int i;
  
  	spin_lock_irqsave(&cctx->lock, flags);
@@ -331,8 +338,8 @@ the first ioctl.
 +				session = &cctx->session[i];
 +				break;
 +			}
-+		}
-+	}
+ 		}
+ 	}
 +
 +	/*
 +	 * Preserve the historical first-free behavior for DTs that only
@@ -344,8 +351,8 @@ the first ioctl.
 +				session = &cctx->session[i];
 +				break;
 +			}
- 		}
- 	}
++		}
++	}
 +
 +	if (session) {
 +		session->used = true;
@@ -363,7 +370,7 @@ the first ioctl.
  }
  
  static void fastrpc_session_free(struct fastrpc_channel_ctx *cctx,
-@@ -1603,11 +1785,122 @@
+@@ -1675,11 +1857,122 @@ static void fastrpc_session_free(struct fastrpc_channel_ctx *cctx,
  {
  	unsigned long flags;
  
@@ -486,8 +493,8 @@ the first ioctl.
  static int fastrpc_release_current_dsp_process(struct fastrpc_user *fl)
  {
  	struct fastrpc_invoke_args args[1];
-@@ -1630,7 +1923,8 @@
- 	struct fastrpc_channel_ctx *cctx = fl->cctx;
+@@ -1703,7 +1996,8 @@ static int fastrpc_device_release(struct inode *inode, struct file *file)
+ 	struct fastrpc_invoke_ctx *ctx, *n;
  	unsigned long flags;
  
 -	fastrpc_release_current_dsp_process(fl);
@@ -496,7 +503,7 @@ the first ioctl.
  
  	spin_lock_irqsave(&cctx->lock, flags);
  	list_del(&fl->user);
-@@ -1671,15 +1965,6 @@
+@@ -1757,15 +2051,6 @@ static int fastrpc_device_open(struct inode *inode, struct file *filp)
  	fl->cctx = cctx;
  	fl->is_secure_dev = fdevice->secure;
  
@@ -512,7 +519,7 @@ the first ioctl.
  	spin_lock_irqsave(&cctx->lock, flags);
  	list_add_tail(&fl->user, &cctx->users);
  	spin_unlock_irqrestore(&cctx->lock, flags);
-@@ -2165,6 +2450,207 @@
+@@ -2252,6 +2537,207 @@ err_invoke:
  	return err;
  }
  
@@ -720,7 +727,7 @@ the first ioctl.
  static long fastrpc_device_ioctl(struct file *file, unsigned int cmd,
  				 unsigned long arg)
  {
-@@ -2172,6 +2658,30 @@
+@@ -2259,6 +2745,30 @@ static long fastrpc_device_ioctl(struct file *file, unsigned int cmd,
  	char __user *argp = (char __user *)arg;
  	int err;
  
@@ -751,7 +758,7 @@ the first ioctl.
  	switch (cmd) {
  	case FASTRPC_IOCTL_INVOKE:
  		err = fastrpc_invoke(fl, argp);
-@@ -2256,6 +2766,8 @@
+@@ -2343,6 +2853,8 @@ static int fastrpc_cb_probe(struct platform_device *pdev)
  	if (of_property_read_u32(dev->of_node, "reg", &sess->sid))
  		dev_info(dev, "FastRPC Session ID not specified in DT\n");
  
@@ -760,9 +767,9 @@ the first ioctl.
  	if (sessions > 0) {
  		struct fastrpc_session_ctx *dup_sess;
  
-@@ -2467,11 +2979,17 @@
+@@ -2553,11 +3065,17 @@ static int fastrpc_rpmsg_probe(struct rpmsg_device *rpdev)
+ 	dma_set_mask_and_coherent(rdev, DMA_BIT_MASK(32));
  	INIT_LIST_HEAD(&data->users);
- 	INIT_LIST_HEAD(&data->invoke_interrupted_mmaps);
  	spin_lock_init(&data->lock);
 +	init_waitqueue_head(&data->sensors_pd_waitq);
 +	atomic_set(&data->sensors_pd_up, 0);
@@ -778,7 +785,7 @@ the first ioctl.
  	err = of_platform_populate(rdev->of_node, NULL, NULL, rdev);
  	if (err)
  		goto err_deregister_fdev;
-@@ -2479,6 +2997,7 @@
+@@ -2565,6 +3083,7 @@ static int fastrpc_rpmsg_probe(struct rpmsg_device *rpdev)
  	return 0;
  
  err_deregister_fdev:
@@ -786,8 +793,8 @@ the first ioctl.
  	if (data->fdevice)
  		misc_deregister(&data->fdevice->miscdev);
  	if (data->secure_fdevice)
-@@ -2507,6 +3026,10 @@
- 	struct fastrpc_buf *buf, *b;
+@@ -2599,6 +3118,10 @@ static void fastrpc_rpmsg_remove(struct rpmsg_device *rpdev)
+ 	struct fastrpc_channel_ctx *cctx = dev_get_drvdata(&rpdev->dev);
  	struct fastrpc_user *user;
  	unsigned long flags;
 +	int err;
@@ -797,7 +804,7 @@ the first ioctl.
  
  	/* No invocations past this point */
  	spin_lock_irqsave(&cctx->lock, flags);
-@@ -2514,6 +3037,7 @@
+@@ -2606,6 +3129,7 @@ static void fastrpc_rpmsg_remove(struct rpmsg_device *rpdev)
  	list_for_each_entry(user, &cctx->users, user)
  		fastrpc_notify_users(user);
  	spin_unlock_irqrestore(&cctx->lock, flags);
@@ -805,9 +812,9 @@ the first ioctl.
  
  	if (cctx->fdevice)
  		misc_deregister(&cctx->fdevice->miscdev);
-@@ -2524,8 +3048,13 @@
- 	list_for_each_entry_safe(buf, b, &cctx->invoke_interrupted_mmaps, node)
- 		list_del(&buf->node);
+@@ -2613,8 +3137,13 @@ static void fastrpc_rpmsg_remove(struct rpmsg_device *rpdev)
+ 	if (cctx->secure_fdevice)
+ 		misc_deregister(&cctx->secure_fdevice->miscdev);
  
 -	if (cctx->remote_heap)
 -		fastrpc_buf_free(cctx->remote_heap);
