@@ -193,15 +193,35 @@ mod tests {
         assert!(s.applied(Event::tick(1900 + crate::idle::SLEEP_RETRY)).contains(&Effect::Sleep));
     }
 
+    /// Every kind of save is sent: the match below names each, so a new kind can't be left out of
+    /// `save_everything` without this test failing to build or failing.
     #[test]
     fn a_restarted_store_is_sent_everything_saved() {
         let mut s = started(init());
         let fx = s.applied(Event::Restarted(Thread::Store));
-        let saved = |f: fn(&Save) -> bool| fx.iter().any(|e| matches!(e, Effect::Save(save) if f(save)));
-        assert!(saved(|s| matches!(s, Save::Settings(_))) && saved(|s| matches!(s, Save::Keymaps(_))) && saved(|s| matches!(s, Save::Curves(_))));
-        assert!(saved(|s| matches!(s, Save::Favourites(_))) && saved(|s| matches!(s, Save::Resume(_))) && saved(|s| matches!(s, Save::Brightness(_))));
-        assert!(saved(|s| matches!(s, Save::WindowRules(_))) && saved(|s| matches!(s, Save::Dock(_))) && saved(|s| matches!(s, Save::Autostart(_))));
-        assert!(saved(|s| matches!(s, Save::TwelveHour(_))) && saved(|s| matches!(s, Save::Sticks(_))) && saved(|s| matches!(s, Save::FirstStartDone)));
+        let kind = |save: &Save| match save {
+            Save::Settings(_) => 0,
+            Save::Keymaps(_) => 1,
+            Save::Curves(_) => 2,
+            Save::Favourites(_) => 3,
+            Save::Resume(_) => 4,
+            Save::Brightness(_) => 5,
+            Save::WindowRules(_) => 6,
+            Save::Dock(_) => 7,
+            Save::Autostart(_) => 8,
+            Save::TwelveHour(_) => 9,
+            Save::FirstStartDone => 10,
+            Save::Sticks(_) => 11,
+        };
+        let mut sent = [false; 12];
+        for e in &fx {
+            if let Effect::Save(save) = e
+                && let Some(slot) = sent.get_mut(kind(save))
+            {
+                *slot = true;
+            }
+        }
+        assert_eq!(sent, [true; 12], "{fx:?}");
     }
 
     #[test]
