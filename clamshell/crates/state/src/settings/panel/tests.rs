@@ -286,6 +286,23 @@ fn a_game_can_start_the_pad_mouse_and_darken_the_second_screen() {
     assert!(!s.pad().mouse_on());
 }
 
+/// Dark for a game, the second screen watches nothing for its tab; a window shown there keeps it lit.
+#[test]
+fn the_dark_second_screen_watches_nothing_and_a_window_there_keeps_it_lit() {
+    let mut s = state();
+    taps(&mut s, Setting::BottomScreen, 2);
+    assert_eq!(s.bottom().tab(), crate::Tab::Sysinfo, "its metrics watched");
+    let mut fx = s.applied(Event::Entry("zelda-lttp".into(), crate::EntryAct::Play));
+    let zelda = s.session().launching().iter().find(|l| &*l.entry == "zelda-lttp").map(|l| l.unit.clone()).unwrap();
+    fx.extend(crate::testkit::start(&mut s, "zelda-lttp"));
+    assert!(s.bottom_dark());
+    assert!(fx.contains(&Effect::Watch(crate::Watch::Metrics, false)), "{fx:?}");
+    s.observed(vec![crate::testkit::win_of(3, "zelda3", &zelda), crate::testkit::win_of(4, "zelda3", &zelda)]);
+    s.applied(Event::HardwareKey(crate::HardwareKey::WindowDown));
+    assert!(s.bottom().shows_windows(s.session()));
+    assert!(!s.bottom_dark());
+}
+
 #[test]
 fn without_a_game_the_panel_edits_the_global_settings() {
     let mut empty = State::new(Init { library: Some(Library::default()), ..init() });

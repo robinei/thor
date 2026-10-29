@@ -45,9 +45,10 @@ impl State {
         Panel::new(self.top(), &self.session, &self.library_view, &self.prefs, &self.keymapping, &self.curving)
     }
 
-    /// Whether the second screen is dark (see [`crate::Bottom::dark`]).
+    /// Whether the second screen is dark (see [`crate::Bottom::dark`]). A window shown there keeps it lit:
+    /// it was put there to be watched.
     pub fn bottom_dark(&self) -> bool {
-        self.bottom.dark(self.session.program().is_some(), self.in_force().choice::<BottomWhenIdle>())
+        !self.bottom.shows_windows(&self.session) && self.bottom.dark(self.session.program().is_some(), self.in_force().choice::<BottomWhenIdle>())
     }
 
     /// What the second screen's power follows, as things are now.

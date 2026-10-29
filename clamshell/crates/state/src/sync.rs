@@ -43,7 +43,7 @@ pub(crate) struct Wanted<'a> {
     pub(crate) refresh: u16,
     /// The bottom screen is on (see [`crate::State::bottom_off`]).
     pub(crate) bottom_on: bool,
-    /// ClamShell's view is on the bottom screen, and that screen is on.
+    /// ClamShell's view is on the bottom screen, and that screen is on and not dark.
     pub(crate) bottom_seen: bool,
     /// What the open tab watches.
     pub(crate) tab: Option<Watch>,

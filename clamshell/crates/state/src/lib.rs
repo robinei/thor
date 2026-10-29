@@ -690,7 +690,7 @@ impl State {
             refresh: self.refresh_wanted(&settings),
             // Off while the refresh rate calibration runs, so only the main screen's vblanks come.
             bottom_on: !bottom_off && !self.setup.calibrating(),
-            bottom_seen: !self.bottom.shows_windows(&self.session) && !bottom_off,
+            bottom_seen: !self.bottom.shows_windows(&self.session) && !bottom_off && !self.bottom_dark(),
             tab,
             setup_open: self.setup.reads_account(self.session.runs_builtin(clamshell_library::Builtin::Device)),
             ui_up: self.ui_up,

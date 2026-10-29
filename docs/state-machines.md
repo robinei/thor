@@ -288,6 +288,7 @@ bottom screen to open the windows' tab and turn on (`Bottom::show_below`).
 | Home+Start: wake if off by itself (dark for a game too, which sets `woken` as a tap does), else toggle off | `the_bottom_screen_turns_off_and_on`, `home_start_brings_back_…`, `…off_by_hand_and_by_itself_at_once`, `home_start_wakes_a_screen_dark_for_a_game` |
 | settle: off by itself when on battery, not refreshing, not set to stay on, no windows shown, no editor, and dark in a game or untouched 4 min | `on_battery_the_untouched_…` and siblings; `a_refresh_calibration_or_an_editor_keeps_it_on` |
 | settle: dimmed after 60 s untouched, unless windows are shown | `the_bottom_screen_dims_untouched_and_lights_when_used` |
+| dark (`bottom_dark`): for a game set to darken it, until woken, and never while a window is shown there; while dark, or off, or showing a window, the tab's readings aren't watched | `the_dark_second_screen_watches_nothing_and_a_window_there_keeps_it_lit` |
 | Wake tap sets `woken`; a game starting resets it | `dark_for_a_game_…`, `a_game_can_start_the_pad_mouse_…`, `a_game_starting_lets_a_woken_screen_go_dark_again`; touch or pad focus don't wake a dark screen (kept by decision, S16 in the history notes) |
 
 ## Idle and sleep (idle.rs)
