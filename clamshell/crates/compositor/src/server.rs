@@ -75,6 +75,12 @@ pub(crate) struct Server {
     /// Counts the changes to the windows as their clients and the window manager left them, which the
     /// scene is placed from (see [`Server::windows_changed`]).
     pub windows_epoch: u64,
+    /// What the windows were last configured from (see `Server::configure_windows`): the state's
+    /// revision, the windows' epoch and the screens' areas for windows.
+    pub configured_from: Option<crate::windows::ConfiguredFrom>,
+    /// How many times the windows were configured, for the tests to count.
+    #[cfg(test)]
+    pub configures: usize,
     /// The id the next window gets, Wayland's and X11's alike.
     pub next_id: i64,
     pub x11: crate::x11::Bridge,
@@ -137,6 +143,9 @@ impl Server {
             identities,
             changed_facts: Vec::new(),
             windows_epoch: 0,
+            configured_from: None,
+            #[cfg(test)]
+            configures: 0,
             next_id: 1,
             x11: Default::default(),
         };

@@ -49,6 +49,14 @@ impl Shown {
     }
 }
 
+/// What the windows were configured from (see `Server::configure_windows`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ConfiguredFrom {
+    revision: u64,
+    windows: u64,
+    areas: [smithay::utils::Rectangle<i32, smithay::utils::Logical>; 2],
+}
+
 impl Server {
     pub fn surface_id(&self, surface: &WlSurface) -> Option<i64> {
         self.windows.iter().find(|w| w.window.root().as_ref() == Some(surface)).map(|w| w.id)
@@ -173,6 +181,36 @@ impl Server {
         self.sync_x11_popups();
         self.validate_capture();
         self.cancel_hidden_touches();
+        self.configure_windows();
+        let focus = self.core.state().session().keyboard_focus();
+        let surface = focus.and_then(|id| self.windows.iter().find(|w| w.id == id && w.mapped)).and_then(|w| w.window.root());
+        let surface = self.menu_focus(surface);
+        if let Some(keyboard) = self.seat.get_keyboard()
+            && keyboard.current_focus() != surface
+        {
+            self.core.handle(clamshell_state::Event::TextInput(false));
+            if surface.is_none() {
+                self.protocols.activation.retain_tokens(|_, _| false);
+                smithay::wayland::selection::data_device::set_data_device_focus(&self.dh, &self.seat, None);
+                smithay::wayland::selection::primary_selection::set_primary_focus(&self.dh, &self.seat, None);
+            }
+            keyboard.set_focus(self, surface, SERIAL_COUNTER.next_serial());
+        }
+    }
+
+    /// Tells each window its configure (its size, bounds, fullscreen and activated states; Smithay sends
+    /// nothing when they are unchanged) and the output it is on, when the state, the windows or the areas
+    /// changed since it last did.
+    fn configure_windows(&mut self) {
+        let from = ConfiguredFrom { revision: self.core.state_revision(), windows: self.windows_epoch, areas: [self.area(false), self.area(true)] };
+        if self.configured_from == Some(from) {
+            return;
+        }
+        self.configured_from = Some(from);
+        #[cfg(test)]
+        {
+            self.configures += 1;
+        }
         let focus = self.core.state().session().keyboard_focus();
         for client in &self.windows {
             let Some(window) = self.core.state().session().window(client.id) else { continue };
@@ -210,19 +248,6 @@ impl Server {
                     candidate.leave(&root);
                 }
             }
-        }
-        let surface = focus.and_then(|id| self.windows.iter().find(|w| w.id == id && w.mapped)).and_then(|w| w.window.root());
-        let surface = self.menu_focus(surface);
-        if let Some(keyboard) = self.seat.get_keyboard()
-            && keyboard.current_focus() != surface
-        {
-            self.core.handle(clamshell_state::Event::TextInput(false));
-            if surface.is_none() {
-                self.protocols.activation.retain_tokens(|_, _| false);
-                smithay::wayland::selection::data_device::set_data_device_focus(&self.dh, &self.seat, None);
-                smithay::wayland::selection::primary_selection::set_primary_focus(&self.dh, &self.seat, None);
-            }
-            keyboard.set_focus(self, surface, SERIAL_COUNTER.next_serial());
         }
     }
 

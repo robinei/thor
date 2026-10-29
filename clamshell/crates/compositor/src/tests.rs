@@ -339,6 +339,26 @@ fn a_windows_presentation_is_worked_out_again_only_when_the_state_changes() {
     assert_eq!(checked, 1);
 }
 
+/// A turn with nothing new, no event, commit or request, places nothing and configures nothing: each is a
+/// comparison. (The window manager's turn on an idle Xwayland: `x11::wm`'s tests.)
+#[test]
+fn an_idle_turn_places_and_configures_nothing() {
+    let (mut display, mut server) = ServerBuilder::new().started();
+    let client = spawn_client(&mut display, launched(), |globals, mut queue, steps| {
+        let _window = open_toplevel(&globals, &mut queue, &mut Client::default(), "test", None);
+        steps.step(());
+    });
+    let checked = client.serve(&mut display, &mut server, Server::frame, |_, server, ()| {
+        server.frame();
+        let counts = (server.scene.placements, server.configures);
+        for _ in 0..3 {
+            server.frame();
+        }
+        assert_eq!((server.scene.placements, server.configures), counts);
+    });
+    assert_eq!(checked, 1);
+}
+
 #[test]
 fn a_window_moved_down_that_ignores_its_configure_is_scaled_at_once() {
     let (mut display, mut server) = ServerBuilder::new().started();
