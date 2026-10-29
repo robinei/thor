@@ -2,7 +2,8 @@
 //! input from libinput. The device profile names the connector of each screen and how its panel is
 //! mounted. Each screen is composed on its own (the colour pipeline, a scene each), turned as its panel
 //! is; its page flips pace its frames and the composing of commits to it, independently of the other
-//! screen's, and their times are the presentation feedback clients get.
+//! screen's, and their times are the presentation feedback clients get. An external display connected
+//! mirrors the top screen and paces it instead (see `external`).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -39,10 +40,12 @@ use smithay::{
 };
 
 mod commit;
+mod external;
 mod input_areas;
 mod shows;
 mod turn;
 use commit::*;
+use external::*;
 use input_areas::*;
 use shows::*;
 use turn::*;
@@ -55,10 +58,19 @@ use crate::{
     server::Server,
 };
 
-/// One of the two screens: its connector's CRTC, its swapchain, and where it is in the scene.
+/// A screen: one of the two panels, or an external display (see `external`); its connector's CRTC, its
+/// swapchain, and where it is in the scene.
 struct Screen {
+    /// The panel's role, or for an external display the panel whose picture it shows (the top's).
     role: ScreenRole,
+    connector: connector::Handle,
     crtc: crtc::Handle,
+    /// An external display's facts; None for a panel.
+    external: Option<External>,
+    /// Whether its flips pace the windows of its part of the scene (see [`pacer`]), and, for a panel,
+    /// whether an external display mirrors it, which paces it instead.
+    paces: bool,
+    mirrored: bool,
     surface: Presenter,
     /// The elements' states in the frame queued, for its flip; refilled in place for each frame, so that
     /// queueing one allocates nothing.
@@ -80,11 +92,11 @@ struct Screen {
     held: Option<Instant>,
     /// Whether it is on, as the state last asked.
     on: bool,
-    /// The connector's modes of the screen's size, the one it started with, and the refresh last asked
-    /// for (0: the starting one).
+    /// The connector's modes of the screen's size, the one it started with, and the refresh last set (0:
+    /// the starting one).
     modes: Vec<smithay::reexports::drm::control::Mode>,
     start_mode: smithay::reexports::drm::control::Mode,
-    refresh: u16,
+    refresh: u32,
     /// When its last frame was shown, by the flip's time.
     flipped: Option<Time<Monotonic>>,
     /// What it shows (see [`shows()`]).
@@ -113,6 +125,78 @@ struct Screen {
 }
 
 impl Screen {
+    /// A screen showing `part` of the scene in `mode` on `crtc`, turned by `transform`, on and to be drawn
+    /// whole; with none of the means to show anything but frames composed (see `run`).
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        role: ScreenRole,
+        connector: connector::Handle,
+        crtc: crtc::Handle,
+        surface: Presenter,
+        mode: smithay::reexports::drm::control::Mode,
+        modes: Vec<smithay::reexports::drm::control::Mode>,
+        part: Rectangle<i32, Buffer>,
+        transform: Transform,
+        external: Option<External>,
+    ) -> Screen {
+        let (w, h) = mode.size();
+        Screen {
+            role,
+            connector,
+            crtc,
+            paces: external.is_none(),
+            mirrored: false,
+            external,
+            surface,
+            part,
+            size: Size::from((i32::from(w), i32::from(h))),
+            transform,
+            interval: Duration::from_micros(1_000_000 / u64::from(mode.vrefresh().max(1))),
+            dirty: true,
+            answered: 0,
+            next_callbacks: None,
+            held: None,
+            on: true,
+            modes,
+            start_mode: mode,
+            refresh: 0,
+            flipped: None,
+            queued: RenderElementStates::default(),
+            feedback: Default::default(),
+            shows: Shows::Composed,
+            ui: None,
+            window: None,
+            candidate: None,
+            fed: None,
+            tested: None,
+            composed_why: None,
+            layers: None,
+            layers_dirty: false,
+            failing: false,
+            off_failing: false,
+            compose_failing: false,
+        }
+    }
+
+    /// Whether it shows the second screen's part of the scene.
+    fn down(&self) -> bool {
+        self.role == ScreenRole::Bottom
+    }
+
+    /// Its scene's index: the top screen's 0, the second's 1.
+    fn scene(&self) -> usize {
+        usize::from(self.down())
+    }
+
+    /// Its name in the log: "Top", "Bottom" or "external".
+    fn name(&self) -> &'static str {
+        match (&self.external, self.role) {
+            (Some(_), _) => "external",
+            (None, ScreenRole::Top) => "Top",
+            (None, ScreenRole::Bottom) => "Bottom",
+        }
+    }
+
     /// Drops what its buffers hold, as after it was off or away, or a flip was lost: the next frame is
     /// drawn whole, composed or its own.
     fn reset_buffers(&mut self) {
@@ -156,6 +240,11 @@ fn next_shown(flipped: Option<Duration>, interval: Duration, pending: bool, now:
 
 /// What drawing needs, shared by the loop's sources.
 struct Drawing {
+    /// The GPU's display device and its buffers' allocator, which an external display's screen is made
+    /// with when it is connected; and the panels' connectors by name, which are no external display.
+    drm: DrmDevice,
+    gbm: GbmDevice<DrmDeviceFd>,
+    panels: [&'static str; 2],
     renderer: GlesRenderer,
     pipeline: Pipeline,
     screens: Vec<Screen>,
@@ -163,7 +252,7 @@ struct Drawing {
     frames: [UiFrame; 4],
     cursor: crate::cursor::Cursor,
     elements: Vec<render::Element>,
-    /// Each screen's elements as last composed.
+    /// Each scene's elements as last composed: the top screen's, the second's.
     states: [RenderElementStates; 2],
     /// Whether the seat is another session's (another VT shown): nothing is drawn or committed meanwhile.
     away: bool,
@@ -272,54 +361,12 @@ pub fn run(
     let mut screens = Vec::new();
     let shown = [Some((ScreenRole::Top, &top, 0)), bottom.as_ref().map(|b| (ScreenRole::Bottom, b, top_size.w))];
     for (role, chosen, x) in shown.into_iter().flatten() {
-        let surface = drm.create_surface(chosen.crtc, chosen.mode, &[chosen.connector]).map_err(|e| format!("drm: {role:?} screen: {e}"))?;
-        // A screen turned on or off, or to another refresh, is a modeset, which on the panels' power
-        // sequences takes tens to hundreds of ms: it doesn't wait for it, so neither do the other screen's
-        // frames and the input. A commit made before it is done is busy and tried again.
-        surface.set_nonblocking_modesets(true);
-        let allocator = GbmAllocator::new(gbm.clone(), GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT);
-        // Ten bits a channel where the screen takes them, for HDR later; else eight.
-        let renderer_formats: Vec<_> = renderer_formats.iter().copied().collect();
-        let surface = Presenter::new(surface, allocator, &[Fourcc::Xrgb2101010, Fourcc::Xrgb8888], &renderer_formats)
-            .map_err(|e| format!("drm: {role:?} screen: {e}"))?;
+        let surface = presenter(&mut drm, &gbm, &renderer, chosen.crtc, chosen.mode, chosen.connector).map_err(|e| format!("drm: {role:?} screen: {e}"))?;
         log::info!("drm: {role:?} screen on {} at {:?}, {}", profile.screen(role).connector, chosen.mode.size(), surface.format());
-        let (w, h) = chosen.mode.size();
-        let size = Size::from((i32::from(w), i32::from(h)));
         let width = if role == ScreenRole::Top { top_size.w } else { bottom_size.w };
         let part = Rectangle::new((x, 0).into(), (width, server.screens.size.1).into());
-        let interval = Duration::from_micros(1_000_000 / u64::from(chosen.mode.vrefresh().max(1)));
-        screens.push(Screen {
-            role,
-            crtc: chosen.crtc,
-            surface,
-            part,
-            size,
-            transform: transform(profile.screen(role).rotation),
-            interval,
-            dirty: true,
-            answered: 0,
-            next_callbacks: None,
-            held: None,
-            on: true,
-            modes: chosen.modes.clone(),
-            start_mode: chosen.mode,
-            refresh: 0,
-            flipped: None,
-            queued: RenderElementStates::default(),
-            feedback: Default::default(),
-            shows: Shows::Composed,
-            ui: None,
-            window: None,
-            candidate: None,
-            fed: None,
-            tested: None,
-            composed_why: None,
-            layers: None,
-            layers_dirty: false,
-            failing: false,
-            off_failing: false,
-            compose_failing: false,
-        });
+        let transform = transform(profile.screen(role).rotation);
+        screens.push(Screen::new(role, chosen.connector, chosen.crtc, surface, chosen.mode, chosen.modes.clone(), part, transform, None));
     }
     // With CLAMSHELL_SCANOUT=1, each screen's own buffers, for while it shows only ClamShell.
     if scanout {
@@ -383,6 +430,9 @@ pub fn run(
     server.core.handle(clamshell_state::Reading::DisplayModes(rates).into());
 
     let drawing = Rc::new(RefCell::new(Drawing {
+        drm,
+        gbm,
+        panels: [profile.top.connector, profile.bottom.connector],
         renderer,
         pipeline,
         screens,
@@ -393,6 +443,23 @@ pub fn run(
         away: false,
     }));
     let on_capture = Rc::new(RefCell::new(on_capture));
+
+    // Connectors plugged and unplugged: an external display (see `external`), connected already or later.
+    connectors_changed(&mut drawing.borrow_mut(), &mut base.server);
+    match smithay::backend::udev::UdevBackend::new(&seat) {
+        Ok(udev) => {
+            let plugs = drawing.clone();
+            base.event_loop
+                .handle()
+                .insert_source(udev, move |event, _, server| {
+                    if let smithay::backend::udev::UdevEvent::Changed { .. } = event {
+                        connectors_changed(&mut plugs.borrow_mut(), server);
+                    }
+                })
+                .map_err(|e| e.error)?;
+        }
+        Err(error) => log::warn!("drm: no udev monitor ({error}): an external display is seen only at start and when the seat is back"),
+    }
 
     // Page flips: the frame shown, its time to the clients, and the next frame.
     let flips = drawing.clone();
@@ -446,8 +513,9 @@ pub fn run(
             SessionEvent::PauseSession => {
                 log::info!("drm: seat paused");
                 libinput.suspend();
-                drm.pause();
-                paused.borrow_mut().away = true;
+                let drawing = &mut *paused.borrow_mut();
+                drawing.drm.pause();
+                drawing.away = true;
             }
             SessionEvent::ActivateSession => {
                 log::info!("drm: seat resumed");
@@ -456,10 +524,10 @@ pub fn run(
                 }
                 // Every screen off and its state forgotten, as the console left them: one that is on is set
                 // up whole by its next commit, one that is off stays so.
-                if let Err(error) = drm.activate(true) {
+                let drawing = &mut *resumed.borrow_mut();
+                if let Err(error) = drawing.drm.activate(true) {
                     log::warn!("drm: {error}");
                 }
-                let drawing = &mut *resumed.borrow_mut();
                 drawing.away = false;
                 for screen in &mut drawing.screens {
                     screen.reset_buffers();
@@ -471,6 +539,8 @@ pub fn run(
                     }
                 }
                 drawing.pipeline.redraw_all();
+                // A display may have been plugged or unplugged meanwhile.
+                connectors_changed(drawing, server);
                 step(drawing, server, &mut *capture.borrow_mut(), Instant::now());
             }
         })
@@ -517,6 +587,26 @@ fn gles(gbm: GbmDevice<DrmDeviceFd>) -> Result<GlesRenderer, Error> {
     unsafe { GlesRenderer::new(context) }.map_err(|e| format!("drm: renderer: {e}").into())
 }
 
+/// A screen's surface on `crtc` showing `connector` in `mode`, and its buffers: ten bits a channel where
+/// the screen takes them, for HDR later, else eight, in a format the renderer draws.
+fn presenter(
+    drm: &mut DrmDevice,
+    gbm: &GbmDevice<DrmDeviceFd>,
+    renderer: &GlesRenderer,
+    crtc: crtc::Handle,
+    mode: smithay::reexports::drm::control::Mode,
+    connector: connector::Handle,
+) -> Result<Presenter, Error> {
+    let surface = drm.create_surface(crtc, mode, &[connector]).map_err(|e| e.to_string())?;
+    // A screen turned on or off, or to another refresh, is a modeset, which on the panels' power sequences
+    // takes tens to hundreds of ms: it doesn't wait for it, so neither do the other screens' frames and the
+    // input. A commit made before it is done is busy and tried again.
+    surface.set_nonblocking_modesets(true);
+    let allocator = GbmAllocator::new(gbm.clone(), GbmBufferFlags::RENDERING | GbmBufferFlags::SCANOUT);
+    let formats: Vec<_> = renderer.dmabuf_formats().iter().copied().collect();
+    Presenter::new(surface, allocator, &[Fourcc::Xrgb2101010, Fourcc::Xrgb8888], &formats)
+}
+
 /// The rotation that turns a panel mounted `rotation` the right way up.
 fn transform(rotation: Rotation) -> Transform {
     match rotation {
@@ -529,21 +619,22 @@ fn transform(rotation: Rotation) -> Transform {
 fn choose(drm: &DrmDevice, profile: &DeviceProfile, role: ScreenRole, taken: Option<crtc::Handle>) -> Result<Chosen, Error> {
     let name = profile.screen(role).connector;
     let resources = drm.resource_handles().map_err(|e| format!("drm: {e}"))?;
+    let taken: &[crtc::Handle] = match &taken {
+        Some(crtc) => std::slice::from_ref(crtc),
+        None => &[],
+    };
     for &handle in resources.connectors() {
         let Ok(info) = drm.get_connector(handle, false) else {
             continue;
         };
-        if format!("{}-{}", info.interface().as_str(), info.interface_id()) != name {
+        if connector_name(&info) != name {
             continue;
         }
         if info.state() != connector::State::Connected {
             return Err(format!("drm: {name}, the {role:?} screen, is not connected").into());
         }
         // The mode the kernel set (its command line's video=, or the panel's own), else the preferred one.
-        let current = info
-            .current_encoder()
-            .and_then(|e| drm.get_encoder(e).inspect_err(|error| log::warn!("drm: {name}: its encoder: {error}")).ok()?.crtc())
-            .filter(|c| Some(*c) != taken)
+        let current = current_crtc(drm, &info, name, taken)
             .and_then(|c| Some((c, drm.get_crtc(c).inspect_err(|error| log::warn!("drm: {name}: its CRTC: {error}")).ok()?.mode()?)));
         let same_size = |mode: smithay::reexports::drm::control::Mode| info.modes().iter().filter(|m| m.size() == mode.size()).copied().collect();
         let millimetres = info.size();
@@ -557,16 +648,38 @@ fn choose(drm: &DrmDevice, profile: &DeviceProfile, role: ScreenRole, taken: Opt
             .or_else(|| info.modes().first())
             .copied()
             .ok_or_else(|| format!("drm: {name} has no modes"))?;
-        let crtc = info
-            .encoders()
-            .iter()
-            .filter_map(|&e| drm.get_encoder(e).inspect_err(|error| log::warn!("drm: {name}: an encoder: {error}")).ok())
-            .flat_map(|e| resources.filter_crtcs(e.possible_crtcs()))
-            .find(|c| Some(*c) != taken)
-            .ok_or_else(|| format!("drm: no CRTC for {name}"))?;
+        let crtc = free_crtc(drm, &resources, &info, name, taken)?;
         return Ok(Chosen { connector: handle, mode, modes: same_size(mode), crtc, millimetres });
     }
     Err(format!("drm: no connector {name} for the {role:?} screen").into())
+}
+
+/// A connector's name, as the kernel and the device profile give it ("DSI-1", "DP-1").
+fn connector_name(info: &connector::Info) -> String {
+    format!("{}-{}", info.interface().as_str(), info.interface_id())
+}
+
+/// The CRTC connector `info` (named `name`) is on now, unless it is one of `taken`.
+fn current_crtc(drm: &DrmDevice, info: &connector::Info, name: &str, taken: &[crtc::Handle]) -> Option<crtc::Handle> {
+    info.current_encoder()
+        .and_then(|e| drm.get_encoder(e).inspect_err(|error| log::warn!("drm: {name}: its encoder: {error}")).ok()?.crtc())
+        .filter(|c| !taken.contains(c))
+}
+
+/// The first CRTC connector `info`'s encoders can use that isn't one of `taken`.
+fn free_crtc(
+    drm: &DrmDevice,
+    resources: &smithay::reexports::drm::control::ResourceHandles,
+    info: &connector::Info,
+    name: &str,
+    taken: &[crtc::Handle],
+) -> Result<crtc::Handle, Error> {
+    info.encoders()
+        .iter()
+        .filter_map(|&e| drm.get_encoder(e).inspect_err(|error| log::warn!("drm: {name}: an encoder: {error}")).ok())
+        .flat_map(|e| resources.filter_crtcs(e.possible_crtcs()))
+        .find(|c| !taken.contains(c))
+        .ok_or_else(|| format!("drm: no CRTC for {name}").into())
 }
 
 /// The frame queued on screen `index` is shown: its time is the presentation feedback, and the clients
@@ -584,13 +697,16 @@ fn flipped(drawing: &mut Drawing, server: &mut Server, index: usize, metadata: O
         Some(DrmEventTime::Monotonic(at)) => (at.into(), true),
         _ => (server.clock.now(), false),
     };
-    let down = screen.role == ScreenRole::Bottom;
+    let down = screen.down();
     screen.flipped = Some(time);
     if submitted {
+        // (A screen that doesn't pace queued no elements' states nor feedback: see `present`.)
         server.frame_shown(&screen.queued, Some(down));
         server.present_flip(&mut screen.feedback, time, hw_clock, screen.interval, metadata.map_or(0, |m| u64::from(m.sequence)));
     }
-    screen.held = server.frame_callbacks(Some(down), screen.interval, Instant::now());
+    if screen.paces {
+        screen.held = server.frame_callbacks(Some(down), screen.interval, Instant::now());
+    }
 }
 
 /// Composes each screen that is free and composed for (see [`composes`]) and shows it if it changed;
@@ -614,6 +730,7 @@ fn step(
         }
         return None;
     }
+    pacing_decide(drawing);
     outputs(drawing, server);
     // The commits of a screen's windows timed for no later than its next frame go ahead before it is
     // composed; the loop wakes a refresh of that screen before the next one held is due, to compose it in
@@ -621,9 +738,9 @@ fn step(
     // (not at once again). Each screen by its own refresh, which the two needn't share.
     let clock = server.clock.now();
     let mut timed = None;
-    for screen in &drawing.screens {
+    for screen in drawing.screens.iter().filter(|screen| screen.paces) {
         let next = screen.next_shown(clock);
-        let held = server.release_timed_commits(next, Some(screen.role == ScreenRole::Bottom));
+        let held = server.release_timed_commits(next, Some(screen.down()));
         timed = earlier(timed, held.map(|at| timed_wake(now, Duration::from(clock), Duration::from(next), Duration::from(at), screen.interval)));
     }
     // The frame's own work (the X11 windows' changes to the state) and the buffers' imports, which their
@@ -685,7 +802,7 @@ fn step(
     let mut due: Option<Instant> = earlier(earlier(timed, trims.finish()), drawing.pipeline.capture_due(now));
     for screen in &mut drawing.screens {
         if screen.surface.flip_due().is_some_and(|lost| now >= lost) {
-            log::warn!("drm: {:?} screen: no flip {} ms after its frame: drawn again", screen.role, crate::presenter::FLIP_LOST.as_millis());
+            log::warn!("drm: {} screen: no flip {} ms after its frame: drawn again", screen.name(), crate::presenter::FLIP_LOST.as_millis());
             screen.reset_buffers();
             screen.dirty = true;
         }
@@ -695,7 +812,7 @@ fn step(
         let Some(screen) = drawing.screens.get_mut(index) else {
             continue;
         };
-        let down = screen.role == ScreenRole::Bottom;
+        let down = screen.down();
         // A frame waits for its flip: a move of the cursor alone goes at once.
         if screen.surface.in_flight()
             && screen.layers_dirty
@@ -734,14 +851,15 @@ fn step(
     after_compose(due, composed, server.pacing.commits, now)
 }
 
-/// Turns each screen off or on, and the top screen to the refresh, as the state last asked.
+/// Turns each screen off or on, as the state last asked of its panel, and the top panel to the refresh
+/// (see [`panel_hz`]); and tells clients the refresh of the screen pacing the top screen's windows.
 fn outputs(drawing: &mut Drawing, server: &mut Server) {
+    let mirror_hz = drawing.screens.iter().find(|screen| screen.external.is_some() && !screen.down()).map(|screen| screen.surface.pending_mode().vrefresh());
     for screen in &mut drawing.screens {
-        let index = usize::from(screen.role == ScreenRole::Bottom);
-        let wanted = server.screens.on.get(index).copied().unwrap_or(true);
+        let wanted = server.screens.on.get(screen.scene()).copied().unwrap_or(true);
         if let Some(power) = switched(Power { on: screen.on, dirty: screen.dirty }, wanted) {
             if wanted {
-                log::info!("drm: {:?} screen on", screen.role);
+                log::info!("drm: {} screen on", screen.name());
                 Power { on: screen.on, dirty: screen.dirty } = power;
                 // The next frame turns it back on.
                 screen.reset_buffers();
@@ -750,7 +868,7 @@ fn outputs(drawing: &mut Drawing, server: &mut Server) {
                 // rather than left lit with nothing composed on it.
                 match screen.surface.surface().clear() {
                     Ok(()) => {
-                        log::info!("drm: {:?} screen off", screen.role);
+                        log::info!("drm: {} screen off", screen.name());
                         Power { on: screen.on, dirty: screen.dirty } = power;
                         screen.off_failing = false;
                         screen.surface.off();
@@ -761,15 +879,18 @@ fn outputs(drawing: &mut Drawing, server: &mut Server) {
                     }
                     Err(error) if !screen.off_failing => {
                         screen.off_failing = true;
-                        log::warn!("drm: turning the {:?} screen off: {error}: trying again", screen.role);
+                        log::warn!("drm: turning the {} screen off: {error}: trying again", screen.name());
                     }
-                    Err(error) => log::debug!("drm: turning the {:?} screen off: {error}", screen.role),
+                    Err(error) => log::debug!("drm: turning the {} screen off: {error}", screen.name()),
                 }
             }
         }
-        if screen.role == ScreenRole::Top && server.screens.refresh_wanted != screen.refresh {
-            screen.refresh = server.screens.refresh_wanted;
-            let hz = u32::from(screen.refresh);
+        if screen.role != ScreenRole::Top || screen.external.is_some() {
+            continue;
+        }
+        let hz = panel_hz(server.screens.refresh_wanted, mirror_hz, screen.modes.iter().map(|m| m.vrefresh()));
+        if hz != screen.refresh {
+            screen.refresh = hz;
             let mode = *mode_for(&screen.modes, &screen.start_mode, |m| m.vrefresh(), hz);
             if hz != 0 && mode.vrefresh() != hz {
                 log::info!("drm: top screen: no mode at {hz} Hz, the nearest at {} Hz", mode.vrefresh());
@@ -780,32 +901,39 @@ fn outputs(drawing: &mut Drawing, server: &mut Server) {
                     Ok(()) => {
                         screen.interval = Duration::from_micros(1_000_000 / u64::from(mode.vrefresh().max(1)));
                         screen.dirty = true;
-                        server.screens.refresh = i32::try_from(mode.vrefresh()).unwrap_or(60).saturating_mul(1000);
-                        server.resize(server.screens.size);
                     }
                     Err(error) => log::warn!("drm: top screen at {} Hz: {error}", mode.vrefresh()),
                 }
             }
         }
     }
+    tell_refresh(drawing, server);
 }
 
-/// Composes screen `index` if it is composed now (see [`composes`]), or for a screenshot (`capture`),
-/// marking it changed if its picture did.
+/// Composes screen `index`'s part of the scene if the screen paces it and composes now (see
+/// [`composes`]), or for a screenshot (`capture`), marking each screen showing it changed if its picture
+/// did.
 fn compose(drawing: &mut Drawing, server: &mut Server, index: usize, capture: bool) -> Result<(), Error> {
     let Drawing { renderer, pipeline, screens, frames, cursor, elements, states, .. } = drawing;
-    let (Some(screen), Some(states)) = (screens.get_mut(index), states.get_mut(index)) else { return Ok(()) };
+    let Some(screen) = screens.get(index) else { return Ok(()) };
     let shows_own = matches!(screen.shows, Shows::Own | Shows::Window(_));
-    if !composes(screen.on, screen.surface.in_flight(), shows_own, capture) {
+    // (A screen following another's pace shows the scene that one composes.)
+    if !screen.paces || !composes(screen.on, screen.surface.in_flight(), shows_own, capture) {
         return Ok(());
     }
-    let down = screen.role == ScreenRole::Bottom;
+    let down = screen.down();
     let skip = match screen.shows {
         Shows::Window(id) => Some(id),
         _ => None,
     };
+    let straight = matches!(screen.shows, Shows::Straight(_));
+    let Some(states) = states.get_mut(screen.scene()) else { return Ok(()) };
     render::elements(server, frames, cursor, renderer, elements, down, skip, screen.planed())?;
-    screen.dirty |= pipeline.compose(server, renderer, down, elements, states, matches!(screen.shows, Shows::Straight(_)))?;
+    if pipeline.compose(server, renderer, down, elements, states, straight)? {
+        for screen in screens.iter_mut().filter(|screen| screen.down() == down) {
+            screen.dirty = true;
+        }
+    }
     Ok(())
 }
 
@@ -822,7 +950,7 @@ mod tests {
     #[test]
     fn a_screen_shows_its_own_buffers_a_lone_windows_or_a_frame_composed() {
         use super::{Facts, Shows, shows};
-        let none = Facts { on: true, own: false, lone: None, buffer: None, screenshot: false };
+        let none = Facts { on: true, own: false, lone: None, buffer: None, screenshot: false, mirroring: false };
         let lone = Facts { lone: Some(7), buffer: Some(Ok(())), ..none };
         assert_eq!(shows(none), Shows::Composed);
         assert_eq!(shows(Facts { own: true, ..none }), Shows::Own);
@@ -832,6 +960,18 @@ mod tests {
         assert_eq!(shows(Facts { buffer: None, ..lone }), Shows::Straight(7), "a screen without window scanout");
         assert_eq!(shows(Facts { on: false, ..lone }), Shows::Straight(7));
         assert_eq!(shows(Facts { screenshot: true, ..lone }), Shows::Composed, "the scene, for the screenshot");
+    }
+
+    /// While an external display mirrors the top screen, the panel's own buffers and a window's buffer are
+    /// off: the scene is composed every frame, which the external display shows too; and off again after.
+    #[test]
+    fn a_mirrored_screen_and_its_mirror_compose_whatever_is_on_them() {
+        use super::{Facts, Shows, shows};
+        let none = Facts { on: true, own: false, lone: None, buffer: None, screenshot: false, mirroring: true };
+        assert_eq!(shows(Facts { own: true, ..none }), Shows::Composed, "not its own buffers");
+        assert_eq!(shows(Facts { lone: Some(7), buffer: Some(Ok(())), ..none }), Shows::Composed, "nor a window's, nor drawn straight");
+        assert_eq!(shows(Facts { lone: Some(7), buffer: Some(Ok(())), mirroring: false, ..none }), Shows::Window(7), "unplugged: back");
+        assert_eq!(shows(Facts { own: true, mirroring: false, ..none }), Shows::Own);
     }
 
     /// Leaving its own buffers clears their colour and composes; going to them commits them whole; leaving
@@ -890,7 +1030,7 @@ mod tests {
         assert_eq!(super::nearest(&[] as &[u32], |r| *r, 60), None);
     }
 
-    const IDLE: Timing = Timing { pending: false, dirty: false, on: true, held: None, answered: true, next_callbacks: None };
+    const IDLE: Timing = Timing { pending: false, dirty: false, on: true, paces: true, held: None, answered: true, next_callbacks: None };
 
     #[test]
     fn a_queued_frame_waits_for_its_flip_without_turning_the_loop() {
@@ -916,6 +1056,18 @@ mod tests {
         assert_eq!(screen_turn(Timing { answered: false, next_callbacks: Some(next), ..IDLE }, now), Turn { wake: Some(next), ..Turn::default() });
         assert_eq!(screen_turn(Timing { answered: false, next_callbacks: Some(now), ..IDLE }, now), Turn { answer: true, ..Turn::default() });
         assert_eq!(screen_turn(IDLE, now), Turn::default(), "nothing to answer");
+    }
+
+    /// A panel following an external display's pace shows each frame composed once it is free, and never
+    /// sends frame callbacks: the external display's flips do.
+    #[test]
+    fn a_screen_that_doesnt_pace_only_shows_frames() {
+        let now = Instant::now();
+        let follows = Timing { paces: false, held: Some(now), answered: false, next_callbacks: Some(now), ..IDLE };
+        assert_eq!(screen_turn(follows, now), Turn::default(), "no callbacks, held or answered, and no wake");
+        assert_eq!(screen_turn(Timing { dirty: true, ..follows }, now), Turn { present: true, ..Turn::default() });
+        assert_eq!(screen_turn(Timing { dirty: true, on: false, ..follows }, now), Turn::default(), "off: nothing");
+        assert_eq!(screen_turn(Timing { dirty: true, pending: true, ..follows }, now), Turn::default(), "at its flip");
     }
 
     /// Held callbacks due later and commits answered later still: the loop wakes for the earlier.

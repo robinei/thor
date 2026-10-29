@@ -32,6 +32,13 @@ use crate::cursor::{Cursor, Shape};
 use crate::scanout::Property;
 use crate::ui_scanout::{BLENDED, LayerBuffers};
 
+/// Whether a screen's layers may go on their planes: not once they failed, nor for a screenshot, nor while
+/// the screen is mirrored on an external display, whose picture is the scene composed: there they are
+/// composed into it, so that the external display shows the overlay and the cursor too.
+pub(crate) fn planes_on(failed: bool, screenshot: bool, mirrored: bool) -> bool {
+    !failed && !screenshot && !mirrored
+}
+
 /// Whether each layer goes on its plane this turn.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Planed {
@@ -219,8 +226,10 @@ impl PlaneLayers {
 
     /// Decides which layers go on their planes this turn: the overlay while it shows anything, the cursor,
     /// with its hotspot `at` on this screen whose top left is `origin` in the scene, while it shows and its
-    /// plane can take it; neither for a screenshot, taken of the scene composed. Returns whether what they
-    /// show changed, for the screen to commit.
+    /// plane can take it; neither for a screenshot, taken of the scene composed, nor while the screen is
+    /// `mirrored` on another, which shows the scene composed. Returns whether what they show changed, for
+    /// the screen to commit.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn decide(
         &mut self,
         server: &mut crate::server::Server,
@@ -229,9 +238,10 @@ impl PlaneLayers {
         renderer: &mut smithay::backend::renderer::gles::GlesRenderer,
         at: Option<Point<f64, Logical>>,
         origin: Point<i32, Logical>,
+        mirrored: bool,
     ) -> bool {
         let was = self.planed;
-        let planes = !self.failed && !server.screenshot_requested;
+        let planes = planes_on(self.failed, server.screenshot_requested, mirrored);
         let area = server.core.overlay_area(screen);
         self.planed.overlay = planes && self.overlay.is_some() && area.is_some();
         let overlay_changed = self.planed.overlay
@@ -534,6 +544,17 @@ fn turned(rect: Rectangle<i32, Logical>, height: i32, quarter: bool) -> Rectangl
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    /// While the top screen is mirrored on an external display, its overlay and cursor are off their
+    /// planes and composed into the scene, so that the picture the external display shows carries them
+    /// (the external display's screen has no planes of its own: everything it shows is composed).
+    #[test]
+    fn a_mirrored_screens_overlay_and_cursor_are_composed_into_the_mirrored_picture() {
+        assert!(planes_on(false, false, false));
+        assert!(!planes_on(false, false, true), "mirrored: composed");
+        assert!(!planes_on(false, true, false), "a screenshot");
+        assert!(!planes_on(true, false, false), "failed");
+    }
 
     #[test]
     fn a_rect_turned_a_quarter_is_where_the_painter_puts_it() {

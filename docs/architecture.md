@@ -118,6 +118,17 @@ compositor to draw each window's stack in its cell, as its screen would show it,
 the cells' targets and the ring. A metadata change cannot restore an old placement. Foreground launch intent and recent-group history
 are session rules. The detailed transitions and their tests are in `docs/state-machines.md`.
 
+## The screens
+
+On the device (`crates/compositor/src/drm/`) each screen is a `Screen`: a connector's CRTC, its buffers
+(`presenter.rs`) and what it shows, composed by the colour pipeline from its part of the scene or scanned out
+from ClamShell's own buffers or a window's. The two panels are named by the device profile. Any other
+connector connected is an external display (`drm/external.rs`), given a screen of its own while connected,
+watched through udev: it mirrors the top screen, the top scene composed once and encoded for it, and its
+flips pace the top screen's windows, the top panel following. Which screen paces is one choice (`pacer`);
+the rest of the host reads it. The external display is a screen like the panels, given the top scene to
+show; a later display with its own part of the scene would be given that instead.
+
 ## Living with what apps do
 
 Apps will do odd things with their windows, Steam and Proton above all. The tail can't be avoided, but

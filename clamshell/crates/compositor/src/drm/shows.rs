@@ -40,13 +40,17 @@ pub(super) struct Facts {
     pub(super) buffer: Option<Result<(), &'static str>>,
     /// A screenshot is taken of the scene this turn.
     pub(super) screenshot: bool,
+    /// Its part of the scene is mirrored on an external display, or it is that display: composed whole
+    /// every frame, which the other shows too.
+    pub(super) mirroring: bool,
 }
 
 /// What a screen shows by its `facts`: its own buffers while it can; the window alone on it from its own
 /// buffer while that can be, else drawn straight; else a frame composed. For a screenshot a lone window
-/// is composed, the scene being what it is taken of.
+/// is composed, the scene being what it is taken of; while mirroring, everything.
 pub(super) fn shows(facts: Facts) -> Shows {
     match facts.lone {
+        _ if facts.mirroring => Shows::Composed,
         _ if facts.own => Shows::Own,
         Some(_) if facts.screenshot => Shows::Composed,
         Some(id) if facts.on && facts.buffer == Some(Ok(())) => Shows::Window(id),
@@ -113,7 +117,7 @@ pub(super) fn show(screen: &mut Screen, pipeline: &mut Pipeline, to: Shows) {
     }
     screen.dirty |= change.dirty;
     if to != screen.shows {
-        log::info!("drm: the {:?} screen {to}", screen.role);
+        log::info!("drm: the {} screen {to}", screen.name());
     }
     screen.shows = to;
     if !matches!(to, Shows::Window(_)) {
@@ -128,7 +132,8 @@ pub(super) fn show(screen: &mut Screen, pipeline: &mut Pipeline, to: Shows) {
 pub(super) fn shows_decide(drawing: &mut Drawing, server: &mut Server) {
     let Drawing { screens, pipeline, .. } = drawing;
     for screen in screens.iter_mut() {
-        let down = screen.role == ScreenRole::Bottom;
+        let down = screen.down();
+        let mirroring = screen.mirrored || screen.external.is_some();
         let planed = screen.planed();
         let area = Rectangle::new((screen.part.loc.x, screen.part.loc.y).into(), (screen.part.size.w, screen.part.size.h).into());
         let own = screen.ui.as_ref().is_some_and(|ui| !ui.refused) && ui_only(server, down, planed);
@@ -136,7 +141,7 @@ pub(super) fn shows_decide(drawing: &mut Drawing, server: &mut Server) {
         let mut candidate = None;
         let mut buffer = None;
         if let Some(scanout) = &screen.window {
-            let alone = lone.filter(|_| !own && screen.on);
+            let alone = lone.filter(|_| !own && screen.on && !mirroring);
             if alone.map(|(id, _)| id) != screen.fed {
                 if let (Some(id), Some(default)) = (screen.fed, &server.protocols.dmabuf_feedback) {
                     server.dmabuf_feedback(id, default);
@@ -161,7 +166,7 @@ pub(super) fn shows_decide(drawing: &mut Drawing, server: &mut Server) {
             buffer = Some(chosen.as_ref().map_or(Err("no window alone"), |chosen| chosen.as_ref().map(|_| ()).map_err(|why| *why)));
             candidate = chosen.and_then(Result::ok);
         }
-        let facts = Facts { on: screen.on, own, lone: lone.map(|(id, _)| id), buffer, screenshot: server.screenshot_requested };
+        let facts = Facts { on: screen.on, own, lone: lone.map(|(id, _)| id), buffer, screenshot: server.screenshot_requested, mirroring };
         let to = shows(facts);
         if let Shows::Window(_) = to
             && screen.candidate.as_ref().zip(candidate.as_ref()).is_none_or(|(shown, now)| shown.commit != now.commit || shown.shape() != now.shape())
@@ -249,15 +254,18 @@ pub(super) fn present_ui(screen: &mut Screen, server: &mut Server, pipeline: &mu
 }
 
 /// Shows screen `index` its part of the scene. Returns when to try again if it failed (see [`failed`]):
-/// drawing it failing too.
+/// drawing it failing too. A screen pacing its windows notes what the frame shows of them and takes their
+/// presentation feedback; one following another's pace shows the frame only.
 pub(super) fn present(drawing: &mut Drawing, server: &mut Server, index: usize) -> Option<Instant> {
     use crate::presenter::CommitError;
     let Drawing { renderer, pipeline, screens, states, cursor, .. } = drawing;
-    let (screen, states) = (screens.get_mut(index)?, states.get(index)?);
+    let screen = screens.get_mut(index)?;
+    let states = states.get(screen.scene())?;
     let with_layers = prepare_layers(screen, server, cursor);
+    let encoding = screen.external.as_ref().map(|external| &external.encoding);
     let drawn = screen.surface.next_buffer().and_then(|mut buffer| {
         let mut target = renderer.bind(&mut buffer)?;
-        pipeline.present_screen(renderer, &mut target, screen.role == ScreenRole::Bottom, screen.size, screen.transform)
+        pipeline.present_screen(renderer, &mut target, screen.down(), screen.size, screen.transform, encoding)
     });
     let sync = match drawn {
         Ok(sync) => sync,
@@ -265,15 +273,19 @@ pub(super) fn present(drawing: &mut Drawing, server: &mut Server, index: usize) 
     };
     // (Not clone_from: a map of another capacity would be allocated anew.)
     screen.queued.states.clear();
-    screen.queued.states.extend(states.states.iter().map(|(id, state)| (id.clone(), *state)));
+    if screen.paces {
+        screen.queued.states.extend(states.states.iter().map(|(id, state)| (id.clone(), *state)));
+    }
     let layers = screen.layers.iter().flat_map(PlaneLayers::states);
     if let Err(error) = screen.surface.queue(Some(sync), layers) {
         return failed(screen, pipeline, Commit::Composed, with_layers, error);
     }
     committed(screen);
-    server.frame_queued(states, Some(screen.role == ScreenRole::Bottom));
-    server.take_feedback(states, Some(screen.role == ScreenRole::Bottom), &mut screen.feedback);
     screen.dirty = false;
-    screen.answered = server.pacing.commits;
+    if screen.paces {
+        server.frame_queued(states, Some(screen.down()));
+        server.take_feedback(states, Some(screen.down()), &mut screen.feedback);
+        screen.answered = server.pacing.commits;
+    }
     None
 }

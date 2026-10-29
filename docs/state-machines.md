@@ -1243,9 +1243,18 @@ the compositor paces (`a_windows_fps_cap_is_the_one_set_for_its_program`,
 | timed commit | later | held | DRM wakes a refresh before it, or at the next frame if within a refresh | same; `a_timed_commit_wakes_the_loop_a_refresh_before_it_or_at_the_next_frame` |
 | timed commit of a capped window | any time | applied | the cap paces it instead | `a_capped_windows_timed_commit_goes_ahead_at_once` |
 
-A frame is shown, on DRM, at the next refresh after the top screen's last flip, a refresh later if a frame
-is already queued (`a_frame_is_shown_at_the_next_refresh_after_the_last_flip`); nested, a host refresh from
-now.
+A frame is shown, on DRM, at the next refresh after the last flip of the screen pacing it, a refresh later
+if a frame is already queued (`a_frame_is_shown_at_the_next_refresh_after_the_last_flip`); nested, a host
+refresh from now.
+
+Which screen paces a part of the scene's windows is one choice (`drm/external.rs` `pacer`): an external
+display showing it while one is connected, else its panel. Only the pacing screen composes that part's
+scene, sends its windows' frame callbacks (at its flips, idle answers and held callbacks), takes and gives
+their presentation feedback, notes the commits it shows (for FIFO barriers), and lets timed commits through
+by its next refresh; clients are told its refresh. Another screen showing the same part (the top panel
+while mirrored) shows each frame composed once it is free, and nothing else
+(`a_screen_that_doesnt_pace_only_shows_frames`,
+`an_external_display_paces_the_top_screen_while_connected_else_the_top_panel_does`).
 
 Each DRM screen, each turn of the loop (`drm/mod.rs` `step`, `drm/turn.rs` `screen_turn`):
 
@@ -1257,6 +1266,7 @@ Each DRM screen, each turn of the loop (`drm/mod.rs` `step`, `drm/turn.rs` `scre
     on --the state turns it off--> off [nothing pending]                            a_screen_turned_on_is_drawn_whole
     off --the state turns it on--> dirty [buffers reset]                            same
     both off --turn--> both off [no compose unless a screenshot waits; dmabuf imports still run]   no unit test
+    following --its part changed, free--> pending [the frame shown; no feedback, no callbacks]   a_screen_that_doesnt_pace_only_shows_frames
     any --the seat resumed (back from another VT)--> dirty [pending cleared, buffers reset, the whole scene drawn]   on the device
 
 The frame rate: at each turn of the server, for the mapped window in front on the top screen, the frames
@@ -1266,6 +1276,40 @@ shows no game rather than 0 (`the_rate_is_the_last_seconds_frames_and_their_spac
 `the_ring_keeps_the_newest_frames`, `the_top_windows_new_buffers_shown_are_its_frame_rate`,
 `the_frame_rate_is_kept_apart_from_the_metrics`). `tests/picture-scaling.py`, where Wine is installed,
 changes a Wine-on-Wayland Vulkan game's mode through the FIFO path and checks that its window survives.
+
+### External display (drm/external.rs)
+
+An external display is any connected connector that isn't one of the profile's two panels (a monitor on
+USB-C's DisplayPort alt mode). The connectors are looked at at start, at each udev change of the GPU
+(Smithay's `UdevBackend`) and when the seat is back; one external display is shown at a time.
+
+    none --a connector connected, not a panel, the seat ours--> mirroring [its modes probed; a mode chosen; a free CRTC, a surface and buffers; the top screen's encoding in sRGB made; logged]
+    none --connected, no mode or CRTC, or the surface fails--> none [warn; tried again at the next change]
+    mirroring --another connected--> mirroring [logged, left dark]
+    mirroring --its connector no longer connected--> none [its feedback discarded, its screen dropped (its CRTC off); logged]
+    any --a change while the seat is away--> unchanged; looked at again when the seat is back
+
+The mode (`external_mode`): of the top screen's size (1920x1080 on the Thor), progressive, at 120 Hz, else
+60, else its highest rate, the preferred among equals; shown one to one. Without one, its preferred mode,
+else its first, with the picture fitted in the middle with bars (`fit`), logged
+(`an_external_display_shows_1080p_at_120_else_60_else_its_highest`,
+`without_1080p_an_external_display_shows_its_preferred_mode_fitted`).
+
+While mirroring:
+
+| What | Test |
+|---|---|
+| the external display paces the top screen's windows and composes its scene; the second screen is unchanged | `an_external_display_paces_the_top_screen_while_connected_else_the_top_panel_does` |
+| the top panel follows: each frame composed once it is free; set to the external display's rate where it has a mode at it, else the Refresh setting's | `a_screen_that_doesnt_pace_only_shows_frames`, `the_top_panel_takes_the_external_displays_rate_where_it_has_it` |
+| the top panel's own buffers, a window's buffer and drawing a window straight are off: the scene is composed every frame; logged once each way | `a_mirrored_screen_and_its_mirror_compose_whatever_is_on_them` |
+| the top panel's overlay and cursor are off their planes, composed into the scene, so the external display's picture carries them | `a_mirrored_screens_overlay_and_cursor_are_composed_into_the_mirrored_picture` |
+| the external display is on and off as the top screen is | no unit test |
+| unplugged: the top panel paces again, its next frame drawn whole, its own buffers and planes back | the VM suite's `external_display` |
+
+The VM suite's `external_display` forces the VM's third output connected and disconnected through its
+connector's sysfs status (a real hotplug event), and compares the external display's picture with the main
+screen's and looks for the cursor in it. The display's EDID read and the DisplayPort link are checked on
+the device.
 
 ### Buffers and dmabuf imports (dmabuf.rs, handlers.rs)
 
@@ -1608,6 +1652,7 @@ the fact stays unknown and its UI is dimmed, not hidden.
 | Fact | Precedence | Test |
 |---|---|---|
 | the screens (`drm/mod.rs` `choose`) | the connector the profile names; the mode the kernel set, else the preferred one, else the first; turned by the profile's rotation | the VM suite (Virtual-1 and -2); on the device (DSI-2, DSI-1) |
+| an external display (`drm/external.rs`) | any other connector connected; its mode by `external_mode`, never turned | compositor `external` tests; the VM suite (Virtual-3) |
 | each screen's size in millimetres (`screens.rs` `shown_millimetres`), and from it the second screen's density, the virtual touchpad's resolution (`Panel::pixels_per_mm`) | the connector's millimetres, else the profile's (the Thor's bottom panel only, 65 by 75), turned as the screen is; else none, and no virtual touchpad; nested, the profile's only. The density is the longer side's, pixels taken as square | compositor `a_panels_millimetres_are_its_connectors_else_the_profiles_turned_as_shown`, state `a_panels_density_is_its_longer_sides_taking_pixels_as_square`; VM `touchpad` |
 | a backlight's label (`levels` `backlight_label`) | the backlights found; one named as the profile's top or bottom hint reads "Top screen" or "Bottom screen", any other its kernel name | levels `the_thors_backlights_by_their_screens` |
 | an absolute input device's screen (`drm/input_areas.rs` `screen_of`) | the profile's entry for it; else, for a touchscreen, the profile's catch-all; else the top screen | compositor `an_input_device_is_on_the_screen_the_profile_names_it_on` |

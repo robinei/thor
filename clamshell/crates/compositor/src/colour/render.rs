@@ -48,6 +48,13 @@ pub(crate) struct Pipeline {
     reading: Option<CaptureReading>,
 }
 
+/// A scene as a screen other than its panel shows it (an external display mirroring it): encoded in that
+/// screen's colour, at `dst` on it. Made when the screen comes, for the scene's primaries then.
+pub(crate) struct Encoding {
+    program: GlesTexProgram,
+    dst: Rectangle<i32, Physical>,
+}
+
 /// A screenshot's texture, of the layout's size, and the shaders encoding each scene, by its primaries, in
 /// sRGB for it.
 struct Capture {
@@ -531,9 +538,20 @@ impl Pipeline {
         Ok(())
     }
 
+    /// Scene `down`'s encoding for a screen of `output` other than its panel, drawn at `dst` on it.
+    pub(crate) fn encoding(
+        &self,
+        renderer: &mut GlesRenderer,
+        down: bool,
+        output: ColourDescription,
+        dst: Rectangle<i32, Physical>,
+    ) -> Result<Encoding, Error> {
+        Ok(Encoding { program: encode_shader(renderer, self.scene(down).output.0.primaries, output)?, dst })
+    }
+
     /// Draws screen `down`'s scene onto its framebuffer (the second, or the top) in its encoding, `size`
     /// before the output's `transform` (a panel mounted turned), returning when the GPU will be done with
-    /// it.
+    /// it. With `encoding`, onto another screen showing it (see [`Encoding`]), from the scene only.
     pub(crate) fn present_screen(
         &self,
         renderer: &mut GlesRenderer,
@@ -541,21 +559,23 @@ impl Pipeline {
         down: bool,
         size: smithay::utils::Size<i32, Physical>,
         transform: Transform,
+        encoding: Option<&Encoding>,
     ) -> Result<smithay::backend::renderer::sync::SyncPoint, Error> {
         let scene = self.scene(down);
         let mut frame = renderer.render(target, size, transform)?;
         let whole = Rectangle::from_size(transform.transform_size(size));
         frame.clear([0.0, 0.0, 0.0, 1.0].into(), &[whole])?;
+        let (program, dst) = encoding.map_or((&scene.output.1, whole), |encoding| (&encoding.program, encoding.dst));
         match &scene.direct {
             // The screen's one surface, decoded and encoded for it in one pass.
-            Some(element) => {
+            Some(element) if encoding.is_none() => {
                 let dst = element.geometry(Scale::from(1.0));
                 element.draw(&mut frame, element.src(), dst, &[Rectangle::from_size(dst.size)], &[], None)?;
             }
-            None => {
+            _ => {
                 if let Some(texture) = &scene.texture {
                     let all = Rectangle::from_size(texture.size()).to_f64();
-                    frame.render_texture_from_to(texture, all, whole, &[whole], &[], Transform::Normal, 1.0, Some(&scene.output.1), &[])?;
+                    frame.render_texture_from_to(texture, all, dst, &[dst], &[], Transform::Normal, 1.0, Some(program), &[])?;
                 }
             }
         }

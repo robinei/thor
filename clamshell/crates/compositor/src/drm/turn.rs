@@ -39,6 +39,8 @@ pub(super) struct Timing {
     /// Its part of the scene changed since its last frame.
     pub(super) dirty: bool,
     pub(super) on: bool,
+    /// Whether its flips pace its windows (see [`pacer`]): else another screen answers them.
+    pub(super) paces: bool,
     /// When frame callbacks held back (under a frame rate cap) are due.
     pub(super) held: Option<Instant>,
     /// Whether the clients' commits have been answered with their frame callbacks.
@@ -54,6 +56,7 @@ impl Timing {
             pending: screen.surface.in_flight(),
             dirty: screen.dirty,
             on: screen.on,
+            paces: screen.paces,
             held: screen.held,
             answered: screen.answered == commits,
             next_callbacks: screen.next_callbacks,
@@ -76,10 +79,15 @@ pub(super) struct Turn {
 
 /// A screen's turn: nothing while a frame is queued (its flip sends what is held: a wake now would only
 /// turn the loop until it); the held callbacks once due; a frame if its part changed and it is on; else,
-/// with commits not answered, their callbacks at most once a refresh.
+/// with commits not answered, their callbacks at most once a refresh. A screen that doesn't pace its
+/// windows only shows a frame when its part changed.
 pub(super) fn screen_turn(timing: Timing, now: Instant) -> Turn {
     let mut turn = Turn::default();
     if timing.pending {
+        return turn;
+    }
+    if !timing.paces {
+        turn.present = timing.dirty && timing.on;
         return turn;
     }
     match timing.held {

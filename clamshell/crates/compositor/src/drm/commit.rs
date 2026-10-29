@@ -12,11 +12,12 @@ pub(super) fn layers_decide(drawing: &mut Drawing, server: &mut Server) {
     });
     // (Not for a screen that is off: nothing is planed there until it is on.)
     for screen in screens.iter_mut().filter(|screen| screen.on) {
+        let (down, mirrored) = (screen.down(), screen.mirrored);
         let Some(layers) = &mut screen.layers else { continue };
-        let down = screen.role == ScreenRole::Bottom;
         let at = at.filter(|at| server.screens.below(at.x) == down);
         let origin = smithay::utils::Point::<i32, Logical>::from((screen.part.loc.x, screen.part.loc.y));
-        screen.layers_dirty |= layers.decide(server, ui_screen(screen.role), cursor, renderer, at, origin);
+        // (Mirrored, the screen's picture is the one composed for the external display, with them in it.)
+        screen.layers_dirty |= layers.decide(server, ui_screen(screen.role), cursor, renderer, at, origin, mirrored);
     }
 }
 
@@ -113,7 +114,7 @@ pub(super) fn failed(screen: &mut Screen, pipeline: &mut Pipeline, kind: Commit,
         Remedy::Wait => None,
         Remedy::Retry => {
             if !screen.failing {
-                log::warn!("drm: the {role:?} screen's commit failed ({error}): tried again at each refresh until one goes through");
+                log::warn!("drm: the {} screen's commit failed ({error}): tried again at each refresh until one goes through", screen.name());
                 screen.failing = true;
             }
             // (The screen's own buffer, not drawn anew, is committed again as the frame shown is.)
@@ -170,7 +171,7 @@ pub(super) fn prepare_layers(screen: &mut Screen, server: &mut Server, cursor: &
 /// The screen's commit went through: its planes show as placed, and its flip is awaited.
 pub(super) fn committed(screen: &mut Screen) {
     if std::mem::take(&mut screen.failing) {
-        log::info!("drm: the {:?} screen's commits go through again", screen.role);
+        log::info!("drm: the {} screen's commits go through again", screen.name());
     }
     layers_committed(screen);
 }
