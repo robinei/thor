@@ -1085,7 +1085,7 @@ class Checks:
         since = now()
         control("tap launch")
         launched = until(lambda: bool(units("run-")) and front() not in ("the Library", "window None"), 10)
-        if not self.check("  the game runs with it", launched and logged(applied_since, f"pad: keymap {ident} (Check)", 5),
+        if not self.check("  the game runs with it", launched and logged(applied_since, f"pad: player 1's keymap {ident} (Check)", 5),
                           f"front {front()!r}; {journal(since)[-300:]!r}"):
             return
         mouse, virtual = device("clamshell pad mouse"), device("clamshell pad (Xbox 360)")
@@ -1109,7 +1109,7 @@ class Checks:
         since = now()
         for line in ["tab settings", "long setting keymap", f"tap keymap-edit {row}", "tap map-from gyro", "slide speed 300 450"]:
             control(line)
-        sent = logged(since, f"pad: keymap {ident} (Check)", 3)
+        sent = logged(since, f"pad: player 1's keymap {ident} (Check)", 3)
         out = capture(f"evtest {mouse}", 2.5, lambda: pad("press lb", "gyro 0 -60 0", "sleep 600", "gyro 0 0 0", "release lb"))
         faster = sum(int(line.rsplit(" ", 1)[1]) for line in out.splitlines() if "(REL_X)" in line and "value" in line)
         speed = (bound(keymap_named("Check"), "Gyro") or {}).get("speed", 0)
@@ -1121,7 +1121,7 @@ class Checks:
         since = now()
         for line in ["tab settings", "long setting keymap", "tap keymap 1"]:
             control(line)
-        self.check("  Default chosen, sent to the pad", logged(since, "pad: keymap 0 (Default)", 3), journal(since)[-300:])
+        self.check("  Default chosen, sent to the pad", logged(since, "pad: player 1's keymap 0 (Default)", 3), journal(since)[-300:])
         out = capture(both, 2, lambda: press("a", 150))
         mouse_keys = [line for line in sh("cat /tmp/thor-checks-mouse").splitlines() if "(EV_KEY)" in line and "value" in line]
         self.check("  Default: A is the game's A, nothing on the keyboard", "(BTN_SOUTH), value 1" in out and not mouse_keys,
