@@ -121,67 +121,123 @@ pub struct Wanted {
 /// What a fetch needs.
 pub struct Fetch {
     pub wanted: Vec<Wanted>,
-    pub keys: Keys,
+    /// The services' keys, from library.json; `None` keeps those the queue has, as a fetch for a folder
+    /// browsed (which knows none) does.
+    pub keys: Option<Keys>,
     /// The art cache, which also keeps what was fetched (see [`Cache`]).
     pub art: PathBuf,
 }
 
-/// The entries waiting to be fetched for, in order, and the fetching threads at work.
+/// The entries waiting to be fetched for, in order, those being fetched, and the fetching threads at work
+/// ([`THREADS`] at most, whoever asked).
 #[derive(Clone, Default)]
 pub struct Queue {
-    waiting: Arc<Mutex<VecDeque<Wanted>>>,
-    threads: Arc<std::sync::atomic::AtomicUsize>,
+    inner: Arc<Mutex<Inner>>,
+    shared: Arc<Mutex<Option<Arc<Shared>>>>,
+}
+
+#[derive(Default)]
+struct Inner {
+    waiting: VecDeque<Wanted>,
+    /// Being fetched now: not added again until done.
+    fetching: Vec<Arc<str>>,
+    threads: usize,
 }
 
 impl Queue {
     /// Moves these entries to the front, in this order, if they are still waiting.
     pub(crate) fn first(&self, ids: &[Arc<str>]) {
-        let mut q = crate::os::lock(&self.waiting);
+        let mut q = crate::os::lock(&self.inner);
         for id in ids.iter().rev() {
-            if let Some(at) = q.iter().position(|w| w.id == *id)
-                && let Some(w) = q.remove(at)
+            if let Some(at) = q.waiting.iter().position(|w| w.id == *id)
+                && let Some(w) = q.waiting.remove(at)
             {
-                q.push_front(w);
+                q.waiting.push_front(w);
             }
         }
     }
 
-    /// Adds `wanted` at the end, skipping entries already waiting. Returns how many wait now.
-    fn add(&self, wanted: Vec<Wanted>) -> usize {
-        let mut q = crate::os::lock(&self.waiting);
+    /// Adds `wanted` at the end, skipping entries already waiting or being fetched. Returns how many wait
+    /// now, and how many more threads to start.
+    fn add(&self, wanted: Vec<Wanted>) -> (usize, usize) {
+        let mut q = crate::os::lock(&self.inner);
         for w in wanted {
-            if !q.iter().any(|x| x.id == w.id) {
-                q.push_back(w);
+            if !q.waiting.iter().any(|x| x.id == w.id) && !q.fetching.contains(&w.id) {
+                q.waiting.push_back(w);
             }
         }
-        q.len()
+        let more = THREADS.saturating_sub(q.threads).min(q.waiting.len());
+        q.threads += more;
+        (q.waiting.len(), more)
     }
 
-    fn next(&self) -> Option<Wanted> {
-        crate::os::lock(&self.waiting).pop_front()
+    /// The next entry to fetch for, now being fetched; or, with none waiting, `None`, and the thread
+    /// asking is done, counted off under the same lock as [`Queue::add`] counts threads on, so none is
+    /// left waiting with no thread.
+    fn next(&self, done: Option<&Arc<str>>) -> Option<Wanted> {
+        let mut q = crate::os::lock(&self.inner);
+        if let Some(id) = done {
+            q.fetching.retain(|f| f != id);
+        }
+        match q.waiting.pop_front() {
+            Some(w) => {
+                q.fetching.push(w.id.clone());
+                Some(w)
+            }
+            None => {
+                q.threads = q.threads.saturating_sub(1);
+                None
+            }
+        }
+    }
+
+    /// Whether no thread fetches.
+    fn idle(&self) -> bool {
+        crate::os::lock(&self.inner).threads == 0
+    }
+
+    /// What the threads share, with `keys` if given: kept across fetches, so libretro's lists are read
+    /// once and a fetch without keys doesn't drop them.
+    fn shared(&self, keys: Option<Keys>, art: PathBuf) -> Arc<Shared> {
+        let mut shared = crate::os::lock(&self.shared);
+        match (shared.as_ref(), keys) {
+            (Some(s), None) => s.clone(),
+            (Some(s), Some(keys)) if s.keys == keys && s.art == art => s.clone(),
+            (_, keys) => {
+                let keys = keys.or_else(|| shared.as_ref().map(|s| s.keys.clone())).unwrap_or_default();
+                let made = Arc::new(Shared { keys, art, listings: Mutex::new(HashMap::new()), databases: Mutex::new(HashMap::new()) });
+                *shared = Some(made.clone());
+                made
+            }
+        }
     }
 }
 
-/// Adds what `fetch` wants to `queue` and fetches on [`THREADS`] more threads until the queue is empty or
-/// the UI is gone. Sends `Fetching(true)` as they start and `Fetching(false)` when the last thread is
-/// done. A thread that can't start is logged; the others fetch its share.
+/// Adds what `fetch` wants to `queue` and fetches on threads, up to [`THREADS`] at once in all, until the
+/// queue is empty or the UI is gone. Sends `Fetching(true)` as they start and `Fetching(false)` when the
+/// last thread is done. A thread that can't start is logged; the others fetch its share.
 pub fn spawn(fetch: Fetch, queue: &Queue, sink: impl Sink + Clone) {
-    use std::sync::atomic::Ordering;
-    let count = queue.add(fetch.wanted);
+    let shared = queue.shared(fetch.keys, fetch.art);
+    let (count, more) = queue.add(fetch.wanted);
     if count == 0 {
         return;
     }
     log::info!("meta: fetching for {count} entries");
     let _ = sink.send(Event::Fetching(true));
-    let shared = Arc::new(Shared { keys: fetch.keys, art: fetch.art, listings: Mutex::new(HashMap::new()), databases: Mutex::new(HashMap::new()) });
-    for _ in 0..THREADS {
-        let (queue, shared, sink) = (queue.clone(), shared.clone(), sink.clone());
-        queue.threads.fetch_add(1, Ordering::SeqCst);
+    for _ in 0..more {
+        let (queue, sink) = (queue.clone(), sink.clone());
         let (waiting, told) = (queue.clone(), sink.clone());
+        let shared = shared.clone();
         let started = worker::detached("meta", move || {
             let cache = Cache::open(&shared.art);
             let fetch_one = |w: &Wanted| {
+                let failures = http::network_failures();
                 let meta = shared.fetch(w);
+                // Nothing found because the network failed isn't a miss: it is fetched again next time.
+                if meta == Meta::default() && http::network_failures() != failures {
+                    log::info!("meta: {}: the network failed: not kept as a miss", w.id);
+                    return Ok(());
+                }
                 let saved = match &w.how {
                     How::Duration => cache.save_probe(&w.id, meta.duration, meta.details.shot.as_deref()),
                     _ => cache.save_meta(&w.id, &w.how.source(), crate::time::clock::unix_secs(), &meta),
@@ -199,7 +255,8 @@ pub fn spawn(fetch: Fetch, queue: &Queue, sink: impl Sink + Clone) {
         if let Err(e) = started {
             log::warn!("meta: a fetching thread: {e}");
             // Not counted. If no other runs, the fetch is over: what waits is fetched with the next.
-            if waiting.threads.fetch_sub(1, Ordering::SeqCst) == 1 {
+            let _ = waiting.next(None);
+            if waiting.idle() {
                 let _ = told.send(Event::Fetching(false));
             }
         }
@@ -210,7 +267,8 @@ pub fn spawn(fetch: Fetch, queue: &Queue, sink: impl Sink + Clone) {
 /// empty or the UI is gone (`Err`). A panic fetching one entry (the panic hook has logged it) costs that
 /// entry's metadata, not the rest. `done` is called by the last thread to finish.
 fn fetch_all(queue: &Queue, mut fetch_one: impl FnMut(&Wanted) -> Result<(), crate::Closed>, done: impl FnOnce()) {
-    while let Some(w) = queue.next() {
+    let mut last: Option<Arc<str>> = None;
+    while let Some(w) = queue.next(last.as_ref()) {
         let fetched = worker::or_on_panic(
             || fetch_one(&w),
             || {
@@ -218,11 +276,16 @@ fn fetch_all(queue: &Queue, mut fetch_one: impl FnMut(&Wanted) -> Result<(), cra
                 Ok(())
             },
         );
+        last = Some(w.id.clone());
         if fetched.is_err() {
-            break;
+            // The UI is gone: this thread stops, counted off.
+            let mut q = crate::os::lock(&queue.inner);
+            q.fetching.retain(|f| Some(f) != last.as_ref());
+            q.threads = q.threads.saturating_sub(1);
+            return;
         }
     }
-    if queue.threads.fetch_sub(1, std::sync::atomic::Ordering::SeqCst) == 1 {
+    if queue.idle() {
         done();
     }
 }
@@ -286,11 +349,13 @@ mod tests {
     fn what_library_view_shows_comes_first() {
         let wanted = |id: &str| Wanted { id: id.into(), key: id.into(), title: id.into(), file: None, how: How::SteamGridDb, art: false };
         let queue = Queue::default();
-        queue.add(["a", "b", "c", "d"].map(wanted).to_vec());
-        assert_eq!(queue.add(vec![wanted("b")]), 4, "not twice");
+        assert_eq!(queue.add(["a", "b", "c", "d"].map(wanted).to_vec()), (4, THREADS));
+        assert_eq!(queue.add(vec![wanted("b")]), (4, 0), "not twice, and no more threads than THREADS");
         queue.first(&["c".into(), "x".into(), "b".into()]);
-        let order: Vec<String> = std::iter::from_fn(|| queue.next()).map(|w| w.id.to_string()).collect();
-        assert_eq!(order, ["c", "b", "a", "d"]);
+        let c = queue.next(None).unwrap();
+        assert_eq!(queue.add(vec![wanted("c")]).0, 3, "not while being fetched");
+        let order: Vec<String> = std::iter::from_fn(|| queue.next(Some(&c.id))).map(|w| w.id.to_string()).collect();
+        assert_eq!(order, ["b", "a", "d"]);
     }
 
     /// A panic fetching one entry costs that entry: the rest are fetched, and the last thread still says
@@ -300,7 +365,7 @@ mod tests {
         let wanted = |id: &str| Wanted { id: id.into(), key: id.into(), title: id.into(), file: None, how: How::SteamGridDb, art: false };
         let queue = Queue::default();
         queue.add(["a", "b", "c"].map(wanted).to_vec());
-        queue.threads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        crate::os::lock(&queue.inner).threads = 1;
         let mut fetched = Vec::new();
         let mut done = 0;
         fetch_all(
@@ -314,7 +379,7 @@ mod tests {
         );
         assert_eq!(fetched, ["a", "c"]);
         assert_eq!(done, 1);
-        assert_eq!(queue.threads.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert!(queue.idle());
     }
 
     #[test]

@@ -98,7 +98,7 @@ fn rescanner<S: Sink + Clone>(sources: Sources, paths: Paths, queue: meta::Queue
                 return;
             }
             if let Some(art) = paths.art.clone() {
-                meta::spawn(meta::Fetch { wanted: loaded.wanted, keys: loaded.keys, art }, &queue, sink.clone());
+                meta::spawn(meta::Fetch { wanted: loaded.wanted, keys: Some(loaded.keys), art }, &queue, sink.clone());
             }
         }
     });
@@ -169,7 +169,7 @@ pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, gl
         let (queue, sink, art) = (fetching.clone(), sink.clone(), paths.art.clone());
         Box::new(move |wanted| {
             if let Some(art) = art.clone() {
-                meta::spawn(meta::Fetch { wanted, keys: meta::Keys::default(), art }, &queue, sink.clone());
+                meta::spawn(meta::Fetch { wanted, keys: None, art }, &queue, sink.clone());
             }
         })
     };

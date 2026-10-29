@@ -16,13 +16,37 @@ pub(crate) fn get(url: &str, headers: &[&str]) -> Option<Vec<u8>> {
         config.push_str(&format!("header = {}\n", quoted(h)));
     }
     let out = command::run("curl", &["-sfL", "--max-time", "30", "--max-filesize", "64M", "-A", "ClamShell", "-K", "-"], Some(config.as_bytes()), CURL_LIMIT)
-        .inspect_err(|e| log::warn!("{}: {e}", shown(url)))
+        .inspect_err(|e| {
+            log::warn!("{}: {e}", shown(url));
+            network_failed();
+        })
         .ok()?;
     if !out.status.success() {
         log::debug!("{}: curl {}", shown(url), out.status);
+        // 22: the server answered with an error, such as not found. Anything else is the way there.
+        if out.status.code() != Some(CURL_HTTP_ERROR) {
+            network_failed();
+        }
         return None;
     }
     Some(out.stdout)
+}
+
+/// curl's exit code for an answer of 400 or more (with `-f`).
+const CURL_HTTP_ERROR: i32 = 22;
+
+std::thread_local! {
+    static NETWORK_FAILURES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+fn network_failed() {
+    NETWORK_FAILURES.with(|n| n.set(n.get() + 1));
+}
+
+/// How many GETs on this thread failed on the way rather than with the server's answer: compared before
+/// and after a fetch, it says whether nothing was found or nothing could be asked.
+pub(crate) fn network_failures() -> u64 {
+    NETWORK_FAILURES.with(std::cell::Cell::get)
 }
 
 /// `url` as a log line shows it, without its query, which may hold an API key.
@@ -97,6 +121,15 @@ pub(crate) fn download(url: &str, headers: &[&str], file: &Path) -> bool {
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+
+    /// A GET that can't reach the server counts as the network failing, which a fetch then doesn't keep as
+    /// a miss.
+    #[test]
+    fn a_get_that_cant_connect_is_a_network_failure() {
+        let before = network_failures();
+        assert_eq!(get("http://127.0.0.1:9/", &[]), None);
+        assert_eq!(network_failures(), before + 1);
+    }
 
     #[test]
     fn lists_are_kept_fetched_again_when_old_and_used_old_when_offline() {
