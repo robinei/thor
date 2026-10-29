@@ -17,6 +17,7 @@ pub mod steam;
 pub mod titles;
 
 mod entry;
+mod index;
 mod library;
 mod meta;
 mod runner;

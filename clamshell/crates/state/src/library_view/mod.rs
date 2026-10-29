@@ -105,7 +105,9 @@ pub(crate) struct ShownList {
 }
 
 impl LibraryView {
-    pub(crate) fn new(library: Library) -> LibraryView {
+    pub(crate) fn new(mut library: Library) -> LibraryView {
+        // One changed through entries_mut, as tests make them, comes with its index dropped.
+        library.reindex();
         let navs = vec![Nav::default(); library.collections.len()];
         let mut library_view = LibraryView { library, read: true, navs, rows: 1, ..LibraryView::default() };
         library_view.sync();
@@ -498,7 +500,7 @@ impl LibraryView {
     /// Shows `group` open, in the current collection if that has the group's outermost group, or else in
     /// the first collection that does. Returns whether the group is there.
     pub(crate) fn reveal(&mut self, group: &str) -> bool {
-        let Some(g) = self.library.entries().iter().position(|x| &*x.id == group) else {
+        let Some(g) = self.library.position(group) else {
             return false;
         };
         let mut path = self.library.groups_of(g);
@@ -574,6 +576,8 @@ impl LibraryView {
     /// groups that are gone closed, each list's typed filter found again, the entry that was `selected`
     /// selected again, the cursor kept in range, and the files selected that are gone dropped.
     fn library_changed(&mut self, selected: Option<&Arc<str>>) {
+        self.library.reindex();
+        debug_assert!(self.library.index_is_current(), "the library's index is out of date");
         self.close_gone();
         self.refind();
         if let Some(id) = selected {
@@ -596,9 +600,11 @@ impl LibraryView {
         // The places start over in the new library, and are restored below; the rest of the Library stays.
         self.navs = vec![Nav::default(); library.collections.len()];
         (self.library, self.read, self.current) = (library, true, 0);
+        // One changed through entries_mut, as tests make them, comes with its index dropped.
+        self.library.reindex();
         self.listings_shown = self.listings_shown.wrapping_add(1);
         for (folder, entries) in listings {
-            if let Some(f) = self.library.entries().iter().position(|g| g.id == folder) {
+            if let Some(f) = self.library.position(&folder) {
                 self.library.set_listing(f, entries.clone());
                 self.listings.push((folder, entries));
             }
@@ -678,7 +684,7 @@ impl LibraryView {
     /// selected entry is kept by id, and open groups that are gone are closed. Returns whether the
     /// selection changed.
     pub(crate) fn listed(&mut self, folder: Arc<str>, entries: Vec<Entry>) -> bool {
-        let Some(f) = self.library.entries().iter().position(|g| g.id == folder) else {
+        let Some(f) = self.library.position(&folder) else {
             return false;
         };
         let shown = |s: &LibraryView| s.list().iter().filter_map(|&i| s.library.entries().get(i)).map(|g| g.id.clone()).collect::<Vec<_>>();
@@ -693,7 +699,7 @@ impl LibraryView {
         self.library.set_listing(f, entries);
         // Drops the listings of folders that went with it.
         let library = &self.library;
-        self.listings.retain(|(id, _)| library.entries().iter().any(|g| g.id == *id));
+        self.listings.retain(|(id, _)| library.position(id).is_some());
         self.library_changed(before.as_ref());
         if shown(self) != shown_before {
             self.listings_shown = self.listings_shown.wrapping_add(1);
@@ -721,15 +727,14 @@ impl LibraryView {
 
     /// Records where mpv left a video, at `now`. None means at its end.
     pub(crate) fn set_position(&mut self, id: &str, position: Option<u32>, now: u64) {
-        if let Some(g) = self.library.entries_mut().iter_mut().find(|g| &*g.id == id) {
-            g.playback.position = position;
-            g.playback.at = now;
+        if let Some(i) = self.library.position(id) {
+            self.library.set_position(i, position, now);
         }
     }
 
     /// Applies what was fetched about entry `id`, if it is there (see [`Library::apply_meta`]).
     pub(crate) fn apply_meta(&mut self, id: &str, meta: &crate::Meta) {
-        if let Some(i) = self.library.entries().iter().position(|g| &*g.id == id) {
+        if let Some(i) = self.library.position(id) {
             self.library.apply_meta(i, meta);
         }
     }

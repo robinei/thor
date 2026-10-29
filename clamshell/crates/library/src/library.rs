@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::index::Index;
 use crate::{BrowseKind, Details, Entry, Meta};
 
 /// A tab in the Library. It is a tab from library.json's sources, Games (which also holds the games from Steam
@@ -60,6 +61,8 @@ pub struct Library {
     /// library.json as read, which the edit mode changes and has written. None if it didn't parse, so
     /// that it isn't written over; a file that isn't there is an empty one.
     pub config: Option<std::sync::Arc<crate::config::Config>>,
+    /// The lookups by id and the rest, kept with `entries`.
+    index: Index,
 }
 
 /// One of ClamShell's own tabs as declared: its name and icon.
@@ -72,7 +75,9 @@ pub struct OwnTab {
 impl Library {
     /// A library of `entries`, in the tabs `collections`.
     pub fn new(collections: Vec<Collection>, entries: Vec<Entry>) -> Library {
-        Library { collections, entries, ..Library::default() }
+        let mut library = Library { collections, entries, ..Library::default() };
+        library.index.build(&library.entries);
+        library
     }
 
     /// Every entry, by slot: [`Collection::entries`] and [`Entry::items`] are indices into it.
@@ -80,9 +85,25 @@ impl Library {
         &self.entries
     }
 
-    /// The entries, to change.
+    /// The entries, to change. This drops the index: until [`Library::reindex`], lookups find nothing
+    /// (and debug builds stop).
     pub fn entries_mut(&mut self) -> &mut Vec<Entry> {
+        self.index.drop_all();
         &mut self.entries
+    }
+
+    /// Builds the index again, if [`Library::entries_mut`] dropped it.
+    pub fn reindex(&mut self) {
+        if self.index.stale() {
+            self.index.build(&self.entries);
+        }
+    }
+
+    /// Whether the index is what building it from the entries now gives, for debug assertions.
+    pub fn index_is_current(&self) -> bool {
+        let mut fresh = Index::default();
+        fresh.build(&self.entries);
+        fresh == self.index
     }
 
     /// The first video frame in folder `i`, searching its entries in order and into subfolders.
@@ -97,12 +118,17 @@ impl Library {
 
     /// An entry by its id.
     pub fn entry(&self, id: &str) -> Option<&Entry> {
-        self.entries.iter().find(|g| &*g.id == id)
+        self.entries.get(self.position(id)?)
+    }
+
+    /// The slot of entry `id`: the first, should two have that id.
+    pub fn position(&self, id: &str) -> Option<usize> {
+        self.index.id(id)
     }
 
     /// Whether entry `id` is in it, or its source is away.
     pub fn has(&self, id: &str) -> bool {
-        self.entries.iter().any(|g| &*g.id == id) || self.away.iter().any(|p| id.starts_with(p.as_str()))
+        self.position(id).is_some() || self.away.iter().any(|p| id.starts_with(p.as_str()))
     }
 
     /// Rebuilds Recent (the last entries played, without apps) and Favourites, if they are declared, and
@@ -156,6 +182,13 @@ impl Library {
             if meta.duration.is_some() {
                 g.playback.duration = meta.duration;
             }
+        }
+    }
+
+    /// Records where mpv left entry `i`'s video, at `at`. None means at its end.
+    pub fn set_position(&mut self, i: usize, position: Option<u32>, at: u64) {
+        if let Some(g) = self.entries.get_mut(i) {
+            (g.playback.position, g.playback.at) = (position, at);
         }
     }
 
@@ -266,6 +299,7 @@ impl Library {
             f.items = items;
         }
         self.free.append(&mut freed);
+        self.index.build(&self.entries);
     }
 
     /// The files that enqueueing entry `i` adds, in order. For a file, that is the file itself. For a
@@ -371,11 +405,11 @@ mod tests {
             Entry { items: vec![4], parent: Some(0), ..Entry::new("cd2", "CD 2") },
             Entry { parent: Some(3), ..file("c.flac", Some(&music)) },
         ];
-        let mut library = Library { entries: games.clone(), ..Library::default() };
+        let mut library = Library::new(Vec::new(), games.clone());
         assert_eq!(library.queue_files(0, &music.key), [PathBuf::from("/m/b.mp3"), "/m/c.flac".into()], "down into CD 2, no cover");
         assert_eq!(library.queue_files(1, &music.key), [PathBuf::from("/m/b.mp3")]);
         games[0].playlist = Some("/m/album.m3u".into());
-        library.entries = games;
+        *library.entries_mut() = games;
         assert_eq!(library.queue_files(0, &music.key), [PathBuf::from("/m/album.m3u")], "its playlist instead");
     }
 
@@ -464,7 +498,7 @@ mod tests {
 
     #[test]
     fn listings_keep_places_and_free_what_went() {
-        let mut lib = Library { entries: vec![browsed("browse:Home", true)], ..Library::default() };
+        let mut lib = Library::new(Vec::new(), vec![browsed("browse:Home", true)]);
         assert!(lib.entries[0].is_group(), "a folder opens before it is listed");
         lib.set_listing(0, vec![browsed("browse:Home/a", true), browsed("browse:Home/b.txt", false)]);
         assert!(lib.entries[0].browsed.as_ref().unwrap().listed);
@@ -492,7 +526,7 @@ mod tests {
     /// was fetched about it.
     #[test]
     fn a_listing_again_keeps_what_was_recorded() {
-        let mut lib = Library { entries: vec![browsed("browse:Home", true)], ..Library::default() };
+        let mut lib = Library::new(Vec::new(), vec![browsed("browse:Home", true)]);
         lib.set_listing(0, vec![browsed("browse:Home/film.mkv", false)]);
         let g = &mut lib.entries[1];
         g.plays.add(100, 60);
@@ -511,7 +545,7 @@ mod tests {
     fn the_trashs_top_entries_can_be_restored() {
         let mut trash = browsed("browse:Trash", true);
         trash.browsed.as_mut().unwrap().kind = BrowseKind::Trash;
-        let mut lib = Library { entries: vec![trash], ..Library::default() };
+        let mut lib = Library::new(Vec::new(), vec![trash]);
         lib.set_listing(0, vec![browsed("browse:Trash/old", true)]);
         assert_eq!(lib.entries[1].browsed.as_ref().unwrap().kind, BrowseKind::Trashed);
         lib.set_listing(1, vec![browsed("browse:Trash/old/in", false)]);

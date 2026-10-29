@@ -161,6 +161,7 @@ pub fn load(sources: &Sources) -> Loaded {
     (library.problems, library.away, library.runner_keymaps, library.order) = (problems, away, runner_keymaps, order);
     (library.recent, library.favourites, library.config) = (recent, favourites, parsed);
     let wanted = known(&mut library, hows, sources);
+    library.reindex();
     library.rebuild_derived();
     Loaded { library, wanted, keys: config.keys }
 }

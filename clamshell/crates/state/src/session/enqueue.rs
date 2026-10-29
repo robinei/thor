@@ -50,7 +50,7 @@ impl LibraryView {
         };
         let runner = target.runner.clone().filter(|r| r.enqueue.is_some())?;
         let library = self.library();
-        let index_of = |id: &str| library.entries().iter().position(|g| &*g.id == id);
+        let index_of = |id: &str| library.position(id);
         // While there is a selection, its entries are queued in the order picked, and the open folder is
         // the entry that plays them.
         let picked = self.files().selected();
