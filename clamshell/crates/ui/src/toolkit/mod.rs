@@ -31,6 +31,22 @@ pub struct Target {
     /// The list item it shows, if it is one, as it was when drawn. A press on it carries the key, so it
     /// acts on that item even if the list changes before the press.
     pub item: Option<ItemKey>,
+    /// How the pad reaches it.
+    pub pad: PadUse,
+}
+
+/// How the pad reaches a target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PadUse {
+    /// By moving to it.
+    #[default]
+    Moves,
+    /// Not at all: it is for fingers, such as a list's area (the pad goes to its rows) or a dock tile's
+    /// tray mark (the pad uses the tile's menu).
+    Touch,
+    /// Only by holding A on the selection, as the Library's details' actions are; then the pad stays
+    /// among them until B.
+    Held,
 }
 
 /// The span along x over which a finger on a target sets a value, in the same units as the target's
@@ -175,7 +191,7 @@ impl<'f, 'c> Frame<'f, 'c> {
             self.ring(shown, look);
         }
         let item = self.s.lists().item_key(&id);
-        self.targets.push(Target { rect, id, track: None, list: None, item });
+        self.targets.push(Target { rect, id, track: None, list: None, item, pad: PadUse::Moves });
     }
 
     /// The focus ring of a button of `look` shown at `shown`.
@@ -216,6 +232,13 @@ impl<'f, 'c> Frame<'f, 'c> {
     pub(crate) fn track(&mut self, track: Track) {
         if let Some(t) = self.targets.last_mut() {
             t.track = Some(track);
+        }
+    }
+
+    /// How the pad reaches the last target drawn.
+    pub(crate) fn pad_use(&mut self, pad: PadUse) {
+        if let Some(t) = self.targets.last_mut() {
+            t.pad = pad;
         }
     }
 

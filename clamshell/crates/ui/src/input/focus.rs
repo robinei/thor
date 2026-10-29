@@ -7,13 +7,13 @@
 //! second screen.
 
 use clamshell_state::levels::Level;
-use clamshell_state::{DockId, Event, Id, LevelEvent, LibraryMode, LibraryViewEvent, LibraryViewId, PadInput, PointerEvent, RowPart, State, Tab, Top};
+use clamshell_state::{Event, Id, LevelEvent, LibraryMode, LibraryViewEvent, LibraryViewId, PadInput, PointerEvent, RowPart, State, Tab, Top};
 use xkeysym::Keysym;
 
 use crate::gfx::Rect;
 use crate::input::nav::{self, Dir, NavTarget};
 use crate::screens::{Screen, Screens};
-use crate::toolkit::{PadOut, Target};
+use crate::toolkit::{PadOut, PadUse, Target};
 
 /// What the last frames drew on each screen, and the screens' sizes in surface pixels.
 pub(crate) trait Drawn {
@@ -35,11 +35,12 @@ pub(crate) enum PadScope {
     BottomOnly,
 }
 
-/// Whether the pad is on the Library's actions, reached by holding A. Only while the Library is in front: with
-/// anything else in front the Library isn't shown, and the pad goes to the second screen even if the focus was
-/// left on an action, as it is after one that starts a game.
-fn on_actions(s: &State) -> bool {
-    s.pad().on_top() && s.library_view().in_actions(s.pointer())
+/// Whether the pad is on targets reached by holding A, such as the Library's actions (see [`PadUse::Held`]).
+/// Only while the pad may use the top screen: with anything else in front the Library isn't shown, and the
+/// pad goes to the second screen even if the focus was left on an action, as it is after one that starts
+/// a game.
+fn on_actions(s: &State, d: &impl Drawn) -> bool {
+    s.pad().on_top() && d.targets(Screen::Top).iter().any(|t| t.pad == PadUse::Held && s.pointer().focused(&t.id))
 }
 
 pub(crate) fn scope(s: &State) -> PadScope {
@@ -109,22 +110,18 @@ fn focused_entry(s: &State) -> Option<usize> {
     (0..s.library_view().list().len()).find(|&i| s.library_view().entry_at(i).is_some_and(|e| &e.id == id))
 }
 
-/// The targets the pad may move between, each with its screen. On the Library's actions, reached by holding A,
-/// they are the actions alone. Otherwise they are the targets on the screens the pad may use, except
-/// those for fingers: a list's area (the pad goes to its rows instead) and a dock tile's tray mark (the
-/// pad uses the Menu entry in the tile's long-press menu). The Library's actions are left out, as they are
-/// reached only by holding A.
+/// The targets the pad may move between, each with its screen, as the views marked them (see [`PadUse`]).
+/// On targets reached by holding A, they are those alone. Otherwise they are the targets it moves to on
+/// the screens the pad may use.
 pub(crate) fn candidates<'d>(s: &State, d: &'d impl Drawn) -> Vec<(Screen, &'d Target)> {
-    if on_actions(s) {
-        let actions: Vec<Id> = s.library_view().actions().as_slice().iter().map(|a| Id::LibraryView(a.id())).collect();
-        return d.targets(Screen::Top).iter().filter(|t| actions.contains(&t.id)).map(|t| (Screen::Top, t)).collect();
-    }
-    let screens: &[Screen] = if scope(s) == PadScope::BottomOnly { &[Screen::Bottom] } else { &Screen::BOTH };
-    // Only the details' actions: the edit mode's targets and the pick's header are the pad's too.
-    let details: Vec<Id> = s.library_view().actions().as_slice().iter().map(|a| Id::LibraryView(a.id())).collect();
-    let actions = |id: &Id| details.contains(id);
-    let fingers = |id: &Id| matches!(id, Id::List(_) | Id::Dock(DockId::Tray(_)));
-    screens.iter().flat_map(|&screen| d.targets(screen).iter().map(move |t| (screen, t))).filter(|(_, t)| !fingers(&t.id) && !actions(&t.id)).collect()
+    let (screens, pad): (&[Screen], PadUse) = if on_actions(s, d) {
+        (&[Screen::Top], PadUse::Held)
+    } else if scope(s) == PadScope::BottomOnly {
+        (&[Screen::Bottom], PadUse::Moves)
+    } else {
+        (&Screen::BOTH, PadUse::Moves)
+    };
+    screens.iter().flat_map(|&screen| d.targets(screen).iter().map(move |t| (screen, t))).filter(|(_, t)| t.pad == pad).collect()
 }
 
 /// `t` on `screen` placed in the plane [`nav::step`] works in.
@@ -142,7 +139,7 @@ fn placed(d: &impl Drawn, screen: Screen, t: &Target) -> NavTarget {
 /// main one.
 pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, dir: Dir) -> Option<Event> {
     // On the Library's actions, reached by holding A, up and down move through them only.
-    if on_actions(s) {
+    if on_actions(s, d) {
         let rows: Vec<NavTarget> = candidates(s, d).into_iter().map(|(screen, t)| placed(d, screen, t)).collect();
         return match dir {
             Dir::Up | Dir::Down => nav::step(&rows, s.pointer().focus(), dir).map(|id| PointerEvent::Focus(id).into()),
@@ -237,7 +234,7 @@ pub(crate) fn press(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>) -> 
 /// tabs from left to right, opening and focusing each.
 pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     // On the Library's actions, the Library stays where it is.
-    if on_actions(s) {
+    if on_actions(s, d) {
         return vec![];
     }
     // On the Library, move a page, which is the rows on screen.
@@ -262,7 +259,7 @@ fn on_library_view(s: &State, d: &impl Drawn) -> bool {
 
 /// L2 and R2 go to the Library's first or last entry.
 pub(crate) fn trigger(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
-    if on_actions(s) {
+    if on_actions(s, d) {
         return vec![];
     }
     if on_library_view(s, d) {
@@ -349,7 +346,12 @@ mod tests {
     }
 
     fn t(x: f32, y: f32, id: Id) -> Target {
-        Target { rect: Rect::new(x, y, 10.0, 10.0), id, track: None, list: None, item: None }
+        Target { rect: Rect::new(x, y, 10.0, 10.0), id, track: None, list: None, item: None, pad: PadUse::Moves }
+    }
+
+    /// `t`, reached only by holding A.
+    fn held(t: Target) -> Target {
+        Target { pad: PadUse::Held, ..t }
     }
 
     fn state() -> State {
@@ -526,9 +528,9 @@ mod tests {
         let mut s = state();
         let mut d = drawn(&s);
         d.0.top.extend([
-            t(60.0, 0.0, Id::LibraryView(LibraryViewId::Launch)),
-            t(60.0, 15.0, Id::LibraryView(LibraryViewId::Favourite)),
-            t(60.0, 30.0, Id::LibraryView(LibraryViewId::Pin)),
+            held(t(60.0, 0.0, Id::LibraryView(LibraryViewId::Launch))),
+            held(t(60.0, 15.0, Id::LibraryView(LibraryViewId::Favourite))),
+            held(t(60.0, 30.0, Id::LibraryView(LibraryViewId::Pin))),
         ]);
         focus(&mut s, Id::LibraryView(LibraryViewId::Launch));
         assert!(s.library_view().in_actions(s.pointer()));
@@ -550,7 +552,7 @@ mod tests {
         let mut s = state();
         let mut d = drawn(&s);
         // The Library's actions, right beside and below the last game shown.
-        d.0.top.extend([t(60.0, 20.0, Id::LibraryView(LibraryViewId::Launch)), t(60.0, 35.0, Id::LibraryView(LibraryViewId::Favourite))]);
+        d.0.top.extend([held(t(60.0, 20.0, Id::LibraryView(LibraryViewId::Launch))), held(t(60.0, 35.0, Id::LibraryView(LibraryViewId::Favourite)))]);
         let last = entry(&s, 1);
         focus(&mut s, last.clone());
         let memory = Screens::default();

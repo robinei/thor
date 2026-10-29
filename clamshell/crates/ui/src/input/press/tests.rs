@@ -13,7 +13,7 @@ fn blank() -> State {
 }
 
 fn target(id: Id, track: Option<Track>) -> Target {
-    Target { rect: Rect::new(0.0, 0.0, 100.0, 50.0), id, track, list: None, item: None }
+    Target { rect: Rect::new(0.0, 0.0, 100.0, 50.0), id, track, list: None, item: None, pad: crate::toolkit::PadUse::Moves }
 }
 
 fn tab() -> Target {
@@ -68,7 +68,14 @@ fn networks(n: usize) -> State {
 
 fn row(list: ListId, i: u16) -> Target {
     let id = list.row(i);
-    Target { rect: Rect::new(0.0, 0.0, 100.0, 1000.0), id, track: None, list: Some(InList { list, row_h: 50.0 }), item: None }
+    Target {
+        rect: Rect::new(0.0, 0.0, 100.0, 1000.0),
+        id,
+        track: None,
+        list: Some(InList { list, row_h: 50.0 }),
+        item: None,
+        pad: crate::toolkit::PadUse::Moves,
+    }
 }
 
 /// Applies what the actions emit to `s`, and returns whether a timer was armed again.

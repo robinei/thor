@@ -13,7 +13,7 @@ use crate::gfx::{Column, Keep, Rect, Span, WRAP_LINE};
 use crate::toolkit::format::{Bytes, DaysAgo, Fmt, PlayTime};
 use crate::toolkit::scroll::Scrolled;
 use crate::toolkit::style::{self, Look, RADIUS_L, SURFACE_HI, Tone};
-use crate::toolkit::{Frame, widgets};
+use crate::toolkit::{Frame, PadUse, widgets};
 
 /// The tab bar's height and text size, as fractions of the screen's height.
 pub(super) const TABS_H: f32 = 0.08;
@@ -449,6 +449,7 @@ fn actions(f: &mut Frame, entry: &Entry, r: Rect, action_h: f32, pad: f32) -> f3
         };
         let row_w = if action == Action::Continue { r.w } else { w };
         widgets::key_action(f, Id::LibraryView(action.id()), Rect::new(r.x, y, row_w, action_h), key, &label, tone, in_actions);
+        f.pad_use(PadUse::Held);
         y += action_h + pad * 0.15;
     }
     if let Some(clamshell_state::library_view::files::Busy { what, fraction }) = s.library_view().files().busy() {

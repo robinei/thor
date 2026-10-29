@@ -13,11 +13,11 @@ use clamshell_state::session::tray::TrayEntry;
 use clamshell_state::{DockId, Id, ListId};
 
 use crate::gfx::{Keep, Rect};
-use crate::toolkit::Frame;
 use crate::toolkit::format::{Bytes, Fmt, MaybeShare, Share};
 use crate::toolkit::scroll::Scrolled;
 use crate::toolkit::style::{self, Look, Text, Tone};
 use crate::toolkit::widgets::{self, CAPTION_Y, HeaderRight, TileFace, TileShape};
+use crate::toolkit::{Frame, PadUse};
 
 /// The grid always has room for at least this many rows, so that a few entries still get normal-sized
 /// tiles.
@@ -105,6 +105,7 @@ fn tray_mark(f: &mut Frame, tile: Rect, i: usize) {
             f.c.fill(Rect::new(shown.x + (shown.w - w) / 2.0, y, w, bar), Tone::Normal);
         }
     });
+    f.pad_use(PadUse::Touch);
 }
 
 /// An entry's menu, opened by a long press on its tile. It has the items that apply: Open another, Close

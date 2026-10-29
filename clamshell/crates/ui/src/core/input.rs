@@ -26,9 +26,16 @@ impl Core {
             self.handle(Event::BottomTouched);
         }
         let below_bar = bottom && self.screens[screen].body.is_some_and(|b| b.contains(x as f32, y as f32));
-        let Some(target) = found
-            .or_else(|| below_bar.then(|| crate::toolkit::Target { rect: crate::gfx::Rect::default(), id: Id::Blank, track: None, list: None, item: None }))
-        else {
+        let Some(target) = found.or_else(|| {
+            below_bar.then(|| crate::toolkit::Target {
+                rect: crate::gfx::Rect::default(),
+                id: Id::Blank,
+                track: None,
+                list: None,
+                item: None,
+                pad: crate::toolkit::PadUse::Touch,
+            })
+        }) else {
             return;
         };
         let now = self.clock.at(time);
@@ -109,6 +116,7 @@ impl Core {
     ///   thread sends View from there too.
     pub(crate) fn pad(&mut self, input: PadInput) {
         self.handle(Event::PadActive);
+        self.fresh();
         // While a dock entry is being moved, the D-pad moves it and A or B ends the move.
         if self.state.dock().moving().is_some() && self.state.bottom().tab() == clamshell_state::Tab::Dock {
             let step = |dir| Some(clamshell_state::DockId::Step(dir));

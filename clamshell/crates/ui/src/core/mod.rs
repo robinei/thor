@@ -264,6 +264,24 @@ impl Core {
         }
     }
 
+    /// Records again the layers the pad may act on that changed since they were last recorded, so that
+    /// what the pad does follows what they show now (see `toolkit::PadOut`). They stay stale for the host,
+    /// which records and draws them as usual. The main screen's view isn't recorded while a window covers
+    /// it: the pad doesn't use it then.
+    pub(crate) fn fresh(&mut self) {
+        let top = self.state.pad().on_top();
+        let layers = [Layer::Screen(Screen::Bottom), Layer::Overlay(Screen::Top), Layer::Overlay(Screen::Bottom)];
+        for layer in layers.into_iter().chain(top.then_some(Layer::Screen(Screen::Top))) {
+            if self.stale(layer) {
+                self.record(layer, false);
+                match layer {
+                    Layer::Screen(screen) => self.screens[screen].stale = true,
+                    Layer::Overlay(screen) => self.overlays[screen].stale = true,
+                }
+            }
+        }
+    }
+
     /// `screen`'s logical size and integer scale, as the host shows it. It is recorded again, and its
     /// overlay too.
     pub fn resize(&mut self, screen: Screen, size: (u32, u32), scale: u32) {
