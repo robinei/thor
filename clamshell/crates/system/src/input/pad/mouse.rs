@@ -1,6 +1,7 @@
 //! The pad mouse. The left stick moves the pointer and the right stick scrolls. A or the right trigger
 //! is the left click, B the right click and Y the middle click. The D-pad sends arrow keys.
 
+use super::carry::{Carry, NOTCH};
 use std::time::{Duration, Instant};
 
 use evdev::{AbsoluteAxisCode, KeyCode, RelativeAxisCode};
@@ -15,8 +16,6 @@ const DEADZONE: f32 = 0.15;
 const MAX_SPEED: f32 = 1800.0;
 /// Scroll speed at full deflection, in wheel notches per second.
 const MAX_SCROLL: f32 = 18.0;
-/// High-resolution wheel units per notch, by the kernel's convention.
-const HI_RES_NOTCH: f32 = 120.0;
 /// A trigger pressed past this fraction of full is a held button.
 const TRIGGER: f32 = 0.5;
 /// How often motion is sent while a stick is deflected: 125 Hz, a common mouse rate.
@@ -40,15 +39,15 @@ pub(crate) struct PadMouse {
     right: (f32, f32),
     trigger_down: bool,
     /// Fractions of a pixel and of a wheel unit not yet sent.
-    carry: (f32, f32),
-    scroll_carry: (f32, f32),
+    carry: Carry,
+    scroll_carry: Carry,
     /// When motion was last sent.
     last: Option<Instant>,
 }
 
 impl PadMouse {
     pub(crate) fn new(ranges: Ranges) -> Self {
-        PadMouse { ranges, left: (0.0, 0.0), right: (0.0, 0.0), trigger_down: false, carry: (0.0, 0.0), scroll_carry: (0.0, 0.0), last: None }
+        PadMouse { ranges, left: (0.0, 0.0), right: (0.0, 0.0), trigger_down: false, carry: Carry::default(), scroll_carry: Carry::default(), last: None }
     }
 
     /// Whether a stick is out of its deadzone, in which case motion needs ticks.
@@ -60,24 +59,21 @@ impl PadMouse {
     pub(crate) fn motion(&mut self, dt: Duration, out: &mut Out) {
         let secs = dt.as_secs_f32();
         let (mx, my) = shape(self.left);
-        self.carry.0 += mx * MAX_SPEED * secs;
-        self.carry.1 += my * MAX_SPEED * secs;
-        let (dx, dy) = (self.carry.0.trunc(), self.carry.1.trunc());
-        self.carry = (self.carry.0 - dx, self.carry.1 - dy);
+        self.carry.add(mx * MAX_SPEED * secs, my * MAX_SPEED * secs);
+        let (dx, dy) = self.carry.take();
 
         let (sx, sy) = shape(self.right);
         // Stick down (positive y) scrolls down, which is a negative wheel value.
-        self.scroll_carry.0 += sx * MAX_SCROLL * HI_RES_NOTCH * secs;
-        self.scroll_carry.1 -= sy * MAX_SCROLL * HI_RES_NOTCH * secs;
-        let (hx, hy) = (self.scroll_carry.0.trunc(), self.scroll_carry.1.trunc());
-        self.scroll_carry = (self.scroll_carry.0 - hx, self.scroll_carry.1 - hy);
+        let notch = NOTCH as f32;
+        self.scroll_carry.add(sx * MAX_SCROLL * notch * secs, -sy * MAX_SCROLL * notch * secs);
+        let (hx, hy) = self.scroll_carry.take();
 
         let start = out.mouse.len();
         for (axis, value) in
             [(RelativeAxisCode::REL_X, dx), (RelativeAxisCode::REL_Y, dy), (RelativeAxisCode::REL_WHEEL_HI_RES, hy), (RelativeAxisCode::REL_HWHEEL_HI_RES, hx)]
         {
-            if value != 0.0 {
-                out.mouse.push(Raw::rel(axis, value as i32));
+            if value != 0 {
+                out.mouse.push(Raw::rel(axis, value));
             }
         }
         if out.mouse.len() > start {
@@ -200,7 +196,7 @@ mod tests {
         let mut out = Out::default();
         feed(&mut m, Raw::abs(AbsoluteAxisCode::ABS_RY, 32767), &mut out);
         m.motion(Duration::from_secs(1), &mut out);
-        assert_eq!(sum(&out, RelativeAxisCode::REL_WHEEL_HI_RES), -(MAX_SCROLL * HI_RES_NOTCH) as i32);
+        assert_eq!(sum(&out, RelativeAxisCode::REL_WHEEL_HI_RES), -(MAX_SCROLL * NOTCH as f32) as i32);
     }
 
     /// After a while still, the first motion is a tick's worth, not the whole time since.

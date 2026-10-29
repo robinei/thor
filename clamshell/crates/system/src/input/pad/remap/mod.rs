@@ -33,6 +33,7 @@
 //! turbo goes on and off at its rate while on. Time moves these on as well as events, and
 //! [`Remap::tick`] says when.
 
+use super::carry::{Carry, NOTCH};
 use std::time::{Duration, Instant};
 
 use clamshell_state::keymap::{Actuation, Binding, Chord, Dir, Input, Keymap, Kind, Layer, Output, PadOut, Side};
@@ -53,8 +54,6 @@ use analog::*;
 
 /// How often a stick on the pointer moves it.
 const POINTER_EVERY: Duration = Duration::from_millis(8);
-/// High-resolution wheel units per notch, by the kernel's convention.
-const NOTCH: i32 = 120;
 /// A binding to a layer that is on. It holds the input and actuation it belongs to, and the binding as it
 /// was when it came on. That binding is kept while on, whatever the layers since make of the input. It
 /// also holds how the layer is on, and the first input the layer maps that acted while it was on, which
@@ -156,7 +155,7 @@ pub(crate) struct Remap {
     sent: Wanted,
     /// The gyro's current rate in degrees per second, and the sub-pixel pointer motion not yet sent.
     gyro: Rate,
-    carry: (f32, f32),
+    carry: Carry,
     /// When a stick last moved the pointer.
     last_pointer: Option<Instant>,
     /// The layers that are on, in the order they came on.
@@ -174,7 +173,7 @@ impl Remap {
             ranges,
             sent: Wanted::default(),
             gyro: Rate::default(),
-            carry: (0.0, 0.0),
+            carry: Carry::default(),
             last_pointer: None,
             activations: Vec::new(),
             actuators: Vec::new(),
@@ -202,7 +201,7 @@ impl Remap {
         self.send(rest, out);
         self.sent = Wanted::default();
         self.gyro = Rate::default();
-        self.carry = (0.0, 0.0);
+        self.carry = Carry::default();
         self.last_pointer = None;
         self.actuators.clear();
         self.activations.clear();
@@ -482,8 +481,7 @@ impl Remap {
             let (x, y) = gyro_turn(&b, rate);
             let gain = gyro_gain(&b, (x, y));
             // Turning left (yaw) moves the pointer left, and tilting the top back (pitch) moves it up.
-            self.carry.0 -= x * gain * dt * px;
-            self.carry.1 -= y * gain * dt * px;
+            self.carry.add(-x * gain * dt * px, -y * gain * dt * px);
             self.flush_pointer(out);
         }
         self.update(snap, Instant::now(), out);
@@ -528,8 +526,7 @@ impl Remap {
             let secs = dt.as_secs_f32();
             for &((x, y), speed) in &self.sent.pointer {
                 let max = step(&STICK_POINTER, speed);
-                self.carry.0 += x * max * secs;
-                self.carry.1 += y * max * secs;
+                self.carry.add(x * max * secs, y * max * secs);
             }
             self.flush_pointer(out);
             self.last_pointer = Some(now);
@@ -539,12 +536,11 @@ impl Remap {
 
     /// Sends the whole pixels of the pointer's motion and keeps the rest.
     fn flush_pointer(&mut self, out: &mut Out) {
-        let (dx, dy) = (self.carry.0.trunc(), self.carry.1.trunc());
-        self.carry = (self.carry.0 - dx, self.carry.1 - dy);
+        let (dx, dy) = self.carry.take();
         let start = out.mouse.len();
         for (axis, v) in [(RelativeAxisCode::REL_X, dx), (RelativeAxisCode::REL_Y, dy)] {
-            if v != 0.0 {
-                out.mouse.push(Raw::rel(axis, v as i32));
+            if v != 0 {
+                out.mouse.push(Raw::rel(axis, v));
             }
         }
         if out.mouse.len() > start {
