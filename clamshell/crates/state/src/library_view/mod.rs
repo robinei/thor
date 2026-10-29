@@ -160,12 +160,10 @@ impl LibraryView {
             }
             return;
         }
-        let read = self.config_shown().cloned();
-        if self.edit.as_mut().is_some_and(|e| e.tap(id, read.as_ref(), out)) {
-            self.took_written();
+        let mut shown = edit::ConfigShown { read: self.library.config.as_ref(), written: &mut self.written };
+        if self.edit.as_mut().is_some_and(|e| e.tap(id, &mut shown, out)) {
             self.edit = None;
         }
-        self.took_written();
     }
 
     /// library.json as the edit mode shows and changes it: as last written while a write of it hasn't been
@@ -177,14 +175,6 @@ impl LibraryView {
     /// How many rows the edit mode's list has, if it is on (see [`edit::Edit::list_rows`]).
     pub fn edit_rows(&self) -> usize {
         self.edit.as_ref().zip(self.config_shown()).map_or(0, |(e, c)| e.list_rows(c))
-    }
-
-    /// Takes what the edit mode just wrote, one more write to be read back.
-    pub(crate) fn took_written(&mut self) {
-        if let Some(c) = self.edit.as_mut().and_then(edit::Edit::take_wrote) {
-            let unread = self.written.as_ref().map_or(0, |(_, n)| *n) + 1;
-            self.written = Some((c, unread));
-        }
     }
 
     /// The thread that writes library.json started again: the writes it hadn't read back won't be.
@@ -219,11 +209,9 @@ impl LibraryView {
 
     /// A place's name typed (see [`edit::Edit::named`]).
     pub(crate) fn place_named(&mut self, what: edit::PlaceName, name: &str, out: &mut crate::out::Out) {
-        let read = self.config_shown().cloned();
         if let Some(e) = &mut self.edit {
-            e.named(what, name, read.as_ref(), out);
+            e.named(what, name, &mut edit::ConfigShown { read: self.library.config.as_ref(), written: &mut self.written }, out);
         }
-        self.took_written();
     }
 
     /// Whether the library has been read (see [`LibraryView::unread`]).

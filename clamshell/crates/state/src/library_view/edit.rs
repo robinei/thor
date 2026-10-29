@@ -127,9 +127,6 @@ pub struct Edit {
     cursor: usize,
     /// The place cut, to be moved where it is pasted.
     cut: Option<String>,
-    /// library.json as just written, until the Library takes it (see
-    /// [`super::LibraryView::config_shown`]).
-    wrote: Option<Arc<Config>>,
     /// Why the last thing asked wasn't done (a name taken, a paste into itself), until something is.
     problem: Option<&'static str>,
     /// How many forms have been opened (see [`Form::opened`]).
@@ -195,12 +192,30 @@ fn new_id(config: &Config, name: &str) -> String {
     (1..).map(|n| if n == 1 { base.to_owned() } else { format!("{base}-{n}") }).find(|id| !taken(id)).unwrap_or_default()
 }
 
-impl Edit {
-    /// library.json as just written, for the Library to show until it is read back.
-    pub(crate) fn take_wrote(&mut self) -> Option<Arc<Config>> {
-        self.wrote.take()
+/// library.json as the edit mode shows and changes it (see [`super::LibraryView::config_shown`]): as read,
+/// or as last written while a write hasn't been read back. A write is noted as it is made, so the next
+/// edit is made on it.
+pub(crate) struct ConfigShown<'a> {
+    pub(crate) read: Option<&'a Arc<Config>>,
+    /// The last write, and how many writes haven't been read back.
+    pub(crate) written: &'a mut Option<(Arc<Config>, u32)>,
+}
+
+impl ConfigShown<'_> {
+    pub(crate) fn get(&self) -> Option<&Arc<Config>> {
+        self.written.as_ref().map(|(c, _)| c).or(self.read)
     }
 
+    /// Writes `changed`, which shows until it is read back.
+    pub(crate) fn write(&mut self, changed: Config, out: &mut Out) {
+        let changed = Arc::new(changed);
+        out.effects.push(Effect::WriteLibrary(changed.clone()));
+        let unread = self.written.as_ref().map_or(0, |(_, n)| *n) + 1;
+        *self.written = Some((changed, unread));
+    }
+}
+
+impl Edit {
     pub fn tab(&self) -> usize {
         self.tab
     }
@@ -302,9 +317,9 @@ impl Edit {
         }
     }
 
-    /// A tap on one of the edit mode's targets, with library.json as `read`. Returns whether it leaves.
-    pub(crate) fn tap(&mut self, id: EditId, read: Option<&Arc<Config>>, out: &mut Out) -> bool {
-        let Some(config) = read.map(|c| &**c).cloned() else {
+    /// A tap on one of the edit mode's targets, with library.json as `shown`. Returns whether it leaves.
+    pub(crate) fn tap(&mut self, id: EditId, shown: &mut ConfigShown<'_>, out: &mut Out) -> bool {
+        let Some(config) = shown.get().map(|c| &**c).cloned() else {
             return matches!(id, EditId::Done);
         };
         // A new ask: the last one's problem is gone, and the folders opened are those still there.
@@ -313,7 +328,7 @@ impl Edit {
         self.open.truncate(open);
         let here = self.here(&config).map(str::to_owned);
         if self.panel != Panel::Places || self.form.is_some() {
-            if let Some(leave) = self.list_tap(id, &config, out) {
+            if let Some(leave) = self.list_tap(id, &config, shown, out) {
                 return leave;
             }
             return false;
@@ -367,7 +382,7 @@ impl Edit {
                     // Pasted on a tab's top, it goes in that tab; in an open folder, in it.
                     p.within.clone_from(&here);
                 }
-                self.write(changed, out);
+                shown.write(changed, out);
             }
             EditId::Open
             | EditId::MoveUp
@@ -385,7 +400,7 @@ impl Edit {
                 let Some(p) = changed.places.iter_mut().find(|p| p.id == id) else { return false };
                 p.icon = ICONS.get(usize::from(j).wrapping_sub(1)).map(|i| (*i).to_owned());
                 self.choosing_icon = false;
-                self.write(changed, out);
+                shown.write(changed, out);
             }
             EditId::Remove => {
                 let Some(id) = self.selected(&config).map(|p| p.id.clone()) else { return false };
@@ -395,7 +410,7 @@ impl Edit {
                 let mut changed = config.clone();
                 changed.places.retain(|p| p.id != id);
                 self.cursor = self.cursor.saturating_sub(1);
-                self.write(changed, out);
+                shown.write(changed, out);
             }
         }
         false
@@ -409,7 +424,7 @@ impl Edit {
 
     /// A tap on the Sources or Runners panel, or on the form open. Returns whether it leaves the edit
     /// mode, or none if the tap isn't the panel's.
-    fn list_tap(&mut self, id: EditId, config: &Config, out: &mut Out) -> Option<bool> {
+    fn list_tap(&mut self, id: EditId, config: &Config, shown: &mut ConfigShown<'_>, out: &mut Out) -> Option<bool> {
         let len = self.listed(config);
         let sources = self.panel == Panel::Sources;
         match id {
@@ -441,7 +456,7 @@ impl Edit {
                     changed.runners.swap(self.cursor, to);
                 }
                 self.cursor = to;
-                self.write(changed, out);
+                shown.write(changed, out);
             }
             EditId::Remove if self.form.is_none() && self.cursor + 1 < len => {
                 let mut changed = config.clone();
@@ -456,7 +471,7 @@ impl Edit {
                     changed.runners.remove(self.cursor);
                 }
                 self.cursor = self.cursor.min(len.saturating_sub(2));
-                self.write(changed, out);
+                shown.write(changed, out);
             }
             EditId::Field(i) => {
                 let form = self.form.as_mut()?;
@@ -483,7 +498,7 @@ impl Edit {
             EditId::Save => {
                 let form = self.form.take()?;
                 match saved(config, form.item.clone(), form.index) {
-                    Ok(changed) => self.write(changed, out),
+                    Ok(changed) => shown.write(changed, out),
                     // Not saved: the form stays, saying why.
                     Err(why) => {
                         self.problem = Some(why);
@@ -544,17 +559,17 @@ impl Edit {
     }
 
     /// Place `id`'s picture, chosen: written.
-    pub(crate) fn set_picture(&mut self, id: &str, path: &str, read: Option<&Arc<Config>>, out: &mut Out) {
-        let Some(mut changed) = read.map(|c| &**c).cloned() else { return };
+    pub(crate) fn set_picture(&mut self, id: &str, path: &str, shown: &mut ConfigShown<'_>, out: &mut Out) {
+        let Some(mut changed) = shown.get().map(|c| &**c).cloned() else { return };
         let Some(p) = changed.places.iter_mut().find(|p| p.id == id) else { return };
         p.picture = Some(path.to_owned());
-        self.write(changed, out);
+        shown.write(changed, out);
     }
 
     /// A name typed for `what`.
-    pub(crate) fn named(&mut self, what: PlaceName, name: &str, read: Option<&Arc<Config>>, out: &mut Out) {
+    pub(crate) fn named(&mut self, what: PlaceName, name: &str, shown: &mut ConfigShown<'_>, out: &mut Out) {
         let name = name.trim();
-        let Some(mut changed) = read.map(|c| &**c).cloned() else { return };
+        let Some(mut changed) = shown.get().map(|c| &**c).cloned() else { return };
         let (within, id) = match &what {
             PlaceName::Rename(id) => (changed.places.iter().find(|p| &p.id == id).and_then(|p| p.within.clone()), Some(id.as_str())),
             PlaceName::New(within) => (within.clone(), None),
@@ -578,14 +593,7 @@ impl Edit {
                 changed.places.insert(at, Place { id, name: name.to_owned(), within, ..Place::default() });
             }
         }
-        self.write(changed, out);
-    }
-
-    /// Writes `changed`, which shows until the library is read again.
-    fn write(&mut self, changed: Config, out: &mut Out) {
-        let changed = Arc::new(changed);
-        out.effects.push(Effect::WriteLibrary(changed.clone()));
-        self.wrote = Some(changed);
+        shown.write(changed, out);
     }
 }
 
@@ -706,9 +714,9 @@ mod tests {
         assert_eq!(edit.row(c, "files", 0), Some(Row::Made("Home")));
         assert_eq!(edit.row(c, "files", 1), Some(Row::New));
         let mut out = Out::default();
-        edit.tap(EditId::Row(0), Some(&read), &mut out);
+        edit.tap(EditId::Row(0), &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
         assert_eq!(edit.here(&read), Some("snes"), "a tap on the selected row opens it");
-        edit.tap(EditId::Up, Some(&read), &mut out);
+        edit.tap(EditId::Up, &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
         assert_eq!((edit.here(&read), edit.cursor()), (Some("games"), 0));
     }
 
@@ -716,12 +724,14 @@ mod tests {
     /// Library shows what was written, see `LibraryView::config_shown`).
     #[test]
     fn names_are_written_each_on_the_last() {
-        let mut shown = config();
+        let read = config();
+        let mut written = None;
+        let mut shown = read.clone();
         let mut edit = Edit::default();
         let mut out = Out::default();
         let mut name = |edit: &mut Edit, what, text: &str, shown: &mut Arc<Config>| {
-            edit.named(what, text, Some(shown), &mut out);
-            *shown = edit.take_wrote().unwrap();
+            edit.named(what, text, &mut ConfigShown { read: Some(&read), written: &mut written }, &mut out);
+            *shown = written.as_ref().unwrap().0.clone();
         };
         name(&mut edit, PlaceName::Rename("snes".into()), " Super NES ", &mut shown);
         assert_eq!(shown.places.iter().find(|p| p.id == "snes").unwrap().name, "Super NES");
@@ -742,28 +752,28 @@ mod tests {
         let read = config();
         let mut edit = Edit::default();
         let mut out = Out::default();
-        edit.tap(EditId::Cut, Some(&read), &mut out);
+        edit.tap(EditId::Cut, &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
         assert_eq!(edit.cut(), Some("snes"), "the row selected");
-        edit.tap(EditId::Row(0), Some(&read), &mut out);
-        edit.tap(EditId::Paste, Some(&read), &mut out);
+        edit.tap(EditId::Row(0), &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
+        edit.tap(EditId::Paste, &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
         assert!(out.effects.is_empty(), "not into itself");
         assert_eq!((edit.problem(), edit.cut()), (Some("Not into itself"), Some("snes")), "said, and the cut kept");
-        edit.tap(EditId::Tab(1), Some(&read), &mut out);
-        edit.tap(EditId::Cut, Some(&read), &mut out);
+        edit.tap(EditId::Tab(1), &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
+        edit.tap(EditId::Cut, &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
         assert_eq!(edit.cut(), Some("files"), "nothing selected: the tab itself");
         edit.cut = Some("rpg".into());
-        edit.tap(EditId::Paste, Some(&read), &mut out);
+        edit.tap(EditId::Paste, &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
         assert_eq!(written(&out).places.iter().find(|p| p.id == "rpg").unwrap().within.as_deref(), Some("files"));
         // Removing, from what was read.
         let (mut edit, mut out) = (Edit::default(), Out::default());
-        edit.tap(EditId::Remove, Some(&read), &mut out);
+        edit.tap(EditId::Remove, &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
         assert!(out.effects.is_empty(), "SNES has RPG in it");
-        edit.tap(EditId::Tab(1), Some(&read), &mut out);
-        edit.tap(EditId::Remove, Some(&read), &mut out);
+        edit.tap(EditId::Tab(1), &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
+        edit.tap(EditId::Remove, &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
         assert!(out.effects.is_empty(), "Files has a browsed folder");
-        edit.tap(EditId::Tab(0), Some(&read), &mut out);
-        edit.tap(EditId::Row(0), Some(&read), &mut out);
-        edit.tap(EditId::Remove, Some(&read), &mut out);
+        edit.tap(EditId::Tab(0), &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
+        edit.tap(EditId::Row(0), &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
+        edit.tap(EditId::Remove, &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
         assert!(!written(&out).places.iter().any(|p| p.id == "rpg"), "RPG is unused");
     }
 
@@ -773,8 +783,8 @@ mod tests {
     fn places_keep_names_of_their_own_and_own_tabs_stay() {
         let read = config();
         let (mut edit, mut out) = (Edit::default(), Out::default());
-        edit.tap(EditId::Tab(2), Some(&read), &mut out);
-        edit.tap(EditId::Cut, Some(&read), &mut out);
+        edit.tap(EditId::Tab(2), &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
+        edit.tap(EditId::Cut, &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
         assert_eq!((edit.cut(), edit.problem()), (None, Some("ClamShell's own tabs stay")));
         for (what, name) in [
             (PlaceName::Rename("snes".into()), "PS1/PSX"),
@@ -782,14 +792,14 @@ mod tests {
             (PlaceName::New(Some("files".into())), "Home"),
             (PlaceName::New(Some("games".into())), "snes"),
         ] {
-            edit.named(what, name, Some(&read), &mut out);
+            edit.named(what, name, &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
             assert!(out.effects.is_empty() && edit.problem().is_some(), "{name}");
         }
-        edit.named(PlaceName::Rename("snes".into()), "Snes", Some(&read), &mut out);
+        edit.named(PlaceName::Rename("snes".into()), "Snes", &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
         assert!(!out.effects.is_empty(), "its own name, cased otherwise");
         // In SNES, which goes: back out to Games.
         let (mut edit, mut out) = (Edit::default(), Out::default());
-        edit.tap(EditId::Row(0), Some(&read), &mut out);
+        edit.tap(EditId::Row(0), &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
         assert_eq!(edit.here(&read), Some("snes"));
         let mut gone = (*read).clone();
         gone.places.retain(|p| p.id != "snes" && p.id != "rpg");
@@ -828,11 +838,11 @@ mod tests {
         let read = Arc::new(read);
         let mut edit = Edit::default();
         let mut out = Out::default();
-        edit.tap(EditId::Sources, Some(&read), &mut out);
-        edit.tap(EditId::Open, Some(&read), &mut out);
+        edit.tap(EditId::Sources, &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
+        edit.tap(EditId::Open, &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
         let fields = edit.form().unwrap().item.fields();
         let at = |f: Field| fields.iter().position(|x| *x == f).unwrap() as u16;
-        edit.tap(EditId::Field(at(Field::Also)), Some(&read), &mut out);
+        edit.tap(EditId::Field(at(Field::Also)), &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
         assert!(
             out.events.iter().any(|e| matches!(e, Event::EditOnKeyboard(Editor { purpose: Purpose::FormField(Field::Also, _), .. }))),
             "typed on the keyboard"
@@ -840,27 +850,27 @@ mod tests {
         let opened = edit.form().unwrap().opened;
         assert!(edit.field_typed(Field::Also, opened, "*.zip"));
         assert!(!edit.field_typed(Field::Also, opened + 1, "*.7z"), "for another form: not taken");
-        edit.tap(EditId::Field(at(Field::Place)), Some(&read), &mut out);
+        edit.tap(EditId::Field(at(Field::Place)), &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
         assert!(edit.form().unwrap().choosing, "its options show");
         let games = edit.form().unwrap().item.options(&read, Field::Place).iter().position(|(v, _)| v == "games").unwrap() as u16;
-        edit.tap(EditId::Choice(games), Some(&read), &mut out);
-        edit.tap(EditId::Save, Some(&read), &mut out);
+        edit.tap(EditId::Choice(games), &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
+        edit.tap(EditId::Save, &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
         let c = written(&out);
         assert!(matches!(c.sources.first(), Some(Source::Dir(d)) if d.also == ["*.zip"] && d.place == "games"), "{:?}", c.sources.first());
         // A new one, on the last row.
         let mut out = Out::default();
         let last = edit.listed(&read) as u16 - 1;
-        edit.tap(EditId::Row(last), Some(&read), &mut out);
+        edit.tap(EditId::Row(last), &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
         assert_eq!(edit.form().unwrap().index, None);
-        edit.tap(EditId::Save, Some(&read), &mut out);
+        edit.tap(EditId::Save, &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
         assert_eq!(written(&out).sources.len(), read.sources.len() + 1);
         let mut out = Out::default();
-        edit.tap(EditId::Row(0), Some(&read), &mut out);
-        edit.tap(EditId::MoveDown, Some(&read), &mut out);
+        edit.tap(EditId::Row(0), &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
+        edit.tap(EditId::MoveDown, &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
         assert!(matches!(written(&out).sources.get(1), Some(Source::Dir(d)) if d.id == "snes"));
         let mut out = Out::default();
-        edit.tap(EditId::Runners, Some(&read), &mut out);
-        edit.tap(EditId::Remove, Some(&read), &mut out);
+        edit.tap(EditId::Runners, &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
+        edit.tap(EditId::Remove, &mut ConfigShown { read: Some(&read), written: &mut None }, &mut out);
         assert!(out.effects.is_empty(), "SNES's scan names it");
     }
 }
