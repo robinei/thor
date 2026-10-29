@@ -213,18 +213,30 @@ pub fn run(
     let top = choose(&drm, &profile, ScreenRole::Top, None)?;
     // Without the second screen (a broken panel, an output missing), ClamShell runs on the top screen: the
     // second is laid out as usual, but shown nowhere.
-    let bottom = choose(&drm, &profile, ScreenRole::Bottom, Some(top.crtc)).inspect_err(|e| log::error!("{e}: running on the top screen alone")).ok();
-    if scanout {
-        let mut crtcs = vec![("the top screen", top.crtc)];
-        crtcs.extend(bottom.as_ref().map(|b| ("the second screen", b.crtc)));
-        crate::scanout::report(&drm, &crtcs);
-    }
     let logical = |chosen: &Chosen, role: ScreenRole| {
         let (w, h) = chosen.mode.size();
         let turned = transform(profile.screen(role).rotation).transform_size(Size::<i32, Physical>::from((i32::from(w), i32::from(h))));
         Size::<i32, Logical>::from((turned.w, turned.h))
     };
     let top_size = logical(&top, ScreenRole::Top);
+    // (The screens are laid out side by side at one height, see `crate::screens`: a second screen of
+    // another height is left out the same way.)
+    let bottom =
+        choose(&drm, &profile, ScreenRole::Bottom, Some(top.crtc)).inspect_err(|e| log::error!("{e}: running on the top screen alone")).ok().filter(|bottom| {
+            let height = logical(bottom, ScreenRole::Bottom).h;
+            if height != top_size.h {
+                log::error!(
+                    "drm: the second screen is {height} high, the top {}: screens of different heights aren't laid out; running on the top screen alone",
+                    top_size.h
+                );
+            }
+            height == top_size.h
+        });
+    if scanout {
+        let mut crtcs = vec![("the top screen", top.crtc)];
+        crtcs.extend(bottom.as_ref().map(|b| ("the second screen", b.crtc)));
+        crate::scanout::report(&drm, &crtcs);
+    }
     let bottom_size = bottom.as_ref().map_or(top_size, |b| logical(b, ScreenRole::Bottom));
     config.top_size = (top_size.w as u32, top_size.h as u32);
     config.bottom_size = (bottom_size.w as u32, bottom_size.h as u32);
