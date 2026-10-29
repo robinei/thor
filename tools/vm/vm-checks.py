@@ -705,14 +705,12 @@ class Checks:
         self.check("  the touchscreen isn't grabbed", not grabbed(device("QEMU Virtio MultiTouch")))
 
         def two_fingers_up():
-            self.i.touch.down(0, 500, PAD_Y + 200)
-            self.i.touch.down(1, 700, PAD_Y + 200)
+            y = PAD_Y + 200
+            self.i.touch.fingers({0: (500, y), 1: (700, y)})
             for step in range(1, 21):
                 time.sleep(0.04)
-                self.i.touch.move(0, 500, PAD_Y + 200 - step * 15)
-                self.i.touch.move(1, 700, PAD_Y + 200 - step * 15)
-            self.i.touch.up(0)
-            self.i.touch.up(1)
+                self.i.touch.fingers({0: (500, y - step * 15), 1: (700, y - step * 15)})
+            self.i.touch.lift([0, 1])
         out = capture(f"sudo libinput debug-events --enable-tap --device {virtual}", 4, two_fingers_up)
         self.check("  two fingers moving together scroll", "POINTER_SCROLL_FINGER" in out, out.strip()[-300:])
         self.icon("dock")

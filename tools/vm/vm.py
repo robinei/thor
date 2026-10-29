@@ -710,6 +710,33 @@ class Touch:
         self._send(events)
         self._save()
 
+    def fingers(self, at):
+        """Fingers by slot ({slot: (x, y)}) down or moved, together in one frame, as a touchscreen reports
+        fingers that move at once (one frame per finger would show the others still, for an instant)."""
+        events = []
+        for slot, (x, y) in at.items():
+            if slot in self.ids:
+                events.append(self._mtt("update", slot, self.ids[slot]))
+            else:
+                self.ids[slot] = (max(self.ids.values(), default=int(time.time()) % 30000) + 1) % 65535
+                events.append(self._mtt("begin", slot, self.ids[slot]))
+                if len(self.ids) == 1:
+                    events.append({"type": "btn", "data": {"button": "touch", "down": True}})
+            events += self._at(slot, x, y)
+        self._send(events)
+        self._save()
+
+    def lift(self, slots):
+        """Fingers lifted together, in one frame."""
+        slots = [slot for slot in slots if slot in self.ids]
+        for slot in slots:
+            del self.ids[slot]
+        events = [self._mtt("end", slot, -1) for slot in slots]
+        if not self.ids:
+            events.append({"type": "btn", "data": {"button": "touch", "down": False}})
+        self._send(events)
+        self._save()
+
     def slide(self, slot, x1, y1, x2, y2, steps, seconds):
         self.down(slot, x1, y1)
         for i in range(1, steps + 1):
