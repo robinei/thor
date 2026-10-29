@@ -52,7 +52,7 @@ impl State {
     /// answered at once with nothing.
     pub(crate) fn follow_portal(&mut self, out: &mut Out) {
         // Order: set aside before the answers are taken, since one that is no program's is answered so.
-        if self.picking_for_app().is_some() && !matches!(self.top(), crate::Top::Library(_)) {
+        if self.picking_for_app().is_some() && !self.home_in_front() {
             self.set_pick_aside();
         }
         if let Some((request, paths)) = self.library_view.take_answered() {
@@ -120,8 +120,13 @@ impl State {
         match self.library_view.pick().map(|p| &p.purpose) {
             None => true,
             Some(PickFor::App { .. }) => false,
-            Some(_) => !matches!(self.top(), crate::Top::Library(_)),
+            Some(_) => !self.home_in_front(),
         }
+    }
+
+    /// Whether the home app is in front, where picks are made.
+    fn home_in_front(&self) -> bool {
+        matches!(self.top(), crate::Top::App { app, .. } if app == crate::builtin_apps::home())
     }
 
     /// The request picked for, if an app's pick goes on.

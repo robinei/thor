@@ -34,7 +34,7 @@ use crate::settings::Setting;
 use crate::settings::panel::SettingsLevel;
 use crate::setup::SticksEvent;
 use crate::*;
-use crate::{LibraryMode, Top};
+use crate::{BuiltinApp, Top};
 
 /// The seeds that run with the other tests, and the events in each.
 /// (828: a Steam game's window freed by a found program ending, checked after every event.)
@@ -247,7 +247,7 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
         ids.push(Id::Wake);
     }
     match s.top() {
-        Top::Device => ids.extend(
+        Top::App { app: BuiltinApp::Device, .. } => ids.extend(
             [
                 DeviceId::Wifi,
                 DeviceId::Zone,
@@ -264,7 +264,7 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
         // The step's own; the tab's below are the step's tab's.
         Top::Setup(_) => ids.extend([SetupId::Password, SetupId::Next, SetupId::Back].map(Id::Setup)),
         // The edit mode's: its tabs, its rows, and its actions.
-        Top::Library(LibraryMode::Edit) => {
+        Top::App { app: BuiltinApp::Library, .. } if s.library_view().edit().is_some() && s.library_view().pick().is_none() => {
             use crate::library_view::edit::EditId;
             ids.extend((0..4).map(EditId::Tab).chain((0..6).map(EditId::Row)).map(Id::from));
             ids.extend([EditId::NewTab, EditId::Up, EditId::Done, EditId::Rename, EditId::Cut, EditId::Paste, EditId::Remove].map(Id::from));
@@ -272,7 +272,7 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
             ids.extend((0..9).map(EditId::Field).chain((0..4).map(EditId::Choice)).chain((0..3).map(EditId::IconChoice)).map(Id::from));
             ids.extend([EditId::Pick(2), EditId::Pick(4), EditId::Icon, EditId::Picture].map(Id::from));
         }
-        Top::Library(_) => {
+        Top::App { app: BuiltinApp::Library, .. } => {
             let sh = s.library_view();
             ids.extend(sh.list().iter().filter_map(|&i| sh.library().entries.get(i)).map(|g| Id::LibraryView(LibraryViewId::Entry(g.id.clone()))));
             ids.extend((0..sh.library().collections.len() as u16).map(|i| Id::LibraryView(LibraryViewId::Collection(i))));
@@ -903,7 +903,8 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     }
     // An app's pick shows only over the Library; one of ClamShell's own may wait behind a window.
     let app_pick = s.library_view().pick().is_some_and(|p| matches!(p.purpose, crate::library_view::pick::PickFor::App { .. }));
-    ensure!(!app_pick || matches!(s.top(), Top::Library(LibraryMode::Pick)), "an app's pick not shown: {:?}", s.top());
+    let home = matches!(s.top(), Top::App { app, .. } if app == crate::builtin_apps::home());
+    ensure!(!app_pick || home, "an app's pick not shown: {:?}", s.top());
     ensure!(s.session().selections_valid(), "a selected window is not in its top group, or a screen's window is not open or on both screens");
     ensure!(s.session().overview_valid(), "the overview is open for a group not in front, or with fewer than two windows, or a choice not in it");
     // Every window has a group once the event is settled, except one of a program still starting, whose
@@ -1040,7 +1041,7 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         PadRoute::Mouse
     } else {
         match (s.top(), s.bottom().tab()) {
-            (Top::Setup(_) | Top::Device | Top::Library(_), _) => PadRoute::Ui,
+            (Top::Setup(_) | Top::App { .. }, _) => PadRoute::Ui,
             (_, Tab::Keyboard) => PadRoute::Keys,
             _ => PadRoute::Game,
         }

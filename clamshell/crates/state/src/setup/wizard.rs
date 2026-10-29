@@ -161,7 +161,7 @@ mod tests {
         tap(&mut s, SetupId::Next);
         let fx = tap(&mut s, SetupId::Next);
         assert!(fx.contains(&Effect::Save(Save::FirstStartDone)), "{fx:?}");
-        assert_eq!((s.top(), s.bottom().tab()), (crate::Top::Library(crate::LibraryMode::Browse), Tab::default()));
+        assert_eq!((s.top(), s.bottom().tab()), (crate::Top::App { app: crate::BuiltinApp::Library, view: 0 }, Tab::default()));
     }
 
     /// Off the device there is no helper: once that is known, Next passes the password step.

@@ -127,7 +127,7 @@ pub use session::dock::{Dock, DockItem};
 pub use session::launch_unit::LaunchUnit;
 pub use session::running::{Launching, Origin, Running};
 pub use settings::panel::{GRID_COLUMNS, Panel, Prefs, Program, SettingsLevel, Source, TileOrigin};
-pub use shown::{LibraryMode, Top};
+pub use shown::Top;
 pub use status::time::{ClockField, TimePage, TimeRow, TimeZones};
 pub use status::{Status, Sys};
 
@@ -373,7 +373,7 @@ impl State {
             sys: &self.sys,
             dock: &self.dock,
             pointer: &self.pointer,
-            top: self.top(),
+            subject: self.subject(),
             menu_rows: self.menu_rows_len(),
         }
     }

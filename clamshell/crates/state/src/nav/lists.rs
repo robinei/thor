@@ -10,6 +10,8 @@
 //! tap on one does are up to the list's feature ([`crate::kit::list::Rows`], [`crate::State::on_row`]). This
 //! module only maps each list to its feature.
 
+use std::sync::Arc;
+
 use crate::id::{AudioId, DockId, Id, LibraryViewId};
 use crate::keymap::screens::Keymapping;
 use crate::kit::list::{EMPTY, ItemKey, RowsOf, Scroll};
@@ -109,7 +111,7 @@ impl Scrolls {
 
 /// The lists as they are now: each one's rows, from its feature, and where it is scrolled. Built by
 /// [`crate::State::lists`] from the areas.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Lists<'a> {
     pub(crate) scrolls: &'a Scrolls,
     pub(crate) library_view: &'a LibraryView,
@@ -122,15 +124,15 @@ pub struct Lists<'a> {
     pub(crate) sys: &'a Sys,
     pub(crate) dock: &'a Dock,
     pub(crate) pointer: &'a Pointer,
-    /// What the main screen shows.
-    pub(crate) top: crate::Top,
+    /// The entry the settings panel edits (see [`crate::State::subject`]).
+    pub(crate) subject: Option<Arc<str>>,
     /// The open tile menu's rows (see [`crate::State::menu_row`]).
     pub(crate) menu_rows: usize,
 }
 
 impl<'a> Lists<'a> {
     fn panel(&self) -> Panel<'a> {
-        Panel::new(self.top, self.session, self.library_view, self.prefs, self.keymapping, self.curving)
+        Panel::new(self.subject.clone(), self.session, self.library_view, self.prefs, self.keymapping, self.curving)
     }
 
     /// Where `list` is scrolled. For the Library, this is the current collection's position.

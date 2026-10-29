@@ -1,16 +1,22 @@
 //! What ClamShell's own apps on the main screen do, each declared in one place: whether it always runs or
-//! only while open, where it goes on the dock, whether it is the home, and what is read from the system
-//! while it runs. Shared code (the session, the dock, sync) reads these instead of asking which app it is.
+//! only while open, where it goes on the dock, whether it is the home, what is read from the system while
+//! it runs, and its hooks: which of its views shows, what a key typed does, and what the settings panel
+//! edits while it is in front. Shared code (the session, the dock, sync, the keyboard, the settings
+//! panel) reads these instead of asking which app it is.
 //! An app's rules are its own area's (the Device view's in [`crate::setup`]), its targets its own `Id`
 //! variant, and how it looks its view in clamshell-ui, found by its [`BuiltinApp`]. Who each is, as a
 //! library entry (its id, title and summary), is [`BuiltinApp`]'s.
 
+use std::sync::Arc;
+
 use clamshell_library::BuiltinApp;
 
+use crate::State;
+use crate::bottom::keyboard::Stroke;
 use crate::effect::Watch;
+use crate::out::Out;
 
 /// What one of ClamShell's own apps does.
-#[derive(Debug)]
 pub struct BuiltinAppDefinition {
     pub runs: Runs,
     pub dock: DockPlace,
@@ -18,6 +24,24 @@ pub struct BuiltinAppDefinition {
     pub home: bool,
     /// What is read from the system while it runs.
     pub watches: &'static [Watch],
+    /// Which of its views shows, a number of its own. When it changes, the focus starts where the new
+    /// view says, as when another app comes in front (see [`crate::Top::App`]).
+    pub view: fn(&State) -> u8,
+    /// What a key typed on the second screen's keyboard does while it is in front.
+    pub(crate) typed: fn(&mut State, Stroke, &mut Out),
+    /// The entry the settings panel edits while it is in front, if any.
+    pub subject: fn(&State) -> Option<Arc<str>>,
+}
+
+/// Nothing, for a hook an app doesn't need.
+fn no_view(_: &State) -> u8 {
+    0
+}
+
+fn not_typed(_: &mut State, _: Stroke, _: &mut Out) {}
+
+fn no_subject(_: &State) -> Option<Arc<str>> {
+    None
 }
 
 /// When an app runs.
@@ -37,9 +61,37 @@ pub enum DockPlace {
     WhileRunning,
 }
 
-const LIBRARY: BuiltinAppDefinition = BuiltinAppDefinition { runs: Runs::Always, dock: DockPlace::PinnedFirst, home: true, watches: &[] };
+/// The Library (see [`crate::library_view`]): its list, its edit mode, or a pick.
+const LIBRARY: BuiltinAppDefinition = BuiltinAppDefinition {
+    runs: Runs::Always,
+    dock: DockPlace::PinnedFirst,
+    home: true,
+    watches: &[],
+    view: |s| match (s.library_view.pick(), s.library_view.edit()) {
+        (Some(_), _) => 2,
+        (None, Some(_)) => 1,
+        (None, None) => 0,
+    },
+    // Finds an entry in the list by what is typed; the edit mode's list isn't found in.
+    typed: |s, stroke, out| {
+        if s.library_view.edit().is_none() || s.library_view.pick().is_some() {
+            s.library_view.find(stroke, out);
+        }
+    },
+    // The selection, where a browsed file that belongs to a library entry stands for that entry.
+    subject: |s| s.library_view.selected().cloned().map(|id| s.library_view.entry_of_file(&id).unwrap_or(id)),
+};
 
-const DEVICE: BuiltinAppDefinition = BuiltinAppDefinition { runs: Runs::WhileOpen, dock: DockPlace::WhileRunning, home: false, watches: &[Watch::Account] };
+/// The Device view (see [`crate::setup`]).
+const DEVICE: BuiltinAppDefinition = BuiltinAppDefinition {
+    runs: Runs::WhileOpen,
+    dock: DockPlace::WhileRunning,
+    home: false,
+    watches: &[Watch::Account],
+    view: no_view,
+    typed: not_typed,
+    subject: no_subject,
+};
 
 /// `app`'s definition.
 pub fn definition(app: BuiltinApp) -> &'static BuiltinAppDefinition {

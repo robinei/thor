@@ -653,7 +653,7 @@ mod tests {
         let account = clamshell_state::setup::account::Account::NoHelper;
         let mut s = State::new(Init { library: Some(clamshell_library::demo::library()), account, ..Init::default() });
         s.apply(Event::Entry("builtin:device".into(), clamshell_state::EntryAct::Play), &mut Vec::new());
-        assert_eq!(s.top(), clamshell_state::Top::Device);
+        assert_eq!(s.top(), clamshell_state::Top::App { app: clamshell_state::BuiltinApp::Device, view: 0 });
         assert_eq!(default_focus(&frames(&s), Screen::Top), Some(Id::Device(clamshell_state::DeviceId::Wifi)));
     }
 

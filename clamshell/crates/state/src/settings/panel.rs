@@ -10,7 +10,6 @@ use crate::effect::{Effect, Save};
 use crate::keymap::screens::Keymapping;
 use crate::profiles::picker::{Owner, PickerRow};
 use crate::settings::{Setting, Settings};
-use crate::shown::Top;
 use crate::{LibraryView, Session};
 
 /// The level the settings panel edits: the global settings (All), the runner of the item in context, or the
@@ -200,11 +199,9 @@ pub struct Panel<'a> {
 }
 
 impl<'a> Panel<'a> {
-    /// The settings panel as it is now. Its item is chosen by what is in front: the entry whose window is
-    /// in front, or the Library's selection, where a browsed file that belongs to a library entry stands for
-    /// that entry. There is none for a window of no program.
+    /// The settings panel as it is now, for the entry `subject` (see [`crate::State::subject`]).
     pub(crate) fn new(
-        top: Top,
+        subject: Option<Arc<str>>,
         session: &'a Session,
         library_view: &'a LibraryView,
         prefs: &'a Prefs,
@@ -212,12 +209,7 @@ impl<'a> Panel<'a> {
         curving: &'a crate::curve::screens::Curving,
     ) -> Panel<'a> {
         let entry_of = |id: &str| session.entry(library_view.library(), id);
-        let id = match top {
-            Top::Window { program: true } => session.top_window().and_then(|w| session.owner_of(w)).or_else(|| session.program().cloned()),
-            Top::Library(_) => library_view.selected().cloned().map(|id| library_view.entry_of_file(&id).unwrap_or(id)),
-            Top::Setup(_) | Top::Device | Top::Window { program: false } => None,
-        };
-        let context = id.and_then(|id| entry_of(&id).map(|g| Program { id, title: &g.title }));
+        let context = subject.and_then(|id| entry_of(&id).map(|g| Program { id, title: &g.title }));
         let entry = context.as_ref().and_then(|item| entry_of(&item.id));
         let levels = match (&context, entry) {
             (Some(item), Some(g)) => match &g.runner {

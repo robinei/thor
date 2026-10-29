@@ -83,8 +83,10 @@ How areas cooperate:
 **Built-in apps.** ClamShell's own apps on the main screen (the Library, the Device view) are each a
 `BuiltinApp`: who it is as a library entry (id, title, summary) in the library crate; what it does as its
 `BuiltinAppDefinition` in `crates/state/src/builtin_apps.rs` (always runs or while open, its dock place,
-whether it is the home, what it watches while it runs); its rules in its own area and `Id` variant; and
-its view in the UI, found by the same `BuiltinApp`. Shared code (the session, the dock, sync) reads the
+whether it is the home, what it watches while it runs, and its hooks: which of its views shows, what a
+key typed does, what the settings panel edits); its rules in its own area and `Id` variant; and its view
+in the UI (`views/apps.rs`), found by the same `BuiltinApp`. `State::top()` says `Top::App { app, view }`
+for any of them. Shared code (the session, the dock, sync) reads the
 definitions, never which app it is, so a new app is an entry, a definition, an area and a view.
 
 ## Windows

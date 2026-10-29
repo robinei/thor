@@ -10,6 +10,7 @@
 //! module, or in `style` when shared. Small adjustments, such as half a padding or slightly larger text,
 //! are written where they are used.
 
+mod apps;
 pub(crate) mod bar;
 mod battery;
 mod bluetooth;
@@ -36,7 +37,7 @@ mod wifi;
 
 use clamshell_state::bottom::editor::Purpose;
 use clamshell_state::library_view::files::FileName;
-use clamshell_state::{LibraryMode, Tab, Top};
+use clamshell_state::{Tab, Top};
 
 use crate::gfx::Rect;
 use crate::toolkit::Frame;
@@ -52,20 +53,12 @@ pub(crate) fn mode_input(mode: crate::toolkit::PadMode, input: clamshell_state::
     }
 }
 
-/// The main screen, over all of `screen`: the Library, or the Device view or Setup shown in its place.
+/// The main screen, over all of `screen`: the app of ClamShell's in front, or Setup in the home app's place.
 /// The frame starts black (see `render`).
 pub fn top(f: &mut Frame, screen: Rect) {
     f.body = screen;
     match f.s.top() {
-        Top::Library(LibraryMode::Edit) => {
-            if let Some(edit) = f.s.library_view().edit() {
-                f.start(clamshell_state::library_view::edit::EditId::Row(edit.cursor() as u16).into());
-                f.out.list_rows = Some(library_edit::draw(f, screen, edit));
-            }
-        }
-        // Picking shows the Library, in the edit mode too.
-        Top::Library(LibraryMode::Browse | LibraryMode::Pick) => f.out.list_rows = Some(library_view::draw(f, screen)),
-        Top::Device => device::draw(f, screen),
+        Top::App { app, .. } => apps::view(app)(f, screen),
         Top::Setup(step) => {
             f.start(clamshell_state::Id::Setup(step.first_target()));
             setup::draw(f, screen);

@@ -125,8 +125,8 @@ mod tests {
     /// request is picked over it; when that ends, the own pick goes on with the Files tab as it left it.
     #[test]
     fn an_own_pick_left_behind_a_window_waits_while_an_apps_goes_on() {
+        use crate::Top;
         use crate::library_view::pick::{PickFor, Takes};
-        use crate::{LibraryMode, Top};
         let mut s = state();
         assert!(s.library_view.start_pick(Takes::Folder, PickFor::PlacePicture("p".into())));
         tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
@@ -138,7 +138,7 @@ mod tests {
         assert_eq!(s.top(), Top::Window { program: false });
         assert!(s.library_view().pick().is_some(), "kept behind the window");
         ask(&mut s, 1, false);
-        assert_eq!(s.top(), Top::Library(LibraryMode::Pick));
+        assert_eq!(s.top(), Top::App { app: crate::BuiltinApp::Library, view: 2 });
         assert_eq!(s.library_view().pick().map(|p| p.asks()), Some("Choose a file"));
         tap(&mut s, Id::LibraryView(LibraryViewId::Up));
         let fx = tap(&mut s, Id::LibraryView(LibraryViewId::CancelPick));
@@ -146,7 +146,7 @@ mod tests {
         assert_eq!(s.session().top_window().map(|w| w.id), Some(7), "the app back in front");
         assert_eq!(s.library_view().pick().map(|p| p.asks()), Some("Choose the folder's picture"), "the own pick again");
         s.applied(Event::Home);
-        assert_eq!(s.top(), Top::Library(LibraryMode::Pick), "Home leaves it as it was");
+        assert_eq!(s.top(), Top::App { app: crate::BuiltinApp::Library, view: 2 }, "Home leaves it as it was");
         assert_eq!(open(&s), home, "the Files tab as the own pick left it");
     }
 

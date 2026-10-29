@@ -54,6 +54,18 @@ const COVER_W: f32 = 0.55;
 
 /// Draws the Library over `screen` and returns how many list rows fit. The state keeps the selection within
 /// them.
+/// The Library as an app (see `super::apps`): its edit mode, or its list, which a pick shows too.
+pub(super) fn app(f: &mut Frame, screen: Rect) {
+    let rows = match f.s.library_view().edit().filter(|_| f.s.library_view().pick().is_none()) {
+        Some(edit) => {
+            f.start(clamshell_state::library_view::edit::EditId::Row(edit.cursor() as u16).into());
+            super::library_edit::draw(f, screen, edit)
+        }
+        None => draw(f, screen),
+    };
+    f.out.list_rows = Some(rows);
+}
+
 pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     let s = f.s;
     let (w, h) = (screen.w, screen.h);

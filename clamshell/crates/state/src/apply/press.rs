@@ -124,8 +124,8 @@ impl State {
             Id::Control(_) | Id::Level(_) | Id::List(_) | Id::Blank => {}
             Id::Key(pos) => {
                 let stroke = self.keyboard.press(pos, long);
-                // The key goes to the editor while it is open, to finding an entry while the Library's list
-                // shows, and otherwise to the focused app. The edit mode's list isn't found in.
+                // The key goes to the editor while it is open, to the app of ClamShell's in front as it says
+                // (see `crate::builtin_apps`), and otherwise to the focused window.
                 match stroke {
                     Some(stroke) if self.bottom.editor().is_some() => {
                         if let Some(done) = self.bottom.edit(stroke) {
@@ -138,9 +138,9 @@ impl State {
                         self.keymapping.captured(crate::keymap::screens::chord(stroke), out);
                     }
                     Some(stroke) => match self.top() {
-                        crate::Top::Library(crate::LibraryMode::Browse | crate::LibraryMode::Pick) => self.library_view.find(stroke, out),
+                        crate::Top::App { app, .. } => (crate::builtin_apps::definition(app).typed)(self, stroke, out),
                         crate::Top::Window { .. } => out.effects.push(Effect::Compositor(Compositor::Key(stroke))),
-                        crate::Top::Library(crate::LibraryMode::Edit) | crate::Top::Device | crate::Top::Setup(_) => {}
+                        crate::Top::Setup(_) => {}
                     },
                     None => {}
                 }

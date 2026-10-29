@@ -125,7 +125,7 @@ impl Pad {
             return Some(Claimant::Mouse);
         }
         match (top, tab) {
-            (Top::Setup(_) | Top::Device | Top::Library(_), _) => Some(Claimant::LibraryView),
+            (Top::Setup(_) | Top::App { .. }, _) => Some(Claimant::LibraryView),
             (Top::Window { .. }, Tab::Keyboard) => Some(Claimant::Typing),
             (Top::Window { .. }, _) => Some(Claimant::Game),
         }
