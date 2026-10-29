@@ -421,3 +421,21 @@ fn a_controller_gone_with_home_held_isnt_a_tap_of_home() {
     r.event(key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
     assert_eq!(out.events, [Event::HomeHeld(false)], "let go, not a tap");
 }
+
+/// Home tapped with the right stick at rest leaves it the game's at once: it never left the rest it has
+/// to return to. The merge passes no event for a value that didn't change, so a stick already centred
+/// sends no centred event to give it back.
+#[test]
+fn home_tapped_with_the_stick_at_rest_leaves_it_the_games() {
+    let (mut r, mut out) = router(PadRoute::Game);
+    for code in [AbsoluteAxisCode::ABS_RX, AbsoluteAxisCode::ABS_RY] {
+        r.snapshot.axes.push(Axis { code, value: 0, rest: 0 });
+    }
+    let now = Instant::now();
+    r.event(key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
+    r.event(key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
+    out.pad.clear();
+    r.event(Raw::abs(AbsoluteAxisCode::ABS_RX, 30000), now, &mut out);
+    r.event(Raw::REPORT, now, &mut out);
+    assert!(out.pad.contains(&Raw::abs(AbsoluteAxisCode::ABS_RX, 30000)), "{:?}", out.pad);
+}

@@ -388,7 +388,8 @@ stick through the current keymap; its physical position is still tracked. While 
 stick flicks become WindowDown / WindowUp / WindowPrevious / WindowNext. Home release emits
 `HomeHeld(false)`, and emits `HomeTap` only if no chord used it. State consumes that tap when a
 Home-held arrow already switched a window; otherwise it shows the Library. Direct Home always shows the Library. A stick still out on release remains taken
-until it returns, including during remap ticks and gyro samples. Unplugging releases Home for state:
+until it returns, including during remap ticks and gyro samples. A stick at rest on release is the game's at once, since the merge sends no event for a
+value unchanged (`home_tapped_with_the_stick_at_rest_leaves_it_the_games`). Unplugging releases Home for state:
 at the end of a run (`losing_the_controller_releases_home_for_the_state`), and a controller of player 1
 that goes while Home is held on it lets Home go without a tap (`a_controller_gone_with_home_held_isnt_a_tap_of_home`).
 Tests: `home_flicks_once_and_neutralises_the_games_stick_until_it_returns`,

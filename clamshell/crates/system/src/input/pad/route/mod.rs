@@ -393,6 +393,11 @@ impl PadRouter {
             }
             Some((KeyCode::BTN_MODE, Press::Up)) => {
                 out.events.push(Event::HomeHeld(false));
+                // A stick at rest as Home is let go has nothing to return from: it is the game's again
+                // now, since no centred event may follow (the merge passes only changes).
+                if Flick::centered(self.right_stick()) {
+                    self.stick_taken = false;
+                }
                 match std::mem::replace(&mut self.home, Home::Up) {
                     Home::Held { combined: false } => out.events.push(Event::HomeTap),
                     Home::Guide => self.guide(false, out),
