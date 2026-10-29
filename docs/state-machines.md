@@ -1307,7 +1307,8 @@ While mirroring:
 | unplugged: the top panel paces again, its next frame drawn whole, its own buffers and planes back | the VM suite's `external_display` |
 
 The VM suite's `external_display` forces the VM's third output connected and disconnected through its
-connector's sysfs status (a real hotplug event), and compares the external display's picture with the main
+connector's sysfs status, each followed by the GPU's change event (which the kernel sends for a monitor's
+hotplug but not for a forced status, so udevadm sends it), and compares the external display's picture with the main
 screen's and looks for the cursor in it. The display's EDID read and the DisplayPort link are checked on
 the device.
 

@@ -293,7 +293,7 @@ class Inputs:
 
     def screenshot(self, head=1):
         """A screen as (width, height, RGB bytes), as QEMU shows it: the main screen head 0, the second
-        1 (through this connection: QMP takes one at a time)."""
+        1, an external display 2 (through this connection: QMP takes one at a time)."""
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "screen.ppm"
             self.qmp.command("screendump", filename=str(path), device="video0", head=head)
@@ -831,6 +831,65 @@ class Checks:
         control("window overview")
         self.check("  the overview closed: straight again", until(straight, 8), screen_shows("Top"))
         gone()
+
+    def external_display(self):
+        """An external display plugged in and out: the third virtio-gpu output (Virtual-3) forced connected
+        and disconnected through its connector's status in sysfs, each followed by the GPU's change event
+        a monitor's hotplug brings (the kernel sends none for a status forced: udevadm sends it).
+        Plugged in, it shows the main screen's picture at 1920x1080, the cursor in it, and paces the main
+        screen; unplugged, the main screen paces itself and is scanned out from its own buffers again."""
+        status = "/sys/class/drm/card*-Virtual-3/status"
+        announce = "sudo -n udevadm trigger --action=change --subsystem-match=drm --sysname-match='card[0-9]'"
+        if not sh(f"ls {status} 2>/dev/null").strip():
+            return self.check("external display: the VM has a third output", False, "no Virtual-3 (tools/vm/vm.py's max_outputs)")
+        sh("pkill -x foot || true")
+        until(lambda: not any(w["app_id"] == "foot" for w in windows()), 8)
+        since = now()
+        sh(f"echo on | sudo -n tee {status} > /dev/null; {announce}")
+        try:
+            plugged = logged(since, "drm: an external display on Virtual-3", 8)
+            paced = logged(since, "drm: the Top screen is mirrored on the external display", 3)
+            self.check("external display plugged in: shown, pacing the main screen", plugged and paced,
+                       "; ".join(l for l in journal(since).splitlines() if "drm:" in l)[-600:])
+            self.check("  the main screen composed while mirrored", until(lambda: screen_shows("Top") == "composes its frames", 5),
+                       screen_shows("Top"))
+
+            def mirrored():
+                main, external = self.i.screenshot(head=0), self.i.screenshot(head=2)
+                if main[:2] != external[:2] or main[:2] != (1920, 1080):
+                    return False, f"sizes {main[:2]} and {external[:2]}"
+                # A grid of samples, as near as the two encodings of one picture are.
+                w, h = main[:2]
+                points = [((y * w + x) * 3) for y in range(5, h, 37) for x in range(5, w, 41)]
+                off = sum(1 for p in points if max(abs(main[2][p + c] - external[2][p + c]) for c in range(3)) > 8)
+                return off <= len(points) // 100, f"{off} of {len(points)} samples differ"
+
+            same = until(lambda: mirrored()[0], 8)
+            self.check("  its picture is the main screen's, at 1920x1080", same, mirrored()[1])
+
+            def white_near(shot, x, y):
+                w, h, rgb = shot
+                return sum(1 for yy in range(max(y - 2, 0), min(y + 30, h)) for xx in range(max(x - 2, 0), min(x + 22, w))
+                           if min(rgb[(yy * w + xx) * 3:(yy * w + xx) * 3 + 3]) >= 240)
+
+            # The cursor (white edged; ClamShell draws no full white of its own) where the pointer is, and
+            # not where it was.
+            self.i.pointer(1500, 700)
+            time.sleep(0.5)
+            self.i.pointer(1000, 500)
+            time.sleep(0.5)
+            shot = self.i.screenshot(head=2)
+            self.check("  the cursor in its picture", white_near(shot, 1000, 500) > 10 and white_near(shot, 1500, 700) < 5,
+                       f"{white_near(shot, 1000, 500)} white pixels at the pointer, {white_near(shot, 1500, 700)} where it was")
+        finally:
+            since = now()
+            sh(f"echo off | sudo -n tee {status} > /dev/null; {announce}; echo detect | sudo -n tee {status} > /dev/null")
+        gone = logged(since, "drm: the external display on Virtual-3 disconnected", 8)
+        back = logged(since, "drm: the Top screen paces its windows again", 3)
+        self.check("external display unplugged: dropped, the main screen pacing itself again", gone and back,
+                   "; ".join(l for l in journal(since).splitlines() if "drm:" in l)[-600:])
+        self.check("  the main screen scanned out from its own buffers again", until(lambda: screen_shows("Top") == "shows its own buffers", 8),
+                   screen_shows("Top"))
 
     def pad_windows(self):
         if not plug_pad():
@@ -1594,7 +1653,7 @@ GLib.MainLoop().run()
 
 
 
-CHECKS = ["session_units", "library_view_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules", "ui_scanout", "screen_changes", "pad_windows",
+CHECKS = ["session_units", "library_view_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules", "ui_scanout", "screen_changes", "external_display", "pad_windows",
           "pad_library_view", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers",
           "keymap_actuations", "rumble", "launch_and_quit", "pause_hidden", "found_window", "tray_program", "clipboard", "portal",
           "bluetooth", "gyro_sleep"]

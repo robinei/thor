@@ -453,8 +453,10 @@ def qemu_devices(args):
         "-smp", "4", "-m", "4G",
         "-nic", f"user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:{A.ssh_port}-:22",
         "-virtfs", f"local,path={REPO},mount_tag=thor,security_model=none,readonly=on",
-        # Two screens: Virtual-1 (top) and Virtual-2 (bottom).
-        "-device", f"{gpu},id=video0,max_outputs=2,xres={TOP[0]},yres={TOP[1]}{venus}",
+        # Two screens: Virtual-1 (top) and Virtual-2 (bottom); and Virtual-3, an external display, not
+        # connected at boot when headless (no window reports its size), which the checks plug in and out
+        # through the connector's status in sysfs.
+        "-device", f"{gpu},id=video0,max_outputs=3,xres={TOP[0]},yres={TOP[1]}{venus}",
         "-device", "virtio-keyboard-pci",
         # The host mouse as an absolute pointer on each screen's window, and a touchscreen on the bottom.
         "-device", "virtio-tablet-pci,display=video0,head=0",
