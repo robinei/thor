@@ -130,15 +130,21 @@ pub(crate) fn devices_watch() -> Option<rustix::fd::OwnedFd> {
 
 /// Starts watching. With `hardware_keys` it takes the device's hardware keys, which is for the device's
 /// own session only.
-pub(crate) fn spawn(hardware_keys: bool, sink: impl Sink) -> io::Result<()> {
+pub(crate) fn spawn(hardware_keys: bool, power_key: Option<&'static str>, sink: impl Sink) -> io::Result<()> {
     worker::lasting(clamshell_state::Thread::InputWatch.name(), move || {
-        if let Err(Closed) = watch(hardware_keys, &sink) {
+        if let Err(Closed) = watch(hardware_keys, power_key, &sink) {
             log::debug!("input watch: the UI is gone");
         }
     })
 }
 
-fn watch(take_keys: bool, sink: &impl Sink) -> Result<(), Closed> {
+fn watch(take_keys: bool, power_key: Option<&'static str>, sink: &impl Sink) -> Result<(), Closed> {
+    // The lid's state goes to the power key's wakeup, where the profile has one.
+    let lid = |closed: bool| {
+        if let Some(key) = power_key {
+            lid::closed(key, closed);
+        }
+    };
     let mut devices: Vec<Watched> = Vec::new();
     let mut scanned: Option<Instant> = None;
     let mut reported: Option<Instant> = None;
@@ -155,7 +161,7 @@ fn watch(take_keys: bool, sink: &impl Sink) -> Result<(), Closed> {
                 {
                     log::debug!("input watch: {}{}", w.device.name().unwrap_or("?"), if w.hardware_keys { " (hardware keys)" } else { "" });
                     if take_keys && w.lid {
-                        lid::closed(lid_switch(&w));
+                        lid(lid_switch(&w));
                     }
                     devices.push(w);
                 }
@@ -190,11 +196,11 @@ fn watch(take_keys: bool, sink: &impl Sink) -> Result<(), Closed> {
                     keys.extend(device_key(raw));
                 }
                 if take_keys && d.lid && raw.kind == EventType::SWITCH && raw.code == SwitchCode::SW_LID.0 {
-                    lid::closed(raw.value != 0);
+                    lid(raw.value != 0);
                 }
                 // Events were dropped, perhaps the lid's among them, so read the lid as it is now.
                 if take_keys && d.lid && raw.kind == EventType::SYNCHRONIZATION && raw.code == SynchronizationCode::SYN_DROPPED.0 {
-                    lid::closed(lid_switch(d));
+                    lid(lid_switch(d));
                 }
             }
             true

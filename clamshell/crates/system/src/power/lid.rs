@@ -4,7 +4,8 @@
 //!
 //! The input watch, in the device session only, calls [`closed`] as the lid closes and opens, and with
 //! its state when it first sees the lid. This turns the power key's wakeup off and on through its
-//! device's `power/wakeup`. That device is the `pwrkey` input device's parent, the PMIC, and the file is
+//! device's `power/wakeup`. That device is the power key's input device's parent (the profile names it:
+//! `pwrkey` on the Thor), the PMIC, and the file is
 //! writable by the `power` group through thor-system's `73-thor-power.rules`. It works like Armada's
 //! `50-armada-powerbutton-suspend`, but follows the lid's state rather than the cause of a suspend.
 
@@ -13,26 +14,26 @@ use std::path::{Path, PathBuf};
 
 use crate::os::sys;
 
-/// The wakeup files under `input`, the input class, of each device named like a PMIC's power key.
-fn wakeup_files(input: &Path) -> Vec<PathBuf> {
+/// The wakeup files under `input`, the input class, of each device whose name has `power_key` in it.
+fn wakeup_files(input: &Path, power_key: &str) -> Vec<PathBuf> {
     sys::entries(input)
         .into_iter()
         .filter(|dev| dev.file_name().is_some_and(|n| n.to_string_lossy().starts_with("input")))
-        .filter(|dev| sys::text(dev.join("name")).is_some_and(|n| n.contains("pwrkey")))
+        .filter(|dev| sys::text(dev.join("name")).is_some_and(|n| n.contains(power_key)))
         .map(|dev| dev.join("device/power/wakeup"))
         .filter(|file| file.exists())
         .collect()
 }
 
-/// Turns the power key's wakeup off when the lid is closed (`true`) and on when it is open, where it
-/// differs.
-pub(crate) fn closed(closed: bool) {
-    set_in(Path::new("/sys/class/input"), closed);
+/// Turns the wakeup of `power_key`, the profile's power key, off when the lid is closed (`true`) and on
+/// when it is open, where it differs.
+pub(crate) fn closed(power_key: &str, closed: bool) {
+    set_in(Path::new("/sys/class/input"), power_key, closed);
 }
 
-fn set_in(input: &Path, closed: bool) {
+fn set_in(input: &Path, power_key: &str, closed: bool) {
     let want = if closed { "disabled" } else { "enabled" };
-    for file in wakeup_files(input) {
+    for file in wakeup_files(input, power_key) {
         if sys::text(&file).is_some_and(|now| now.trim() != want) {
             match fs::write(&file, want) {
                 Ok(()) => log::info!("lid {}: the power key's wakeup {want}", if closed { "closed" } else { "open" }),
@@ -58,11 +59,11 @@ mod tests {
             fs::write(power.join("wakeup"), "enabled\n").unwrap();
         }
         let wakeup = |dev: &str| fs::read_to_string(input.join(dev).join("device/power/wakeup")).unwrap();
-        set_in(input, true);
+        set_in(input, "pwrkey", true);
         assert_eq!(wakeup("input0"), "disabled");
         assert_eq!(wakeup("input1"), "enabled\n", "only the power key");
         assert_eq!(wakeup("input2"), "enabled\n");
-        set_in(input, false);
+        set_in(input, "pwrkey", false);
         assert_eq!(wakeup("input0"), "enabled");
     }
 }

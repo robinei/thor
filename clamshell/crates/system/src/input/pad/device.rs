@@ -305,7 +305,7 @@ mod tests {
 
     #[test]
     fn control_normalisation_preserves_other_keys_and_axis_codes() {
-        let controls = Controls { back_key: Some(123), auxiliary: None, letter_code_drivers: &[] };
+        let controls = Controls { back_key: Some(123), auxiliary: None, letter_code_drivers: &[], power_key: None };
         let mut events =
             [Raw::key(KeyCode(123), Press::Down), Raw::key(KeyCode::BTN_SOUTH, Press::Down), Raw { kind: evdev::EventType::ABSOLUTE, code: 123, value: 1 }];
         normalise_controls(controls, &mut events);

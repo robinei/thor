@@ -127,7 +127,7 @@ pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, gl
     rescan.send(Rescan::Read);
     let touchpad = started("touchpad", touchpad::spawn());
     // Watch input on every device for idle, and the hardware keys in the device's own session.
-    log_failed_start("input watch", crate::input::watch::spawn(env.device_session, sink.clone()));
+    log_failed_start("input watch", crate::input::watch::spawn(env.device_session, env.profile.controls.power_key, sink.clone()));
     log_failed_start("units", units::spawn(sink.clone()));
     // Games start from the launcher, each on a thread of its own, so several start side by side. Plays
     // go to the database.

@@ -13,13 +13,21 @@ pub struct Controls {
     pub back_key: Option<u16>,
     pub auxiliary: Option<AuxiliaryKey>,
     pub letter_code_drivers: &'static [&'static str],
+    /// The power key's input device, by a part of its name, where its wakeup follows the lid (its parent's
+    /// `power/wakeup`, the PMIC's on the Thor).
+    pub power_key: Option<&'static str>,
 }
 impl Controls {
     pub const fn thor() -> Self {
-        Self { back_key: Some(0x116), auxiliary: Some(AuxiliaryKey { device_name: "gpio-keys-ayn", code: 194 }), letter_code_drivers: &["rsinput", "xpad"] }
+        Self {
+            back_key: Some(0x116),
+            auxiliary: Some(AuxiliaryKey { device_name: "gpio-keys-ayn", code: 194 }),
+            letter_code_drivers: &["rsinput", "xpad"],
+            power_key: Some("pwrkey"),
+        }
     }
     pub const fn generic() -> Self {
-        Self { back_key: Some(0x116), auxiliary: None, letter_code_drivers: &["xpad"] }
+        Self { back_key: Some(0x116), auxiliary: None, letter_code_drivers: &["xpad"], power_key: None }
     }
     pub fn normalise_button(self, code: u16) -> u16 {
         if self.back_key == Some(code) { BACK_ROLE } else { code }
@@ -38,7 +46,7 @@ mod tests {
     }
     #[test]
     fn physical_back_codes_are_normalised_and_missing_auxiliary_controls_stay_absent() {
-        let controls = Controls { back_key: Some(123), auxiliary: None, letter_code_drivers: &[] };
+        let controls = Controls { back_key: Some(123), auxiliary: None, letter_code_drivers: &[], power_key: None };
         assert_eq!(controls.normalise_button(123), BACK_ROLE);
         assert_eq!(controls.normalise_button(42), 42);
         assert_eq!(Controls::generic().auxiliary, None);
