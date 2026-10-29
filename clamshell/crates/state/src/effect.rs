@@ -123,6 +123,9 @@ pub enum Effect {
         level: u8,
         shares: Vec<Share>,
     },
+    /// What the stick lights show, left then right (see [`crate::lights`]). Sent when it changes, and
+    /// again after sleep, which turns them off.
+    Lights([crate::lights::Lit; 2]),
     Wifi(wifi::Command),
     Bluetooth(bluetooth::Command),
     /// Start (true) or stop reading something for a tab while it is open.
@@ -262,6 +265,8 @@ pub enum Save {
     Settings(crate::settings::Settings),
     Keymaps(crate::keymap::Keymaps),
     Curves(crate::curve::Curves),
+    /// The sets of stick lights.
+    Lights(crate::lights::LightSets),
     /// The favourite entries' ids.
     Favourites(Vec<String>),
     /// Where the Library and the second screen are, to start there next time.

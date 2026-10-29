@@ -24,7 +24,7 @@ pub(super) fn setting(s: Setting) -> Icon {
         Setting::Size => Icon::Size,
         Setting::AntiAliasing => Icon::AntiAlias,
         Setting::Sharpen => Icon::Sharpen,
-        Setting::Curve | Setting::HdrPeak => Icon::Brightness,
+        Setting::Curve | Setting::HdrPeak | Setting::Lights => Icon::Brightness,
         Setting::BottomScreen => Icon::ScreenOff,
         Setting::BigCores => Icon::Cores,
         Setting::Fan => Icon::Fan,

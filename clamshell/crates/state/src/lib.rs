@@ -25,6 +25,8 @@
 //! - [`presentation`]: what the compositor said of the screens and Xwayland, and the window presentation
 //!   policy;
 //! - [`keymap`]: keymaps and their screens;
+//! - [`curve`]: tone curves and their screens;
+//! - [`lights`]: the stick lights and their screens;
 //! - [`nav`]: focus and presses ([`Pointer`]), the lists, and the pad's routing ([`Pad`]);
 //! - [`kit`]: generic parts the areas build on, which know nothing about them.
 //!
@@ -67,6 +69,7 @@ pub mod keymap;
 pub mod kit;
 pub mod levels;
 pub mod library_view;
+pub mod lights;
 pub mod nav;
 pub mod notifications;
 pub(crate) mod out;
@@ -154,6 +157,8 @@ pub struct Init {
     pub keymaps: keymap::Keymaps,
     /// The tone curves.
     pub curves: curve::Curves,
+    /// The sets of stick lights.
+    pub lights: lights::LightSets,
     /// The screens' brightness as it was left.
     pub brightness: Brightness,
     /// The dock's pinned entries, in order.
@@ -216,6 +221,8 @@ pub struct State {
     /// The keymaps and their screens (see [`crate::keymap::screens`]).
     keymapping: Keymapping,
     curving: crate::curve::screens::Curving,
+    /// The sets of stick lights and their screens (see [`crate::lights::screens`]).
+    lighting: crate::lights::screens::Lighting,
     presentation: crate::presentation::Presentation,
     /// Where the lists but the Library are scrolled.
     scrolls: Scrolls,
@@ -253,6 +260,7 @@ impl State {
             prefs: Prefs::new(init.settings),
             keymapping: Keymapping::new(init.keymaps),
             curving: crate::curve::screens::Curving::new(init.curves),
+            lighting: crate::lights::screens::Lighting::new(init.lights),
             bottom: Bottom::default(),
             sys: Sys::new(init.twelve_hour),
             levels: Levels::new(init.brightness),
@@ -376,6 +384,10 @@ impl State {
         &self.curving
     }
 
+    pub fn lighting(&self) -> &crate::lights::screens::Lighting {
+        &self.lighting
+    }
+
     /// The lists, their rows and where each is scrolled (see [`Lists`]).
     pub fn lists(&self) -> Lists<'_> {
         Lists {
@@ -385,6 +397,7 @@ impl State {
             prefs: &self.prefs,
             keymapping: &self.keymapping,
             curving: &self.curving,
+            lighting: &self.lighting,
             players: self.device_view.controllers().count(),
             radios: &self.radios,
             levels: &self.levels,
@@ -725,6 +738,7 @@ impl State {
             route: self.pad.route(),
             pad_activity: self.session.top_window().is_some_and(|w| Some(w.id) != self.session.keyboard_focus()),
             touchpad: self.presentation.touchpad(),
+            lights: self.lights_shown(),
         }
     }
 

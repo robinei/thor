@@ -15,6 +15,7 @@ use crate::idle::Stage;
 use crate::keymap::screens::Keymapping;
 use crate::library_view::files::{Browse, BrowseCommand};
 use crate::library_view::{LibraryView, ShownList};
+use crate::lights::Lit;
 use crate::out::Out;
 use crate::settings::Values;
 use crate::{Levels, PadRoute, Running, Thread};
@@ -64,6 +65,8 @@ pub(crate) struct Wanted<'a> {
     pub(crate) pad_activity: bool,
     /// The virtual touchpad's size and resolution (see [`crate::presentation::Presentation::touchpad`]).
     pub(crate) touchpad: Option<TouchLayout>,
+    /// What the stick lights show (see [`crate::State::lights_shown`]).
+    pub(crate) lights: [Lit; 2],
 }
 
 /// What the outside was last sent.
@@ -105,6 +108,8 @@ pub(crate) struct Sent {
     pad_activity: Option<bool>,
     /// The virtual touchpad's layout, or None to send it again.
     touchpad: Option<Option<TouchLayout>>,
+    /// What the stick lights were last set to, or None to set them again.
+    lights: Option<[Lit; 2]>,
 }
 
 impl Default for Sent {
@@ -128,6 +133,7 @@ impl Default for Sent {
             route: None,
             pad_activity: Some(false),
             touchpad: Some(None),
+            lights: None,
         }
     }
 }
@@ -138,8 +144,8 @@ pub(crate) enum Resend {
     /// The library was read again or fetching started or stopped: the Library's entries shown are asked for
     /// first again.
     FetchFirst,
-    /// Back from sleep, which may have reset what the settings set, such as frequency caps and cores: they
-    /// are applied again.
+    /// Back from sleep, which may have reset what the settings set, such as frequency caps and cores, and
+    /// turned the stick lights off: they are set again.
     Resumed,
     /// A system thread was started again after a panic (see [`crate::Thread`]): what it had been sent is
     /// sent again.
@@ -151,7 +157,7 @@ impl Sent {
     pub(crate) fn resend(&mut self, why: Resend) {
         match why {
             Resend::FetchFirst => self.fetch_view = None,
-            Resend::Resumed => self.applied = None,
+            Resend::Resumed => (self.applied, self.lights) = (None, None),
             Resend::Restarted(thread) => match thread {
                 // The rumble's strength comes with the settings applied.
                 Thread::Pad => (self.keymaps, self.route, self.pad_activity, self.applied) = ([None; Player::MOST], None, None, None),
@@ -169,6 +175,7 @@ impl Sent {
                 // The thread holds nothing; the backlights keep their level. Sent again if ClamShell set one.
                 Thread::Brightness => self.brightness = None,
                 Thread::Touchpad => self.touchpad = None,
+                Thread::Lights => self.lights = None,
                 // Nothing of theirs is kept here to send again (each is named, so that a new thread is
                 // thought about).
                 Thread::PadDevices
@@ -194,8 +201,8 @@ impl Sent {
     }
 
     /// As at start: only what the outside starts with counts as sent. The settings in force were applied
-    /// as the system started (its wiring applies the global ones); the pad has no keymap or route, and
-    /// the compositor runs at the screen's own rate (0).
+    /// as the system started (its wiring applies the global ones); the pad has no keymap or route, the
+    /// compositor runs at the screen's own rate (0), and the stick lights are as something else left them.
     pub(crate) fn new(w: &Wanted) -> Sent {
         Sent { applied: Some((w.program.cloned(), w.settings)), ..Sent::default() }
     }
@@ -215,6 +222,7 @@ impl Sent {
         self.keymaps(w, out);
         self.pad_route(w, out);
         self.touchpad(w, out);
+        self.lights(w, out);
     }
 
     /// While metadata is being fetched and what the Library shows has changed, asks for the shown entries'
@@ -379,6 +387,13 @@ impl Sent {
         }
         if self.route.replace(w.route) != Some(w.route) {
             out.effects.push(Effect::PadRoute(w.route));
+        }
+    }
+
+    /// The stick lights, when what they show changes.
+    fn lights(&mut self, w: &Wanted, out: &mut Out) {
+        if self.lights.replace(w.lights) != Some(w.lights) {
+            out.effects.push(Effect::Lights(w.lights));
         }
     }
 

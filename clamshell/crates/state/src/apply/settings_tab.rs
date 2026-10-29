@@ -21,6 +21,7 @@ impl State {
                 }
             }
             SettingsId::Tile(Setting::Curve) if long => self.curving.open_picker(),
+            SettingsId::Tile(Setting::Lights) if long => self.lighting.open_picker(),
             SettingsId::Tile(setting) if long => self.prefs.open_menu(setting),
             SettingsId::Tile(setting) if let Some(kind) = ProfileKind::of(setting) => self.next_profile(kind, out),
             SettingsId::Tile(setting) => {
@@ -95,6 +96,7 @@ impl State {
         let next = match kind {
             ProfileKind::Keymap => next_profile(self.keymapping.keymaps(), entry.as_deref(), now),
             ProfileKind::Curve => next_profile(self.curving.curves(), entry.as_deref(), now),
+            ProfileKind::Lights => next_profile(self.lighting.sets(), entry.as_deref(), now),
         };
         self.choose_profile(kind, next, out);
     }
@@ -129,6 +131,15 @@ impl State {
             ProfileKind::Keymap => self.keymapping.on_picker(id, self.prefs.settings(), self.bottom.editors_mut(), out),
             ProfileKind::Curve if id == ProfileId::Back => self.curving.back(),
             ProfileKind::Curve => self.curving.on_picker(id, self.prefs.settings(), self.bottom.editors_mut(), out),
+            ProfileKind::Lights if id == ProfileId::Back => self.lighting.back(),
+            ProfileKind::Lights => self.lighting.on_picker(id, self.prefs.settings(), self.bottom.editors_mut(), out),
+        }
+    }
+
+    /// The lights' edit screen's buttons (see [`crate::lights::screens`]).
+    pub(crate) fn on_lights(&mut self, id: crate::lights::screens::LightsId, out: &mut Out) {
+        if let Some(save) = self.lighting.on(id) {
+            out.effects.push(save);
         }
     }
 
@@ -162,6 +173,7 @@ impl State {
                 out.effects.push(match kind {
                     ProfileKind::Keymap => self.keymapping.save(),
                     ProfileKind::Curve => self.curving.save_effect(),
+                    ProfileKind::Lights => self.lighting.save_effect(),
                 });
             }
             ProfileEvent::Deleted(id) => {

@@ -361,9 +361,10 @@ fn a_game_whose_window_is_below_is_not_paused() {
 }
 
 /// What the outside starts without goes out at the first event: the brightness as it was left, the
-/// keymap in force and the pad's route (keymap before route, as [`crate::sync::Sent::sync`] says), and
-/// the main screen's refresh rate when the settings want one other than the screen's own. The UI
-/// starting sends nothing of these again.
+/// keymap in force and the pad's route (keymap before route, as [`crate::sync::Sent::sync`] says), the
+/// main screen's refresh rate when the settings want one other than the screen's own, and the stick
+/// lights (off here), which something else may have left on. The UI starting sends nothing of these
+/// again.
 #[test]
 fn what_the_outside_starts_without_goes_out_at_the_first_event() {
     use crate::session::below::{WindowRule, WindowRules};
@@ -386,11 +387,12 @@ fn what_the_outside_starts_without_goes_out_at_the_first_event() {
             &Effect::Compositor(Compositor::Refresh(90)),
             &Effect::Keymap(crate::device_view::controllers::Player::ONE, keymap),
             &Effect::PadRoute(PadRoute::Ui),
+            &Effect::Lights([crate::lights::Lit::OFF; 2]),
         ],
         "{fx:?}"
     );
     let fx = s.applied(Event::Start);
-    assert!(!fx.iter().any(|e| matches!(e, Effect::Keymap(_, _) | Effect::PadRoute(_) | Effect::Brightness { .. })), "{fx:?}");
+    assert!(!fx.iter().any(|e| matches!(e, Effect::Keymap(_, _) | Effect::PadRoute(_) | Effect::Brightness { .. } | Effect::Lights(_))), "{fx:?}");
 }
 
 /// Back from sleep, which may have reset what the settings set, the settings in force are applied again

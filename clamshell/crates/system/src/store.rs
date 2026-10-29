@@ -11,6 +11,7 @@
 //!   - `keymaps/<name>.json` holds one keymap, named after it. A keymap owned by an entry or a runner level
 //!     is named like that owner's settings file. With no folder, the initial keymaps are used.
 //!   - `curves/<name>.json` holds one HDR curve, named the same way as keymaps.
+//!   - `lights/<name>.json` holds one set of stick lights, named the same way.
 //!   - `window-rules.json`, `dock.json`, `autostart.json`, `favourites.json`, `resume.json` (where the Library
 //!     and the second screen were), `sticks.json` (the sticks' calibrations, by controller),
 //!     `controllers.json` (how many players there are, and every controller seen, by key, with its name and player), `brightness.json`, `clock.json`, and `first-start.json` (whether the first start is over, see
@@ -36,6 +37,7 @@ use clamshell_library::{Plays, key_of};
 use clamshell_state::curve::{Curve, Curves};
 use clamshell_state::keymap::{Keymap, Keymaps};
 use clamshell_state::levels::Brightness;
+use clamshell_state::lights::{LightSets, Lights};
 use clamshell_state::profiles::{Profile, Profiles};
 use clamshell_state::session::below::{WindowRule, WindowRules};
 use clamshell_state::settings::{Setting, Settings};
@@ -110,11 +112,13 @@ pub struct Store {
     keymaps: Option<HashMap<String, Keymap>>,
     /// The curves' files as last written.
     curves: Option<HashMap<String, Profile<Curve>>>,
+    /// The sets of lights' files as last written.
+    lights: Option<HashMap<String, Profile<Lights>>>,
 }
 
 impl Store {
     pub fn open(dir: &Path) -> Store {
-        Store { dir: dir.to_path_buf(), screens: None, keymaps: None, curves: None }
+        Store { dir: dir.to_path_buf(), screens: None, keymaps: None, curves: None, lights: None }
     }
 
     fn file(&self, name: &str) -> PathBuf {
@@ -128,6 +132,7 @@ impl Store {
             Save::Settings(s) => self.save_settings(s),
             Save::Keymaps(k) => self.save_keymaps(k),
             Save::Curves(c) => save_profiles(&self.file("curves"), &mut self.curves, c),
+            Save::Lights(l) => save_profiles(&self.file("lights"), &mut self.lights, l),
             Save::Favourites(list) => write_json(&self.file("favourites.json"), list),
             Save::Resume(r) => {
                 write_json(&self.file("resume.json"), &ResumeFile { collection: r.collection.clone(), tab: r.tab.clone(), places: r.places.clone() })
@@ -252,6 +257,11 @@ impl Store {
     /// The HDR curves, by id, or none if they were never saved (see [`Store::keymaps`]).
     pub fn curves(&self) -> Option<Curves> {
         read_profiles(&self.file("curves"))
+    }
+
+    /// The sets of stick lights, by id, or none if they were never saved (see [`Store::keymaps`]).
+    pub fn lights(&self) -> Option<LightSets> {
+        read_profiles(&self.file("lights"))
     }
 
     /// Saves each keymap as a file, writing only the files that changed. Files of removed keymaps are

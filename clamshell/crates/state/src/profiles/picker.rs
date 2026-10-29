@@ -1,7 +1,7 @@
 //! The picker, shown over the settings tab, the same for every kind of profile ([`Kind`]):
 //!
 //! - It lists, for a game, its own profile or a row that makes one from the profile in force. Then come
-//!   Default (no profile: the pad as it is, or for curves Off), the named profiles with how many games use each,
+//!   Default (no profile: the pad as it is, for curves Default colours, for lights Off), the named profiles with how many games use each,
 //!   and New.
 //! - A profile's menu has Edit, Rename, Duplicate and Delete; deleting one in use asks first. A game's own
 //!   profile stays while another is chosen, and is never deleted. Its menu has Edit, Load from, Save as
@@ -28,6 +28,8 @@ pub enum Kind {
     Keymap,
     /// tone curves (see [`crate::curve`]).
     Curve,
+    /// the stick lights (see [`crate::lights`]).
+    Lights,
 }
 
 impl Kind {
@@ -39,13 +41,14 @@ impl Kind {
         match self {
             Kind::Keymap => Setting::Keymap,
             Kind::Curve => Setting::Curve,
+            Kind::Lights => Setting::Lights,
         }
     }
 
     /// Every kind.
-    pub const ALL: [Kind; 2] = [Kind::Keymap, Kind::Curve];
+    pub const ALL: [Kind; 3] = [Kind::Keymap, Kind::Curve, Kind::Lights];
 
-    /// The kind whose setting `setting` is (a player's keymap or the curve), if it is one's.
+    /// The kind whose setting `setting` is (a player's keymap, the curve or the lights), if it is one's.
     pub(crate) fn of(setting: Setting) -> Option<Kind> {
         if setting.is_keymap() { Some(Kind::Keymap) } else { Kind::ALL.into_iter().find(|k| k.setting() == setting) }
     }
@@ -60,6 +63,7 @@ impl Kind {
         match self {
             Kind::Keymap => ListId::Keymaps,
             Kind::Curve => ListId::Curves,
+            Kind::Lights => ListId::Lights,
         }
     }
 
@@ -68,6 +72,7 @@ impl Kind {
         match self {
             Kind::Keymap => "Own keymap",
             Kind::Curve => "Own curve",
+            Kind::Lights => "Own lights",
         }
     }
 
@@ -76,6 +81,7 @@ impl Kind {
         match self {
             Kind::Keymap => "keymap",
             Kind::Curve => "curve",
+            Kind::Lights => "lights",
         }
     }
 
@@ -84,6 +90,7 @@ impl Kind {
         match self {
             Kind::Keymap => "Default",
             Kind::Curve => "Default colours",
+            Kind::Lights => "Off",
         }
     }
 }

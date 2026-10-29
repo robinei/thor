@@ -65,6 +65,19 @@ fn words(kind: Kind) -> Words {
             overwrite: "Its values become the own curve's.",
             overwrite_used: "Its values become the own curve's, for every game using it",
         },
+        Kind::Lights => Words {
+            title: "Lights",
+            make_own: "Make own lights",
+            new: "New lights…",
+            default_note: "All lights off",
+            load_title: "Load into own lights",
+            load_hint: "Its colours replace the own lights'",
+            save_title: "Save own lights as",
+            save_hint: "New lights, or ones whose colours they replace",
+            pick_hint: "The lights under the sticks · Long press for the menu",
+            overwrite: "Its colours become the own lights'.",
+            overwrite_used: "Its colours become the own lights', for every game using them",
+        },
     }
 }
 
@@ -84,7 +97,7 @@ pub(super) fn draw(f: &mut Frame, kind: Kind, screen: PickerScreen) {
 fn title(s: &clamshell_state::State, kind: Kind, w: &Words) -> &'static str {
     match kind {
         Kind::Keymap => clamshell_state::device_view::controllers::keymap_label(s.device_view().controllers().count(), s.keymapping().player()),
-        Kind::Curve => w.title,
+        Kind::Curve | Kind::Lights => w.title,
     }
 }
 

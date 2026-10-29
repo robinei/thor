@@ -51,6 +51,8 @@ pub enum Id {
     Keymap(KeymapId),
     /// Buttons on a kind's picker (see [`crate::profiles::picker`]).
     Profile(crate::profiles::picker::Kind, crate::profiles::picker::ProfileId),
+    /// Buttons on the lights' edit screen (see [`crate::lights::screens`]).
+    Lights(crate::lights::screens::LightsId),
     /// A scrolled list's area, under its rows. A finger on it between rows drags the list, and a tap does
     /// nothing.
     List(crate::nav::lists::ListId),

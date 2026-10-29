@@ -69,6 +69,9 @@ pub enum Setting {
     Keymap6,
     Keymap7,
     Keymap8,
+    /// The stick lights by their set's id (see [`crate::lights`]). 0 is Off, all lights off. It is chosen
+    /// in the lights' picker. Any id is kept, and one whose set is gone counts as Off.
+    Lights,
     /// Rumble strength, from 0 (off) up to 3 (full).
     Rumble,
     /// The CPU's frequency cap as a percent of its range. 0 uses the power profile's.
@@ -326,7 +329,7 @@ choices!(
     }
 );
 
-pub const COUNT: usize = 30;
+pub const COUNT: usize = 31;
 
 /// What a value does, for the tile's colour. It is the stock value and does nothing, or it saves power
 /// or eases the load, costs power, or changes how the game looks or plays.
@@ -364,6 +367,7 @@ names!(Setting {
     Keymap6: "keymap6";
     Keymap7: "keymap7";
     Keymap8: "keymap8";
+    Lights: "lights";
     Rumble: "rumble";
     CpuMax: "cpumax";
     GpuMax: "gpumax";
@@ -408,7 +412,7 @@ impl Setting {
 
     /// Whether the setting takes `value`. It must be one of its choices, or any keymap id for the keymap.
     pub fn accepts(self, value: u16) -> bool {
-        self.is_keymap() || self == Setting::Curve || (self == Setting::Refresh && value <= 1000) || self.choices().contains(&value)
+        self.is_keymap() || matches!(self, Setting::Curve | Setting::Lights) || (self == Setting::Refresh && value <= 1000) || self.choices().contains(&value)
     }
 
     /// The setting's values as a [`Choice`]'s table, if they are named choices.
@@ -426,7 +430,9 @@ impl Setting {
             Setting::PadMouse => Some(&MouseAtLaunch::TABLE),
             Setting::Rumble => Some(&RumbleStrength::TABLE),
             Setting::Background => Some(&InBackground::TABLE),
-            Setting::FpsCap | Setting::Refresh | Setting::Curve | Setting::HdrPeak | Setting::CpuMax | Setting::GpuMax | Setting::Sharpen => None,
+            Setting::FpsCap | Setting::Refresh | Setting::Curve | Setting::Lights | Setting::HdrPeak | Setting::CpuMax | Setting::GpuMax | Setting::Sharpen => {
+                None
+            }
             Setting::Keymap
             | Setting::Keymap2
             | Setting::Keymap3
@@ -447,9 +453,9 @@ impl Setting {
         match self {
             Setting::FpsCap => &[0, 30, 40, 45, 60, 90, 120],
             Setting::Refresh => &[0],
-            // The other values are the existing keymaps and curves.
+            // The other values are the existing keymaps, curves and sets of lights.
             s if s.is_keymap() => &[0],
-            Setting::Curve => &[0],
+            Setting::Curve | Setting::Lights => &[0],
             Setting::CpuMax | Setting::GpuMax => &[0, 40, 50, 60, 70, 80, 90, 100],
             Setting::Sharpen => &[0, 25, 50, 75, 100],
             Setting::HdrPeak => &[0, 400, 600, 800, 1000, 1500, 2000, 4000],
@@ -510,6 +516,7 @@ impl Setting {
             Setting::Keymap6 => "Keymap 6",
             Setting::Keymap7 => "Keymap 7",
             Setting::Keymap8 => "Keymap 8",
+            Setting::Lights => "Lights",
             Setting::Rumble => "Rumble",
             Setting::CpuMax => "CPU limit",
             Setting::GpuMax => "GPU limit",
@@ -533,7 +540,7 @@ impl Setting {
             // Never, or later than the default, costs power. Sooner saves it.
             (Setting::ScreenOff | Setting::Sleep, v) if v == 0 || v > self.default_value() => Impact::Costs,
             (s, _) if s.is_keymap() => Impact::Changes,
-            (Setting::Curve | Setting::HdrPeak | Setting::Sharpen, _) => Impact::Changes,
+            (Setting::Curve | Setting::Lights | Setting::HdrPeak | Setting::Sharpen, _) => Impact::Changes,
             _ => Impact::Saves,
         }
     }
@@ -561,6 +568,9 @@ impl Setting {
             (Setting::HdrPeak, 0) => "As declared",
             // The tile shows the curve's name.
             (Setting::Curve, v) => return number(buf, "Curve ", v, ""),
+            // The tile shows the set's name.
+            (Setting::Lights, 0) => "Lights off",
+            (Setting::Lights, v) => return number(buf, "Lights ", v, ""),
             (Setting::CpuMax, 0) => "CPU auto",
             (Setting::GpuMax, 0) => "GPU auto",
             (Setting::Sharpen, 0) => "Sharpen off",

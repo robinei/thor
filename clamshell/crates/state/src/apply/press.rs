@@ -127,6 +127,9 @@ impl State {
             Id::Profile(kind, id) => {
                 self.on_profile(kind, id, out);
             }
+            Id::Lights(id) => {
+                self.on_lights(id, out);
+            }
             Id::Tab(tab) => {
                 self.choose_tab(tab);
             }
@@ -135,8 +138,9 @@ impl State {
                 let tab = match control {
                     Control::Volume => Tab::Volume,
                     Control::Brightness => Tab::Brightness,
-                    // A keymap's or a curve's parameter, or a setting's slider, is held or slid, not tapped.
-                    Control::Param(_) | Control::Curve(_) | Control::Setting(_) => return,
+                    // A keymap's, a curve's or a light's parameter, or a setting's slider, is held or slid,
+                    // not tapped.
+                    Control::Param(_) | Control::Curve(_) | Control::Light(_) | Control::Setting(_) => return,
                 };
                 self.choose_tab(tab);
             }
@@ -197,6 +201,10 @@ impl State {
             ListId::Curves => {
                 let cx = self.picker_cx(ProfileKind::Curve);
                 self.curving.on_row(i, part, long, &cx, self.bottom.editors_mut(), out);
+            }
+            ListId::Lights => {
+                let cx = self.picker_cx(ProfileKind::Lights);
+                self.lighting.on_row(i, part, long, &cx, self.bottom.editors_mut(), out);
             }
             ListId::Values if !long => self.on_menu_row(i, out),
             ListId::Values => {}

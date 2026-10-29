@@ -146,7 +146,7 @@ pub const GRID_COLUMNS: usize = 5;
 /// the grid scrolls. On a program's tab Reset comes before the last, CPU cores, to show with the others.
 /// The keymap's tile stands for one per player, player 1's first (see [`Panel::grid`]). The settings for
 /// the device rather than a program, the charge limit and idle, are on the battery tab.
-const GRID: [crate::id::SettingsId; 20] = {
+const GRID: [crate::id::SettingsId; 21] = {
     use crate::id::SettingsId::{Env, Tile};
     [
         Tile(Setting::Power),
@@ -160,6 +160,7 @@ const GRID: [crate::id::SettingsId; 20] = {
         Tile(Setting::AntiAliasing),
         Tile(Setting::Sharpen),
         Tile(Setting::Keymap),
+        Tile(Setting::Lights),
         Tile(Setting::PadMouse),
         Tile(Setting::BottomScreen),
         Tile(Setting::Background),
@@ -172,14 +173,21 @@ const GRID: [crate::id::SettingsId; 20] = {
     ]
 };
 
+/// The kinds of profile, whose pickers the panel shows.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Kinds<'a> {
+    pub(crate) keymapping: &'a Keymapping,
+    pub(crate) curving: &'a crate::curve::screens::Curving,
+    pub(crate) lighting: &'a crate::lights::screens::Lighting,
+}
+
 /// The settings panel as it is now: the item in context, the levels it offers, what it edits, and the
 /// keymaps' picker for it. Built by [`Panel::new`]; it doesn't allocate, since the UI builds it while
 /// drawing.
 #[derive(Debug, Clone)]
 pub struct Panel<'a> {
     prefs: &'a Prefs,
-    keymapping: &'a Keymapping,
-    curving: &'a crate::curve::screens::Curving,
+    kinds: Kinds<'a>,
     context: Option<Program<'a>>,
     levels: [Option<(SettingsLevel, Program<'a>)>; 2],
     editing: Option<Program<'a>>,
@@ -197,8 +205,7 @@ impl<'a> Panel<'a> {
         session: &'a Session,
         library_view: &'a LibraryView,
         prefs: &'a Prefs,
-        keymapping: &'a Keymapping,
-        curving: &'a crate::curve::screens::Curving,
+        kinds: Kinds<'a>,
         players: Player,
     ) -> Panel<'a> {
         let entry_of = |id: &str| session.entry(library_view.library(), id);
@@ -223,7 +230,7 @@ impl<'a> Panel<'a> {
         };
         let runner = editing.as_ref().and_then(|p| entry_of(&p.id)).and_then(|g| g.runner.as_ref()).map(|r| &*r.key);
         let handover = editing.is_some() && entry.and_then(|g| g.runner.as_ref()).is_some_and(|r| r.handover);
-        Panel { prefs, keymapping, curving, context, levels, editing, runner, handover, players }
+        Panel { prefs, kinds, context, levels, editing, runner, handover, players }
     }
 
     /// The item the settings panel is about, chosen by what is in front (see [`Panel::new`]). It is
@@ -363,14 +370,15 @@ impl<'a> Panel<'a> {
 
     /// Row `i` of the keymaps' picker, for what the panel edits.
     pub(crate) fn keymap_row(&self, i: usize) -> Option<PickerRow<'a>> {
-        self.keymapping.row(i, self.entry())
+        self.kinds.keymapping.row(i, self.entry())
     }
 
     /// Row `i` of `kind`'s picker, for what the panel edits.
     pub fn profile_row(&self, kind: crate::profiles::picker::Kind, i: usize) -> Option<PickerRow<'a>> {
         let row = match kind {
             crate::profiles::picker::Kind::Keymap => self.keymap_row(i),
-            crate::profiles::picker::Kind::Curve => self.curving.row(i, self.entry()),
+            crate::profiles::picker::Kind::Curve => self.kinds.curving.row(i, self.entry()),
+            crate::profiles::picker::Kind::Lights => self.kinds.lighting.row(i, self.entry()),
         };
         row.or_else(|| (i == self.profile_rows_len(kind) && self.picker_resettable(kind)).then_some(PickerRow::Reset))
     }
@@ -378,8 +386,9 @@ impl<'a> Panel<'a> {
     /// The picker's rows of `kind`, without its Reset row.
     fn profile_rows_len(&self, kind: crate::profiles::picker::Kind) -> usize {
         match kind {
-            crate::profiles::picker::Kind::Keymap => self.keymapping.rows_len(self.entry()),
-            crate::profiles::picker::Kind::Curve => self.curving.rows_len(self.entry()),
+            crate::profiles::picker::Kind::Keymap => self.kinds.keymapping.rows_len(self.entry()),
+            crate::profiles::picker::Kind::Curve => self.kinds.curving.rows_len(self.entry()),
+            crate::profiles::picker::Kind::Lights => self.kinds.lighting.rows_len(self.entry()),
         }
     }
 
@@ -388,8 +397,9 @@ impl<'a> Panel<'a> {
     fn picker_resettable(&self, kind: crate::profiles::picker::Kind) -> bool {
         use crate::profiles::picker::{Kind, PickerScreen};
         let list = match kind {
-            Kind::Keymap => self.keymapping.picker() == Some(PickerScreen::List),
-            Kind::Curve => self.curving.screen() == Some(crate::curve::screens::CurveScreen::Picker(PickerScreen::List)),
+            Kind::Keymap => self.kinds.keymapping.picker() == Some(PickerScreen::List),
+            Kind::Curve => self.kinds.curving.screen() == Some(crate::curve::screens::CurveScreen::Picker(PickerScreen::List)),
+            Kind::Lights => self.kinds.lighting.screen() == Some(crate::lights::screens::LightsScreen::Picker(PickerScreen::List)),
         };
         list && self.resettable(self.setting_of(kind))
     }
@@ -404,28 +414,24 @@ impl<'a> Panel<'a> {
         self.tile_value(self.setting_of(kind))
     }
 
-    /// The setting a picker of `kind` chooses: the keymap of the player whose tile was pressed, or the
-    /// curve.
+    /// The setting a picker of `kind` chooses: the keymap of the player whose tile was pressed, the curve
+    /// or the lights.
     pub fn setting_of(&self, kind: crate::profiles::picker::Kind) -> Setting {
         match kind {
-            crate::profiles::picker::Kind::Keymap => Setting::keymap(self.keymapping.player()),
+            crate::profiles::picker::Kind::Keymap => Setting::keymap(self.kinds.keymapping.player()),
             crate::profiles::picker::Kind::Curve => Setting::Curve,
+            crate::profiles::picker::Kind::Lights => Setting::Lights,
         }
     }
 
-    pub(crate) fn keymap_rows_len(&self) -> usize {
-        let kind = crate::profiles::picker::Kind::Keymap;
-        self.profile_rows_len(kind) + usize::from(self.picker_resettable(kind))
-    }
-
-    pub(crate) fn curve_rows_len(&self) -> usize {
-        let kind = crate::profiles::picker::Kind::Curve;
+    /// The rows of `kind`'s picker, with its Reset row.
+    pub(crate) fn picker_rows_len(&self, kind: crate::profiles::picker::Kind) -> usize {
         self.profile_rows_len(kind) + usize::from(self.picker_resettable(kind))
     }
 
     /// Whether the panel edits a game that has no keymap of its own and so can make one.
     pub fn keymap_can_make_own(&self) -> bool {
-        self.keymapping.can_make_own(self.entry())
+        self.kinds.keymapping.can_make_own(self.entry())
     }
 }
 

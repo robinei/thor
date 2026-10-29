@@ -31,6 +31,8 @@ pub enum ListId {
     Keymaps,
     /// The curve picker: Off, then the curves.
     Curves,
+    /// The lights' picker: Off, then the sets of lights.
+    Lights,
     /// A keymap's layers. To pick one to show, it lists all of them, then New layer. To pick one as a
     /// target, it lists all but Base, then New layer.
     Layers,
@@ -60,7 +62,7 @@ pub enum RowPart {
 }
 
 impl ListId {
-    pub const COUNT: usize = 13;
+    pub const COUNT: usize = 14;
     pub const ALL: [ListId; ListId::COUNT] = [
         ListId::LibraryView,
         ListId::Wifi,
@@ -69,6 +71,7 @@ impl ListId {
         ListId::Backlights,
         ListId::Keymaps,
         ListId::Curves,
+        ListId::Lights,
         ListId::Layers,
         ListId::Time,
         ListId::Dock,
@@ -119,6 +122,7 @@ pub struct Lists<'a> {
     pub(crate) prefs: &'a Prefs,
     pub(crate) keymapping: &'a Keymapping,
     pub(crate) curving: &'a crate::curve::screens::Curving,
+    pub(crate) lighting: &'a crate::lights::screens::Lighting,
     /// How many players there are, as the last one: the settings have a keymap tile for each.
     pub(crate) players: crate::device_view::controllers::Player,
     pub(crate) radios: &'a Radios,
@@ -134,7 +138,14 @@ pub struct Lists<'a> {
 
 impl<'a> Lists<'a> {
     fn panel(&self) -> Panel<'a> {
-        Panel::new(self.subject.clone(), self.session, self.library_view, self.prefs, self.keymapping, self.curving, self.players)
+        Panel::new(
+            self.subject.clone(),
+            self.session,
+            self.library_view,
+            self.prefs,
+            crate::settings::panel::Kinds { keymapping: self.keymapping, curving: self.curving, lighting: self.lighting },
+            self.players,
+        )
     }
 
     /// Where `list` is scrolled. For the Library, this is the current collection's position.
@@ -158,8 +169,9 @@ impl<'a> Lists<'a> {
             ListId::Bluetooth => RowsOf::Of(self.radios.bluetooth()),
             ListId::Streams => RowsOf::Of(self.levels.audio()),
             ListId::Backlights => RowsOf::Of(self.levels.backlight_rows()),
-            ListId::Keymaps => RowsOf::Count(self.panel().keymap_rows_len()),
-            ListId::Curves => RowsOf::Count(self.panel().curve_rows_len()),
+            ListId::Keymaps => RowsOf::Count(self.panel().picker_rows_len(crate::profiles::picker::Kind::Keymap)),
+            ListId::Curves => RowsOf::Count(self.panel().picker_rows_len(crate::profiles::picker::Kind::Curve)),
+            ListId::Lights => RowsOf::Count(self.panel().picker_rows_len(crate::profiles::picker::Kind::Lights)),
             ListId::Layers => RowsOf::Count(self.keymapping.layer_rows()),
             ListId::Time => RowsOf::Count(self.sys.time_rows()),
             ListId::Dock => RowsOf::Count(self.dock.items().len().div_ceil(crate::dock::DOCK_COLUMNS)),

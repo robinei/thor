@@ -1,8 +1,8 @@
 //! Volume and brightness in the bar. A finger held on either icon, or sliding off it sideways, brings up
 //! a slider with the current value under the finger. Moving sets the level as it goes, and lifting
 //! leaves it there. A tap opens the icon's tab instead. The same slider sets a keymap binding's
-//! parameters ([`Control::Param`]), a curve's ([`Control::Curve`]) and a setting ([`Control::Setting`]);
-//! the state holds the one held (see `apply::sliders`).
+//! parameters ([`Control::Param`]), a curve's ([`Control::Curve`]), a light's colour ([`Control::Light`])
+//! and a setting ([`Control::Setting`]); the state holds the one held (see `apply::sliders`).
 //!
 //! The slider runs along the screen's width. Its length is what fits on both sides of where the finger
 //! came down, given the level there: the part below the level goes left of the finger and the rest goes
@@ -20,6 +20,8 @@ pub enum Control {
     Param(crate::keymap::Param),
     /// A parameter of the curve on the curve edit screen (see [`crate::curve::screens`]).
     Curve(crate::curve::CurveParam),
+    /// A part of a stick's colour on the lights' edit screen (see [`crate::lights::screens`]).
+    Light(crate::lights::LightParam),
     /// A setting at the level the settings panel edits, through its stops (see [`crate::State::setting_stop`]):
     /// Default, which writes nothing there, then its values.
     Setting(crate::settings::Setting),
@@ -31,7 +33,7 @@ impl Control {
         match self {
             Control::Volume => Some(Level::Volume),
             Control::Brightness => Some(Level::Brightness),
-            Control::Param(_) | Control::Curve(_) | Control::Setting(_) => None,
+            Control::Param(_) | Control::Curve(_) | Control::Light(_) | Control::Setting(_) => None,
         }
     }
 }

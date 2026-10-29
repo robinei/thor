@@ -40,9 +40,14 @@ impl State {
         self.prefs.settings().of_in(id, self.runner_of(id).as_slice())
     }
 
+    /// The kinds of profile, for the settings panel.
+    pub(crate) fn kinds(&self) -> crate::settings::panel::Kinds<'_> {
+        crate::settings::panel::Kinds { keymapping: &self.keymapping, curving: &self.curving, lighting: &self.lighting }
+    }
+
     /// The settings panel as it is now (see [`Panel::new`]).
     pub fn panel(&self) -> Panel<'_> {
-        Panel::new(self.subject(), &self.session, &self.library_view, &self.prefs, &self.keymapping, &self.curving, self.device_view.controllers().count())
+        Panel::new(self.subject(), &self.session, &self.library_view, &self.prefs, self.kinds(), self.device_view.controllers().count())
     }
 
     /// Whether the second screen is dark (see [`crate::Bottom::dark`]). A window shown there keeps it lit:
@@ -87,6 +92,7 @@ impl State {
         match kind {
             ProfileKind::Keymap => self.keymapping.name(id),
             ProfileKind::Curve => self.curving.name(id),
+            ProfileKind::Lights => self.lighting.name(id),
         }
     }
 
@@ -95,6 +101,7 @@ impl State {
         match kind {
             ProfileKind::Keymap => self.keymapping.is_own(id),
             ProfileKind::Curve => self.curving.curves().is_own(id),
+            ProfileKind::Lights => self.lighting.sets().is_own(id),
         }
     }
 
@@ -103,7 +110,22 @@ impl State {
         match kind {
             ProfileKind::Keymap => self.keymapping.keymaps().get(id).is_some(),
             ProfileKind::Curve => self.curving.curves().get(id).is_some(),
+            ProfileKind::Lights => self.lighting.sets().get(id).is_some(),
         }
+    }
+
+    /// What the stick lights show now, left then right (see [`crate::lights`]): while a set is on its edit
+    /// screen in the settings tab, that set's colours, so that each change shows as it is made; else the
+    /// set the settings in force choose, showing the charge while charging if it says so.
+    pub fn lights_shown(&self) -> [crate::lights::Lit; 2] {
+        if self.bottom.tab() == crate::Tab::Settings
+            && let Some(id) = self.lighting.editing()
+        {
+            return self.lighting.in_force(id).shown(None);
+        }
+        let lights = self.lighting.in_force(self.in_force().get(crate::settings::Setting::Lights));
+        let status = self.sys.status();
+        lights.shown(status.battery.filter(|_| status.charging))
     }
 
     /// What the keymaps' screens read from the settings panel (see [`PickerCx`]).

@@ -115,6 +115,7 @@ pub fn state(library: Library, first_start: bool) -> State {
         dock,
         keymaps: clamshell_state::keymap::Keymaps::initial(),
         curves: clamshell_state::curve::Curves::initial(),
+        lights: clamshell_state::lights::LightSets::initial(),
         window_rules: clamshell_state::session::below::WindowRules::from_list(vec![clamshell_state::session::below::WindowRule {
             owner: "desktop:foot".into(),
             app_id: "foot".into(),

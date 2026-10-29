@@ -38,6 +38,7 @@ impl State {
             | Thread::System
             | Thread::Browse
             | Thread::Brightness
+            | Thread::Lights
             | Thread::Touchpad => self.sent.resend(Resend::Restarted(thread)),
             // Everything saved, written again. A play being recorded is lost.
             Thread::Store => self.save_everything(out),
@@ -75,6 +76,7 @@ impl State {
             self.prefs.save_effect(),
             self.keymapping.save_effect(),
             self.curving.save_effect(),
+            self.lighting.save_effect(),
             Effect::Save(Save::Favourites(self.library_view.library().favourite_ids().map(str::to_owned).collect())),
             Effect::Save(Save::Resume(self.resume())),
             self.levels.brightness_save(),
@@ -215,8 +217,9 @@ mod tests {
             Save::FirstStartDone => 10,
             Save::Sticks(_) => 11,
             Save::Controllers(_) => 12,
+            Save::Lights(_) => 13,
         };
-        let mut sent = [false; 13];
+        let mut sent = [false; 14];
         for e in &fx {
             if let Effect::Save(save) = e
                 && let Some(slot) = sent.get_mut(kind(save))
@@ -224,7 +227,7 @@ mod tests {
                 *slot = true;
             }
         }
-        assert_eq!(sent, [true; 13], "{fx:?}");
+        assert_eq!(sent, [true; 14], "{fx:?}");
     }
 
     #[test]

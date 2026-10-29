@@ -339,6 +339,19 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
             ids.extend(crate::curve::CurveParam::ALL.map(|p| Id::Control(Control::Curve(p))));
             ids.push(Id::Control(Control::Setting(Setting::HdrPeak)));
         }
+        Tab::Settings if s.lighting().screen().is_some() => {
+            ids.extend(
+                [ProfileId::Back, ProfileId::New, ProfileId::Edit, ProfileId::Rename, ProfileId::Duplicate, ProfileId::Delete, ProfileId::ConfirmDelete]
+                    .map(|p| Id::Profile(crate::profiles::picker::Kind::Lights, p)),
+            );
+            ids.extend(row(ListId::Lights, s.lists().len(ListId::Lights)));
+            ids.extend(crate::lights::LightParam::ALL.map(|p| Id::Control(Control::Light(p))));
+            use crate::lights::screens::LightsId;
+            ids.extend(
+                [LightsId::Linked, LightsId::Battery, LightsId::Stick(crate::lights::Stick::Left), LightsId::Stick(crate::lights::Stick::Right)]
+                    .map(Id::Lights),
+            );
+        }
         Tab::Settings => match s.keymapping().screen() {
             None => {
                 let count = s.device_view().controllers().count();
@@ -669,6 +682,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
         77..=81 => Event::Reading(match rng.below(6) {
             0 => Reading::Status(Status {
                 battery: Some(rng.below(101) as u8),
+                charging: rng.one_in(2),
                 discharging: rng.one_in(2),
                 volume: Some(rng.below(101) as u8),
                 muted: rng.one_in(4),
@@ -763,10 +777,11 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             0 => LevelEvent::Step(Level::Volume, if rng.one_in(2) { 1 } else { -1 }).into(),
             1 => LevelEvent::Set(Level::Brightness, rng.below(101) as u8).into(),
             2 => {
-                let control = match rng.below(4) {
+                let control = match rng.below(5) {
                     0 => Control::Volume,
                     1 => Control::Brightness,
                     2 => Control::Setting(Setting::HdrPeak),
+                    3 => Control::Light(crate::lights::LightParam::ALL.get(rng.below(3)).copied().unwrap_or(crate::lights::LightParam::Hue)),
                     _ => Control::Curve(crate::curve::CurveParam::ALL.get(rng.below(6)).copied().unwrap_or(crate::curve::CurveParam::Highlights)),
                 };
                 Slide::Start { control, x: rng.below(100) as f32, width: 100.0 }.into()
@@ -1337,7 +1352,14 @@ fn run(seed: u64, events: usize) -> Result<(), String> {
     // The account is read soon after the start, as at a start on the device, but now and then only by
     // the readings drawn later, which hold programs meanwhile.
     let account_late = rng.one_in(5);
-    let init = Init { library: (!unread).then(library), keymaps: crate::keymap::Keymaps::initial(), device_session: true, first_start, ..Init::default() };
+    let init = Init {
+        library: (!unread).then(library),
+        keymaps: crate::keymap::Keymaps::initial(),
+        lights: crate::lights::LightSets::initial(),
+        device_session: true,
+        first_start,
+        ..Init::default()
+    };
     let mut s = State::new(init);
     // As the outside starts: the settings in force applied, the screens on at their own rate (0), the
     // status watched, and the pad with no keymap or route.

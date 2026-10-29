@@ -56,7 +56,8 @@ binary gives it them in its `Config` (`Views`).
 `State` (`crates/state/src/lib.rs`) is a coordinator over **areas**, each a type with private fields, its
 rules and the getters the UI reads: `LibraryView` (the game list), `Session` (launches, windows, background),
 `Bottom` (the second screen, its tabs, editor and notices), `Radios`, `Levels`, `Sys` (status, battery,
-time), `DeviceView` (the Device view: calibrations), `Setup` (the first start's steps and the account), `Idle`, `Prefs` (settings), `Keymapping`,
+time), `DeviceView` (the Device view: calibrations), `Setup` (the first start's steps and the account), `Idle`, `Prefs` (settings), `Keymapping`, `Curving`
+(tone curves), `Lighting` (the stick lights): the three kinds of profile, sharing `profiles` and its picker,
 `Presentation` (what the compositor said of the screens), the pad route, the pointer and the lists'
 scrolls. `State`'s impl holds what spans areas, in files by subject under `apply/` (launching, presses,
 tabs, sliders, the settings tab, ...); nothing outside an area touches its fields.
@@ -79,7 +80,7 @@ How areas cooperate:
    the second screen's dimming, the idle stage, the program in force, the second screen's power and the
    pad's route. The list, with the test that pins each order that matters, is `State::settle`'s doc.
 3. **Sync**: what the outside should have now (`Wanted`: watches, screen power, the settings applied, the
-   keymap, the pad route, files in use, ...) is computed from the settled state and compared with what it
+   keymap, the pad route, the stick lights, files in use, ...) is computed from the settled state and compared with what it
    was last sent (`Sent`); only differences become effects, in one fixed order. Effects that are
    commands (launch, quit, save) come from the rules; effects that describe a condition come from sync.
 

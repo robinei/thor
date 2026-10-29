@@ -348,6 +348,8 @@ pub enum Thread {
     BluetoothConnect,
     Tray,
     Brightness,
+    /// Writes the stick lights.
+    Lights,
     Sound,
     Store,
     System,
@@ -371,7 +373,7 @@ pub enum Thread {
 }
 
 impl Thread {
-    pub const ALL: [Thread; 30] = [
+    pub const ALL: [Thread; 31] = [
         Thread::Pad,
         Thread::PadDevices,
         Thread::Tuning,
@@ -384,6 +386,7 @@ impl Thread {
         Thread::BluetoothConnect,
         Thread::Tray,
         Thread::Brightness,
+        Thread::Lights,
         Thread::Sound,
         Thread::Store,
         Thread::System,
@@ -419,6 +422,7 @@ impl Thread {
             Thread::BluetoothConnect => "bluetooth connect",
             Thread::Tray => "tray",
             Thread::Brightness => "brightness",
+            Thread::Lights => "lights",
             Thread::Sound => "sound",
             Thread::Store => "store",
             Thread::System => "system",

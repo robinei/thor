@@ -1,4 +1,5 @@
-//! The sliders: the levels', a keymap's or a curve's parameter's, and a setting's in the settings panel.
+//! The sliders: the levels', a keymap's, a curve's or a light's parameter's, and a setting's in the
+//! settings panel.
 
 use crate::out::Out;
 use crate::settings::Setting;
@@ -25,6 +26,7 @@ impl State {
                 self.slider = match control {
                     Control::Param(param) => self.keymapping.param_slider(param, x, width),
                     Control::Curve(param) => self.curving.slider(param, x, width),
+                    Control::Light(param) => self.lighting.slider(param, x, width),
                     Control::Setting(setting) => Some(self.setting_slider_at(setting, x, width)),
                     control => Some(self.levels.slider(control, x, width)),
                 };
@@ -39,6 +41,10 @@ impl State {
                     Control::Param(param) => self.keymapping.param_slid(param, value),
                     Control::Curve(param) => {
                         self.curving.slid(param, value);
+                        Some(value)
+                    }
+                    Control::Light(param) => {
+                        self.lighting.slid(param, value);
                         Some(value)
                     }
                     Control::Setting(setting) => {
@@ -59,6 +65,7 @@ impl State {
                 match slider.control {
                     Control::Param(_) => out.effects.push(self.keymapping.save()),
                     Control::Curve(_) => out.effects.push(self.curving.save_effect()),
+                    Control::Light(_) => out.effects.push(self.lighting.save_effect()),
                     Control::Setting(_) => out.effects.push(self.prefs.save_effect()),
                     // A level stays where it was set; the brightness saves itself a moment later.
                     _ => {}

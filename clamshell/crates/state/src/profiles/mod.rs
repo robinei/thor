@@ -1,9 +1,9 @@
-//! Profiles: what keymaps and tone curves share. A profile is either named and shared by the games that
-//! choose it, or a game's own: unnamed, offered to that game alone, made from the profile in force for the
-//! game and kept while the game uses another one, until it is deleted. Contents move between the two
+//! Profiles: what keymaps, tone curves and the stick lights share. A profile is either named and shared by
+//! the games that choose it, or a game's own: unnamed, offered to that game alone, made from the profile
+//! in force for the game and kept while the game uses another one, until it is deleted. Contents move between the two
 //! kinds by copying: a named profile (or the none in force, id 0) can be loaded into a game's own, and a
 //! game's own can be saved as a new named profile or over an existing one. What a profile holds is its
-//! body (`B`): a keymap's layers, a curve's parameters.
+//! body (`B`): a keymap's layers, a curve's parameters, the lights' colours.
 
 pub mod picker;
 
@@ -14,8 +14,8 @@ use crate::kit::replace;
 /// A named profile or a game's own, holding a body `B`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Profile<B> {
-    /// Its number, kept across renames. 0 is the none in force (Default for keymaps, Off for curves),
-    /// which no profile has.
+    /// Its number, kept across renames. 0 is the none in force (Default for keymaps, Default colours for
+    /// curves, Off for lights), which no profile has.
     pub id: u16,
     /// Empty for a game's own.
     pub name: String,

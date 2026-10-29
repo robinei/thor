@@ -7,6 +7,7 @@ use std::rc::Rc;
 use clamshell_compositor::EventSender;
 use clamshell_state::curve::Curves;
 use clamshell_state::keymap::Keymaps;
+use clamshell_state::lights::LightSets;
 use clamshell_state::settings::Values;
 use clamshell_state::{Init, State};
 use clamshell_system::library::Sources;
@@ -20,10 +21,11 @@ use crate::config::Env;
 use crate::control;
 
 /// Loads what was saved. A piece that is missing or can't be read gets its default, and a read error is
-/// logged. On the first start the keymaps and curves are the ready-made ones, and they are saved at once.
+/// logged. On the first start the keymaps, curves and lights are the ready-made ones, and they are saved
+/// at once.
 pub(crate) fn saved(paths: &Paths) -> Init {
     let Some(dir) = paths.state_dir.as_deref() else {
-        return Init { keymaps: Keymaps::initial(), curves: Curves::initial(), ..Init::default() };
+        return Init { keymaps: Keymaps::initial(), curves: Curves::initial(), lights: LightSets::initial(), ..Init::default() };
     };
     let mut store = Store::open(dir);
     let keymaps = store.keymaps().unwrap_or_else(|| {
@@ -40,10 +42,18 @@ pub(crate) fn saved(paths: &Paths) -> Init {
         }
         initial
     });
+    let lights = store.lights().unwrap_or_else(|| {
+        let initial = LightSets::initial();
+        if let Err(e) = store.save(&clamshell_state::Save::Lights(initial.clone())) {
+            log::warn!("store: lights: {e}");
+        }
+        initial
+    });
     Init {
         settings: store.settings(),
         keymaps,
         curves,
+        lights,
         window_rules: store.window_rules(),
         brightness: store.brightness(),
         twelve_hour: store.twelve_hour(),

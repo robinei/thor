@@ -464,6 +464,39 @@ whole pixels, and the screen's black is labelled below them. `tests/picture-scal
 pattern, and `curve-edit-histogram.png` shows one. The randomized test taps the
 curve screens and slides their parameters.
 
+## Stick lights (lights/)
+
+Screens: the picker's (`profiles::picker`, as for keymaps and curves; Off is the default, "All lights
+off"), then Edit: the two sticks drawn lit, Linked, Hue, Saturation and Brightness (`Control::Light`, the
+same held sliders as the curve's), and "Charging shows the battery". One Back for all of them
+(`Id::Profile(Lights, Back)`). The set chosen is `Setting::Lights` (an id, 0 Off: all lights off), per
+game, runner or for all. A set holds a colour per stick (hue, saturation, brightness), Linked, and
+whether charging shows the battery (`lights::Lights`).
+
+What the lights show (`State::lights_shown`): while a set is on its edit screen with the settings tab
+open, that set's colours, so that each change shows as it is made; otherwise the set the settings in
+force choose (the program in front's, else All's), and while charging (`Status::charging`, from the
+status thread's battery reading) with "Charging shows the battery" on, the charge's colour instead, red
+at empty through yellow to green at full, at each stick's brightness. Sync sends it as
+`Effect::Lights([left, right])` when it changes (`Sent::lights`); at start it is unknown, so the first
+event sends it; back from sleep (`Resend::Resumed`), which turns the LEDs off, and after the lights
+thread's restart, it is sent again.
+
+| Transition | Test |
+|---|---|
+| Lights tile → List; a row → chosen for the level edited; Off → 0 | `the_tile_opens_the_picker_and_a_row_chooses_lights_for_the_game` |
+| List: Make own → own set copied from the one in force, Edit opens, chosen; settings saved before lights | `a_games_own_lights_are_made_from_the_ones_in_force_and_open_on_their_edit_screen` |
+| Edit, linked: slide start/to → both sticks change as it moves, and the lights follow at once; end → saved once if moved; Back → the lights in force again | `linked_a_slider_sets_both_sticks_and_the_lights_follow_it_live` |
+| Edit: Linked → unlinked (saved); a stick tapped → the sliders set it, from its value, and the other keeps its colour; Linked again → the picked stick's colour copied to the other (saved); the edit screen opens with the left picked | `unlinked_the_picked_stick_is_set_and_linking_copies_it_to_the_other` |
+| Edit: "Charging shows the battery" → saved; charging → the charge's colour, unplugged → the colours; on the edit screen, the colours | `charging_shows_the_battery_when_the_set_says_so` |
+| The lights in force change (a choice at All, a game in front with its own) → `Lights` once; unchanged → nothing; `Resumed`, `Restarted(Lights)` → `Lights` again | `the_lights_in_force_are_sent_when_they_change` |
+| Menu: Delete in use → asks; confirmed → removed, its games back on Off | `deleting_lights_in_use_asks_and_puts_its_games_back_on_off` |
+| List: New → named → Edit, a set that is off until edited | `new_lights_are_named_and_off_until_edited` |
+
+The colours as written (`Colour::rgb`, `lights::charge_colour`) are tested in `lights::tests`. The system
+crate's lights thread writes them to the LEDs the device profile names (see "Device facts"). The randomized
+test taps the lights' screens, slides their parameters and reads charging.
+
 ## The Library (the Library/)
 
 | Transition | Test |
@@ -579,7 +612,7 @@ anchored lists on their item and every list within its ends; Focus scrolls just 
 
 | Transition | Test |
 |---|---|
-| tile tap cycles the value at the level edited (global-only settings always global); a profile tile's (Keymap, tone curve) steps through Default or Default colours, the level's own, then the named ones | `games_override_the_global_settings`, `a_profile_tile_steps_through_its_profiles_and_its_picker_resets` |
+| tile tap cycles the value at the level edited (global-only settings always global); a profile tile's (Keymap, tone curve, Lights) steps through Default (Default colours, Off), the level's own, then the named ones | `games_override_the_global_settings`, `a_profile_tile_steps_through_its_profiles_and_its_picker_resets` |
 | tile long press opens its menu (`Prefs::menu`, list `Values`): its values, the one in force marked; a row sets it and closes; Reset (last, when the level chooses it itself, or All differs from stock) goes back to the level below's (`Panel::inherited_value`); Back closes. A profile tile's long press opens its picker, which ends with the same Reset | `a_tiles_menu_picks_a_value_and_resets_to_the_level_below`, `a_profile_tile_steps_…` |
 | A level tab selects the level; Reset drops an item's overrides and env | `the_panel_offers_the_items_levels`, `a_runner_can_leave_its_items_without_settings_…` |
 | Env editor | `the_environment_editor_takes_the_keyboard` |
@@ -679,13 +712,13 @@ compositor test, which sends them with `gdbus`, closes one and taps another.
 
 | Resend | Raised by | Re-sends | Test |
 |---|---|---|---|
-| Resumed | `Event::Resumed` | Apply | tests `back_from_sleep_applies_the_settings_again_and_wakes_the_screens` |
+| Resumed | `Event::Resumed` | Apply, Lights | tests `back_from_sleep_applies_the_settings_again_and_wakes_the_screens` |
 | FetchFirst | Fetching, Library | FetchFirst | tests `while_metadata_is_fetched_library_views_view_goes_first`, `a_library_read_while_fetching_asks_for_library_views_view_first_again` |
 | Restarted(thread) | `Event::Restarted` | what that thread was sent (below) | tests in `apply/restart.rs` |
 
 At start only what the outside starts with counts as sent (`Sent::new`): the settings in force
 applied, the screens on at their own rate, the bar's status watched. So the brightness, the keymap,
-the pad's route and a refresh rate the settings want go out at the first event (tests
+the pad's route, the stick lights and a refresh rate the settings want go out at the first event (tests
 `what_the_outside_starts_without_goes_out_at_the_first_event`); Start sends none of them again.
 
 The main screen's refresh rate needs no resend: sync sends `Wanted::refresh` whenever it differs from
@@ -719,6 +752,7 @@ then go nowhere, logged once (system crate, `a_thread_that_keeps_panicking_soon_
   `a_restarted_system_thread_is_asked_to_sleep_again_after_the_retry`)
 - `--Restarted(Brightness)--> [Brightness]` if ClamShell set a level, dimmed if idle dimmed it (tested
   `a_restarted_brightness_thread_is_sent_the_level_clamshell_set`)
+- `--Restarted(Lights)--> [Lights]` (tested `the_lights_in_force_are_sent_when_they_change`)
 - `--Restarted(Touchpad)--> [SizeTouchpad]` (tested `a_restarted_touchpad_thread_is_sent_the_second_screens_layout`)
 - `--Restarted(Store)--> [Save of everything saved]` (tested `a_restarted_store_is_sent_everything_saved`)
 - `files running --Restarted(Files)--> the oldest operation done, failed [notice]`; the rest run (tested
