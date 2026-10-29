@@ -994,6 +994,23 @@ mod tests {
         wm.event(&event, &mut wire, &mut server).unwrap();
         assert!(wm.windows[0].wants_map && !wm.windows[0].override_redirect);
     }
+    /// An override-redirect window with no owner yet is left mapped, to be shown once its program has the
+    /// focus; one whose owner lost the focus is dismissed.
+    #[test]
+    fn an_ownerless_override_redirect_window_stays_mapped() {
+        let (_display, mut server) = crate::tests::ServerBuilder::new().build();
+        let (socket, _peer) = UnixStream::pair().unwrap();
+        let mut wire = Transport::new(socket, Instant::now()).unwrap();
+        let mut wm = Wm { root: 1, owner: 2, atoms: Atoms(NAMES.iter().enumerate().map(|(i, name)| (*name, 100 + i as u32)).collect()), ..Wm::default() };
+        wm.discover(10, Rectangle::from_size((100, 100).into()), true, &mut wire, &mut server).unwrap();
+        let menu = &mut wm.windows[0];
+        (menu.pid, menu.outstanding, menu.wants_map) = (Some(1), 0, true);
+        wm.settle_menus(&mut wire, &mut server).unwrap();
+        assert!(wm.windows[0].wants_map, "waiting for an owner");
+        wm.windows[0].popup_parent = Some(99);
+        wm.settle_menus(&mut wire, &mut server).unwrap();
+        assert!(!wm.windows[0].wants_map, "its owner gone: dismissed");
+    }
     /// A client may put a window in front only while its program has the focus.
     #[test]
     fn only_the_focused_program_activates_a_window() {

@@ -44,6 +44,12 @@ impl Wm {
                 continue;
             }
             let owner = self.popup_owner(menu, focused, hovered);
+            // One that never had an owner (a splash, an overlay, or a menu mapped before its program's
+            // window has the focus) stays mapped, not shown, until it has one; one whose owner went away
+            // or lost the focus is dismissed as a menu is.
+            if owner.is_none() && menu.popup_parent.is_none() {
+                continue;
+            }
             let parent = owner.and_then(|id| self.windows.iter().find(|w| w.id == id && w.opened));
             let valid = parent.is_some_and(|parent| server.visible(parent.id) && (menu.properties.tooltip || focused == Some(parent.id)));
             if !valid {
