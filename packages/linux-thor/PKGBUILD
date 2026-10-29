@@ -58,6 +58,9 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         # PR #3495, tried on a Thor); QSEED4's horizontal preload of 7 behind the inline rotator, so a
         # rotated layer split over two pipes (a game's buffer shown directly, turned for the sideways
         # panels) has no seam (0018, at 8662e9f5ad, measured on an SM8650 tablet, not yet tried on a Thor).
+        # stable-*: fixes of Linux 7.2.8 (Armada pins 7.2.6) to DisplayPort and the DPU, as they are
+        # there: Armada's kernel hard-freezes the Thor when a DP monitor is plugged in (Armada #529),
+        # PB-OS's on 7.2.8 shows DP working. Not yet tried on a Thor.
         pbos-0545-power-supply-qcom_battmgr-retroid-charge-controls.patch
         thor-0001-dts-thor-lra-haptics.patch
         pbos-0620-drm-panel-ch13726a-thor-16-bit-brightness-high-byte-first.patch
@@ -71,7 +74,10 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         thor-0004-fastrpc-legacy-mmap-needs-a-session.patch
         pbos-0611-drm-msm-gem-honor-the-mmap-offset-in-the-fault-handler.patch
         rocknix-0017-clk-qcom-blank-dsi-panels-before-dispcc-park.patch
-        rocknix-0018-drm-msm-dpu-preload-seven-pixels-in-qseed4-behind-the-inline-rotator.patch)
+        rocknix-0018-drm-msm-dpu-preload-seven-pixels-in-qseed4-behind-the-inline-rotator.patch
+        stable-0001-drm-msm-dp-skip-push-idle-when-the-link-was-never-enabled.patch
+        stable-0002-drm-msm-dp-fix-link-bandwidth-check-when-wide-bus-is-enabled.patch
+        stable-0003-drm-msm-dpu-clear-pending-peripheral-flush-state.patch)
 sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             SKIP
             cdbe93282683496da781d8ffc750614b8e02d4edf9c883497488469f9f61a185
@@ -89,7 +95,10 @@ sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             b76d35f52f1c936ed0d01eacb8a41ce6149fec324a896bfbc5f0ec9da297cfd1
             1f8fb8a80978a1939e94ff2a397dc0abe5317bbc03a1006e512bb8095a9a51cf
             2b8592031f6d51b30b82e2d4960098eac10c39050b8ec9d8779f4a7a7c908a71
-            7c1d5de97f6027c606e8260c3addd4d27c3b18e237152ce371740baeee6fdd76)
+            7c1d5de97f6027c606e8260c3addd4d27c3b18e237152ce371740baeee6fdd76
+            8a175ce1ae47de256bd775ed892dc21bfb493c278a2c5ed3d119cd3577c0a477
+            158ba786ac5a5d5cb2df7999269f090f5518a950980dc3ad65c55f7dd6c97da5
+            1138bd37189179a05492cd002370d4a50e2e2327cbdab996b0f61c8a6ae72b0a)
 # Linus Torvalds', Greg Kroah-Hartman's (keys/pgp, as Arch's linux has them).
 validpgpkeys=(ABAF11C65A2970B130ABE3C479BE3E4300411886
               647F28654894E3BD457199BE38DBBDC86092693E)
