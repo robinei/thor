@@ -11,7 +11,7 @@ pub mod scroll;
 pub mod style;
 pub mod widgets;
 
-use clamshell_state::{Event, Id, ItemKey, ListId, PointerEvent, State, Tab};
+use clamshell_state::{Event, Id, ItemKey, ListId, PadInput, PointerEvent, State, Tab};
 
 use crate::gfx::images::Images;
 use crate::gfx::{Canvas, Rect};
@@ -47,6 +47,8 @@ pub enum PadUse {
     /// Only by holding A on the selection, as the Library's details' actions are; then the pad stays
     /// among them until B.
     Held,
+    /// By moving to it, and on it the pad's moves are its list's (see [`PadOut::moves`]).
+    List,
 }
 
 /// The span along x over which a finger on a target sets a value, in the same units as the target's
@@ -73,7 +75,7 @@ impl Track {
 
 /// What the pad's buttons do on a screen, as its views declare while drawing what they act on. The pad's
 /// input reads it from the last frame (see `input::focus`), so a button does what the screen shows.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default)]
 pub struct PadOut {
     /// B and the Back button, and whether it is over the whole screen, as an editor's is, rather than
     /// the screen's own. The last declared wins: what is drawn inside goes back first.
@@ -82,32 +84,31 @@ pub struct PadOut {
     pub start: Option<Id>,
     /// What Y, X and Start press, as their badges show.
     pub keys: [Option<Id>; 3],
-    /// The Library's list, drawn: up and down step through it, the shoulders page and the triggers go to
-    /// its ends, and left and right go as this says.
-    pub list: Option<Sideways>,
+    /// What the view's list does with the pad's moves while the focus is on its targets ([`PadUse::List`]):
+    /// the directions, and the shoulders' pages and the triggers' ends while the focus is on the screen.
+    pub moves: Option<ListMoves>,
     /// The bar's tabs, left to right, each with its button's target, which the shoulders step through.
     pub tabs: [Option<(Tab, Id)>; Tab::ALL.len()],
-    /// A mode of the view's that takes the pad's buttons before anything else does.
-    pub mode: Option<PadMode>,
+    /// A mode of the view's, such as a dock tile being moved, that takes the pad's buttons before anything
+    /// else does: what each does in it.
+    pub mode: Option<fn(PadInput) -> Option<Event>>,
 }
 
-/// A mode that takes the pad's buttons while it is drawn (see `views::mode_input`).
+/// A move of the pad's that a view's list may take (see [`PadOut::moves`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PadMode {
-    /// A dock tile being moved.
-    DockMove,
-    /// The overview of the program's windows.
-    Overview,
+pub enum PadMove {
+    Dir(crate::input::nav::Dir),
+    /// A shoulder: a page on, or back with -1.
+    Page(i32),
+    /// A trigger: to the end, or the start with -1.
+    End(i32),
+    /// The wheel, by notches, over the screen where no scrolled list is.
+    Scroll(i32),
 }
 
-/// What left and right do in the Library's list.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Sideways {
-    /// Step through the collections.
-    Collections,
-    /// Go out of the open folder, or into the selected one: picking, the Files tab is the only one.
-    Folders,
-}
+/// What a list does with a move: `None` if it doesn't take it, which then goes by direction as on any
+/// screen; else what it does, if anything.
+pub type ListMoves = fn(&State, PadMove) -> Option<Option<Event>>;
 
 /// A button of the pad that a badge stands for (see [`widgets::key_action`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,10 +142,11 @@ impl PadKey {
 }
 
 /// What a frame tells the rest of the program besides its picture and targets.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default)]
 pub struct FrameOut {
-    /// How many rows the Library's list on the main screen shows. The state keeps the selection within them.
-    pub list_rows: Option<usize>,
+    /// An event the frame tells the state once it is drawn, such as how many rows a list shows when that
+    /// changed. The last reported wins.
+    pub report: Option<Event>,
     /// The area below the bar on the second screen, where a finger may point (see clamshell-state's
     /// `touch`).
     pub touchpad_area: Option<Rect>,
@@ -284,9 +286,27 @@ impl<'f, 'c> Frame<'f, 'c> {
         self.out.pad.back = Some((PointerEvent::Activate(id).into(), true));
     }
 
-    /// The Library's list is drawn, with left and right going as `sideways` says.
-    pub fn list(&mut self, sideways: Sideways) {
-        self.out.pad.list = Some(sideways);
+    /// Tells the state `event` once the frame is drawn (see [`FrameOut::report`]).
+    pub fn report(&mut self, event: Event) {
+        self.out.report = Some(event);
+    }
+
+    /// The view's list takes the pad's moves as `moves` says, on its targets marked [`PadUse::List`].
+    pub fn list_moves(&mut self, moves: ListMoves) {
+        self.out.pad.moves = Some(moves);
+    }
+
+    /// How many targets have been drawn: with [`Frame::pad_use_since`], what a widget drew is marked.
+    pub fn targets_drawn(&self) -> usize {
+        self.targets.len()
+    }
+
+    /// How the pad reaches the targets it moves to drawn since `first` (see [`Frame::targets_drawn`]); those
+    /// for fingers alone stay so.
+    pub fn pad_use_since(&mut self, first: usize, pad: PadUse) {
+        for t in self.targets.iter_mut().skip(first).filter(|t| t.pad == PadUse::Moves) {
+            t.pad = pad;
+        }
     }
 
     /// The bar's tab `tab` is drawn, after those left of it, with its button's target `id`.
@@ -296,9 +316,9 @@ impl<'f, 'c> Frame<'f, 'c> {
         }
     }
 
-    /// The view is in `mode`, which takes the pad's buttons.
-    pub fn mode(&mut self, mode: PadMode) {
-        self.out.pad.mode = Some(mode);
+    /// The view is in a mode that takes the pad's buttons, each as `input` says.
+    pub fn mode(&mut self, input: fn(PadInput) -> Option<Event>) {
+        self.out.pad.mode = Some(input);
     }
 
     /// The focus starts on `id` when nothing better is known.

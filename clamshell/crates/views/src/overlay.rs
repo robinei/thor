@@ -8,9 +8,9 @@ use clamshell_state::{Event, Id, PadInput};
 
 use clamshell_ui::gfx::icons::Icon;
 use clamshell_ui::gfx::{Rect, Rgb};
+use clamshell_ui::toolkit::Frame;
 use clamshell_ui::toolkit::format::Fmt;
 use clamshell_ui::toolkit::style::{Look, Tone};
-use clamshell_ui::toolkit::{Frame, PadMode};
 
 /// The HUD's text size, as a fraction of the screen's height.
 const HUD_TEXT: f32 = 0.028;
@@ -24,7 +24,7 @@ const ARROW_ICON: f32 = 48.0;
 
 pub fn draw(f: &mut Frame, screen: Rect) {
     if f.s.session().overview().is_some() {
-        f.mode(PadMode::Overview);
+        f.mode(overview_input);
         return overview(f);
     }
     hud(f, screen);

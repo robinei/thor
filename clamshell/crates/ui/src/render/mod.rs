@@ -14,8 +14,6 @@
 //! - Screen pixels are the touchscreen's, used for the virtual touchpad. They are the buffer pixels of
 //!   the second screen, which fills its output.
 
-#[cfg(any(test, feature = "dev"))]
-use clamshell_state::LibraryViewEvent;
 use clamshell_state::{Event, ListEvent, ListId, State};
 
 #[cfg(any(test, feature = "dev"))]
@@ -267,11 +265,11 @@ pub fn list_changes(state: &State, out: &FrameOut) -> impl Iterator<Item = Event
     })
 }
 
-/// What a frame drawn without Wayland reports back to the state, as a live frame would: the Library's rows and
-/// the lists' visible rows.
+/// What a frame drawn without Wayland reports back to the state, as a live frame would: what the views
+/// reported and the lists' visible rows.
 #[cfg(any(test, feature = "dev"))]
 pub fn frame_events(state: &State, out: &FrameOut) -> Vec<Event> {
-    let mut events: Vec<Event> = out.list_rows.filter(|&r| r != state.library_view().rows()).map(|r| LibraryViewEvent::Rows(r).into()).into_iter().collect();
+    let mut events: Vec<Event> = out.report.clone().into_iter().collect();
     events.extend(list_changes(state, out));
     events
 }

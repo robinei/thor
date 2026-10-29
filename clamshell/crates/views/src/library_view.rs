@@ -6,14 +6,15 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use clamshell_state::{Entry, Id, Launch, LibraryViewEvent, LibraryViewId, ListId, PointerEvent, State, Tab};
+use clamshell_state::{Entry, Event, Id, Launch, LibraryViewEvent, LibraryViewId, ListId, PointerEvent, State, Tab};
 
 use clamshell_ui::gfx::icons::Icon;
 use clamshell_ui::gfx::{Column, Keep, Rect, Span, WRAP_LINE};
+use clamshell_ui::input::nav::Dir;
 use clamshell_ui::toolkit::format::{Bytes, DaysAgo, Fmt, PlayTime};
 use clamshell_ui::toolkit::scroll::Scrolled;
 use clamshell_ui::toolkit::style::{self, Look, RADIUS_L, SURFACE_HI, Tone};
-use clamshell_ui::toolkit::{Frame, PadUse, Sideways, widgets};
+use clamshell_ui::toolkit::{Frame, PadMove, PadUse, widgets};
 
 /// The tab bar's height and text size, as fractions of the screen's height.
 pub(super) const TABS_H: f32 = 0.08;
@@ -54,6 +55,39 @@ const COVER_W: f32 = 0.55;
 
 /// Draws the Library over `screen` and returns how many list rows fit. The state keeps the selection within
 /// them.
+/// What the pad's moves do on the Library's list (see `clamshell_ui::toolkit::PadOut::moves`). Up and down
+/// step through the games, scrolling it, counted from the focused game, which isn't the selected one when
+/// the focus came up from the second screen; down past the last goes on by direction, to the second
+/// screen. Left and right switch tabs, or picking, where the Files tab is the only one, go out of the open
+/// folder and into the selected one. A shoulder moves a page, the rows on screen; a trigger to an end.
+fn moves(s: &State, m: PadMove) -> Option<Option<Event>> {
+    let lv = s.library_view();
+    let (len, cursor) = (lv.list().len(), lv.cursor().index);
+    let focused = match s.pointer().focus() {
+        Some(Id::LibraryView(LibraryViewId::Entry(id))) => (0..len).find(|&i| lv.entry_at(i).is_some_and(|e| &e.id == id)),
+        _ => None,
+    };
+    let from = focused.unwrap_or(cursor);
+    let step = |n: i64| Some(Some(LibraryViewEvent::ListStep(i32::try_from(n).unwrap_or(0)).into()));
+    let to = |n: usize| step(n as i64 - cursor as i64);
+    let picking = lv.pick().is_some();
+    match m {
+        PadMove::Dir(Dir::Up) => to(from.saturating_sub(1)),
+        PadMove::Dir(Dir::Down) if from + 1 < len => to(from + 1),
+        PadMove::Dir(Dir::Down) => None,
+        PadMove::Dir(Dir::Left) if picking => Some(lv.group().map(|_| PointerEvent::Activate(Id::LibraryView(LibraryViewId::Up)).into())),
+        // Pressing the selected entry opens it.
+        PadMove::Dir(Dir::Right) if picking => {
+            Some(lv.entry_at(from).filter(|e| e.is_group()).map(|e| PointerEvent::Activate(Id::LibraryView(LibraryViewId::Entry(e.id.clone()))).into()))
+        }
+        PadMove::Dir(Dir::Left) => Some(Some(LibraryViewEvent::CollectionStep(-1).into())),
+        PadMove::Dir(Dir::Right) => Some(Some(LibraryViewEvent::CollectionStep(1).into())),
+        PadMove::Page(n) => step(i64::from(n) * lv.rows().max(1) as i64),
+        PadMove::End(n) => step(i64::from(n) * len as i64),
+        PadMove::Scroll(n) => step(i64::from(n)),
+    }
+}
+
 /// The Library as an app (see `super::apps`): its edit mode, or its list, which a pick shows too.
 pub(super) fn app(f: &mut Frame, screen: Rect) {
     let rows = match f.s.library_view().edit().filter(|_| f.s.library_view().pick().is_none()) {
@@ -63,7 +97,10 @@ pub(super) fn app(f: &mut Frame, screen: Rect) {
         }
         None => draw(f, screen),
     };
-    f.out.list_rows = Some(rows);
+    // The state keeps the selection within the rows on screen.
+    if rows != f.s.library_view().rows() {
+        f.report(LibraryViewEvent::Rows(rows).into());
+    }
 }
 
 pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
@@ -98,7 +135,10 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
         let icon = coll.icon.as_deref().and_then(Icon::named);
         (Id::LibraryView(LibraryViewId::Collection(i as u16)), icon, coll.name.as_str(), i == s.library_view().current())
     });
+    let first = f.targets_drawn();
     let tabs_end = widgets::tabs(f, Rect::new(pad, 0.0, w - 2.0 * pad, tabs_h), h * TAB_TEXT, pad * 0.8, f32::INFINITY, items);
+    // The tabs are the list's, whose moves are its own (see `moves`).
+    f.pad_use_since(first, PadUse::List);
 
     // The first problem found reading the library, such as in library.json or a missing folder, shown at
     // the right end.
@@ -171,8 +211,10 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
         }
     }
     let rows = ((list.h / (h * ROW_H)).floor() as usize).max(1);
+    let first = f.targets_drawn();
     list_rows(f, list, rows, s.library_view().list().len(), pad);
-    f.list(if picking { Sideways::Folders } else { Sideways::Collections });
+    f.pad_use_since(first, PadUse::List);
+    f.list_moves(moves);
     // When there is nothing but ClamShell's own tools, say where games and apps come from, in the middle
     // of the screen. Not while the library is still being read at start, when the Library is empty for a moment.
     if s.library_view().read() && s.library_view().library().entries.iter().all(|g| matches!(g.launch, Launch::Tool(_) | Launch::Builtin(_))) {

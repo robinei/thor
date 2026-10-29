@@ -7,13 +7,13 @@
 //! second screen.
 
 use clamshell_state::levels::Level;
-use clamshell_state::{Event, Id, LevelEvent, LibraryViewEvent, LibraryViewId, PadInput, PointerEvent, RowPart, State, Tab};
+use clamshell_state::{Event, Id, LevelEvent, PadInput, PointerEvent, RowPart, State, Tab};
 use xkeysym::Keysym;
 
 use crate::gfx::Rect;
 use crate::input::nav::{self, Dir, NavTarget};
 use crate::screens::{Screen, Screens};
-use crate::toolkit::{PadOut, PadUse, Sideways, Target};
+use crate::toolkit::{PadMove, PadOut, PadUse, Target};
 
 /// What the last frames drew on each screen, and the screens' sizes in surface pixels.
 pub trait Drawn {
@@ -26,10 +26,10 @@ pub trait Drawn {
 /// Where the pad's focus may go.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PadScope {
-    /// The Library is in front and the focus is in its list or on its tabs. Up and down step through the
-    /// games, and left and right through the collections.
-    LibraryViewList,
-    /// The Library is in front, and the focus may go anywhere on both screens.
+    /// The pad may use both screens and the focus is on a view's list, whose moves are its own (see
+    /// [`PadOut::moves`]).
+    List,
+    /// One of ClamShell's apps is in front, and the focus may go anywhere on both screens.
     BothScreens,
     /// Something else is in front, and the focus stays on the second screen.
     BottomOnly,
@@ -44,10 +44,9 @@ fn on_actions(s: &State, d: &impl Drawn) -> bool {
 }
 
 pub fn scope(s: &State, d: &impl Drawn) -> PadScope {
-    let in_list =
-        d.pad(Screen::Top).list.is_some() && matches!(s.pointer().focus(), Some(Id::LibraryView(LibraryViewId::Entry(_) | LibraryViewId::Collection(_))));
+    let in_list = d.targets(Screen::Top).iter().any(|t| t.pad == PadUse::List && s.pointer().focus() == Some(&t.id));
     match (s.pad().on_top(), in_list) {
-        (true, true) => PadScope::LibraryViewList,
+        (true, true) => PadScope::List,
         (true, false) => PadScope::BothScreens,
         (false, _) => PadScope::BottomOnly,
     }
@@ -103,14 +102,6 @@ pub fn switch_screen(s: &State, d: &impl Drawn, memory: &mut Screens<Option<Id>>
     Some(PointerEvent::Focus(target).into())
 }
 
-/// The position in the Library's list of the focused entry, if the focus is on one.
-fn focused_entry(s: &State) -> Option<usize> {
-    let Some(Id::LibraryView(LibraryViewId::Entry(id))) = s.pointer().focus() else {
-        return None;
-    };
-    (0..s.library_view().list().len()).find(|&i| s.library_view().entry_at(i).is_some_and(|e| &e.id == id))
-}
-
 /// The targets the pad may move between, each with its screen, as the views marked them (see [`PadUse`]).
 /// On targets reached by holding A, they are those alone. Otherwise they are the targets it moves to on
 /// the screens the pad may use.
@@ -122,7 +113,8 @@ pub fn candidates<'d>(s: &State, d: &'d impl Drawn) -> Vec<(Screen, &'d Target)>
     } else {
         (&Screen::BOTH, PadUse::Moves)
     };
-    screens.iter().flat_map(|&screen| d.targets(screen).iter().map(move |t| (screen, t))).filter(|(_, t)| t.pad == pad).collect()
+    let reached = |t: &Target| t.pad == pad || (pad == PadUse::Moves && t.pad == PadUse::List);
+    screens.iter().flat_map(|&screen| d.targets(screen).iter().map(move |t| (screen, t))).filter(|(_, t)| reached(t)).collect()
 }
 
 /// `t` on `screen` placed in the plane [`nav::step`] works in.
@@ -148,36 +140,12 @@ pub fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, dir: Di
         };
     }
     let scope = scope(s, d);
-    // In the Library's list, up and down move through the games, scrolling it, and left and right switch
-    // collections. Down past the last game goes on to the second screen. The steps count from the
-    // focused game, which isn't the selected one when the focus came up from the second screen.
-    if scope == PadScope::LibraryViewList {
-        let len = s.library_view().list().len();
-        let cursor = s.library_view().cursor().index;
-        let from = focused_entry(s).unwrap_or(cursor);
-        let at_end = from + 1 >= len;
-        let sideways = d.pad(Screen::Top).list;
-        let to = |n: usize| LibraryViewEvent::ListStep(i32::try_from(n).unwrap_or(i32::MAX).saturating_sub(i32::try_from(cursor).unwrap_or(i32::MAX)));
-        let step = match dir {
-            Dir::Up => Some(to(from.saturating_sub(1))),
-            Dir::Down if !at_end => Some(to(from + 1)),
-            // Picking, the Files tab is the only one: left goes out of the open folder, right opens the
-            // selected one.
-            Dir::Left if sideways == Some(Sideways::Folders) => {
-                return s.library_view().group().map(|_| PointerEvent::Activate(Id::LibraryView(LibraryViewId::Up)).into());
-            }
-            Dir::Right if sideways == Some(Sideways::Folders) => {
-                // Pressing the selected entry opens it.
-                let folder = s.library_view().entry_at(from).filter(|e| e.is_group());
-                return folder.map(|e| PointerEvent::Activate(Id::LibraryView(LibraryViewId::Entry(e.id.clone()))).into());
-            }
-            Dir::Left => Some(LibraryViewEvent::CollectionStep(-1)),
-            Dir::Right => Some(LibraryViewEvent::CollectionStep(1)),
-            Dir::Down => None,
-        };
-        if let Some(step) = step {
-            return Some(step.into());
-        }
+    // On a view's list, its moves are its own; one it doesn't take goes by direction, as down past the
+    // Library's last game goes on to the second screen.
+    if scope == PadScope::List
+        && let Some(taken) = d.pad(Screen::Top).moves.and_then(|moves| moves(s, PadMove::Dir(dir)))
+    {
+        return taken;
     }
     // Away from the Library, only the second screen is used. If the focus is elsewhere, it moves there first.
     if scope == PadScope::BottomOnly && focus_screen(s, d) != Screen::Bottom {
@@ -239,10 +207,9 @@ pub fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     if on_actions(s, d) {
         return vec![];
     }
-    // On the Library, move a page, which is the rows on screen.
-    if on_library_view(s, d) {
-        let page = i32::try_from(s.library_view().rows()).unwrap_or(1).max(1);
-        return vec![LibraryViewEvent::ListStep(step * page).into()];
+    // On a screen with a list that pages, a page.
+    if let Some(taken) = list_moves(s, d, PadMove::Page(step)) {
+        return taken.into_iter().collect();
     }
     // The bar's tabs, as it draws them.
     let tabs = &d.pad(Screen::Bottom).tabs;
@@ -259,9 +226,10 @@ pub fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     }
 }
 
-/// Whether the pad is on the Library, rather than on a view shown in its place.
-fn on_library_view(s: &State, d: &impl Drawn) -> bool {
-    s.pad().on_top() && focus_screen(s, d) == Screen::Top && d.pad(Screen::Top).list.is_some()
+/// What the top screen's list does with `m` while the pad is on that screen, if it takes it.
+fn list_moves(s: &State, d: &impl Drawn, m: PadMove) -> Option<Option<Event>> {
+    let on_top = s.pad().on_top() && focus_screen(s, d) == Screen::Top;
+    d.pad(Screen::Top).moves.filter(|_| on_top).and_then(|moves| moves(s, m))
 }
 
 /// L2 and R2 go to the Library's first or last entry.
@@ -269,9 +237,8 @@ pub fn trigger(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     if on_actions(s, d) {
         return vec![];
     }
-    if on_library_view(s, d) {
-        let len = i32::try_from(s.library_view().list().len()).unwrap_or(i32::MAX);
-        return vec![LibraryViewEvent::ListStep(step * len).into()];
+    if let Some(taken) = list_moves(s, d, PadMove::End(step)) {
+        return taken.into_iter().collect();
     }
     vec![]
 }
@@ -332,6 +299,7 @@ pub fn desktop_key(sym: Keysym) -> Option<PadInput> {
 #[allow(clippy::indexing_slicing)]
 mod tests {
     use super::*;
+    use clamshell_state::LibraryViewId;
     use clamshell_state::settings::Setting;
     use clamshell_state::{Init, ListId, SettingsId};
 
@@ -356,6 +324,11 @@ mod tests {
         Target { rect: Rect::new(x, y, 10.0, 10.0), id, track: None, list: None, item: None, pad: PadUse::Moves }
     }
 
+    /// `t`, a list's (see [`PadUse::List`]).
+    fn list(t: Target) -> Target {
+        Target { pad: PadUse::List, ..t }
+    }
+
     /// `t`, reached only by holding A.
     fn held(t: Target) -> Target {
         Target { pad: PadUse::Held, ..t }
@@ -373,7 +346,7 @@ mod tests {
         let start = |id: Id| PadOut { start: Some(id), ..PadOut::default() };
         Fake(
             Screens {
-                top: vec![t(0.0, 0.0, entry(s, 0)), t(0.0, 20.0, entry(s, 1))],
+                top: vec![list(t(0.0, 0.0, entry(s, 0))), list(t(0.0, 20.0, entry(s, 1)))],
                 bottom: vec![
                     t(0.0, 0.0, Id::Tab(Tab::Settings)),
                     t(50.0, 0.0, Id::Tab(Tab::Sysinfo)),
@@ -381,7 +354,7 @@ mod tests {
                 ],
             },
             Screens {
-                top: PadOut { list: Some(Sideways::Collections), ..start(entry(s, s.library_view().cursor().index)) },
+                top: start(entry(s, s.library_view().cursor().index)),
                 bottom: PadOut { tabs: Tab::ALL.map(|t| Some((t, Id::Tab(t)))), ..start(Id::Tab(s.bottom().tab())) },
             },
         )
@@ -429,40 +402,6 @@ mod tests {
         // Moving from a lost focus starts at the first target.
         focus(&mut s, Id::Settings(SettingsId::Env));
         assert_eq!(navigate(&s, &d, &memory, Dir::Right), Some(PointerEvent::Focus(entry(&s, 0)).into()));
-    }
-
-    #[test]
-    fn in_library_views_list_up_and_down_step_and_the_end_goes_on_down() {
-        let mut s = state();
-        let d = drawn(&s);
-        let memory = Screens::default();
-        let g = entry(&s, 0);
-        focus(&mut s, g);
-        assert_eq!(scope(&s, &d), PadScope::LibraryViewList);
-        assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(LibraryViewEvent::ListStep(1).into()));
-        assert_eq!(navigate(&s, &d, &memory, Dir::Right), Some(LibraryViewEvent::CollectionStep(1).into()));
-        let len = s.library_view().collection().map_or(0, |c| c.entries.len());
-        s.apply(LibraryViewEvent::ListStep(len as i32).into(), &mut Vec::new());
-        let last = entry(&s, len - 1);
-        focus(&mut s, last.clone());
-        // Past the last game, the focus moves by direction on to the second screen.
-        let mut d = drawn(&s);
-        d.0.top.push(t(0.0, 90.0, last));
-        let below = navigate(&s, &d, &memory, Dir::Down);
-        assert!(matches!(below, Some(Event::Pointer(PointerEvent::Focus(Id::Tab(_))))), "{below:?}");
-    }
-
-    #[test]
-    fn in_library_views_list_up_and_down_step_from_the_focused_entry() {
-        let mut s = state();
-        let d = drawn(&s);
-        let memory = Screens::default();
-        // The focus came up from the second screen onto entry 1, while entry 0 is selected.
-        let g = entry(&s, 1);
-        focus(&mut s, g);
-        assert_eq!(s.library_view().cursor().index, 0);
-        assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(LibraryViewEvent::ListStep(2).into()), "to entry 2");
-        assert_eq!(navigate(&s, &d, &memory, Dir::Up), Some(LibraryViewEvent::ListStep(0).into()), "to entry 0");
     }
 
     #[test]
@@ -523,12 +462,26 @@ mod tests {
             vec![PointerEvent::Activate(Id::Tab(next)).into(), PointerEvent::Focus(Id::Tab(next)).into()],
             "its button, as declared"
         );
+    }
+
+    /// On a list's targets, the list's moves are its own; a move it doesn't take goes by direction. On its
+    /// screen, the shoulders and triggers are its pages and ends.
+    #[test]
+    fn a_lists_moves_are_its_own_and_one_it_declines_goes_by_direction() {
+        let mut s = state();
+        let mut d = drawn(&s);
+        d.1.top.moves = Some(|_, m| match m {
+            PadMove::Dir(Dir::Up) => Some(Some(Event::Home)),
+            PadMove::Dir(_) => None,
+            PadMove::Page(_) | PadMove::End(_) | PadMove::Scroll(_) => Some(Some(Event::HomeTap)),
+        });
         let g = entry(&s, 0);
         focus(&mut s, g);
-        let page = s.library_view().rows() as i32;
-        assert_eq!(shoulder(&s, &d, -1), vec![LibraryViewEvent::ListStep(-page).into()], "in the Library: a page");
-        let len = s.library_view().list().len() as i32;
-        assert_eq!(trigger(&s, &d, 1), vec![LibraryViewEvent::ListStep(len).into()], "the last entry");
+        let memory = Screens::default();
+        assert_eq!(scope(&s, &d), PadScope::List);
+        assert_eq!(navigate(&s, &d, &memory, Dir::Up), Some(Event::Home), "taken");
+        assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(PointerEvent::Focus(entry(&s, 1)).into()), "declined: by direction");
+        assert_eq!((shoulder(&s, &d, 1), trigger(&s, &d, 1)), (vec![Event::HomeTap], vec![Event::HomeTap]));
     }
 
     #[test]

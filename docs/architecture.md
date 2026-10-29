@@ -169,7 +169,10 @@ and fixed once. Seven rules:
   pad's other buttons do is declared by the views as they draw (`PadOut`): B's and the Back button's
   back (an editor's Cancel over everything, else the back of the screen the pad is on), where the focus
   starts, and what Y, X and Start press (a `key_action` badge binds its button unless faded; a drawn
-  keyboard binds X to Backspace). So a button does what the screen shows, and a new screen gets its
+  keyboard binds X to Backspace), what a list does with the pad's moves (the Library's: a game a step,
+  tabs or folders sideways, pages, ends and the wheel), and a mode that takes the buttons (a dock tile
+  moving, the overview). A frame may also report an event, as the Library its rows on screen. The
+  framework knows no screen of ClamShell's. So a button does what the screen shows, and a new screen gets its
   pad meaning by using the shared widgets. Whether the pad may use the top screen stays the state's
   (`Pad::on_top`): under a window, the top screen's last frame is old.
   A touch reaches ClamShell's view where the compositor's scene draws it, and no window over it

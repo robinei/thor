@@ -132,3 +132,35 @@ fn the_focus_starts_where_the_view_shown_says() {
     let row = core.state().library_view().edit().map(|e| Id::from(EditId::Row(e.cursor() as u16)));
     assert_eq!(core.state().pointer().focus(), row.as_ref());
 }
+
+/// In the Library's list, up and down step through the games, counted from the focused one; left and right
+/// switch tabs; past the last game, down goes on by direction to the second screen. A shoulder moves a
+/// page and a trigger to the end.
+#[test]
+fn the_librarys_list_takes_the_pads_moves() {
+    use clamshell_state::LibraryViewEvent;
+    let mut s = state();
+    let memory = Screens::default();
+    let g = entry(&s, 0);
+    focus(&mut s, g);
+    let d = frames(&s);
+    assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(LibraryViewEvent::ListStep(1).into()));
+    assert_eq!(navigate(&s, &d, &memory, Dir::Right), Some(LibraryViewEvent::CollectionStep(1).into()));
+    let page = s.library_view().rows() as i32;
+    assert_eq!(clamshell_ui::input::focus::shoulder(&s, &d, -1), vec![LibraryViewEvent::ListStep(-page).into()], "a page");
+    let len = s.library_view().list().len() as i32;
+    assert_eq!(clamshell_ui::input::focus::trigger(&s, &d, 1), vec![LibraryViewEvent::ListStep(len).into()], "the last entry");
+    // The focus came up from the second screen onto entry 1, while entry 0 is selected.
+    let g = entry(&s, 1);
+    focus(&mut s, g);
+    let d = frames(&s);
+    assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(LibraryViewEvent::ListStep(2).into()), "to entry 2");
+    assert_eq!(navigate(&s, &d, &memory, Dir::Up), Some(LibraryViewEvent::ListStep(0).into()), "to entry 0");
+    // The last game: down goes on to the second screen.
+    s.apply(LibraryViewEvent::ListStep(len).into(), &mut Vec::new());
+    let last = entry(&s, len as usize - 1);
+    focus(&mut s, last);
+    let d = frames(&s);
+    let below = navigate(&s, &d, &memory, Dir::Down);
+    assert!(matches!(&below, Some(Event::Pointer(PointerEvent::Focus(id))) if !matches!(id, Id::LibraryView(_))), "{below:?}");
+}

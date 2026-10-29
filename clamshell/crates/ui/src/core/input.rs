@@ -3,7 +3,7 @@
 
 use clamshell_state::HardwareKey;
 use clamshell_state::session::overview::OverviewEvent;
-use clamshell_state::{Event, Id, LibraryViewEvent, ListEvent, NotificationEvent, PadInput, State};
+use clamshell_state::{Event, Id, ListEvent, NotificationEvent, PadInput, State};
 use xkeysym::Keysym;
 
 use crate::Screen;
@@ -69,13 +69,17 @@ impl Core {
         true
     }
 
-    /// The wheel on `screen` at `position`, by `notches`. Over the main screen it scrolls the Library's
-    /// list by a game per notch. Over a list on the second screen, it scrolls by a row per notch.
+    /// The wheel on `screen` at `position`, by `notches`. Over a scrolled list it scrolls by a row per
+    /// notch. Elsewhere on the main screen, it is the view's list's (see `toolkit::PadOut::moves`), as the
+    /// Library's, which it scrolls by a game per notch.
     pub fn wheel(&mut self, screen: Screen, (x, y): (f64, f64), notches: i32) {
-        if screen == Screen::Top {
-            return self.handle(Event::LibraryView(LibraryViewEvent::ListStep(notches)));
-        }
         let list = self.screens[screen].frames.retained.targets.iter().rev().find(|t| t.rect.contains(x as f32, y as f32)).and_then(|t| t.list);
+        if list.is_none()
+            && screen == Screen::Top
+            && let Some(Some(event)) = self.screens.top.pad.moves.and_then(|moves| moves(&self.state, crate::toolkit::PadMove::Scroll(notches)))
+        {
+            return self.handle(event);
+        }
         if let Some(list) = list {
             self.handle(ListEvent::Scroll(list.list, notches as f32).into());
         }
@@ -119,7 +123,7 @@ impl Core {
         self.fresh();
         // A mode drawn takes the pad's buttons first: a dock tile being moved, or the overview.
         if let Some(mode) = self.screens.bottom.pad.mode.or(self.overlays.top.pad.mode) {
-            if let Some(event) = (self.views.mode_input)(mode, input) {
+            if let Some(event) = mode(input) {
                 self.handle(event);
             }
             return;

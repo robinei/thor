@@ -50,14 +50,12 @@ pub struct Config {
 }
 
 /// The views the framework draws on each layer, given to it rather than known to it: the main screen's,
-/// the second screen's and the overlays, and what a mode a view declared does with the pad's buttons (see
-/// `toolkit::PadMode`).
+/// the second screen's and the overlays.
 #[derive(Clone, Copy)]
 pub struct Views {
     pub top: fn(&mut toolkit::Frame, gfx::Rect),
     pub bottom: fn(&mut toolkit::Frame, gfx::Rect),
     pub overlay: fn(&mut toolkit::Frame, gfx::Rect, Screen),
-    pub mode_input: fn(toolkit::PadMode, clamshell_state::PadInput) -> Option<clamshell_state::Event>,
 }
 
 /// Renders one screen without Wayland, at `size` logical pixels and integer `scale`, to a PNG file, with

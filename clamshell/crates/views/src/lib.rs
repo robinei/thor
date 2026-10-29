@@ -54,18 +54,10 @@ use clamshell_ui::gfx::Rect;
 use clamshell_ui::toolkit::Frame;
 
 /// ClamShell's views, for the framework to draw (see [`clamshell_ui::Views`]).
-pub const VIEWS: clamshell_ui::Views = clamshell_ui::Views { top, bottom, overlay, mode_input };
+pub const VIEWS: clamshell_ui::Views = clamshell_ui::Views { top, bottom, overlay };
 
 /// How much the black layer over the area below the bar hides it while that area is a touchpad.
 const POINTING_FADE: f32 = 0.7;
-
-/// What the pad's `input` does in a view's `mode`, which takes the pad's buttons while drawn.
-pub(crate) fn mode_input(mode: clamshell_ui::toolkit::PadMode, input: clamshell_state::PadInput) -> Option<clamshell_state::Event> {
-    match mode {
-        clamshell_ui::toolkit::PadMode::DockMove => dock::moving_input(input),
-        clamshell_ui::toolkit::PadMode::Overview => overlay::overview_input(input),
-    }
-}
 
 /// The main screen, over all of `screen`: the app of ClamShell's in front, or Setup in the home app's place.
 /// The frame starts black (see `render`).

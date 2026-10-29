@@ -16,7 +16,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::time::Instant;
 
 use clamshell_state::bottom::touch::{Contact, Pointing};
-use clamshell_state::{Effect, Event, Id, LibraryViewEvent, PointerEvent, State};
+use clamshell_state::{Effect, Event, Id, PointerEvent, State};
 
 use crate::Error;
 use crate::gfx::fonts::Found;
@@ -102,9 +102,9 @@ pub struct Core {
     outbox: VecDeque<Effect>,
     /// The events waiting while another is handled.
     queue: EventQueue,
-    /// What the frames recorded since the last [`Core::frames_done`] report: a changed row count of
-    /// the Library's list, and the lists' rows.
-    rows: Option<usize>,
+    /// What the frames recorded since the last [`Core::frames_done`] report: what a view reported (see
+    /// [`crate::toolkit::FrameOut::report`]), and the lists' rows.
+    report: Option<Event>,
     lists: Vec<Event>,
 }
 
@@ -144,7 +144,7 @@ impl Core {
             effects: Vec::new(),
             outbox: VecDeque::new(),
             queue: EventQueue::default(),
-            rows: None,
+            report: None,
             lists: Vec::new(),
         })
     }
@@ -355,7 +355,9 @@ impl Core {
         s.stale = false;
         s.body = out.touchpad_area;
         s.pad = std::mem::take(&mut out.pad);
-        self.rows = self.rows.or(out.list_rows.filter(|&rows| rows != self.state.library_view().rows()));
+        if let Some(event) = out.report.take() {
+            self.report = Some(event);
+        }
         self.lists.extend(render::list_changes(&self.state, &out));
         if whole {
             s.frames.redraw_all(Bounds::of_size(size_px));
@@ -399,8 +401,8 @@ impl Core {
     /// The frames recorded since the last call are done: the state learns what they report. The list's
     /// row count follows the layout, and the state keeps the selection within it.
     pub fn frames_done(&mut self) {
-        if let Some(rows) = self.rows.take() {
-            self.handle(Event::LibraryView(LibraryViewEvent::Rows(rows)));
+        if let Some(event) = self.report.take() {
+            self.handle(event);
         }
         let lists = std::mem::take(&mut self.lists);
         self.handle_all(lists);
@@ -443,6 +445,7 @@ impl EventQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clamshell_state::LibraryViewEvent;
 
     /// Handles events as `Core::handle` does, where handling event `n` below 3 emits event `n + 1`, and
     /// the emitted one is handled after the effects are given.

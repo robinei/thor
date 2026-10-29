@@ -17,7 +17,7 @@ use clamshell_ui::toolkit::format::{Bytes, Fmt, MaybeShare, Share};
 use clamshell_ui::toolkit::scroll::Scrolled;
 use clamshell_ui::toolkit::style::{self, Look, Text, Tone};
 use clamshell_ui::toolkit::widgets::{self, CAPTION_Y, HeaderRight, TileFace, TileShape};
-use clamshell_ui::toolkit::{Frame, PadMode, PadUse};
+use clamshell_ui::toolkit::{Frame, PadUse};
 
 /// The grid always has room for at least this many rows, so that a few entries still get normal-sized
 /// tiles.
@@ -58,7 +58,7 @@ pub(super) fn draw(f: &mut Frame) {
     let mut area = style::content(body);
     area.take_top(pad);
     if s.dock().moving().is_some() {
-        f.mode(PadMode::DockMove);
+        f.mode(moving_input);
         let size = f.text(Text::Small);
         let line = area.take_bottom(size * 1.6);
         f.c.text_fit(line.shifted(0.0, size * 0.4).top_line(size), size, Tone::Dim, "The D-pad moves it · A or B: done", Keep::Start);
