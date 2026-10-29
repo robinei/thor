@@ -424,6 +424,9 @@ class Checks:
         self.started = started
         self.failed = 0
         self.passed = 0
+        # The check running, and each failure with its check and evidence, said again at the end.
+        self.current = ""
+        self.failures = []
 
     def check(self, what, ok, evidence=""):
         if ok:
@@ -431,6 +434,7 @@ class Checks:
             print(f"  ok    {what}")
         else:
             self.failed += 1
+            self.failures.append((self.current, what, evidence))
             print(f"  FAIL  {what}" + (f"\n        {evidence}" if evidence else ""))
         return ok
 
@@ -1617,6 +1621,7 @@ def main():
     try:
         for name in chosen:
             print(name)
+            checks.current = name
             checks.reset()
             try:
                 getattr(checks, name)()
@@ -1626,8 +1631,12 @@ def main():
         inputs.lift_all()
         if not args.keep:
             teardown()
+    if checks.failures:
+        print("failed:")
+        for name, what, evidence in checks.failures:
+            print(f"  {name}: {what}" + (f"\n        {evidence}" if evidence else ""))
     print(f"{checks.passed} ok, {checks.failed} failed")
-    return checks.failed
+    return min(checks.failed, 255)
 
 
 if __name__ == "__main__":
