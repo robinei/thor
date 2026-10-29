@@ -10,6 +10,8 @@ fn router(route: PadRoute) -> (PadRouter, Out) {
     let axes = vec![Axis { code: AbsoluteAxisCode::ABS_X, value: 1000, rest: 0 }, Axis { code: AbsoluteAxisCode::ABS_RZ, value: 0, rest: 0 }];
     let mut out = Out::default();
     let router = PadRouter::new(ranges, PadSnapshot::new(axes), route, Keymap::default(), &mut out);
+    // What it sent as it was made (the controller as it is, to the game) isn't the tests' business.
+    out.pad.clear();
     (router, out)
 }
 
@@ -417,4 +419,15 @@ fn a_resync_presses_home_first_and_lets_it_go_last() {
     }
     assert!(actions(&out).is_empty(), "not Home: {:?}", out.events);
     assert!(out.pad.iter().all(|e| e.as_key().is_none_or(|(k, _)| k != KeyCode::BTN_SOUTH)), "{:?}", out.pad);
+}
+
+/// Made again for a controller in the game's route (a reconnection), the virtual pad shows what is held
+/// on it, after being left at rest while it was away.
+#[test]
+fn a_reconnection_in_the_game_sends_what_is_held() {
+    let ranges = Ranges { stick: Range::STICK, trigger: Range { min: 0, max: 1023 } };
+    let axes = vec![Axis { code: AbsoluteAxisCode::ABS_X, value: 1000, rest: 0 }];
+    let mut out = Out::default();
+    let _router = PadRouter::new(ranges, PadSnapshot::new(axes), PadRoute::Game, Keymap::default(), &mut out);
+    assert!(out.pad.contains(&Raw::abs(AbsoluteAxisCode::ABS_X, 1000)), "{:?}", out.pad);
 }

@@ -182,9 +182,14 @@ impl Remap {
         }
     }
 
-    /// Puts a new keymap in force. What it makes of the controller now replaces what the old one held.
+    /// Puts a new keymap in force. What it makes of the controller now replaces what the old one held;
+    /// the old one's layers on, armed or toggled, and its buttons' timings go, since its ids mean the new
+    /// one's layers now.
     pub(crate) fn set_keymap(&mut self, keymap: Keymap, snap: &PadSnapshot, live: bool, out: &mut Out) {
         self.keymap = keymap;
+        self.activations.clear();
+        self.actuators.clear();
+        self.buzz = None;
         if live {
             self.update(snap, Instant::now(), out);
         }
@@ -213,14 +218,6 @@ impl Remap {
         } else {
             self.ranges.stick.middle()
         }
-    }
-
-    /// Takes the outputs to be what the keymap makes of `snap` already, without sending anything.
-    pub(crate) fn prime(&mut self, snap: &PadSnapshot) {
-        let now = Instant::now();
-        self.actuate(snap, now);
-        self.sent = self.wanted(snap, now);
-        self.buzz = None;
     }
 
     /// The controller's state changed to `snap` at `now`, and the outputs follow.

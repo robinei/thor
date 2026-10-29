@@ -244,8 +244,9 @@ impl PadRouter {
         if away(route) {
             router.snapshot.events(false, &mut out.pad);
         } else {
-            // The virtual pad is taken to show the controller as it is, as games saw it before.
-            router.remap.prime(&router.snapshot);
+            // The virtual pad, left at rest while no controller was there, shows the controller as it is:
+            // what is held across a reconnection is held again.
+            router.enter_game(out);
         }
         router
     }

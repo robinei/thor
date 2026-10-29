@@ -622,6 +622,26 @@ fn a_toggled_layer_and_a_layer_key_the_layer_remaps() {
     assert!(held(&out.mouse).is_empty() && held(&out.pad).contains(&KeyCode::BTN_SOUTH), "Base again: A as on the pad");
 }
 
+/// A keymap put in force while a layer of the old one is toggled on starts with none on: the old layer's id
+/// means another layer in the new one.
+#[test]
+fn a_new_keymap_starts_with_no_layer_on() {
+    let mut k = keymap(&[]);
+    let aim = k.add_layer("aim").unwrap();
+    k.set(Input::Button(Button::LB), Some(Binding { toggle: true, ..to(Output::Layer(aim)) }));
+    k.set_in(aim, Input::Button(Button::A), Some(to(Output::Key(ctrl('y')))));
+    let (mut r, mut out) = router(k.clone(), PadRoute::Game);
+    press(&mut r, KeyCode::BTN_TL, true, &mut out);
+    press(&mut r, KeyCode::BTN_TL, false, &mut out);
+    let mut other = keymap(&[]);
+    let menu = other.add_layer("menu").unwrap();
+    other.set_in(menu, Input::Button(Button::A), Some(to(Output::Key(Chord::of(Key::Char('q'))))));
+    r.set_keymap(other, &mut out);
+    let mut out = Out::default();
+    press(&mut r, KeyCode::BTN_SOUTH, true, &mut out);
+    assert!(held(&out.mouse).is_empty() && held(&out.pad).contains(&KeyCode::BTN_SOUTH), "A as on the pad, not menu's Q");
+}
+
 #[test]
 fn the_gyro_differs_by_layer() {
     let mut k = keymap(&[]);
