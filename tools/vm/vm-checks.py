@@ -508,6 +508,14 @@ class Checks:
         else:
             self.i.hold(ICONS[name], BAR_Y, seconds)
 
+    def shown(self, action):
+        """Does `action`, then waits until the second screen shows what it brought: it differs from
+        before, and then stays as it is for a moment (past a press's highlight; 5 s at most)."""
+        before = self.i.screenshot()[2]
+        action()
+        until(lambda: self.i.screenshot()[2] != before, 5, 0.1)
+        settled(lambda: self.i.screenshot()[2], quiet=0.3, seconds=3)
+
     def open_tab(self, name):
         """A tab open, through the control pipe (not a tap on its icon, at a place that moves with the
         bar's layout: the checks of the bar's taps tap it)."""
@@ -554,24 +562,19 @@ class Checks:
         self.icon("clock")
         self.check("time: a tap on the clock opens the time tab", until(lambda: tab() == "time") and logged(since, "Watch(Time, true)", 2),
                    f"tab {tab()!r}")
-        # The regions: Africa, America, Antarctica, Arctic, Asia (the fifth), ...; Asia's first zone.
-        control("tap time-zone")
-        time.sleep(0.5)
-        self.i.tap(300, TIME_FIRST_Y + 4 * ROW_H)
-        time.sleep(0.5)
+        # The regions: Africa, America, Antarctica, Arctic, Asia (the fifth), ...; Asia's first zone. (Each
+        # tap once the page before it is shown: a tap goes where the screen last drawn has its rows.)
+        self.shown(lambda: control("tap time-zone"))
+        self.shown(lambda: self.i.tap(300, TIME_FIRST_Y + 4 * ROW_H))
         since = now()
         self.i.tap(300, TIME_FIRST_Y)
         self.check("  the time zone's row, Asia, then its first zone, sets it", until(lambda: zone().startswith("Asia/")) and logged(since, "SetTimezone Asia/", 2),
                    f"time zone {zone()!r}")
         # From a region's zones, back to the regions: Africa's first zone.
-        control("tap time-zone")
-        time.sleep(0.5)
-        self.i.tap(300, TIME_FIRST_Y + 4 * ROW_H)
-        time.sleep(0.5)
-        control("tap time-back")
-        time.sleep(0.5)
-        self.i.tap(300, TIME_FIRST_Y)
-        time.sleep(0.5)
+        self.shown(lambda: control("tap time-zone"))
+        self.shown(lambda: self.i.tap(300, TIME_FIRST_Y + 4 * ROW_H))
+        self.shown(lambda: control("tap time-back"))
+        self.shown(lambda: self.i.tap(300, TIME_FIRST_Y))
         self.i.tap(300, TIME_FIRST_Y)
         self.check("  back to the regions, then Africa's first zone", until(lambda: zone().startswith("Africa/")), f"time zone {zone()!r}")
         # Set automatically off: the clock by hand, an hour on and back.
