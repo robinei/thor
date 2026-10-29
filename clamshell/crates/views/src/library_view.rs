@@ -14,7 +14,7 @@ use clamshell_ui::input::nav::Dir;
 use clamshell_ui::toolkit::format::Fmt;
 use clamshell_ui::toolkit::scroll::Scrolled;
 use clamshell_ui::toolkit::style::{self, Look, RADIUS_L, Tone};
-use clamshell_ui::toolkit::{Frame, PadMove, PadUse, widgets};
+use clamshell_ui::toolkit::{Frame, PadKey, PadMove, PadUse, widgets};
 
 use super::art;
 use super::format::{Bytes, DaysAgo, PlayTime};
@@ -154,9 +154,9 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
         let size = h * DETAIL;
         // The actions a row high, in the middle of the tabs' height.
         let (row_h, row_y) = (size * 1.6, (tabs_h - size * 1.6) / 2.0);
-        let cancel_w = widgets::key_action_width(f, row_h, "B", "Cancel");
+        let cancel_w = widgets::key_action_width(f, row_h, Some(PadKey::B), "Cancel");
         let cancel = Rect::new(w - pad - cancel_w, row_y, cancel_w, row_h);
-        widgets::key_action(f, Id::LibraryView(LibraryViewId::CancelPick), cancel, "B", "Cancel", Tone::Fn, false);
+        widgets::key_action(f, Id::LibraryView(LibraryViewId::CancelPick), cancel, Some(PadKey::B), "Cancel", Tone::Fn, false);
         let mut end = cancel.x;
         if pick.saves() {
             use clamshell_state::library_view::pick::SaveHere;
@@ -168,18 +168,18 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
             };
             // At most half the room between the tab and Cancel: a long name is cut, not drawn over the rest.
             let room = end - tabs_end - pad * 3.0;
-            let save_w = widgets::key_action_width(f, row_h, "Start", &label).min(room * 0.5);
+            let save_w = widgets::key_action_width(f, row_h, Some(PadKey::Start), &label).min(room * 0.5);
             let save = Rect::new(end - pad * 2.0 - save_w, row_y, save_w, row_h);
             let tone = if here == SaveHere::Off { Tone::Dim } else { Tone::Accent };
-            widgets::key_action(f, Id::LibraryView(LibraryViewId::SaveHere), save, "Start", &label, tone, here == SaveHere::Off);
+            widgets::key_action(f, Id::LibraryView(LibraryViewId::SaveHere), save, Some(PadKey::Start), &label, tone, here == SaveHere::Off);
             end = save.x;
         }
         let asks = Rect::new(tabs_end + pad * 2.0, 0.0, end - tabs_end - pad * 3.0, tabs_h);
         match &pick.takes {
             clamshell_state::library_view::pick::Takes::Save { name, .. } => {
                 let text = Fmt::<192>::of(format_args!("Save as: {name} \u{270e}"));
-                let save_as = Rect::new(asks.x, row_y, widgets::key_action_width(f, row_h, "Y", &text).min(asks.w), row_h);
-                widgets::key_action(f, Id::LibraryView(LibraryViewId::SaveAs), save_as, "Y", &text, Tone::Fn, false);
+                let save_as = Rect::new(asks.x, row_y, widgets::key_action_width(f, row_h, Some(PadKey::Y), &text).min(asks.w), row_h);
+                widgets::key_action(f, Id::LibraryView(LibraryViewId::SaveAs), save_as, Some(PadKey::Y), &text, Tone::Fn, false);
             }
             _ => {
                 f.c.text_fit(asks, size, Tone::Accent, pick.asks(), Keep::End);
@@ -420,6 +420,16 @@ fn selected(f: &mut Frame, entry: &Entry, screen: Rect, list: Rect, pad: f32) {
     }
 }
 
+/// The pad's button for an action's shortcut.
+fn pad_key(shortcut: clamshell_state::library_view::actions::Shortcut) -> PadKey {
+    use clamshell_state::library_view::actions::Shortcut;
+    match shortcut {
+        Shortcut::Y => PadKey::Y,
+        Shortcut::X => PadKey::X,
+        Shortcut::Start => PadKey::Start,
+    }
+}
+
 /// Draws the details' actions as rows from the top of `r`, each with its pad button, and returns their
 /// height. A opens (plays, or shows it running), Start continues a folder of videos, and Y and X toggle
 /// favourite and on the dock, or Copy and Paste for a browsed file. Then come the file actions, where
@@ -438,11 +448,8 @@ fn actions(f: &mut Frame, entry: &Entry, r: Rect, action_h: f32, pad: f32) -> f3
     let in_actions = s.library_view().in_actions(s.pointer());
     for &action in s.library_view().actions().as_slice() {
         let key = match action {
-            Action::Open => "A",
-            _ if shortcut(Shortcut::Start) == Some(action) => "Start",
-            _ if shortcut(Shortcut::Y) == Some(action) => "Y",
-            _ if shortcut(Shortcut::X) == Some(action) => "X",
-            _ => "",
+            Action::Open => Some(PadKey::A),
+            _ => [Shortcut::Start, Shortcut::Y, Shortcut::X].into_iter().find(|&k| shortcut(k) == Some(action)).map(pad_key),
         };
         let running = s.session().runs(&entry.id);
         let starting = s.session().starting(&entry.id);
@@ -524,8 +531,8 @@ fn actions(f: &mut Frame, entry: &Entry, r: Rect, action_h: f32, pad: f32) -> f3
     // below the actions gives way to it.
     if in_actions {
         let line = Rect::new(r.x, r.y + r.h - action_h, w, action_h);
-        let confirm = widgets::key_hint(f, line, "A", "Confirm");
-        widgets::key_hint(f, Rect::new(line.x + confirm + pad, line.y, line.w - confirm - pad, line.h), "B", "Back");
+        let confirm = widgets::key_hint(f, line, PadKey::A, "Confirm");
+        widgets::key_hint(f, Rect::new(line.x + confirm + pad, line.y, line.w - confirm - pad, line.h), PadKey::B, "Back");
         return r.h;
     }
     y - r.y

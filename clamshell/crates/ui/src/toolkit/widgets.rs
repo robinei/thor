@@ -463,11 +463,11 @@ pub fn toned_value_row(f: &mut Frame, row: Rect, size: f32, label: &str, value: 
     f.c.text_fit(Rect::new(inner.right() - vw, row.y, vw + 1.0, row.h), size, tone, value, Keep::Start);
 }
 
-/// An action and the pad button that does it, as a target filling `r`. It shows the button's name in a
-/// ring, or a pill for a longer name, then the label in `tone`.
-/// Its button presses it, unless faded.
-pub fn key_action(f: &mut Frame, id: Id, r: Rect, key: &str, label: &str, tone: Tone, faded: bool) {
-    if let Some(key) = [PadKey::B, PadKey::Y, PadKey::X, PadKey::Start].into_iter().find(|k| k.name() == key).filter(|_| !faded) {
+/// An action and the pad button that does it, if one does, as a target filling `r`. It shows the
+/// button's name in a ring, or a pill for a longer name, then the label in `tone`. Its button presses it
+/// (see [`Frame::key`]), unless faded.
+pub fn key_action(f: &mut Frame, id: Id, r: Rect, key: Option<PadKey>, label: &str, tone: Tone, faded: bool) {
+    if let Some(key) = key.filter(|_| !faded) {
         f.key(key, id.clone());
     }
     f.button(id, r, Look::ICON, |f| {
@@ -476,17 +476,22 @@ pub fn key_action(f: &mut Frame, id: Id, r: Rect, key: &str, label: &str, tone: 
 }
 
 /// How wide [`key_action`] draws `key`'s badge and `label` in a rect `h` high.
-pub fn key_action_width(f: &mut Frame, h: f32, key: &str, label: &str) -> f32 {
+pub fn key_action_width(f: &mut Frame, h: f32, key: Option<PadKey>, label: &str) -> f32 {
     let d = h * 0.78;
-    let ring_w = d.max(f.c.text_width(d * 0.55, key) + d * 0.6);
+    let ring_w = d.max(f.c.text_width(d * 0.55, badge(key)) + d * 0.6);
     // (With room to spare, so the label isn't cut at its last letter.)
     ring_w + f.pad() + f.c.text_width(h * 0.62, label)
 }
 
 /// A button's badge and what it does, drawn as [`key_action`] draws them but as a hint with nothing to
 /// tap. Returns its width.
-pub fn key_hint(f: &mut Frame, r: Rect, key: &str, label: &str) -> f32 {
-    key_label(f, r, key, label, Tone::Dim, false)
+pub fn key_hint(f: &mut Frame, r: Rect, key: PadKey, label: &str) -> f32 {
+    key_label(f, r, Some(key), label, Tone::Dim, false)
+}
+
+/// The name on `key`'s badge, empty without a key.
+fn badge(key: Option<PadKey>) -> &'static str {
+    key.map_or("", PadKey::name)
 }
 
 /// How strongly a faded badge's ring and letter show.
@@ -495,7 +500,8 @@ const FADED: f32 = 0.35;
 /// Draws the badge, a ring with the button's name, and the label after it, and returns their width.
 /// Without a name there is no ring, but the label stays where the other rows' labels are. The badge is
 /// faded while the button doesn't do the action.
-fn key_label(f: &mut Frame, r: Rect, key: &str, label: &str, tone: Tone, faded: bool) -> f32 {
+fn key_label(f: &mut Frame, r: Rect, key: Option<PadKey>, label: &str, tone: Tone, faded: bool) -> f32 {
+    let key = badge(key);
     let pad = f.pad();
     let d = r.h * 0.78;
     let size = d * 0.55;

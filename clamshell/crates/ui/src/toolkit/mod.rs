@@ -141,6 +141,8 @@ pub type ListMoves = fn(&State, PadMove) -> Option<Option<Event>>;
 /// A button of the pad that a badge stands for (see [`widgets::key_action`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PadKey {
+    /// A presses what the focus is on, so its badge binds nothing.
+    A,
     B,
     Y,
     X,
@@ -151,6 +153,7 @@ impl PadKey {
     /// Its name on the badge.
     pub fn name(self) -> &'static str {
         match self {
+            PadKey::A => "A",
             PadKey::B => "B",
             PadKey::Y => "Y",
             PadKey::X => "X",
@@ -161,7 +164,7 @@ impl PadKey {
     /// Its place in [`PadOut::keys`], for the buttons there.
     pub fn index(self) -> Option<usize> {
         match self {
-            PadKey::B => None,
+            PadKey::A | PadKey::B => None,
             PadKey::Y => Some(0),
             PadKey::X => Some(1),
             PadKey::Start => Some(2),
@@ -364,11 +367,17 @@ impl<'f, 'c> Frame<'f, 'c> {
         self.out.pad.start = Some(id);
     }
 
-    /// `key` presses `id`.
+    /// `key` presses `id`: B as the screen's back, Y, X and Start as their badges show. A presses what
+    /// the focus is on, so it binds nothing.
     pub fn key(&mut self, key: PadKey, id: Id) {
-        match key.index().and_then(|i| self.out.pad.keys.get_mut(i)) {
-            Some(slot) => *slot = Some(id),
-            None => self.back(id),
+        match key {
+            PadKey::A => {}
+            PadKey::B => self.back(id),
+            PadKey::Y | PadKey::X | PadKey::Start => {
+                if let Some(slot) = key.index().and_then(|i| self.out.pad.keys.get_mut(i)) {
+                    *slot = Some(id);
+                }
+            }
         }
     }
 
