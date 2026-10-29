@@ -60,7 +60,7 @@ impl Bottom {
         self.used_at = Some(clock.mono());
     }
 
-    /// Runs after any event: the time it goes unused counts from the first clock reading.
+    /// The first clock reading: the time it goes unused counts from it.
     pub(crate) fn note_clock(&mut self, clock: &Clock) {
         if self.used_at.is_none() && clock.read() {
             self.used_at = Some(clock.mono());

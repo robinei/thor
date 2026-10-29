@@ -548,8 +548,9 @@ impl State {
     ///
     /// Then the rest:
     ///
-    /// 10. The time the second screen goes unused counts from the first clock reading. Whether it is dimmed,
-    ///     or off by itself, is worked out when asked ([`State::bottom_dimmed`], [`State::bottom_off`]).
+    /// 10. (Whether the second screen is dimmed, or off by itself, is worked out when asked
+    ///     ([`State::bottom_dimmed`], [`State::bottom_off`]), from when it was last used: the first tick
+    ///     starts that.)
     /// 11. The browsed folder's selection and armed action; the radios' scans and joins, by the clock.
     /// 12. The idle stage.
     /// 13. The program in force.
@@ -622,7 +623,6 @@ impl State {
         self.dock.follow(&self.session);
         // After every step that reads what the last pass saw: the new windows and the group in front.
         self.session.followed();
-        self.bottom.note_clock(&self.clock);
         self.library_view.follow_folder();
         self.radios.follow(self.clock.mono());
         // Sleep only in the device's own session. A program in front doesn't hold it off; one playing a

@@ -11,11 +11,16 @@ impl State {
     /// The clock ticked. Once a minute, the bar's clock and both screens' burn-in orbit move on. Changes
     /// are saved once they have stopped for a moment.
     pub(crate) fn tick(&mut self, unix_secs: u64, mono_secs: u64, out: &mut Out) {
-        // The first tick. Anything idle heard before it was timed at 0, so count from now.
-        if !self.clock.read() {
+        // The first tick. Anything idle heard before it was timed at 0, so count from now; the second
+        // screen goes unused from now too.
+        let first = !self.clock.read();
+        if first {
             self.idle.resumed(mono_secs);
         }
         self.clock.tick(unix_secs, mono_secs);
+        if first {
+            self.bottom.note_clock(&self.clock);
+        }
         if self.resume.due(mono_secs, SAVE_AFTER) {
             out.effects.push(Effect::Save(Save::Resume(self.resume())));
         }
