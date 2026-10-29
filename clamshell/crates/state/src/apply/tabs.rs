@@ -83,11 +83,10 @@ impl State {
             (Done::Save, Purpose::KeymapName(action)) => self.keymapping.named(action, &editor.text, out),
             (Done::Save, Purpose::ProfileName(ProfileKind::Keymap, action)) => self.keymapping.named_profile(action, &editor.text, out),
             (Done::Save, Purpose::ProfileName(ProfileKind::Curve, action)) => self.curving.named_profile(action, &editor.text, out),
-            (Done::Save, Purpose::FileName(purpose)) => {
-                if let Some(op) = crate::library_view::files::named(purpose, &editor.text) {
-                    self.library_view.run_file_op(op, out);
-                }
-            }
+            (Done::Save, Purpose::FileName(purpose)) => match crate::library_view::files::named(purpose, &editor.text) {
+                Ok(op) => self.library_view.run_file_op(op, out),
+                Err(e) => self.bottom.notice_mut().show(crate::bottom::notice::NoticeKind::Files(Err(e)), self.clock.mono()),
+            },
             (Done::Save, Purpose::PlaceName(what)) => self.library_view.place_named(what, &editor.text, out),
             (Done::Save, Purpose::FormField(field, opened)) => self.library_view.form_typed(field, opened, &editor.text, out),
             (Done::Save, Purpose::SaveName) => self.library_view.save_named(&editor.text),

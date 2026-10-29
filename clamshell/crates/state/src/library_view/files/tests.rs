@@ -252,7 +252,7 @@ fn another_action_or_the_details_changing_disarms() {
 }
 
 /// New folder types its name on the keyboard and makes it in the folder open; Cancel, or a name that
-/// can't be one, makes nothing, and the keyboard goes back.
+/// can't be one, makes nothing (the latter saying why), and the keyboard goes back.
 #[test]
 fn a_new_folder_is_named_on_the_keyboard() {
     let mut s = files_state();
@@ -275,6 +275,7 @@ fn a_new_folder_is_named_on_the_keyboard() {
     s.editor_mut().unwrap().text = "../up".into();
     let fx = tap(&mut s, Id::Editor(crate::EditorId::Save));
     assert!(!fx.iter().any(|e| matches!(e, Effect::Files(_))), "not a name: {fx:?}");
+    assert!(matches!(crate::testkit::notice(&s), Some(NoticeKind::Files(Err(_)))), "and said so");
     assert_eq!(s.bottom().tab(), before);
 }
 

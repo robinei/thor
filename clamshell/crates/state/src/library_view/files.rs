@@ -229,13 +229,16 @@ pub(crate) fn extracted_name(name: &str) -> &str {
     }
 }
 
-/// The operation for a file's name typed for `purpose`, unless the name can't be one.
-pub(crate) fn named(purpose: FileName, name: &str) -> Option<FileOp> {
+/// The operation for a file's name typed for `purpose`, or why the name can't be one.
+pub(crate) fn named(purpose: FileName, name: &str) -> Result<FileOp, String> {
     let name = name.trim();
-    if name.is_empty() || name.contains('/') || name == "." || name == ".." {
-        return None;
+    if name.is_empty() || name == "." || name == ".." {
+        return Err(format!("\"{name}\" can't be a file's name"));
     }
-    Some(match purpose {
+    if name.contains('/') {
+        return Err(format!("A file's name can't have a / in it: \"{name}\""));
+    }
+    Ok(match purpose {
         FileName::Rename(path) => FileOp::Rename { path, name: name.to_owned() },
         FileName::NewFolder(dir) => FileOp::NewFolder { dir, name: name.to_owned() },
         FileName::Extract(archive) => FileOp::Extract { archive, name: name.to_owned() },
