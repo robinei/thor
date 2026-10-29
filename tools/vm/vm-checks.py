@@ -254,17 +254,53 @@ def device(name):
     return sh(f"dev {shlex.quote(name)}").strip()
 
 
-def capture(command, seconds, action):
-    """Runs a reading command in the machine (evtest, libinput) for `seconds` while `action` is done;
-    what it printed."""
-    out = "/tmp/thor-checks-capture"
-    sh(f"rm -f {out}; setsid -f sh -c {shlex.quote(f'timeout {seconds} {command} > {out} 2>&1')} < /dev/null > /dev/null 2>&1")
-    time.sleep(0.5)
+# Where a capture's reader writes, and the file holding its process group.
+CAPTURED = "/tmp/thor-checks-capture"
+
+
+def capture(command, action, done=None, ready="Testing ...", seconds=5.0, settle=0.5):
+    """Runs a reading command in the machine (evtest, libinput; line-buffered, so that its output can be
+    read as it comes) while `action` is done; what it printed. The action is done once the reader reads
+    (`ready`: in its output, or a function of it), and the reader is stopped once `done(output)` holds,
+    or `seconds` after the action if it never does. Without `done` (what is looked for is that nothing
+    comes) it reads for `settle` seconds after the action."""
+    pid = f"{CAPTURED}.pid"
+    started = f"echo $$ > {pid}; exec timeout 60 {command}"
+    sh(f"rm -f {CAPTURED} {pid}; setsid -f sh -c {shlex.quote(started)} > {CAPTURED} 2>&1 < /dev/null")
+    read = lambda: sh(f"cat {CAPTURED} 2>/dev/null")
+    is_ready = ready if callable(ready) else (lambda out: ready in out)
+    if not until(lambda: is_ready(read()), 10, 0.1):
+        raise RuntimeError(f"{command}: not reading after 10 s: {read()[-300:]!r}")
     action()
-    time.sleep(max(0.0, seconds - 0.5))
-    # (Anchored: the remote shell's own command line holds the pattern too.)
-    until(lambda: not sh("pgrep -f '^timeout .*thor-checks-capture' || true").strip(), 3)
-    return sh(f"cat {out}")
+    if done:
+        until(lambda: done(read()), seconds, 0.1)
+    else:
+        time.sleep(settle)
+    # (The reader's whole process group: sudo, a shell's readers.)
+    sh(f"kill -TERM -- -$(cat {pid}) 2>/dev/null")
+    until(lambda: not sh(f"kill -0 $(cat {pid}) 2>/dev/null && echo running").strip(), 3, 0.1)
+    return read()
+
+
+def evtest(device):
+    """evtest reading `device`, line-buffered (see `capture`)."""
+    return f"stdbuf -oL evtest {device}"
+
+
+def libinput(device):
+    """libinput's events of `device`, with tapping on as the compositor has it, line-buffered."""
+    return f"sudo stdbuf -oL libinput debug-events --enable-tap --device {device}"
+
+
+def ev_keys(out):
+    """The key events in evtest's output, as KEY_X1 (down) and KEY_X0 (up)."""
+    return [line.split("(")[2].split(")")[0] + line.rsplit(" ", 1)[1] for line in out.splitlines()
+            if "(EV_KEY)" in line and "value" in line]
+
+
+def rel_x(out):
+    """The REL_X events in evtest's output: their values."""
+    return [int(line.rsplit(" ", 1)[1]) for line in out.splitlines() if "(REL_X)" in line and "value" in line]
 
 
 def grabbed(path):
@@ -320,18 +356,31 @@ class Inputs:
 
 
 def pad(*commands):
-    """Commands for the fake pad (tools/vm/vm.py pad do)."""
-    sh(f"timeout 5 sh -c 'cat > $XDG_RUNTIME_DIR/fake-pad'", input="\n".join(commands) + "\n")
+    """Commands for the fake pad (tools/vm/vm.py pad do), carried out by the time this returns: it answers
+    each line in its log ("ok: ..." or "error: ..."), and the answers are waited for. One it refused, or
+    no answer in the time the commands take and 5 s more, is an error."""
+    lines = [c for c in commands if c.strip()]
+    takes = sum(float(w[-1]) if len(w) > 2 or w[0] == "sleep" else 80 for w in (c.split() for c in lines)
+                if w[0] in ("sleep", "tap")) / 1000
+    since = now()
+    sh(f"timeout 5 sh -c 'cat > $XDG_RUNTIME_DIR/fake-pad'", input="\n".join(lines) + "\n")
+    answers = lambda: [l for l in sh(f"journalctl --user -u {vm.FAKE_PAD_UNIT} {after(since)} -o cat --no-pager").splitlines()
+                       if l.startswith(("ok: ", "error: "))]
+    if not until(lambda: len(answers()) >= len(lines), takes + 5, 0.1):
+        raise RuntimeError(f"the fake pad carried out {len(answers())} of {lines}")
+    refused = [a for a in answers() if a.startswith("error: ")]
+    if refused:
+        raise RuntimeError(f"the fake pad refused: {refused}")
 
 
 def press(button, ms=80):
     pad(f"tap {button} {ms}")
-    time.sleep(ms / 1000 + 0.3)
+    time.sleep(0.3)
 
 
 def dpad(direction):
     pad(f"dpad {direction}", "sleep 80", "dpad none")
-    time.sleep(0.4)
+    time.sleep(0.3)
 
 
 def focus_library_view():
@@ -700,7 +749,8 @@ class Checks:
             time.sleep(0.5)
             self.i.touch.slide(0, 300, PAD_Y, 900, PAD_Y, 20, 1.0)
             self.i.touch.up(0)
-        out = capture(f"sudo libinput debug-events --enable-tap --device {virtual}", 4, tap_then_slide)
+        clicked_and_moved = lambda out: "POINTER_BUTTON" in out and out.count("POINTER_MOTION") > 3
+        out = capture(libinput(virtual), tap_then_slide, clicked_and_moved, ready="DEVICE_ADDED")
         self.check("  a tap below the bar clicks at once", "POINTER_BUTTON" in out, out.strip()[-300:])
         motion = out.count("POINTER_MOTION")
         self.check("  a finger below the bar moves the pointer", motion > 3, f"{motion} motion events; {out.strip()[-300:]!r}")
@@ -713,7 +763,7 @@ class Checks:
                 time.sleep(0.04)
                 self.i.touch.fingers({0: (500, y - step * 15), 1: (700, y - step * 15)})
             self.i.touch.lift([0, 1])
-        out = capture(f"sudo libinput debug-events --enable-tap --device {virtual}", 4, two_fingers_up)
+        out = capture(libinput(virtual), two_fingers_up, lambda out: "POINTER_SCROLL_FINGER" in out, ready="DEVICE_ADDED")
         self.check("  two fingers moving together scroll", "POINTER_SCROLL_FINGER" in out, out.strip()[-300:])
         self.icon("dock")
         self.check("  a finger on the bar still taps the bar (the dock opens)", until(lambda: tab() == "dock"), f"tab {tab()!r}")
@@ -941,7 +991,8 @@ class Checks:
             time.sleep(0.3)
             self.i.tap(600, PAD_Y)
         # (libinput's own context taps, as the compositor's does on ClamShell's touchpad.)
-        out = capture(f"sudo libinput debug-events --enable-tap --device {virtual}", 4, slide_then_tap)
+        moved_and_clicked = lambda out: "POINTER_BUTTON" in out and out.count("POINTER_MOTION") > 3
+        out = capture(libinput(virtual), slide_then_tap, moved_and_clicked, ready="DEVICE_ADDED")
         motion = out.count("POINTER_MOTION")
         self.check("  a finger sliding over the keys moves the pointer", motion > 3, f"{motion} motion events; {out.strip()[-300:]!r}")
         self.check("  a tap while it points clicks", "POINTER_BUTTON" in out, out.strip()[-300:])
@@ -1001,8 +1052,8 @@ class Checks:
         self.icon("pad-mouse")
         on = logged(since, "PadRoute(Mouse)")
         mouse = device("clamshell pad mouse")
-        out = capture(f"evtest {mouse}", 2, lambda: pad("stick left 1 0", "sleep 500", "stick left 0 0"))
-        moves = out.count("(REL_X)")
+        out = capture(evtest(mouse), lambda: pad("stick left 1 0", "sleep 500", "stick left 0 0"), lambda out: len(rel_x(out)) > 10)
+        moves = len(rel_x(out))
         self.check("pad mouse: on from the bar, the stick moves the pointer", on and moves > 10,
                    f"route logged {on}, {moves} REL_X events")
         self.icon("pad-mouse")
@@ -1027,9 +1078,9 @@ class Checks:
         if not self._terminal_with_keyboard():
             return
         mouse = device("clamshell pad mouse")
-        out = capture(f"evtest {mouse}", 2, lambda: dpad("up") or dpad("left"))
-        self.check("  the D-pad types arrows", "(KEY_UP), value 1" in out and "(KEY_LEFT), value 1" in out,
-                   out.strip()[-300:])
+        arrows = lambda out: "(KEY_UP), value 1" in out and "(KEY_LEFT), value 1" in out
+        out = capture(evtest(mouse), lambda: dpad("up") or dpad("left"), arrows)
+        self.check("  the D-pad types arrows", arrows(out), out.strip()[-300:])
 
     def pad_held_key(self):
         if not plug_pad():
@@ -1085,23 +1136,24 @@ class Checks:
             return
         game = front()
         virtual = device("clamshell pad (Xbox 360)")
-        out = capture(f"evtest {virtual}", 3, lambda: pad("press home", "sleep 100", "press back", "sleep 400", "release back",
-                                                         "sleep 100", "release home"))
-        mode = [line for line in out.splitlines() if "BTN_MODE" in line and "value" in line]
+        modes = lambda out: [line for line in out.split("Testing ...")[-1].splitlines() if "BTN_MODE" in line and "value" in line]
+        out = capture(evtest(virtual), lambda: pad("press home", "sleep 100", "press back", "sleep 400", "release back",
+                                                   "sleep 100", "release home"), lambda out: len(modes(out)) >= 2)
+        mode = modes(out)
         self.check("  Home then Back: the game's Guide, down then up", len(mode) == 2 and "value 1" in mode[0]
                    and "value 0" in mode[1], f"{mode}")
         self.check("  and not ClamShell's Home (the game stays in front), Back not the game's",
                    front() == game and "BTN_BACK" not in out.split("Testing ...")[-1], f"front {front()!r}")
-        out = capture(f"evtest {virtual}", 3, lambda: pad("tap ayn 200"))
-        mode = [line for line in out.split("Testing ...")[-1].splitlines() if "BTN_MODE" in line and "value" in line]
+        out = capture(evtest(virtual), lambda: pad("tap ayn 200"), lambda out: len(modes(out)) >= 2)
+        mode = modes(out)
         self.check("  AYN: the game's Guide, down then up (the game stays in front)", len(mode) == 2 and "value 1" in mode[0]
                    and "value 0" in mode[1] and front() == game, f"{mode}, front {front()!r}")
-        out = capture(f"evtest {virtual}", 3, lambda: pad("tap home 900"))
+        out = capture(evtest(virtual), lambda: pad("tap home 900"))
         self.check("  Home held long alone: not Guide (Home on release: the Library in front)",
                    "BTN_MODE" not in out.split("Testing ...")[-1] and until(lambda: front() == "the Library", 3),
                    f"front {front()!r}")
         press("home")
-        out = capture(f"evtest {virtual}", 2, lambda: press("home"))
+        out = capture(evtest(virtual), lambda: press("home"))
         self.check("  Home pressed: ClamShell's (the Library in front), the game sees nothing",
                    until(lambda: front() == "the Library", 3) and "BTN_MODE" not in out.split("Testing ...")[-1],
                    f"front {front()!r}")
@@ -1152,29 +1204,34 @@ class Checks:
                           f"front {front()!r}; {journal(since)[-300:]!r}"):
             return
         mouse, virtual = device("clamshell pad mouse"), device("clamshell pad (Xbox 360)")
-        both = f"sh -c 'evtest {mouse} > /tmp/thor-checks-mouse 2>&1 & evtest {virtual}'"
-        out = capture(both, 2, lambda: press("a", 150))
-        keys = [line.split("(")[2].split(")")[0] + line.rsplit(" ", 1)[1] for line in sh("cat /tmp/thor-checks-mouse").splitlines()
-                if "(EV_KEY)" in line and "value" in line]
-        self.check("  A on the pad: Ctrl+X on the virtual keyboard, Ctrl first and last",
-                   keys == ["KEY_LEFTCTRL1", "KEY_X1", "KEY_X0", "KEY_LEFTCTRL0"], f"{keys}")
+        # Both read at once: the keyboard's into a file of its own.
+        keyboard = "/tmp/thor-checks-mouse"
+        both = f"sh -c {shlex.quote(f'{evtest(mouse)} > {keyboard} 2>&1 & {evtest(virtual)}')}"
+        typed_keys = lambda: ev_keys(sh(f"cat {keyboard} 2>/dev/null"))
+        both_ready = lambda out: "Testing ..." in out and "Testing ..." in sh(f"cat {keyboard} 2>/dev/null")
+        ctrl_x = ["KEY_LEFTCTRL1", "KEY_X1", "KEY_X0", "KEY_LEFTCTRL0"]
+        sh(f"rm -f {keyboard}")
+        out = capture(both, lambda: press("a", 150), lambda _: typed_keys() == ctrl_x, ready=both_ready)
+        keys = typed_keys()
+        self.check("  A on the pad: Ctrl+X on the virtual keyboard, Ctrl first and last", keys == ctrl_x, f"{keys}")
         self.check("  and nothing on the game's pad", "BTN_SOUTH" not in out.split("Testing ...")[-1], out.strip()[-300:])
-        out = capture(f"evtest {mouse}", 2, lambda: pad("stick right 1 0", "sleep 600", "stick right 0 0"))
-        moves = len([line for line in out.splitlines() if "(REL_X)" in line and "value" in line])
+        out = capture(evtest(mouse), lambda: pad("stick right 1 0", "sleep 600", "stick right 0 0"), lambda out: len(rel_x(out)) > 20)
+        moves = len(rel_x(out))
         self.check("  the right stick moves the pointer", moves > 20, f"{moves} REL_X events")
-        out = capture(f"evtest {mouse}", 2, lambda: pad("gyro 0 -60 0", "sleep 600", "gyro 0 0 0"))
-        moves = [line for line in out.splitlines() if "(REL_X)" in line and "value" in line]
+        out = capture(evtest(mouse), lambda: pad("gyro 0 -60 0", "sleep 600", "gyro 0 0 0"))
+        moves = rel_x(out)
         self.check("  the gyro without LB: nothing", not moves, moves[:5])
-        out = capture(f"evtest {mouse}", 2.5, lambda: pad("press lb", "gyro 0 -60 0", "sleep 600", "gyro 0 0 0", "release lb"))
-        moved = sum(int(line.rsplit(" ", 1)[1]) for line in out.splitlines() if "(REL_X)" in line and "value" in line)
+        gyro_with_lb = lambda: pad("press lb", "gyro 0 -60 0", "sleep 600", "gyro 0 0 0", "release lb")
+        out = capture(evtest(mouse), gyro_with_lb, lambda out: sum(rel_x(out)) > 100)
+        moved = sum(rel_x(out))
         self.check("  the gyro with LB held moves the pointer", moved > 100, f"pointer moved {moved} px")
         # The gyro's speed slid up on the edit screen's panel, the game still running: further.
         since = now()
         for line in ["tab settings", "long setting keymap", f"tap keymap-edit {row}", "tap map-from gyro", "slide speed 300 450"]:
             control(line)
         sent = logged(since, f"pad: player 1's keymap {ident} (Check)", 3)
-        out = capture(f"evtest {mouse}", 2.5, lambda: pad("press lb", "gyro 0 -60 0", "sleep 600", "gyro 0 0 0", "release lb"))
-        faster = sum(int(line.rsplit(" ", 1)[1]) for line in out.splitlines() if "(REL_X)" in line and "value" in line)
+        out = capture(evtest(mouse), gyro_with_lb, lambda out: sum(rel_x(out)) > moved * 1.5)
+        faster = sum(rel_x(out))
         speed = (bound(keymap_named("Check"), "Gyro") or {}).get("speed", 0)
         self.check("  the gyro's speed slid up: sent to the pad at once, saved, the pointer goes further",
                    sent and speed >= 90 and faster > moved * 1.5, f"{moved} px, then {faster} px; speed {speed}")
@@ -1185,8 +1242,9 @@ class Checks:
         for line in ["tab settings", "long setting keymap", "tap keymap 1"]:
             control(line)
         self.check("  Default chosen, sent to the pad", logged(since, "pad: player 1's keymap 0 (Default)", 3), journal(since)[-300:])
-        out = capture(both, 2, lambda: press("a", 150))
-        mouse_keys = [line for line in sh("cat /tmp/thor-checks-mouse").splitlines() if "(EV_KEY)" in line and "value" in line]
+        sh(f"rm -f {keyboard}")
+        out = capture(both, lambda: press("a", 150), lambda out: "(BTN_SOUTH), value 0" in out, ready=both_ready)
+        mouse_keys = typed_keys()
         self.check("  Default: A is the game's A, nothing on the keyboard", "(BTN_SOUTH), value 1" in out and not mouse_keys,
                    f"{out.strip()[-200:]!r}; mouse {mouse_keys}")
 
@@ -1219,10 +1277,9 @@ class Checks:
         game = front()
         mouse = device("clamshell pad mouse")
 
-        def keys(*commands, seconds=2.5):
-            out = capture(f"evtest {mouse}", seconds, lambda: pad(*commands))
-            return [line.split("(")[2].split(")")[0] + line.rsplit(" ", 1)[1] for line in out.splitlines()
-                    if "(EV_KEY)" in line and "value" in line]
+        def keys(*commands, want):
+            """The keys typed while the pad does `commands`, read until they are `want`."""
+            return ev_keys(capture(evtest(mouse), lambda: pad(*commands), lambda out: ev_keys(out) == want))
 
         def held(events):
             down = set()
@@ -1230,11 +1287,14 @@ class Checks:
                 (down.add if e.endswith("1") else down.discard)(e[:-1])
             return down
 
-        got = keys("press a", "sleep 150", "release a")
-        self.check("  A: Ctrl+X", got == ["KEY_LEFTCTRL1", "KEY_X1", "KEY_X0", "KEY_LEFTCTRL0"], f"{got}")
-        got = keys("press back", "sleep 100", "press a", "sleep 150", "release a", "sleep 100", "release back")
-        self.check("  Back held, A: Ctrl+Y (Back itself nothing)", got == ["KEY_LEFTCTRL1", "KEY_Y1", "KEY_Y0", "KEY_LEFTCTRL0"], f"{got}")
-        got = keys("press back", "sleep 100", "press a", "sleep 150", "release back", "sleep 150", "release a")
+        ctrl_x = ["KEY_LEFTCTRL1", "KEY_X1", "KEY_X0", "KEY_LEFTCTRL0"]
+        ctrl_y = ["KEY_LEFTCTRL1", "KEY_Y1", "KEY_Y0", "KEY_LEFTCTRL0"]
+        got = keys("press a", "sleep 150", "release a", want=ctrl_x)
+        self.check("  A: Ctrl+X", got == ctrl_x, f"{got}")
+        got = keys("press back", "sleep 100", "press a", "sleep 150", "release a", "sleep 100", "release back", want=ctrl_y)
+        self.check("  Back held, A: Ctrl+Y (Back itself nothing)", got == ctrl_y, f"{got}")
+        got = ev_keys(capture(evtest(mouse), lambda: pad("press back", "sleep 100", "press a", "sleep 150", "release back", "sleep 150", "release a"),
+                              lambda out: "KEY_X0" in ev_keys(out) and not held(ev_keys(out))))
         self.check("  Back let go while A is held: Ctrl+Y up, then A's Ctrl+X, nothing left down",
                    "KEY_Y0" in got and "KEY_X1" in got and not held(got), f"{got}")
         # The layer made Once in its menu, the game still running: Back tapped, then A twice: Ctrl+Y, then
@@ -1247,9 +1307,8 @@ class Checks:
         self.check("  the layer made Once, saved", once, k)
         since = now()
         got = keys("press back", "sleep 80", "release back", "sleep 150", "press a", "sleep 150", "release a", "sleep 150",
-                   "press a", "sleep 150", "release a", seconds=3.0)
-        self.check("  Once: Back tapped, then A twice: Ctrl+Y, then Ctrl+X",
-                   got == ["KEY_LEFTCTRL1", "KEY_Y1", "KEY_Y0", "KEY_LEFTCTRL0", "KEY_LEFTCTRL1", "KEY_X1", "KEY_X0", "KEY_LEFTCTRL0"], f"{got}")
+                   "press a", "sleep 150", "release a", want=ctrl_y + ctrl_x)
+        self.check("  Once: Back tapped, then A twice: Ctrl+Y, then Ctrl+X", got == ctrl_y + ctrl_x, f"{got}")
         said = sh(f"journalctl --user -u {vm.FAKE_PAD_UNIT} {after(since)} -o cat --no-pager | grep rumble || true")
         self.check("  a buzz as it is armed, another as it goes off", "rumble 0 40000" in said and "rumble 30000 0" in said, said)
         self.check("  the game stays in front", front() == game, f"front {front()!r}")
@@ -1282,22 +1341,22 @@ class Checks:
         mouse = device("clamshell pad mouse")
         virtual = device("clamshell pad (Xbox 360)")
 
-        def keys(*commands, seconds=2.5, dev=mouse):
-            out = capture(f"evtest {dev}", seconds, lambda: pad(*commands))
-            return [line.split("(")[2].split(")")[0] + line.rsplit(" ", 1)[1] for line in out.splitlines()
-                    if "(EV_KEY)" in line and "value" in line]
+        def keys(*commands, want, dev=mouse):
+            """The keys `dev` gives while the pad does `commands`, read until they are `want`."""
+            return ev_keys(capture(evtest(dev), lambda: pad(*commands), lambda out: ev_keys(out) == want))
 
-        got = keys("press a", "sleep 100", "release a")
+        got = keys("press a", "sleep 100", "release a", want=["KEY_X1", "KEY_X0"])
         self.check("  A tapped: X, on letting go", got == ["KEY_X1", "KEY_X0"], f"{got}")
-        got = keys("press a", "sleep 700", "release a")
+        got = keys("press a", "sleep 700", "release a", want=["KEY_E1", "KEY_E0"])
         self.check("  A held: E only, until let go", got == ["KEY_E1", "KEY_E0"], f"{got}")
-        got = keys("press b", "sleep 80", "release b", "sleep 100", "press b", "sleep 150", "release b")
+        got = keys("press b", "sleep 80", "release b", "sleep 100", "press b", "sleep 150", "release b", want=["KEY_Z1", "KEY_Z0"])
         self.check("  B twice: Z, held while the second press is", got == ["KEY_Z1", "KEY_Z0"], f"{got}")
-        got = keys("press b", "sleep 80", "release b", seconds=2.0, dev=virtual)
+        got = keys("press b", "sleep 80", "release b", want=["BTN_EAST1", "BTN_EAST0"], dev=virtual)
         self.check("  B once: the game's B, after the double's window", got == ["BTN_EAST1", "BTN_EAST0"], f"{got}")
-        got = keys("press y", "sleep 80", "release y", "sleep 300")
+        # (T still on once the pad is done, Y let go 300 ms before.)
+        got = keys("press y", "sleep 80", "release y", "sleep 300", want=["KEY_T1"])
         self.check("  Y: T on at the press, staying on", got == ["KEY_T1"], f"{got}")
-        got = keys("press y", "sleep 80", "release y")
+        got = keys("press y", "sleep 80", "release y", want=["KEY_T0"])
         self.check("  Y again: T off", got == ["KEY_T0"], f"{got}")
         press("home")
 
