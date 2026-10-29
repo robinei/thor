@@ -298,6 +298,8 @@ pub enum DeviceId {
     Refresh,
     /// The Library's edit mode (see [`crate::library_view::edit`]).
     EditLibrary,
+    /// The count of players' row (see [`crate::device_view::controllers`]): steps the count.
+    Players,
     /// A controller's row, by its place in the list (see [`crate::device_view::controllers`]): steps its
     /// player.
     Controller(u16),

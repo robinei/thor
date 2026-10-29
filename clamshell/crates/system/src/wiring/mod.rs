@@ -151,7 +151,9 @@ pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, gl
     if let Some(dir) = paths.state_dir.as_deref() {
         let store = Store::open(dir);
         pad.send(pad::Command::Sticks(store.sticks()));
-        pad.send(pad::Command::Players(store.controllers().into_iter().map(|c| (c.key, c.player)).collect()));
+        let saved = store.controllers();
+        let of = saved.controllers.into_iter().map(|c| (c.key, c.player)).collect();
+        pad.send(pad::Command::Players(clamshell_state::device_view::controllers::Players { count: saved.players, of }));
     }
     // Sleep waits for the pad to close the gyro's stream.
     log_failed_start("sleep", crate::power::sleep::spawn_hold(pad.clone()));

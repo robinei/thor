@@ -264,6 +264,7 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
             ]
             .map(Id::Device)
             .into_iter()
+            .chain(std::iter::once(Id::Device(DeviceId::Players)))
             .chain((0..s.device_view().controllers().list().len() as u16).map(|i| Id::Device(DeviceId::Controller(i)))),
         ),
         // The step's own; the tab's below are the step's tab's.
@@ -822,6 +823,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             Event::Controller(match rng.below(3) {
                 0 => ControllerEvent::Connected { key: key.into(), name: format!("{key} controller") },
                 1 => ControllerEvent::Disconnected(key.into()),
+                2 if rng.one_in(3) => ControllerEvent::StepCount(if rng.one_in(2) { 1 } else { -1 }),
                 _ => ControllerEvent::Step(rng.below(4) as u16, if rng.one_in(2) { 1 } else { -1 }),
             })
         }
@@ -1009,9 +1011,15 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     }
     // 14. The pad thread's players (as sent; one never sent is player 1, as there) are the state's.
     for c in s.device_view().controllers().list() {
-        let sent_player = sent.players.get(&c.key).copied().unwrap_or(crate::device_view::controllers::Player::ONE);
+        let sent_player = sent.players.of(&c.key);
         ensure!(sent_player == c.player, "14: {} is player {} but the pad thread has {}", c.key, c.player.number(), sent_player.number());
     }
+    ensure!(
+        sent.players.count == s.device_view().controllers().count(),
+        "14: the pad thread has {} players, not {}",
+        sent.players.count.number(),
+        s.device_view().controllers().count().number()
+    );
     let keys = s.device_view().controllers().list();
     ensure!(keys.iter().enumerate().all(|(i, c)| !keys.iter().skip(i + 1).any(|o| o.key == c.key)), "14: a controller listed twice");
     if started {

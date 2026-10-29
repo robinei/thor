@@ -22,7 +22,7 @@ use crate::bottom::editor::{Editor, Purpose};
 use crate::effect::{Effect, Save};
 use crate::out::Out;
 use crate::setup::account::{Account, AccountCommand, PasswordStep};
-use controllers::{Controller, ControllerEvent, Controllers};
+use controllers::{ControllerEvent, Controllers, Saved};
 use sticks::{Calibrations, Progress, Sticks};
 
 /// The refresh rate's calibration.
@@ -76,7 +76,7 @@ pub enum SticksEvent {
 }
 
 impl DeviceView {
-    pub(crate) fn new(calibrations: Calibrations, controllers: Vec<Controller>) -> DeviceView {
+    pub(crate) fn new(calibrations: Calibrations, controllers: Saved) -> DeviceView {
         DeviceView { calibrations, controllers: Controllers::new(controllers), ..DeviceView::default() }
     }
 
@@ -154,6 +154,8 @@ impl DeviceView {
             DeviceId::Refresh => {}
             // A controller's row steps its player on.
             DeviceId::Controller(i) => self.controllers.step(usize::from(i), 1, out),
+            // The count's row steps how many players there are.
+            DeviceId::Players => self.controllers.step_count(1, out),
             DeviceId::Close => out.events.push(Event::Entry(clamshell_library::BuiltinApp::Device.id().into(), crate::EntryAct::Quit)),
             DeviceId::EditLibrary => out.events.push(crate::LibraryViewEvent::Edit.into()),
         }

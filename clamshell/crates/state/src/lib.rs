@@ -180,8 +180,9 @@ pub struct Init {
     pub first_start: bool,
     /// The sticks' calibrations, by controller (see [`crate::device_view::sticks`]).
     pub sticks: crate::device_view::sticks::Calibrations,
-    /// Every controller seen, with its player (see [`crate::device_view::controllers`]).
-    pub controllers: Vec<crate::device_view::controllers::Controller>,
+    /// How many players there are, and every controller seen with its player (see
+    /// [`crate::device_view::controllers`]).
+    pub controllers: crate::device_view::controllers::Saved,
 }
 
 /// Everything ClamShell knows, as its areas (see the [crate docs](crate)).

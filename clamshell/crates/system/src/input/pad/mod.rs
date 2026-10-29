@@ -92,8 +92,8 @@ pub(crate) enum Command {
     /// The sticks' calibrations, by controller. They are sent at start, and a calibration made here is
     /// kept here too.
     Sticks(clamshell_state::device_view::sticks::Calibrations),
-    /// The controllers' players, by key. They are sent at start and whenever one changes. A controller not
-    /// among them is player 1.
+    /// How many players there are, and the controllers' players by key. They are sent at start and whenever
+    /// they change. A controller not among them is player 1.
     Players(Players),
 }
 

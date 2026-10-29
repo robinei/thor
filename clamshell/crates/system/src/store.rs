@@ -13,7 +13,7 @@
 //!   - `curves/<name>.json` holds one HDR curve, named the same way as keymaps.
 //!   - `window-rules.json`, `dock.json`, `autostart.json`, `favourites.json`, `resume.json` (where the Library
 //!     and the second screen were), `sticks.json` (the sticks' calibrations, by controller),
-//!     `controllers.json` (every controller seen, by key, with its name and player), `brightness.json`, `clock.json`, and `first-start.json` (whether the first start is over, see
+//!     `controllers.json` (how many players there are, and every controller seen, by key, with its name and player), `brightness.json`, `clock.json`, and `first-start.json` (whether the first start is over, see
 //!     `clamshell_state::setup`).
 //! - `plays.jsonl` has one line per play: the entry's id, the start in seconds since the epoch and the
 //!   duration in seconds. Lines are appended, and a line cut short is skipped.
@@ -291,8 +291,8 @@ impl Store {
         read_json(&self.file("sticks.json")).unwrap_or_default()
     }
 
-    /// Every controller seen, with its player.
-    pub fn controllers(&self) -> Vec<clamshell_state::device_view::controllers::Controller> {
+    /// How many players there are, and every controller seen with its player.
+    pub fn controllers(&self) -> clamshell_state::device_view::controllers::Saved {
         read_json(&self.file("controllers.json")).unwrap_or_default()
     }
 
