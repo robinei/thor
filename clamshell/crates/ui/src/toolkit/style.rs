@@ -141,12 +141,17 @@ impl Look {
     /// white while pressed or when it is the chosen option of a choice. The target is as large as the
     /// room it is given.
     pub const TEXT: Look = Look { radius: RADIUS, fill: None, inset: 0.0, ring: -2.0, press_fill: false };
-    /// A button on a background of its own.
-    pub const CARD: Look = Look { radius: RADIUS, fill: Some(SURFACE_HI), inset: 0.0, ring: -2.0, press_fill: true };
+
     /// A tab's label (the Library's collections, the settings' scopes).
     pub const TAB: Look = Look { radius: RADIUS_S, fill: None, inset: 4.0, ring: 2.0, press_fill: true };
     /// A keyboard key: a square cell with the ring just inside it.
     pub const KEY: Look = Look { radius: 0.0, fill: None, inset: 0.0, ring: 3.0, press_fill: true };
     /// Nothing shown (the dark screen).
     pub const PLAIN: Look = Look { radius: 0.0, fill: None, inset: 0.0, ring: 0.0, press_fill: true };
+
+    /// A card, such as a row of a list with a selection: on a background of its own while `selected`, and
+    /// on the black otherwise.
+    pub const fn card(selected: bool) -> Look {
+        Look { radius: RADIUS, fill: if selected { Some(SURFACE_HI) } else { None }, inset: 0.0, ring: -2.0, press_fill: true }
+    }
 }

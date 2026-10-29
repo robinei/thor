@@ -13,7 +13,7 @@ use clamshell_ui::gfx::{Column, Keep, Rect, Span, WRAP_LINE};
 use clamshell_ui::input::nav::Dir;
 use clamshell_ui::toolkit::format::Fmt;
 use clamshell_ui::toolkit::scroll::Scrolled;
-use clamshell_ui::toolkit::style::{self, Look, RADIUS_L, SURFACE_HI, Tone};
+use clamshell_ui::toolkit::style::{self, Look, RADIUS_L, Tone};
 use clamshell_ui::toolkit::{Frame, PadMove, PadUse, widgets};
 
 use super::art;
@@ -272,7 +272,7 @@ fn list_rows(f: &mut Frame, list: Rect, rows: usize, len: usize, pad: f32) {
         } else {
             Tone::Normal
         };
-        let look = Look { fill: selected.then_some(SURFACE_HI), ..Look::CARD };
+        let look = Look::card(selected);
         // Every row's picture is a square, cropped to fill it, so that the titles line up.
         let thumb_h = r.h * THUMB;
         let thumb = Rect::new(r.x + pad * 0.4, r.y + (r.h - thumb_h) / 2.0, thumb_h * ROW_ASPECT, thumb_h);

@@ -16,7 +16,7 @@ use super::library_view::{ACTION, DETAIL, LIST_W, ROW_H, ROW_TEXT, TAB_TEXT, TAB
 use clamshell_ui::gfx::{Align, Keep, Rect};
 use clamshell_ui::toolkit::format::Fmt;
 use clamshell_ui::toolkit::scroll::Scrolled;
-use clamshell_ui::toolkit::style::{self, Look, SURFACE_HI, Tone};
+use clamshell_ui::toolkit::style::{self, Look, Tone};
 use clamshell_ui::toolkit::{Frame, widgets};
 
 /// Draws the edit mode over `screen`. Returns how many list rows fit, as the Library's list does.
@@ -82,7 +82,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect, edit: &Edit) -> usize {
         let at = scrolled.row(i);
         let r = Rect::new(at.x, at.y, at.w, row_h - 2.0);
         let selected = i == edit.cursor();
-        let look = Look { fill: selected.then_some(SURFACE_HI), ..Look::CARD };
+        let look = Look::card(selected);
         let size = r.h * ROW_TEXT;
         let text = Rect::new(r.x + pad * 0.6, r.y, r.w - pad * 1.2, r.h);
         f.button(EditId::Row(i as u16).into(), r, look, |f| match row {
@@ -127,7 +127,7 @@ fn list_view(f: &mut Frame, h: f32, edit: &Edit, config: &Config, panel: Panel, 
         let at = scrolled.row(i);
         let r = Rect::new(at.x, at.y, at.w - pad, row_h - 2.0);
         let selected = i == edit.cursor();
-        let look = Look { fill: selected.then_some(SURFACE_HI), ..Look::CARD };
+        let look = Look::card(selected);
         let size = r.h * ROW_TEXT;
         let text = Rect::new(r.x + pad * 0.6, r.y, r.w - pad * 1.2, r.h);
         let tone = if selected { Tone::High } else { Tone::Normal };
@@ -253,7 +253,7 @@ fn fields(f: &mut Frame, h: f32, config: &Config, item: ItemRef<'_>, selected: O
         match (selected, field.picks()) {
             (Some(_), Some(_)) => {
                 let typed = Rect::new(row.x, row.y, row.w - choose_w, row.h);
-                f.button(EditId::Field(i as u16).into(), typed, Look { fill: lit.then_some(SURFACE_HI), ..Look::CARD }, draw);
+                f.button(EditId::Field(i as u16).into(), typed, Look::card(lit), draw);
                 let choose = Rect::new(row.x + row.w - choose_w, row.y, choose_w, row.h);
                 // Without a Files tab, there is nowhere to pick in.
                 if f.s.library_view().can_pick() {
@@ -262,7 +262,7 @@ fn fields(f: &mut Frame, h: f32, config: &Config, item: ItemRef<'_>, selected: O
                     f.c.text_fit(choose, detail, Tone::Dim, "No Files tab", Keep::End);
                 }
             }
-            (Some(_), None) => f.button(EditId::Field(i as u16).into(), row, Look { fill: lit.then_some(SURFACE_HI), ..Look::CARD }, draw),
+            (Some(_), None) => f.button(EditId::Field(i as u16).into(), row, Look::card(lit), draw),
             (None, _) => draw(f),
         }
         y += row_h;
