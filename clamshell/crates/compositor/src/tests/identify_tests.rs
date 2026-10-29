@@ -132,6 +132,12 @@ fn a_client_gone_or_stuck_while_identified_holds_up_nothing() {
     let mut clients = 0;
     server.dh.backend_handle().with_all_clients(|_| clients += 1);
     assert_eq!(clients, 1, "the client gone ended, and the stuck ones aren't taken in yet");
+    // Each read runs on a thread of its own: the stuck process's and the gone client's may not have
+    // begun yet, though the last client's has ended.
+    let until = Instant::now() + Duration::from_secs(5);
+    while calls.load(Ordering::SeqCst) < 3 && Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(1));
+    }
     assert_eq!(calls.load(Ordering::SeqCst), 3, "one read of the stuck process for its two clients");
     assert_eq!(told(&server), Some(Resolution::Half));
 }
