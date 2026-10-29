@@ -22,10 +22,12 @@ pub(super) fn mount_point(path: &Path) -> PathBuf {
 /// Moves `path` to the Trash. That is the home Trash if `path` is on the same filesystem, or else its
 /// filesystem's `.Trash-<uid>`, where the path is recorded relative to the filesystem's top.
 pub(super) fn trash(path: &Path, data_home: Option<&Path>) -> Result<(), String> {
-    let path = path.canonicalize().map_err(|e| format!("{}: {e}", name_of(path)))?;
+    let path = resolved(path).map_err(|e| format!("{}: {e}", name_of(path)))?;
     let dev = |p: &Path| fs::metadata(p).map(|m| m.dev()).ok();
     let home_trash = home_trash(data_home).ok_or("no home dir")?;
-    let on_home = dev(&path) == home_trash.ancestors().find_map(dev);
+    // A symlink is on its own folder's filesystem, whatever it points at.
+    let own_dev = fs::symlink_metadata(&path).map(|m| m.dev()).ok();
+    let on_home = own_dev == home_trash.ancestors().find_map(dev);
     let (trash, recorded) = if on_home {
         (home_trash, path.clone())
     } else {
@@ -69,6 +71,17 @@ pub(super) fn trash(path: &Path, data_home: Option<&Path>) -> Result<(), String>
         }
         n += 1;
     }
+}
+
+/// `path` with its folder resolved, but not its last part: a symlink is trashed itself, never what it
+/// points at.
+fn resolved(path: &Path) -> io::Result<PathBuf> {
+    let name = path.file_name().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no file name"))?;
+    let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    // It must be there, as a link or not.
+    let path = parent.canonicalize()?.join(name);
+    fs::symlink_metadata(&path)?;
+    Ok(path)
 }
 
 /// The Trash's record of `path`, if it is at the top of a Trash's `files`.
@@ -132,5 +145,20 @@ mod tests {
         let to = restore(&trash_dir.join("files/a b.txt")).unwrap();
         assert_eq!(to, home.join("docs/a b.txt").canonicalize().unwrap());
         assert!(!trash_dir.join("info/a b.txt.trashinfo").exists());
+    }
+
+    /// A symlink goes to the Trash itself; what it points at stays.
+    #[test]
+    fn a_symlink_is_trashed_not_what_it_points_at() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        fs::create_dir_all(home.join("games")).unwrap();
+        std::os::unix::fs::symlink(home.join("games"), home.join("link")).unwrap();
+        let data = home.join(".local/share");
+        trash(&home.join("link"), Some(&data)).unwrap();
+        assert!(home.join("games").is_dir(), "the folder stays");
+        assert!(home.join("link").symlink_metadata().is_err(), "the link went");
+        let trashed = home_trash(Some(&data)).unwrap().join("files/link");
+        assert!(trashed.symlink_metadata().unwrap().file_type().is_symlink());
     }
 }

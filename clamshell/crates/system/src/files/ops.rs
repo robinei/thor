@@ -145,7 +145,10 @@ pub(super) fn free_name(dir: &Path, name: &str) -> PathBuf {
 /// Copies `path` into `into`, or moves it if `cut`, under a free name. A copy's progress is sent.
 fn paste(path: &Path, into: &Path, cut: bool, sink: &impl Sink) -> Result<String, String> {
     let name = name_of(path);
-    if into.starts_with(path) {
+    // A folder can't go into itself, also through a symlink to either. A symlink is copied as a link.
+    let resolved = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    let folder = path.symlink_metadata().is_ok_and(|m| m.is_dir());
+    if into.starts_with(path) || (folder && resolved(into).starts_with(resolved(path))) {
         return Err(format!("{name} can't go into itself"));
     }
     if cut && path.parent() == Some(into) {
@@ -153,9 +156,13 @@ fn paste(path: &Path, into: &Path, cut: bool, sink: &impl Sink) -> Result<String
     }
     let to = free_name(into, &name);
     if cut {
+        // Across filesystems a move is a copy, then the original removed; any other failure is the move's.
         match fs::rename(path, &to) {
             Ok(()) => return Ok(format!("Moved {name}")),
-            Err(e) => log::debug!("files: renaming {} to {}: {e}: copying it", path.display(), to.display()),
+            Err(e) if e.kind() == io::ErrorKind::CrossesDevices => {
+                log::debug!("files: renaming {} to {}: {e}: copying it", path.display(), to.display());
+            }
+            Err(e) => return Err(format!("Moving {name}: {e}")),
         }
     }
     let mut progress =
@@ -198,13 +205,15 @@ fn extract(archive: &Path, name: &str, sink: &impl Sink) -> Result<String, Strin
     // Read as it comes, since a full pipe would stall bsdtar.
     let errors = crate::os::command::drain("bsdtar", child.stderr.take());
     let mut stall = Stall::new(Instant::now());
+    // bsdtar's open file is the archive's resolved path: through a symlinked folder it differs.
+    let opened = archive.canonicalize().unwrap_or_else(|_| archive.to_path_buf());
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Ok(status),
             Ok(None) => {}
             Err(e) => break Err(e),
         }
-        let read = read_so_far(child.id(), archive);
+        let read = read_so_far(child.id(), &opened);
         if let Some(read) = read {
             let fraction = (read as f64 / total as f64) as f32;
             let _ = sink.send(Event::Files(FilesEvent::Busy { what: format!("Extracting {what}"), fraction }));
@@ -310,6 +319,11 @@ fn copy(from: &Path, to: &Path, progress: &mut Progress<impl Sink>) -> io::Resul
         }
         return fs::set_permissions(to, meta.permissions());
     }
+    // A pipe, socket or device has no contents to copy: opening a pipe would wait for a writer.
+    if !meta.is_file() {
+        log::info!("files: {}: not a file or folder: not copied", from.display());
+        return Ok(());
+    }
     let mut src = fs::File::open(from)?;
     let mut dst = fs::OpenOptions::new().write(true).create_new(true).open(to)?;
     let mut buf = vec![0u8; 1 << 20];
@@ -361,6 +375,23 @@ mod tests {
         paste(&dir.join("from"), &dir.join("to"), true, &tx).unwrap();
         assert_eq!(fs::read_to_string(dir.join("to/from/sub/f.txt")).unwrap(), "hello");
         assert!(!dir.join("from").exists(), "cut: moved");
+    }
+
+    /// A folder can't be pasted into itself through a symlink either; a pipe in a folder is left out
+    /// rather than waited on.
+    #[test]
+    fn pastes_go_not_into_themselves_and_skip_pipes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        fs::create_dir_all(dir.join("games/sub")).unwrap();
+        std::os::unix::fs::symlink(dir.join("games"), dir.join("link")).unwrap();
+        let (tx, _rx) = mpsc::channel();
+        paste(&dir.join("games"), &dir.join("link/sub"), false, &tx).unwrap_err();
+        let fifo = dir.join("games/pipe");
+        rustix::fs::mknodat(rustix::fs::CWD, &fifo, rustix::fs::FileType::Fifo, rustix::fs::Mode::from_raw_mode(0o600), 0).unwrap();
+        fs::create_dir(dir.join("to")).unwrap();
+        assert_eq!(paste(&dir.join("games"), &dir.join("to"), false, &tx).unwrap(), "Copied games");
+        assert!(dir.join("to/games/sub").is_dir() && dir.join("to/games/pipe").symlink_metadata().is_err());
     }
 
     #[test]
