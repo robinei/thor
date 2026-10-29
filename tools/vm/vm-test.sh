@@ -8,6 +8,11 @@
 #   tools/vm/vm-test.sh [CHECK...]   (all checks, or these: vm-checks.py --list)
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+# One machine at a time. A second run's QEMU can't open the disk, but the run would go on with the first
+# run's machine, which answers on the same ssh port: set it up again and restart its session under its
+# checks, and stop it at the end.
+DISK="qemu-system-.*thor-vm/.*/disk.qcow2"
+if pgrep -f "^$DISK" > /dev/null; then echo "a VM runs already (another run?): not starting another"; exit 1; fi
 cd "$ROOT/clamshell" && cargo build --release --quiet && cargo build --release --quiet -p clamshell-system --examples || exit 1
 cd "$ROOT"
 RUNS="${XDG_STATE_HOME:-$HOME/.local/state}/thor/vm-runs"
@@ -17,12 +22,16 @@ LOG="$RUNS/$STAMP-machine.log"
 python3 tools/vm/vm.py run --headless > "$LOG" 2>&1 &
 VM=$!
 # (Checks that restart the machine leave a QEMU that isn't ours by parentage: stop any on the VM's disk.)
-stop() { kill "$VM" 2>/dev/null; wait "$VM" 2>/dev/null; pkill -f "qemu-system-.*thor-vm/.*/disk.qcow2" 2>/dev/null; }
+stop() { kill "$VM" 2>/dev/null; wait "$VM" 2>/dev/null; pkill -f "^$DISK" 2>/dev/null; }
 trap stop EXIT INT TERM
 # The session and system files as this repository has them, as soon as the machine answers (the login
 # script among them: one from an older checkout may not start the session at all); then the console's
 # login again if the session isn't up.
-for _ in $(seq 1 60); do timeout 8 python3 tools/vm/vm.py ssh true 2> /dev/null && break; sleep 4; done
+for _ in $(seq 1 60); do
+    kill -0 "$VM" 2> /dev/null || { echo "the VM stopped (log: $LOG)"; exit 1; }
+    timeout 8 python3 tools/vm/vm.py ssh true 2> /dev/null && break
+    sleep 4
+done
 python3 tools/vm/vm.py sync > /dev/null || { echo "syncing the VM's files failed (log: $LOG)"; exit 1; }
 timeout 8 python3 tools/vm/vm.py ssh 'systemctl --user is-active clamshell' 2> /dev/null | grep -q '^active' \
     || python3 tools/vm/vm.py ssh 'sudo systemctl daemon-reload; sudo systemctl restart getty@tty1' > /dev/null
