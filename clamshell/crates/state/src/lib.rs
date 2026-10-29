@@ -412,10 +412,13 @@ impl State {
             self.saved_place = place;
             self.resume.touch(self.clock.mono());
         }
-        // The follow-up steps don't queue events: one queued here would never be handled.
+        // The follow-up steps don't queue events: one queued here would never be handled, so it is a bug,
+        // and in a release build at least logged.
         debug_assert!(out.events.is_empty(), "an event queued after the event was handled: {:?}", out.events);
+        for dropped in out.events.drain(..) {
+            out.log.push((LogLevel::Warn, format!("an event queued after the event was handled, dropped: {dropped:?}")));
+        }
         *effects = out.effects;
-        out.events.clear();
         self.queue = out.events;
         self.log = out.log;
     }
