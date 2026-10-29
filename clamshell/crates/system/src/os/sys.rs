@@ -59,12 +59,18 @@ static SEEN: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<u32,
 pub(crate) fn saw(pid: u32) -> Option<u64> {
     let start = start_time(pid)?;
     let mut seen = crate::os::lock(&SEEN);
-    // Keep the map bounded by forgetting everything now and then, including windows long gone.
+    // Keep the map bounded by forgetting, now and then, the processes gone (or whose ids were taken
+    // again), and only those: one forgotten while it runs would count as the same as anything given its id.
     if seen.len() > 1024 {
-        seen.clear();
+        forget_gone(&mut seen);
     }
     seen.insert(pid, start);
     Some(start)
+}
+
+/// Forgets the processes `seen` that are gone, or whose ids another has taken.
+fn forget_gone(seen: &mut std::collections::HashMap<u32, u64>) {
+    seen.retain(|pid, start| start_time(*pid) == Some(*start));
 }
 
 /// Whether process `pid` is the one last seen with that id. A process never seen counts as the same.
@@ -191,5 +197,15 @@ mod tests {
         crate::os::lock(&SEEN).insert(me, 1);
         assert!(!same_process(me));
         assert!(same_process(u32::MAX - 1), "never seen: as far as is known");
+    }
+
+    /// Keeping the map bounded forgets the processes gone, not one still running.
+    #[test]
+    fn the_processes_gone_are_forgotten_and_only_they() {
+        let me = std::process::id();
+        let mut seen: std::collections::HashMap<u32, u64> = (0..10).map(|i| (u32::MAX - 10 - i, 1)).collect();
+        seen.insert(me, start_time(me).unwrap());
+        forget_gone(&mut seen);
+        assert_eq!(seen.keys().copied().collect::<Vec<_>>(), [me]);
     }
 }
