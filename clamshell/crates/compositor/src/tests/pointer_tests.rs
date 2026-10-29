@@ -156,6 +156,15 @@ fn turn(host: &std::cell::RefCell<Host>) -> impl FnMut(&mut Server) + '_ {
     }
 }
 
+/// The server's turn after the client ended, which sees its connection gone and its constraints with it.
+/// (The client's thread ends as it drops its connection: whether the server turned again before
+/// [`TestClient::serve`] saw the thread end is chance, so a test of what the host was asked for takes
+/// this turn before it looks.)
+fn client_gone(display: &mut Display<Server>, server: &mut Server, host: &std::cell::RefCell<Host>) {
+    display.dispatch_clients(server).unwrap();
+    turn(host)(server);
+}
+
 /// At [`Step::Shown`], moves the pointer over the window: to (290, 175), and by (10, 5) as a relative-only
 /// device does.
 fn shown(server: &mut Server, step: &Step) {
@@ -212,7 +221,8 @@ fn a_locked_pointer_stays_put_and_its_motion_goes_to_the_window() {
         server.sync_pointer_capture(|mode| host.borrow_mut().capture(mode));
     });
     assert_eq!(checked, 2);
-    assert_eq!(host.into_inner().modes, [CaptureMode::Locked]);
+    client_gone(&mut display, &mut server, &host);
+    assert_eq!(host.into_inner().modes, [CaptureMode::Locked, CaptureMode::Free], "locked, then freed with the client gone");
 }
 
 #[test]
@@ -250,8 +260,9 @@ fn unmapping_ends_a_lock_and_a_persistent_lock_resumes_once_mapped_again() {
         server.sync_pointer_capture(|mode| host.borrow_mut().capture(mode));
     });
     assert_eq!(checked, 4);
-    // Each release reaches the host before a later capture.
-    assert_eq!(host.into_inner().modes, [CaptureMode::Locked, CaptureMode::Free, CaptureMode::Locked]);
+    client_gone(&mut display, &mut server, &host);
+    // Each release reaches the host before a later capture; the last with the client gone.
+    assert_eq!(host.into_inner().modes, [CaptureMode::Locked, CaptureMode::Free, CaptureMode::Locked, CaptureMode::Free]);
 }
 
 #[test]
