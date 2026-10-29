@@ -577,6 +577,36 @@ fn a_dialog_of_a_window_below_shows_over_it_there_at_its_fixed_size() {
     assert_eq!(checked, 2);
 }
 
+/// A centred Wayland window of no fixed size is configured with no size (0x0), so that it chooses its own
+/// within its bounds: here a window that filled the screen, made a utility window, isn't held at the size
+/// it filled.
+#[test]
+fn a_centred_wayland_window_chooses_its_own_size() {
+    let (mut display, mut server) = ServerBuilder::new().started();
+    let client = spawn_client(&mut display, launched(), |globals, mut queue, steps| {
+        let mut client = Client::default();
+        let _window = open_toplevel(&globals, &mut queue, &mut client, "test", None);
+        steps.step(*client.sizes.last().unwrap());
+        queue.roundtrip(&mut client).unwrap();
+        steps.step(*client.sizes.last().unwrap());
+    });
+    let mut step = 0;
+    let checked = client.serve(&mut display, &mut server, Server::frame, |display, server, size| {
+        step += 1;
+        if step == 1 {
+            assert_eq!(size, (960, 540), "a main window fills the screen");
+            let mut facts = server.core.state().session().windows()[0].facts.clone();
+            facts.role = clamshell_state::presentation::WindowRole::Utility;
+            server.core.handle(clamshell_state::WindowEvent::Changed(facts).into());
+            server.frame();
+            display.flush_clients().unwrap();
+        } else {
+            assert_eq!(size, (0, 0), "a utility window chooses");
+        }
+    });
+    assert_eq!(checked, 2);
+}
+
 #[test]
 fn a_destroyed_window_leaves_the_state_and_the_server() {
     let (mut display, mut server) = ServerBuilder::new().started();

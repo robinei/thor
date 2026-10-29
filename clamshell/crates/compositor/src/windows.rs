@@ -173,8 +173,10 @@ impl Server {
             let Some(window) = self.core.state().session().window(client.id) else { continue };
             if let Some(surface) = client.window.toplevel() {
                 let area = self.area(self.core.state().session().below(client.id));
-                // (Its place is the X11 side's alone: an xdg toplevel is centred as it is drawn.)
-                let Some(configure) = crate::geometry::configure(window, &client.shown, area, Some(client.window.geometry().size), None) else { continue };
+                // An xdg toplevel has no size of its own apart from what it was configured to, so a centred one
+                // of no fixed size chooses its size within the bounds (one larger is scaled down). Its place
+                // is the X11 side's alone: it is centred as it is drawn.
+                let Some(configure) = crate::geometry::configure(window, &client.shown, area, None, None) else { continue };
                 surface.with_pending_state(|pending| {
                     pending.size = configure.size;
                     pending.bounds = Some(area.size);

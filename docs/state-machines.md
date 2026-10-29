@@ -764,9 +764,12 @@ screen: a game's at Fit, any other at Native. Dialogs, utility and splash window
 size that is none of the screen's resolutions or Xwayland's modes are Centred at Native; a fixed size equal
 to one of those fills the screen. Size at Fit, Integer or Stretch applies to main windows only.
 
-The compositor configures a fixed-size window at its size, a Fullscreen one at the screen's area or at its
-game's resolution, and any other at its own size clipped to the area; Fullscreen sets the xdg fullscreen
-state, and keyboard focus sets Activated. Drawing and input use one `Geometry` (viewport, origin, scale)
+The compositor configures a window the same way for X11 and Wayland (`geometry::configure`): a fixed-size
+window at its size, a Fullscreen one at the screen's area or at its game's resolution (an X11 game at the
+mode Xwayland emulates for it), and any other X11 window at its own size clipped to the area, centred in
+it; any other Wayland window gets no size (0×0: the client chooses within the bounds, the area, and one
+larger is scaled down), and is centred as it is drawn. Fullscreen sets the xdg fullscreen state, and
+keyboard focus sets Activated. Drawing and input use one `Geometry` (viewport, origin, scale)
 per window. A scaled Fullscreen window is fitted by its picture (the surface `picture_surface` picks, such
 as Wine's game subsurface), in the picture's own shape when that differs from its place by more than 2 %.
 Native never scales up. A press on the black around a top window reaches neither the window nor the Library
@@ -793,10 +796,13 @@ Tests: in the state `dialogs_and_fixed_windows_are_centred_and_games_fit_ignored
 `fitting_preserves_aspect_and_uses_the_same_inverse_for_input`,
 `native_size_is_sharp_and_oversized_fixed_windows_scale_down`,
 `a_fullscreen_game_at_a_lower_resolution_is_configured_to_it_and_scaled_up`,
+`a_fixed_window_is_configured_to_its_size_centred_however_large`,
+`a_centred_window_keeps_its_own_size_within_the_area_and_an_unknown_one_is_the_clients`,
+`an_emulated_mode_is_configured_only_when_fullscreen`,
 `a_mode_stretched_over_the_screen_keeps_its_shape`,
 `integer_scaling_shows_the_largest_whole_multiple_of_the_picture`,
 `a_picture_in_part_of_its_window_is_what_is_fitted`; the compositor's lifecycle test above (a client that
-stops acknowledging configure is fitted below at once). The fullscreen and activated states, and the black
+stops acknowledging configure is fitted below at once), `a_centred_wayland_window_chooses_its_own_size`. The fullscreen and activated states, and the black
 around a window, are checked by `tests/nested-compositor.py` (real pixels above, below, on return and at
 Home; X11 fixed-size and transient windows centred on black). `tests/picture-scaling.py` checks that test
 games (Wine's subsurface and viewport, SDL 3 on Wayland and on X11, at the desktop's size and at a lower
