@@ -13,9 +13,9 @@ use std::fmt::{self, Display, Formatter, Write};
 use clamshell_state::DeviceId;
 use clamshell_state::Id;
 use clamshell_state::bottom::editor::{Editor, Purpose};
-use clamshell_state::setup::Refresh;
+use clamshell_state::device_view::Refresh;
+use clamshell_state::device_view::sticks::{Phase, Progress, StickAxis};
 use clamshell_state::setup::account::PasswordStep;
-use clamshell_state::setup::sticks::{Phase, Progress, StickAxis};
 
 use super::time::Name;
 use clamshell_ui::gfx::{Align, Column, Keep, Rect};
@@ -36,7 +36,7 @@ const DOT: f32 = 0.07;
 /// The view, over all of `screen`.
 pub(super) fn draw(f: &mut Frame, screen: Rect) {
     let s = f.s;
-    let device = s.setup();
+    let device = s.device_view();
     let (pad, size) = (f.pad(), f.text(Text::Body));
     let area = style::content(screen).inset(pad);
     let small = f.text(Text::Small);

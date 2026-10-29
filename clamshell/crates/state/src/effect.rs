@@ -276,5 +276,5 @@ pub enum Save {
     /// again.
     FirstStartDone,
     /// The sticks' calibrations, by controller.
-    Sticks(crate::setup::sticks::Calibrations),
+    Sticks(crate::device_view::sticks::Calibrations),
 }

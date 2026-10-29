@@ -222,8 +222,8 @@ pub fn battery(now: u64) -> Vec<Event> {
 
 /// A stick calibration halfway through. The centres are taken, the left stick has been turned up and
 /// right so far, and the right stick is resting.
-pub fn sticks_progress() -> clamshell_state::setup::sticks::Progress {
-    use clamshell_state::setup::sticks::{Phase, Progress, StickAxis};
+pub fn sticks_progress() -> clamshell_state::device_view::sticks::Progress {
+    use clamshell_state::device_view::sticks::{Phase, Progress, StickAxis};
     let axis = |low, high| StickAxis { low, centre: 0, high };
     Progress { phase: Phase::Turn, now: [620, -540, 10, -5], seen: [axis(-80, 760), axis(-700, 60), axis(-10, 15), axis(-8, 6)], min: -1024, max: 1024 }
 }

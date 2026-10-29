@@ -98,7 +98,7 @@ impl State {
     /// The refresh rate calibration ended: the bottom screen comes on again and the main screen's rate
     /// is the settings' again, as sync finds.
     pub(crate) fn refresh_calibrated(&mut self, result: Result<String, String>) {
-        self.setup.refresh_done(result);
+        self.device_view.refresh_done(result);
     }
 
     /// The UI is up. Sends what was waiting for it: the dock if pins were dropped at start and the

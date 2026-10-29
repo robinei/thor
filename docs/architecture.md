@@ -55,7 +55,7 @@ binary gives it them in its `Config` (`Views`).
 `State` (`crates/state/src/lib.rs`) is a coordinator over **areas**, each a type with private fields, its
 rules and the getters the UI reads: `LibraryView` (the game list), `Session` (launches, windows, background),
 `Bottom` (the second screen, its tabs, editor and notices), `Radios`, `Levels`, `Sys` (status, battery,
-time), `Setup` (the Device view: calibrations, account), `Idle`, `Prefs` (settings), `Keymapping`,
+time), `DeviceView` (the Device view: calibrations), `Setup` (the first start's steps and the account), `Idle`, `Prefs` (settings), `Keymapping`,
 `Presentation` (what the compositor said of the screens), the pad route, the pointer and the lists'
 scrolls. `State`'s impl holds what spans areas, in files by subject under `apply/` (launching, presses,
 tabs, sliders, the settings tab, ...); nothing outside an area touches its fields.

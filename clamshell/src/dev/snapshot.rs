@@ -11,11 +11,11 @@ use std::path::Path;
 use clamshell_state::Control;
 use clamshell_state::DeviceId;
 use clamshell_state::bottom::keyboard::{Key, Modifier, Named};
+use clamshell_state::device_view::SticksEvent;
 use clamshell_state::keymap::{Actuation, Button, Dir, Input, Layer, MouseButton, Output, PadOut, Param, Side};
 use clamshell_state::levels::Level;
 use clamshell_state::library_view::edit::EditId;
 use clamshell_state::settings::Setting;
-use clamshell_state::setup::SticksEvent;
 use clamshell_state::{
     Dock, EditorId, Event, Id, Init, KeymapId, LevelEvent, Library, LibraryViewEvent, LibraryViewId, ListEvent, ListId, PointerEvent, Reading, SettingsId,
     SettingsLevel, Slide, State, Status, Tab, Target, TimeId,

@@ -20,6 +20,7 @@ use std::sync::Arc;
 
 use crate::HardwareKey;
 use crate::bottom::keyboard::{KeyPos, slot};
+use crate::device_view::SticksEvent;
 use crate::idle::{IdleEvent, Stage};
 use crate::keymap::Dir;
 use crate::keymap::{Button, Input};
@@ -32,7 +33,6 @@ use crate::session::overview::OverviewEvent;
 use crate::session::windows::WindowFacts;
 use crate::settings::Setting;
 use crate::settings::panel::SettingsLevel;
-use crate::setup::SticksEvent;
 use crate::*;
 use crate::{BuiltinApp, Top};
 
@@ -576,8 +576,14 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                     w.sticks = false;
                     Event::Sticks(SticksEvent::Done("pad".into(), None))
                 } else {
-                    let rest = crate::setup::sticks::StickAxis { low: 0, centre: 0, high: 0 };
-                    let p = crate::setup::sticks::Progress { phase: crate::setup::sticks::Phase::Turn, now: [0; 4], seen: [rest; 4], min: -1024, max: 1024 };
+                    let rest = crate::device_view::sticks::StickAxis { low: 0, centre: 0, high: 0 };
+                    let p = crate::device_view::sticks::Progress {
+                        phase: crate::device_view::sticks::Phase::Turn,
+                        now: [0; 4],
+                        seen: [rest; 4],
+                        min: -1024,
+                        max: 1024,
+                    };
                     Event::Sticks(SticksEvent::Progress(p))
                 }
             }
@@ -990,7 +996,7 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         sent.watched
     );
     // (The refresh rate calibration keeps the bottom screen off while it runs.)
-    let outputs = (screens_on, !s.bottom_off() && !s.setup().calibrating());
+    let outputs = (screens_on, !s.bottom_off() && !s.device_view().calibrating());
     ensure!(sent.outputs == outputs, "2: outputs sent {:?}, state {outputs:?}", sent.outputs);
     // Once ClamShell set a level, the screens have it, or a third of it (at least 1) while dimmed.
     if let Some(level) = s.levels().brightness().level {
@@ -1005,7 +1011,7 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     // screen as it is.
     let settings = s.session().refresh_launch().map_or_else(|| s.in_force(), |id| s.settings_of(id));
     let (wanted, cap) = (settings.get(Setting::Refresh), settings.get(Setting::FpsCap));
-    if let Some(hz) = s.setup().calibration_rate() {
+    if let Some(hz) = s.device_view().calibration_rate() {
         ensure!(sent.refresh == hz, "2: refresh sent {}, the calibration's {hz}", sent.refresh);
     } else if wanted != 0 || cap == 0 || w.start_rate == 0 || w.start_rate.is_multiple_of(cap) {
         ensure!(sent.refresh == wanted, "2: refresh sent {}, set {wanted} (cap {cap}, start {})", sent.refresh, w.start_rate);

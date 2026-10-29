@@ -81,7 +81,7 @@ impl State {
             self.dock.save_effect(),
             self.session.autostart_save(),
             Effect::Save(Save::TwelveHour(self.sys.twelve_hour())),
-            Effect::Save(Save::Sticks(self.setup.calibrations().clone())),
+            Effect::Save(Save::Sticks(self.device_view.calibrations().clone())),
         ]);
         if !self.setup.first_start() {
             out.effects.push(Effect::Save(Save::FirstStartDone));

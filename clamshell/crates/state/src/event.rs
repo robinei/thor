@@ -120,7 +120,7 @@ pub enum Event {
     /// A requested gyro calibration ended. True if it worked, meaning the device was held still enough.
     GyroCalibrated(bool),
     /// Progress or the end of a stick calibration (see [`crate::setup`]).
-    Sticks(crate::setup::SticksEvent),
+    Sticks(crate::device_view::SticksEvent),
     /// The top screen's refresh rate calibration ended, with its output or the reason it failed.
     RefreshCalibrated(Result<String, String>),
     /// The running refresh rate calibration asks for the main screen at this rate, in Hz (`clamshell ctl

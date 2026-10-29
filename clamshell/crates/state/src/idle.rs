@@ -329,7 +329,7 @@ mod tests {
         s.applied(Event::tick(1000));
         s.applied(Event::Idle(IdleEvent::Watching(true)));
         s.applied(PointerEvent::Activate(Id::Device(DeviceId::Refresh)).into());
-        assert!(s.setup().calibrating());
+        assert!(s.device_view().calibrating());
         let fx = s.applied(Event::tick(1900));
         assert_eq!(s.idle().stage(), Stage::Awake, "{fx:?}");
         s.applied(Event::RefreshCalibrated(Ok("done".into())));

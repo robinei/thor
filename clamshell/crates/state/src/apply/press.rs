@@ -149,7 +149,7 @@ impl State {
                 self.library_view.start_edit();
                 self.show_builtin(clamshell_library::BuiltinApp::Library);
             }
-            Id::Device(id) => self.setup.tap(id, self.clock.mono(), out),
+            Id::Device(id) => self.device_view.tap(id, self.setup.account(), self.clock.mono(), out),
             Id::Setup(id) => self.setup.wizard_tap(id, out),
             Id::Battery(id) => {
                 self.sys.on_battery(id, &self.session, out);

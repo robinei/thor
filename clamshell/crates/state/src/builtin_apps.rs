@@ -3,7 +3,7 @@
 //! it runs, and its hooks: which of its views shows, what a key typed does, and what the settings panel
 //! edits while it is in front. Shared code (the session, the dock, sync, the keyboard, the settings
 //! panel) reads these instead of asking which app it is.
-//! An app's rules are its own area's (the Device view's in [`crate::setup`]), its targets its own `Id`
+//! An app's rules are its own area's (the Device view's in [`crate::device_view`]), its targets its own `Id`
 //! variant, and how it looks its view in clamshell-ui, found by its [`BuiltinApp`]. Who each is, as a
 //! library entry (its id, title and summary), is [`BuiltinApp`]'s.
 
@@ -88,7 +88,7 @@ const LIBRARY: BuiltinAppDefinition = BuiltinAppDefinition {
     needed: None,
 };
 
-/// The Device view (see [`crate::setup`]).
+/// The Device view (see [`crate::device_view`]).
 const DEVICE: BuiltinAppDefinition = BuiltinAppDefinition {
     runs: Runs::WhileOpen,
     dock: DockPlace::WhileRunning,
