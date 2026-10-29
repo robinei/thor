@@ -21,6 +21,11 @@ use x11rb_protocol::{
     x11_utils::{Request, Serialize, TryParse},
 };
 
+/// The most top-level windows Xwayland's clients may have: a bound on what a runaway client can make the
+/// window manager hold. Programs keep many unmapped ones (Steam has dozens), so it is far above what any
+/// shows; the client whose window goes over it is ended.
+const WINDOWS_MAX: usize = 4096;
+
 struct Pending {
     sequence: u64,
     kind: Query,
@@ -462,7 +467,7 @@ impl Wm {
         if self.windows.iter().any(|w| w.xid == xid) || xid == self.owner {
             return Ok(());
         }
-        if self.windows.len() >= 128 {
+        if self.windows.len() >= WINDOWS_MAX {
             log::warn!("compositor: X11 window limit exceeded by resource {xid}; ending its client");
             wire.request(KillClientRequest { resource: xid }, 0, false)?;
             return Ok(());
