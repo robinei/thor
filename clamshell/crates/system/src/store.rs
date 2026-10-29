@@ -172,12 +172,15 @@ impl Store {
         out
     }
 
-    /// Adds a play of `id`. The line is appended whole in one write and flushed to the disk.
+    /// Adds a play of `id`. The line is appended whole in one write and flushed to the disk. After a line
+    /// cut short (a crash mid-write), it starts on a line of its own, so only the cut one is lost.
     fn add_play(&self, id: &str, start: u64, duration: u64) -> io::Result<()> {
         fs::create_dir_all(&self.dir)?;
-        let mut line = serde_json::to_string(&Play { id: id.to_owned(), start, duration }).map_err(io::Error::other)?;
+        let path = self.file("plays.jsonl");
+        let mut line = if ends_mid_line(&path) { String::from("\n") } else { String::new() };
+        line.push_str(&serde_json::to_string(&Play { id: id.to_owned(), start, duration }).map_err(io::Error::other)?);
         line.push('\n');
-        let mut file = fs::OpenOptions::new().create(true).append(true).open(self.file("plays.jsonl"))?;
+        let mut file = fs::OpenOptions::new().create(true).append(true).open(path)?;
         file.write_all(line.as_bytes())?;
         file.sync_data()
     }
@@ -229,7 +232,11 @@ impl Store {
         }
         screens.retain(|_, screen| !screen.settings.is_empty() || !screen.env.is_empty());
         let before = std::mem::take(self.screens_on_disk_mut());
-        write_folder(&self.file("settings"), &before, &screens)?;
+        if let Err(e) = write_folder(&self.file("settings"), &before, &screens) {
+            // What is on disk isn't known now: read again next time.
+            self.screens = None;
+            return Err(e);
+        }
         self.screens = Some(screens);
         Ok(())
     }
@@ -433,6 +440,14 @@ impl Drop for Writer {
     }
 }
 
+/// Whether `path` ends without a newline: its last line was cut short.
+fn ends_mid_line(path: &Path) -> bool {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut file) = fs::File::open(path) else { return false };
+    let mut last = [0u8];
+    file.seek(SeekFrom::End(-1)).is_ok() && file.read_exact(&mut last).is_ok() && last != [b'\n']
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -531,6 +546,17 @@ mod tests {
         assert!(store.sticks().is_empty());
         assert!(!store.twelve_hour());
         assert_eq!(store.brightness(), Brightness::default());
+    }
+
+    /// A play line cut short (a crash mid-write) loses that play alone: the next starts on its own line.
+    #[test]
+    fn a_play_after_a_line_cut_short_is_kept() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(dir.join("plays.jsonl"), b"{\"id\":\"a\",\"sta").unwrap();
+        let store = Store::open(dir);
+        store.add_play("b", 100, 60).unwrap();
+        assert_eq!(store.plays().get("b").map(|p| p.count), Some(1));
     }
 
     #[test]

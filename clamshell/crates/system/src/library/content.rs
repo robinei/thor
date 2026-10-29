@@ -384,7 +384,9 @@ fn group(folder: &Path, dir: &Path, source: &str, items: &[String], open: &Open,
     let listing = listing(folder);
     let season = season_of(&name);
     let mut members = Vec::new();
-    for (_, path) in listing.iter().filter(|(n, p)| p.is_dir() && !n.starts_with('.')) {
+    // A symlinked folder isn't followed: a link to `.` or `..` would scan without end.
+    let folder_in = |p: &Path| p.symlink_metadata().is_ok_and(|m| m.is_dir());
+    for (_, path) in listing.iter().filter(|(n, p)| folder_in(p) && !n.starts_with('.')) {
         if let Some(g) = group(path, dir, source, items, open, Some(index), games) {
             members.push(g);
         }
@@ -626,6 +628,22 @@ mod tests {
         assert_eq!(episode.box_front, None, "a video: its frame, not the series' art");
         assert_eq!(episode.parent, Some(show.items[0]));
         assert!(games[tops[0]].is_group(), "a film's folder too");
+    }
+
+    /// A symlinked folder in a series isn't followed: a link to its own folder would scan without end.
+    #[test]
+    fn symlinked_folders_in_a_series_arent_followed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        touch(root, &["Show/Season 1/1. One.mkv"]);
+        std::os::unix::fs::symlink(".", root.join("Show/Season 1/again")).unwrap();
+        std::os::unix::fs::symlink("..", root.join("Show/up")).unwrap();
+        let s = source(r#"{ "place": "TV", "id": "tv", "dir": "", "match": ["*/"], "items": ["*.mkv"] }"#);
+        let s = Scan { dir: root.to_string_lossy().into_owned(), ..s };
+        let mut games = Vec::new();
+        let tops = scan(&s, &mut games, &by("mpv"));
+        assert_eq!(games[tops[0]].items.len(), 1, "the season alone");
+        assert_eq!(games.len(), 3, "the show, its season and the episode");
     }
 
     #[test]
