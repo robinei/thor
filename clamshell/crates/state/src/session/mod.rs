@@ -345,7 +345,7 @@ impl Session {
     /// whichever way it came to wait (see [`launchers::launcher_of`]).
     fn front_launcher<'a>(&self, library: &'a Library) -> Option<&'a str> {
         let key = &self.front_launch.as_ref()?.unit.key;
-        let game = library.entries().iter().find(|g| &g.key == key)?;
+        let game = library.entry_by_key(key)?;
         launchers::launcher_of(game)?.entry(library).map(|l| l.key.as_str())
     }
 

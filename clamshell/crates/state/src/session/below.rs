@@ -158,7 +158,7 @@ impl Session {
             .find(|w| {
                 let owner = self.owner_of(w).or_else(|| {
                     let key = w.group.as_ref()?.key()?;
-                    library.entries().iter().find(|g| g.key == key).map(|g| g.id.clone())
+                    library.entry_by_key(key).map(|g| g.id.clone())
                 });
                 owner.is_some_and(|o| self.window_rules.wants(&o, w))
             })

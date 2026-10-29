@@ -83,11 +83,11 @@ impl Spender {
     pub fn name<'a>(&'a self, library: &'a Library) -> &'a str {
         match &self.group {
             Group::Launch(unit) => {
-                let entry = library.entries().iter().find(|g| g.key == unit.key);
+                let entry = library.entry_by_key(&unit.key);
                 entry.map_or(unit.key.as_str(), |g| g.title.as_str())
             }
             Group::App(app) => {
-                let entry = library.entries().iter().find(|g| clamshell_library::ids::desktop_file(&g.id) == Some(app.as_str()));
+                let entry = library.entry_of_desktop_file(&[app.as_str()]);
                 entry.map_or(app.as_str(), |g| g.title.as_str())
             }
             Group::Process(name) => name,

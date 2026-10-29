@@ -2,7 +2,7 @@
 //! derived from them: Recent, Favourites, a group's Continue and a browsed folder's listing.
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::index::Index;
@@ -124,6 +124,26 @@ impl Library {
     /// The slot of entry `id`: the first, should two have that id.
     pub fn position(&self, id: &str) -> Option<usize> {
         self.index.id(id)
+    }
+
+    /// The entry with key `key` ([`Entry::key`]), the first should two have it.
+    pub fn entry_by_key(&self, key: &str) -> Option<&Entry> {
+        self.entries.get(self.index.key(&self.entries, key)?)
+    }
+
+    /// The entry, neither browsed nor a group, whose file is `file`: the first should two have it.
+    pub fn entry_of_file(&self, file: &Path) -> Option<&Entry> {
+        self.entries.get(self.index.file(&self.entries, file)?)
+    }
+
+    /// The first desktop entry named `name` or with that `StartupWMClass`, ignoring ASCII case.
+    pub fn entry_by_desktop(&self, name: &str) -> Option<&Entry> {
+        self.entries.get(self.index.desktop(&self.entries, name)?)
+    }
+
+    /// The first entry of a desktop file with one of the names `names`, exactly.
+    pub fn entry_of_desktop_file(&self, names: &[&str]) -> Option<&Entry> {
+        self.entries.get(names.iter().filter_map(|name| self.index.desktop_file(&self.entries, name)).min()?)
     }
 
     /// Whether entry `id` is in it, or its source is away.
@@ -343,6 +363,16 @@ impl Library {
             at = self.entries.get(g).and_then(|g| g.parent);
         }
         groups
+    }
+}
+
+#[cfg(test)]
+impl Library {
+    /// The same library, indexed with every hash the same.
+    pub(crate) fn colliding(mut self) -> Library {
+        self.index.collide = true;
+        self.index.build(&self.entries);
+        self
     }
 }
 

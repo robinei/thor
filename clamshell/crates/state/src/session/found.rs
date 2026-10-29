@@ -105,24 +105,17 @@ pub(crate) fn window_entry(library: &Library, w: &WindowFacts, pid: u32) -> Entr
 /// Whether `id` is the entry that [`window_entry`] makes for window `w` of process `pid`, worked out without
 /// making it.
 fn is_window_entry(library: &Library, w: &WindowFacts, pid: u32, id: &str) -> bool {
-    match library_entry(library, &w.app_id) {
+    match library.entry_by_desktop(&w.app_id) {
         Some(g) => *g.id == *id,
         None => id.strip_prefix(ids::WINDOW).is_some_and(|name| if w.app_id.is_empty() { name.parse() == Ok(pid) } else { name == w.app_id }),
     }
 }
 
 /// The entry that a program found by `name`, its window's app id or its tray icon's id, runs as: the
-/// library's (see [`library_entry`]), or else one of its own made by `own`.
+/// library's desktop entry named `name` or with that `StartupWMClass`, ignoring case (see
+/// [`Library::entry_by_desktop`]), or else one of its own made by `own`.
 pub(crate) fn found_entry(library: &Library, name: &str, own: impl FnOnce() -> Entry) -> Entry {
-    library_entry(library, name).cloned().unwrap_or_else(own)
-}
-
-/// The library's desktop entry named `name` or with that `StartupWMClass`, ignoring case.
-fn library_entry<'a>(library: &'a Library, name: &str) -> Option<&'a Entry> {
-    let named = |g: &&Entry| {
-        ids::desktop_file(&g.id).is_some_and(|d| d.eq_ignore_ascii_case(name)) || g.wm_class.as_deref().is_some_and(|c| c.eq_ignore_ascii_case(name))
-    };
-    library.entries().iter().find(named)
+    library.entry_by_desktop(name).cloned().unwrap_or_else(own)
 }
 
 /// The icon to look for, for an entry found by its window.

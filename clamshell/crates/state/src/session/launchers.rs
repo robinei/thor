@@ -28,7 +28,7 @@
 //! without its window if it doesn't run and hands it the game. The game then runs by its windows (see
 //! [`crate::Session::launch`]).
 
-use clamshell_library::{Launch, ids};
+use clamshell_library::Launch;
 
 use crate::{Entry, Library};
 
@@ -60,7 +60,7 @@ pub(crate) fn launcher_of(g: &Entry) -> Option<&'static Launcher> {
 impl Launcher {
     /// Its own entry in `library`: its desktop file's.
     pub(crate) fn entry<'a>(&self, library: &'a Library) -> Option<&'a Entry> {
-        library.entries().iter().find(|g| ids::desktop_file(&g.id).is_some_and(|d| self.desktop.contains(&d)))
+        library.entry_of_desktop_file(self.desktop)
     }
 }
 

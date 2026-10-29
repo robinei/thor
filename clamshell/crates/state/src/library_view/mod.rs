@@ -293,7 +293,7 @@ impl LibraryView {
         // An archive counts even though it is browsed as a folder, since a ROM's zip is a file in the
         // library.
         let file = self.entry(id).filter(|g| g.browsed.as_ref().is_some_and(|b| !b.folder || b.archive))?.file.as_ref()?;
-        self.library.entries().iter().find(|g| g.browsed.is_none() && !g.is_group() && g.file.as_ref() == Some(file)).map(|g| g.id.clone())
+        self.library.entry_of_file(file).map(|g| g.id.clone())
     }
 
     /// Collection `c`'s list at its current place: the innermost open group's entries, or else the

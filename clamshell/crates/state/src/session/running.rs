@@ -253,7 +253,7 @@ impl Session {
             });
             // Its units are named by the wall clock.
             let start = first.min().map_or(now, |secs| now.saturating_sub(unix.saturating_sub(secs)));
-            if let Some(g) = library.entries().iter().find(|g| g.key == key) {
+            if let Some(g) = library.entry_by_key(key) {
                 self.running.push(Running { mark: mark_of(library, g), ..Running::of(g, Origin::Ours, start) });
                 continue;
             }
