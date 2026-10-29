@@ -89,6 +89,18 @@ impl Mounts {
             // When the service stops or crashes, the mount is detached lazily.
             properties: vec![format!("ExecStopPost=/usr/bin/fusermount3 -uz {}", dir.display())],
         };
+        // The same archive's service, stopped a moment ago, may still be stopping: its name is free once it
+        // is gone.
+        for _ in 0..50 {
+            match crate::launch::units::is_loaded(&unit) {
+                Ok(true) => std::thread::sleep(std::time::Duration::from_millis(100)),
+                Ok(false) => break,
+                Err(e) => {
+                    log::warn!("archives: {unit}: {e}");
+                    break;
+                }
+            }
+        }
         let started = match job::start(&job) {
             Ok(()) => true,
             Err(job::Error::Io(e)) => return Err(format!("Opening {name}: {e}")),
@@ -197,7 +209,7 @@ mod tests {
         fs::write(dir.join("inside.txt"), "hello").unwrap();
         let zip = dir.join("a.zip");
         assert!(std::process::Command::new("bsdtar").arg("-C").arg(dir).args(["-a", "-cf"]).arg(&zip).arg("inside.txt").status().unwrap().success());
-        let mut mounts = Mounts::new(None, None);
+        let mut mounts = Mounts::new(Some(dir), None);
         let at = mounts.mount(&zip).unwrap();
         assert_eq!(fs::read_to_string(at.join("inside.txt")).unwrap(), "hello");
         mounts.keep(&[]);

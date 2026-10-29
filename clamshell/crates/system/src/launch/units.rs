@@ -252,6 +252,11 @@ pub(crate) fn is_active(unit: &str) -> Result<bool, Error> {
     with_manager(|bus| Ok(units(bus, &[unit])?.iter().any(|row| matches!(row.3.as_str(), "active" | "activating" | "reloading"))))
 }
 
+/// Whether unit `unit` is loaded: still there, if only stopping.
+pub(crate) fn is_loaded(unit: &str) -> Result<bool, Error> {
+    with_manager(|bus| Ok(loaded(bus, unit)))
+}
+
 /// Thaws a unit if it is loaded. systemd does nothing if it isn't frozen.
 fn thaw_now(bus: &mut Bus, unit: &str) {
     if loaded(bus, unit)
