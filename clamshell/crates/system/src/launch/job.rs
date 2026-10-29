@@ -107,11 +107,29 @@ pub(crate) fn reap(mut child: Child) {
     }
 }
 
-/// Starts a job's service, returning once systemd has started it.
+/// How long `systemd-run` may take to start a job: a user manager that doesn't answer would otherwise
+/// hold the thread that asked.
+const START_LIMIT: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// Starts a job's service, returning once systemd has started it, or failed to within [`START_LIMIT`].
 pub(crate) fn start(job: &Job) -> Result<(), Error> {
     let mut cmd = command(job).ok_or(Error::EmptyCommand)?;
     // In its own process group, our signals, such as a Ctrl-C in a terminal, don't reach it.
-    let status = cmd.stdin(Stdio::null()).process_group(0).status()?;
+    let mut child = cmd.stdin(Stdio::null()).process_group(0).spawn()?;
+    let until = std::time::Instant::now() + START_LIMIT;
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if std::time::Instant::now() >= until {
+            if let Err(e) = child.kill() {
+                log::debug!("systemd-run for {}: stopping it: {e}", job.unit);
+            }
+            reap(child);
+            return Err(Error::Io(io::Error::new(io::ErrorKind::TimedOut, format!("systemd-run: no answer in {} s", START_LIMIT.as_secs()))));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
     if status.success() { Ok(()) } else { Err(Error::NotStarted(status)) }
 }
 
