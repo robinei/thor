@@ -87,30 +87,67 @@ impl Geometry {
     }
 }
 
-/// The size a window is configured to in `area`: a fixed size as it is, a fullscreen window `fill` (the
-/// area, or the resolution its game is set to, which [`Geometry`] scales up to the area), and any other its
-/// own size within the area.
-pub(crate) fn configure_size(
-    window: &WindowFacts,
-    policy: WindowPresentation,
-    area: Size<i32, Logical>,
-    fill: Size<i32, Logical>,
-    current: Size<i32, Logical>,
-) -> Option<Size<i32, Logical>> {
-    if let Some((w, h)) = window.limits.fixed_size() {
-        return Some((i32::try_from(w).unwrap_or(i32::MAX), i32::try_from(h).unwrap_or(i32::MAX)).into());
-    }
-    if policy.layout == WindowLayout::Fullscreen {
-        return Some(fill);
-    }
-    (current.w > 0 && current.h > 0).then(|| (current.w.min(area.w), current.h.min(area.h)).into())
+/// How a window is configured: its size (`None`: the client chooses, within its bounds), where it is
+/// placed in its area (only X11 has a place: an xdg toplevel is centred as it is drawn, see [`Geometry::new`]),
+/// and whether it is told it is fullscreen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Configure {
+    pub size: Option<Size<i32, Logical>>,
+    pub offset: Point<i32, Logical>,
+    pub fullscreen: bool,
+}
+
+/// The configure of a window of `facts` shown as `shown` says in `area`, whose own size is `own`, the same
+/// for X11 and Wayland: a fixed size as it is, a fullscreen window the size it fills (the area, or the
+/// resolution its game is set to, which [`Geometry`] scales up to the area), and any other its own size
+/// within the area. `emulated` is the mode Xwayland emulates for an X11 game that switched to one: a
+/// fullscreen window is configured to it, and Xwayland scales it to the screen. `None` while the state
+/// has no presentation for it.
+pub(crate) fn configure(
+    facts: &WindowFacts,
+    shown: &crate::windows::Shown,
+    area: Rectangle<i32, Logical>,
+    own: Option<Size<i32, Logical>>,
+    emulated: Option<(u32, u32)>,
+) -> Option<Configure> {
+    let policy = shown.presentation?;
+    let fullscreen = policy.layout == WindowLayout::Fullscreen;
+    let size = if let Some((w, h)) = facts.limits.fixed_size() {
+        Some((i32::try_from(w).unwrap_or(i32::MAX), i32::try_from(h).unwrap_or(i32::MAX)).into())
+    } else if fullscreen {
+        Some(fill_size(shown.clarity, area.size))
+    } else {
+        own.filter(|own| own.w > 0 && own.h > 0).map(|own| (own.w.min(area.size.w), own.h.min(area.size.h)).into())
+    };
+    let size = match emulated {
+        Some((w, h)) if fullscreen => Some((i32::try_from(w).unwrap_or(i32::MAX), i32::try_from(h).unwrap_or(i32::MAX)).into()),
+        _ => size,
+    };
+    let offset = if fullscreen {
+        (0, 0).into()
+    } else {
+        let size = size.unwrap_or_default();
+        ((area.size.w - size.w).max(0) / 2, (area.size.h - size.h).max(0) / 2).into()
+    };
+    Some(Configure { size, offset, fullscreen })
+}
+
+/// What a fullscreen window fills in an area of `area`: the area, or the resolution its game is set to (a
+/// fraction of it, `docs/picture.md`), which the window is then scaled up from.
+fn fill_size(clarity: clamshell_state::presentation::Clarity, area: Size<i32, Logical>) -> Size<i32, Logical> {
+    let (w, h) = clarity.resolution.size_on((area.w.max(0) as u32, area.h.max(0) as u32));
+    (w as i32, h as i32).into()
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use clamshell_state::{presentation::WindowLimits, settings::Size};
+    use crate::windows::Shown;
+    use clamshell_state::{
+        presentation::{Clarity, WindowLimits},
+        settings::{Resolution, Size},
+    };
     #[test]
     fn fitting_preserves_aspect_and_uses_the_same_inverse_for_input() {
         let viewport = Rectangle::from_size((960, 540).into());
@@ -131,27 +168,65 @@ mod tests {
             Geometry::new(Rectangle::new((960, 40).into(), (620, 500).into()), Rectangle::from_size((1240, 1000).into()), policy, Picture::default()).unwrap();
         assert_eq!(small.scale, Scale::from(0.5));
         assert_eq!(small.surface_coords((1270.0, 290.0).into()), (620.0, 500.0).into());
+    }
+
+    /// How the state shows a window of `facts`, at `resolution` if a game.
+    fn shown(facts: &WindowFacts, game: bool, resolution: Resolution) -> Shown {
+        let clarity = Clarity { resolution, ..Clarity::default() };
+        Shown { presentation: Some(facts.presentation(game, &[], Size::Default)), clarity, ..Shown::default() }
+    }
+
+    #[test]
+    fn a_fixed_window_is_configured_to_its_size_centred_however_large() {
         let fixed = WindowFacts { limits: WindowLimits { min: (1240, 1000), max: (1240, 1000) }, ..WindowFacts::default() };
-        assert_eq!(
-            configure_size(&fixed, fixed.presentation(false, &[], Size::Default), (620, 500).into(), (620, 500).into(), (0, 0).into()),
-            Some((1240, 1000).into())
-        );
+        let area = Rectangle::from_size((620, 500).into());
+        let configured = configure(&fixed, &shown(&fixed, false, Resolution::Native), area, None, None).unwrap();
+        assert_eq!(configured, Configure { size: Some((1240, 1000).into()), offset: (0, 0).into(), fullscreen: false });
+        let small = WindowFacts { limits: WindowLimits { min: (320, 240), max: (320, 240) }, ..WindowFacts::default() };
+        let configured = configure_of(&small, area, Some((100, 100).into()));
+        assert_eq!((configured.size, configured.offset), (Some((320, 240).into()), (150, 130).into()), "centred, its own size aside");
+    }
+
+    /// The configure of a window of `facts` in `area`, of its own size `own`, as a non-game's.
+    fn configure_of(facts: &WindowFacts, area: Rectangle<i32, Logical>, own: Option<smithay::utils::Size<i32, Logical>>) -> Configure {
+        configure(facts, &shown(facts, false, Resolution::Native), area, own, None).unwrap()
+    }
+
+    #[test]
+    fn a_centred_window_keeps_its_own_size_within_the_area_and_an_unknown_one_is_the_clients() {
+        let dialog = WindowFacts { parent: Some(1), ..WindowFacts::default() };
+        let area = Rectangle::new((960, 40).into(), (620, 500).into());
+        let configured = configure_of(&dialog, area, Some((400, 300).into()));
+        assert_eq!(configured, Configure { size: Some((400, 300).into()), offset: (110, 100).into(), fullscreen: false });
+        assert_eq!(configure_of(&dialog, area, Some((1000, 300).into())).size, Some((620, 300).into()), "clamped to the area");
+        for unknown in [None, Some((0, 300).into())] {
+            let configured = configure_of(&dialog, area, unknown);
+            assert_eq!((configured.size, configured.offset), (None, (310, 250).into()), "the client chooses");
+        }
+        assert_eq!(configure(&dialog, &Shown::default(), area, None, None), None, "no presentation yet");
+    }
+
+    #[test]
+    fn an_emulated_mode_is_configured_only_when_fullscreen() {
+        let game = WindowFacts::default();
+        let area = Rectangle::from_size((1920, 1080).into());
+        let full = configure(&game, &shown(&game, true, Resolution::Native), area, Some((800, 600).into()), Some((640, 480))).unwrap();
+        assert_eq!(full, Configure { size: Some((640, 480).into()), offset: (0, 0).into(), fullscreen: true });
+        let dialog = WindowFacts { parent: Some(1), ..WindowFacts::default() };
+        let centred = configure(&dialog, &shown(&dialog, true, Resolution::Native), area, Some((800, 600).into()), Some((640, 480))).unwrap();
+        assert_eq!(centred.size, Some((800, 600).into()));
     }
 
     #[test]
     fn a_fullscreen_game_at_a_lower_resolution_is_configured_to_it_and_scaled_up() {
         let game = WindowFacts::default();
-        let policy = game.presentation(true, &[], Size::Default);
-        let size = configure_size(&game, policy, (1920, 1080).into(), (1280, 720).into(), (0, 0).into()).unwrap();
-        assert_eq!(size, (1280, 720).into());
-        let geometry = Geometry::new(Rectangle::from_size((1920, 1080).into()), Rectangle::from_size(size), policy, Picture::default()).unwrap();
+        let shown = shown(&game, true, Resolution::TwoThirds);
+        let area = Rectangle::from_size((1920, 1080).into());
+        let configured = configure(&game, &shown, area, Some((400, 300).into()), None).unwrap();
+        assert_eq!(configured, Configure { size: Some((1280, 720).into()), offset: (0, 0).into(), fullscreen: true });
+        let size = configured.size.unwrap();
+        let geometry = Geometry::new(area, Rectangle::from_size(size), shown.presentation.unwrap(), Picture::default()).unwrap();
         assert_eq!((geometry.scale, geometry.origin), (Scale::from(1.5), (0.0, 0.0).into()), "filling the screen");
-        // A dialog keeps its own size.
-        let dialog = WindowFacts { parent: Some(1), ..WindowFacts::default() };
-        assert_eq!(
-            configure_size(&dialog, dialog.presentation(true, &[], Size::Default), (1920, 1080).into(), (1280, 720).into(), (400, 300).into()),
-            Some((400, 300).into())
-        );
     }
 
     #[test]

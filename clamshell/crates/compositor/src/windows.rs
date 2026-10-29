@@ -4,7 +4,7 @@ use clamshell_state::{State, WindowEvent, session::windows::WindowFacts};
 use smithay::{
     desktop::Window as SurfaceWindow,
     reexports::wayland_server::{Resource, protocol::wl_surface::WlSurface},
-    utils::{Logical, SERIAL_COUNTER, Size},
+    utils::SERIAL_COUNTER,
     wayland::{
         compositor::with_states,
         shell::xdg::{SurfaceCachedState, ToplevelSurface, XdgToplevelSurfaceData},
@@ -186,14 +186,13 @@ impl Server {
             let Some(window) = self.core.state().session().window(client.id) else { continue };
             if let Some(surface) = client.window.toplevel() {
                 let area = self.area(self.core.state().session().below(client.id));
-                let Some(policy) = client.shown.presentation else { continue };
-                let fill = fill_size(client.shown.clarity, area.size);
-                let size = crate::geometry::configure_size(window, policy, area.size, fill, client.window.geometry().size);
+                // (Its place is the X11 side's alone: an xdg toplevel is centred as it is drawn.)
+                let Some(configure) = crate::geometry::configure(window, &client.shown, area, Some(client.window.geometry().size), None) else { continue };
                 surface.with_pending_state(|pending| {
-                    pending.size = size;
+                    pending.size = configure.size;
                     pending.bounds = Some(area.size);
                     use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State;
-                    if policy.layout == clamshell_state::presentation::WindowLayout::Fullscreen {
+                    if configure.fullscreen {
                         pending.states.set(State::Fullscreen);
                     } else {
                         pending.states.unset(State::Fullscreen);
@@ -252,11 +251,4 @@ impl Server {
             }
         }
     }
-}
-
-/// What a fullscreen window fills in an area of `area`: the area, or the resolution its game is set to (a
-/// fraction of it, `docs/picture.md`), which the window is then scaled up from.
-pub(crate) fn fill_size(clarity: clamshell_state::presentation::Clarity, area: Size<i32, Logical>) -> Size<i32, Logical> {
-    let (w, h) = clarity.resolution.size_on((area.w.max(0) as u32, area.h.max(0) as u32));
-    (w as i32, h as i32).into()
 }

@@ -176,30 +176,19 @@ impl Window {
             self.policy = server.core.state().window_presentation(self.id);
             self.revision = Some(server.core.state_revision());
         }
-        let Some(policy) = self.policy else { return Ok(()) };
         let area = server.area(server.core.state().session().below(self.id));
         // (Its clarity as read for its window this revision, else from the state while it has none yet.)
         let clarity = server.windows.iter().find(|w| w.id == self.id).map_or_else(|| server.core.state().window_clarity(self.id), |w| w.shown.clarity);
-        let fill = crate::windows::fill_size(clarity, area.size);
-        let size = crate::geometry::configure_size(model, policy, area.size, fill, (i32::from(self.size.0), i32::from(self.size.1)).into())
-            .unwrap_or((i32::from(self.size.0), i32::from(self.size.1)).into());
+        let shown = crate::windows::Shown { presentation: self.policy, clarity, ..Default::default() };
+        let own = (i32::from(self.size.0), i32::from(self.size.1)).into();
         // A fullscreen game that switched mode is configured to it, so that Xwayland emulates it: the window
         // at the mode's size is scaled to the screen, and comes to us as a smaller buffer scaled by a viewport.
-        let size = match self.properties.emulated {
-            Some((w, h)) if policy.layout == WindowLayout::Fullscreen => (i32::try_from(w).unwrap_or(size.w), i32::try_from(h).unwrap_or(size.h)).into(),
-            _ => size,
-        };
-        let offset: smithay::utils::Point<i32, smithay::utils::Logical> =
-            if policy.layout == WindowLayout::Centred { ((area.size.w - size.w).max(0) / 2, (area.size.h - size.h).max(0) / 2).into() } else { (0, 0).into() };
-        let geometry = Rectangle::new(area.loc + offset, size);
-        if self.configured != Some(geometry) || self.layout != Some(policy.layout) {
-            log::debug!(
-                "X11 configure {} to {geometry:?}: {:?}, limits {:?}, emulated {:?}",
-                self.id,
-                policy.layout,
-                self.properties.limits,
-                self.properties.emulated
-            );
+        let Some(configure) = crate::geometry::configure(model, &shown, area, Some(own), self.properties.emulated) else { return Ok(()) };
+        // An X11 window has a size: one the client chooses is its own.
+        let geometry = Rectangle::new(area.loc + configure.offset, configure.size.unwrap_or(own));
+        let layout = if configure.fullscreen { WindowLayout::Fullscreen } else { WindowLayout::Centred };
+        if self.configured != Some(geometry) || self.layout != Some(layout) {
+            log::debug!("X11 configure {} to {geometry:?}: {layout:?}, limits {:?}, emulated {:?}", self.id, self.properties.limits, self.properties.emulated);
             wire.request(
                 ConfigureWindowRequest {
                     window: self.xid,
@@ -216,18 +205,11 @@ impl Window {
                 false,
             )?;
             let fullscreen = [atoms.get("_NET_WM_STATE_FULLSCREEN")];
-            Wm::property(
-                atoms,
-                wire,
-                self.xid,
-                "_NET_WM_STATE",
-                AtomEnum::ATOM.into(),
-                if policy.layout == WindowLayout::Fullscreen { &fullscreen } else { &[] },
-            )?;
+            Wm::property(atoms, wire, self.xid, "_NET_WM_STATE", AtomEnum::ATOM.into(), if configure.fullscreen { &fullscreen } else { &[] })?;
             Wm::property(atoms, wire, self.xid, "WM_STATE", atoms.get("WM_STATE"), &[1, 0])?;
             wire.request(MapWindowRequest { window: self.xid }, 0, false)?;
             self.configured = Some(geometry);
-            self.layout = Some(policy.layout);
+            self.layout = Some(layout);
         }
         Ok(())
     }
