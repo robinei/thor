@@ -23,7 +23,7 @@ const WITH_DIALOGS: [Opened; 3] = [
 
 /// Opens `windows` in order on a started server, each a surface of one client with a buffer of its size, and
 /// runs `check` on the server once they are all mapped, the first is in front, and they are placed.
-fn with_windows(windows: &[Opened], check: impl FnOnce(&mut Server)) {
+fn with_windows(windows: &[Opened], check: impl FnOnce(&mut Server)) -> (Display<Server>, Server) {
     let (mut display, mut server) = ServerBuilder::new().started();
     let sizes: Vec<(i32, i32)> = windows.iter().map(|w| (w.size.0 as i32, w.size.1 as i32)).collect();
     let client = spawn_client(&mut display, ClientState::default(), move |globals, mut queue, steps| {
@@ -72,6 +72,18 @@ fn with_windows(windows: &[Opened], check: impl FnOnce(&mut Server)) {
         check.take().unwrap()(server);
     });
     assert_eq!(checked, 1);
+    (display, server)
+}
+
+/// A window whose surface is gone, its client ended before the window did, leaves the scene at once: a
+/// surface's end changes what the windows are placed from, as its commits do.
+#[test]
+fn a_window_whose_surface_is_gone_leaves_the_scene() {
+    let (mut display, mut server) = with_windows(&WITH_DIALOGS[..1], |server| assert!(server.scene.window(1).is_some()));
+    // The client's end, and with it its surfaces'.
+    display.dispatch_clients(&mut server).unwrap();
+    server.place();
+    assert_eq!(server.scene.window(1), None);
 }
 
 /// The windows in the scene, front first.

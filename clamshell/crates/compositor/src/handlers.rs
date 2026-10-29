@@ -94,6 +94,10 @@ impl CompositorHandler for Server {
     }
     fn destroyed(&mut self, surface: &WlSurface) {
         self.colour.surfaces.remove(&smithay::backend::renderer::element::Id::from_wayland_resource(surface));
+        // A surface's end may take a window's picture with it, as a commit may change it: a client gone
+        // before its window was closed (an X11 window's, until the window manager hears) is no longer
+        // placed from it.
+        self.windows_changed();
     }
     fn commit(&mut self, surface: &WlSurface) {
         // Any surface's commit may change a window's size, picture or mapping, or its popups'.
