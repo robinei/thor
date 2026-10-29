@@ -51,6 +51,8 @@ impl Server {
             log::debug!("compositor: too many simultaneous touches");
             return;
         };
+        // Order: a touch is hit against the scene as the dispatch so far left it (see `Server::input`).
+        self.place();
         let hit = self.hit(position);
         self.dismiss_menu_outside(hit.as_ref().map(|hit| hit.window));
         self.dismiss_x11_menus_outside(hit.as_ref().map(|hit| &hit.surface));
@@ -81,6 +83,7 @@ impl Server {
         if let Some(contact) = self.touch.contacts.get_mut(index) {
             *contact = Some(Contact { slot, target, location: position });
         }
+        // Order: the window touched is activated and given the keyboard before the touch's frame reaches it.
         self.sync_windows();
     }
     pub(crate) fn touch_motion(&mut self, slot: TouchSlot, position: Point<f64, Logical>, time: InputTime) {

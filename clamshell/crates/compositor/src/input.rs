@@ -74,6 +74,9 @@ impl Server {
     /// nested window) lies in the scene, and the turn of the panel it reports in (see [`placed`]).
     pub(crate) fn input<B: InputBackend>(&mut self, event: InputEvent<B>, host: Host, area: impl Fn(&B::Device) -> (Rectangle<f64, Logical>, Transform)) {
         self.idle.input(std::time::Instant::now());
+        // Order: input is hit against the scene as the dispatch so far left it (a commit in it may have moved
+        // a window), placed again if it changed.
+        self.place();
         match event {
             InputEvent::Keyboard { event, .. } => {
                 if let Some(keyboard) = self.seat.get_keyboard() {
@@ -154,6 +157,7 @@ impl Server {
                         let (screen, position) = self.screen_position(self.pointer.location);
                         if event.button_code() == 0x110 && self.core.press_overlay(screen, position) {
                             self.pointer.overlay_pressed = true;
+                            // Order: what the press changed (the keyboard's focus) before its button reaches a client.
                             self.sync_windows();
                             return;
                         }
@@ -177,6 +181,8 @@ impl Server {
                     if !self.pointer.buttons.contains(&event.button_code()) {
                         self.pointer.buttons.push(event.button_code());
                     }
+                    // Order: the window pressed is activated and given the keyboard before the button reaches
+                    // it, so that it gets the press with its focus.
                     self.sync_windows();
                 } else if event.button_code() == 0x110 {
                     let at = self.core.at(event.time().millis());

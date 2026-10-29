@@ -62,6 +62,5 @@ impl XdgActivationHandler for Server {
             return;
         }
         self.core.handle(WindowEvent::Activate(id).into());
-        self.sync_windows();
     }
 }

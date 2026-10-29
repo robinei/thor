@@ -108,7 +108,6 @@ impl Server {
             }
         }
         self.windows_changed();
-        self.sync_windows();
     }
 
     /// Where windows go: the top screen, or (`down`) the second screen's part that shows windows.

@@ -789,8 +789,12 @@ on a difference, so a stale scene fails the tests and the nested harness. Tests:
 suite and `tests/nested-compositor.py` run with the check; `the_overviews_cells_are_targets_in_place_of_the_arrows`
 (the overlay's cells are the compositor's, unmoved by the burn-in drift),
 `placing_again_with_nothing_changed_does_nothing` (a commit, a state event, an overlay drawn anew and a
-resize each place it once), `an_idle_turn_places_and_configures_nothing`. The windows' configures and
-outputs are told again likewise only when the state, the windows or the areas changed
+resize each place it once), `an_idle_turn_places_and_configures_nothing`. The windows are synced
+(configured, given their outputs, the keyboard's focus set) once per turn, at its end, and otherwise only
+where the order needs it: before a window's first configure, and after a press before its button or touch
+reaches a client; input places the scene first, so that a touch in the dispatch of a commit that moved its
+window lands on it where it is now (`a_touch_right_after_a_resizing_commit_lands_on_the_new_geometry`). The
+configures and outputs are told again only when the state, the windows or the areas changed
 (`Server::configure_windows`).
 
     window --role or limits Changed--> the same place and selection, a new presentation [configure]

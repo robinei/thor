@@ -755,6 +755,7 @@ fn touch_contacts_keep_independent_surfaces_and_native_coordinates() {
         server.touch_motion(Some(1).into(), bottom.origin, time);
         assert!(server.touch.contacts.iter().all(Option::is_none));
         server.resize((790, 135));
+        server.place();
         let scaled = server.geometry(first).unwrap();
         assert!(scaled.scale.x < 1.0);
         let point = scaled.origin + smithay::utils::Point::from((128.0 * scaled.scale.x, 64.0 * scaled.scale.y));
@@ -768,6 +769,48 @@ fn touch_contacts_keep_independent_surfaces_and_native_coordinates() {
         assert!(server.touch.contacts.iter().all(Option::is_none), "hiding a touched client cancels the gesture");
     });
     assert_eq!(checked, 1);
+}
+
+/// A touch that comes in the dispatch of a commit that changed its window's size, before the turn, lands
+/// where the window is drawn now: the scene is placed again for it.
+#[test]
+fn a_touch_right_after_a_resizing_commit_lands_on_the_new_geometry() {
+    use smithay::backend::input::InputTime;
+    let (mut display, mut server) = ServerBuilder::new().started();
+    let client = spawn_client(&mut display, launched(), |globals, mut queue, steps| {
+        let qh = queue.handle();
+        let seat: wl_seat::WlSeat = globals.bind(&qh, 1..=7, ()).unwrap();
+        let _touch = seat.get_touch(&qh, ());
+        let mut client = Client::default();
+        let window = open_toplevel(&globals, &mut queue, &mut client, "test", None);
+        steps.step(false);
+        // Half the size it was configured to: shown at its own size, centred.
+        window.surface.attach(Some(&shm_buffer(&globals, &qh, (480, 270))), 0, 0);
+        window.surface.damage_buffer(0, 0, 480, 270);
+        window.surface.commit();
+        queue.roundtrip(&mut client).unwrap();
+        steps.step(true);
+        queue.roundtrip(&mut client).unwrap();
+        let surface = window.surface.id().protocol_id();
+        assert_eq!(client.touches, vec![TouchRecord::Down(0, surface, (10.0, 20.0)), TouchRecord::Up(0), TouchRecord::Frame]);
+    });
+    // No turn between the dispatches: the touch comes right after the commit.
+    let checked = client.serve(
+        &mut display,
+        &mut server,
+        |_| {},
+        |_, server, resized| {
+            if !resized {
+                server.frame();
+                return assert_eq!(server.geometry(server.windows[0].id).map(|g| g.native.size), Some((960, 540).into()));
+            }
+            let time = InputTime::from_millis(10);
+            server.touch_down(Some(0).into(), (240.0 + 10.0, 135.0 + 20.0).into(), time);
+            server.touch_up(Some(0).into(), time);
+            server.touch_frame();
+        },
+    );
+    assert_eq!(checked, 2);
 }
 
 #[test]

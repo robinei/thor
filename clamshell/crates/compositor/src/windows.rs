@@ -140,7 +140,8 @@ impl Server {
         let Some(client) = self.windows.get(index) else { return };
         let Some(toplevel) = client.window.toplevel().cloned() else { return };
         let id = client.id;
-        if !client.opened {
+        let opening = !client.opened;
+        if opening {
             let facts = self.facts(&toplevel, id);
             let colour = facts.colour.as_ref().map_or("unspecified".to_string(), |c| format!("{:?} {:?}", c.primaries, c.transfer));
             let (app_id, title) = (facts.app_id.clone(), facts.title.clone());
@@ -159,7 +160,11 @@ impl Server {
                 client.facts_dirty = true;
             }
         }
-        self.sync_windows();
+        // Order: a window opening is configured as the state placed it before its first configure is sent.
+        // (Any later commit is synced at the end of the turn.)
+        if opening {
+            self.sync_windows();
+        }
         if !toplevel.is_initial_configure_sent() {
             toplevel.send_configure();
         }

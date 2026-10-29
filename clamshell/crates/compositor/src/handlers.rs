@@ -139,7 +139,6 @@ impl CompositorHandler for Server {
                     client.facts_dirty = false;
                     log::info!("compositor: window {} unmaps", client.id);
                     self.core.handle(WindowEvent::Closed(client.id).into());
-                    self.sync_windows();
                     return;
                 }
                 client.mapped = mapped;
@@ -164,8 +163,6 @@ impl CompositorHandler for Server {
         {
             self.reject_client(surface, &format!("cannot configure popup: {error}"));
         }
-        // A window's size or picture may have changed: a subsurface's commit doesn't sync the windows.
-        self.place();
     }
 }
 impl BufferHandler for Server {
@@ -207,7 +204,6 @@ impl XdgShellHandler for Server {
             self.core.handle(WindowEvent::Closed(id).into());
             self.windows.retain(|w| w.id != id);
             self.windows_changed();
-            self.sync_windows();
         }
     }
     fn title_changed(&mut self, surface: ToplevelSurface) {
