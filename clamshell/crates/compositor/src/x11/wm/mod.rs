@@ -134,10 +134,10 @@ impl Wm {
         self.sync_selection(wire, server, now)?;
         self.take_identified(server);
         self.settle(wire, server)?;
-        // The menus are placed by their windows, which what came from X11 may have moved.
+        // Order: the menus are placed by their windows, which what came from X11 may have moved. (The
+        // server's turn, which follows, syncs the windows.)
         server.place();
         self.settle_menus(wire, server)?;
-        server.sync_windows();
         Ok(())
     }
     /// The windows' processes identified since the last turn.
@@ -547,6 +547,33 @@ mod tests {
             },
         );
         assert_eq!(checked, 1);
+    }
+
+    /// The loop runs the window manager's turn after its dispatch and then the server's (see `Base::run`): a
+    /// window the window manager opens is configured on both sides in that turn, and a turn after with
+    /// nothing new from Xwayland places and configures nothing.
+    #[test]
+    fn a_window_opened_by_the_wm_is_configured_in_the_same_turn() {
+        let (_display, mut server) = crate::tests::ServerBuilder::new().started();
+        let (socket, _peer) = UnixStream::pair().unwrap();
+        let now = Instant::now();
+        let mut wire = Transport::new(socket, now).unwrap();
+        let mut wm = Wm { root: 1, owner: 2, atoms: Atoms(NAMES.iter().enumerate().map(|(i, name)| (*name, 100 + i as u32)).collect()), ..Wm::default() };
+        wm.discover(10, Rectangle::from_size((400, 300).into()), false, &mut wire, &mut server).unwrap();
+        (wm.windows[0].outstanding, wm.windows[0].wants_map) = (0, true);
+        let id = wm.windows[0].id;
+        let configures = server.configures;
+        wm.turn(&mut wire, &mut server, now).unwrap();
+        server.turn();
+        assert!(server.core.state().session().window(id).is_some(), "opened");
+        assert!(wm.windows[0].configured.is_some(), "configured on the X11 side");
+        assert!(server.configures > configures, "and on the server's");
+        let counts = (server.scene.placements, server.configures);
+        for _ in 0..3 {
+            wm.turn(&mut wire, &mut server, now).unwrap();
+            server.turn();
+        }
+        assert_eq!((server.scene.placements, server.configures), counts, "an idle turn");
     }
 
     /// A window manager with one X11 window (see [`placed`]): the window's id, Xwayland's end of the

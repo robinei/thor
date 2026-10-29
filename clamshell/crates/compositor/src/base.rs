@@ -90,7 +90,6 @@ impl Base {
         let mut notifier = crate::notify::Notifier::new(readiness);
         while !server.exit {
             let now = Instant::now();
-            x11.turn(&mut server, now);
             let wait = server
                 .core
                 .deadline()
@@ -103,6 +102,9 @@ impl Base {
                 .min()
                 .map(|at| at.saturating_duration_since(now));
             event_loop.dispatch(wait, &mut server)?;
+            // Order: the window manager's turn after the dispatch that brought what Xwayland sent, and before
+            // the server's, which syncs what it changed (a window opened, its facts) before the loop waits.
+            x11.turn(&mut server, Instant::now());
             server.turn();
             host_deadline = host(&mut server, Instant::now());
             server.dh.flush_clients()?;
