@@ -517,6 +517,17 @@ impl Wm {
                     )?;
                 }
             }
+            // A window made top-level from inside another is found as a created one is; one put inside
+            // another is no longer a window of ours.
+            Some(REPARENT_NOTIFY_EVENT) => {
+                let event = ReparentNotifyEvent::try_parse(bytes).map_err(io::Error::other)?.0;
+                if event.parent == self.root {
+                    let at = Rectangle::new((i32::from(event.x), i32::from(event.y)).into(), (1, 1).into());
+                    self.discover(event.window, at, event.override_redirect, wire, server)?;
+                } else if let Some(id) = self.windows.iter().find(|w| w.xid == event.window).map(|w| w.id) {
+                    self.forget(id, server);
+                }
+            }
             Some(MAP_REQUEST_EVENT) => {
                 let event = MapRequestEvent::try_parse(bytes).map_err(io::Error::other)?.0;
                 // Only a managed window's map is redirected to us: one created override-redirect has
@@ -1010,6 +1021,24 @@ mod tests {
         wm.windows[0].popup_parent = Some(99);
         wm.settle_menus(&mut wire, &mut server).unwrap();
         assert!(!wm.windows[0].wants_map, "its owner gone: dismissed");
+    }
+    /// A window reparented into the root is found; one reparented out of it is forgotten.
+    #[test]
+    fn reparenting_finds_and_forgets_top_level_windows() {
+        let (_display, mut server) = crate::tests::ServerBuilder::new().build();
+        let (socket, _peer) = UnixStream::pair().unwrap();
+        let mut wire = Transport::new(socket, Instant::now()).unwrap();
+        let mut wm = Wm { root: 1, owner: 2, atoms: Atoms(NAMES.iter().enumerate().map(|(i, name)| (*name, 100 + i as u32)).collect()), ..Wm::default() };
+        let mut reparent = |wm: &mut Wm, parent| {
+            let event = ReparentNotifyEvent { response_type: REPARENT_NOTIFY_EVENT, event: 1, window: 10, parent, ..ReparentNotifyEvent::default() };
+            let mut event = Serialize::serialize(&event).to_vec();
+            event.resize(32, 0);
+            wm.event(&event, &mut wire, &mut server).unwrap();
+        };
+        reparent(&mut wm, 1);
+        assert_eq!(wm.windows.iter().map(|w| w.xid).collect::<Vec<_>>(), [10]);
+        reparent(&mut wm, 50);
+        assert!(wm.windows.is_empty());
     }
     /// A client may put a window in front only while its program has the focus.
     #[test]
