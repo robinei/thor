@@ -11,8 +11,8 @@ use clamshell_state::radios::wifi::{Network, Wifi};
 use clamshell_state::session::windows::WindowFacts;
 use clamshell_state::status::metrics::Metrics;
 use clamshell_state::{
-    Control, Effect, EntryAct, Event, Id, Init, LaunchUnit, ListEvent, ListId, Notification, NotificationEvent, NotificationId, PointerEvent, Reading, Slide,
-    State, Status, Tab, Urgency, WindowEvent,
+    Control, Effect, EntryAct, Event, HardwareKey, Id, Init, LaunchUnit, LibraryViewEvent, ListEvent, ListId, Notification, NotificationEvent, NotificationId,
+    PointerEvent, Reading, Slide, State, Status, Tab, Urgency, WindowEvent,
 };
 
 thread_local! {
@@ -208,6 +208,18 @@ fn allocations_per_event() {
             menu: Vec::new(),
         };
         run(&name("tray, unchanged"), s, &|_| Event::Tray(vec![item.clone()]));
+        // The pad and keys that come most: the Library's list and collections, a list scrolled, the
+        // volume keys; and the readings of the tabs that watch.
+        run(&name("Library list stepped"), s, &|i| LibraryViewEvent::ListStep(if i % 2 == 0 { 1 } else { -1 }).into());
+        run(&name("Library collection stepped"), s, &|i| LibraryViewEvent::CollectionStep(if i % 2 == 0 { 1 } else { -1 }).into());
+        run(&name("a list scrolled"), s, &|i| ListEvent::Scroll(ListId::Wifi, if i % 2 == 0 { 0.5 } else { -0.5 }).into());
+        run(&name("volume keys"), s, &|i| Event::HardwareKey(if i % 2 == 0 { HardwareKey::VolumeUp } else { HardwareKey::VolumeDown }));
+        let battery = clamshell_state::status::battery::Battery::default();
+        run(&name("battery reading, unchanged"), s, &|_| Event::Reading(Reading::Battery(battery.clone())));
+        let bluetooth = clamshell_state::radios::bluetooth::Bluetooth::default();
+        run(&name("bluetooth reading, unchanged"), s, &|_| Event::Reading(Reading::Bluetooth(bluetooth.clone())));
+        let audio = clamshell_state::levels::Audio::default();
+        run(&name("audio reading, unchanged"), s, &|_| Event::Reading(Reading::Audio(audio.clone())));
         // The brightness slid in the bar, at a new level each step.
         s.apply(Event::Reading(Reading::Status(Status { brightness: Some(50), ..Status::default() })), &mut Vec::new());
         s.apply(Slide::Start { control: Control::Brightness, x: 300.0, width: 620.0 }.into(), &mut Vec::new());
