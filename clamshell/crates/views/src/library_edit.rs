@@ -12,8 +12,7 @@ use clamshell_state::library_view::edit::{self, Edit, EditId, Form, Panel, Row};
 use clamshell_state::library_view::form::{self, ItemRef, Set};
 
 use super::icons;
-use super::library_view::{ACTION, DETAIL, HEADER_TEXT, LIST_W, ROW_H, ROW_TEXT, TAB_TEXT, TABS_H, TITLE};
-use clamshell_ui::gfx::icons::Icon;
+use super::library_view::{ACTION, DETAIL, LIST_W, ROW_H, ROW_TEXT, TAB_TEXT, TABS_H, TITLE, path_header};
 use clamshell_ui::gfx::{Align, Keep, Rect};
 use clamshell_ui::toolkit::format::Fmt;
 use clamshell_ui::toolkit::scroll::Scrolled;
@@ -72,12 +71,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect, edit: &Edit) -> usize {
     if edit.open(config).next().is_some() {
         let header = list.take_top(h * ROW_H);
         f.back(EditId::Up.into());
-        f.button(EditId::Up.into(), header, Look::ICON, |f| {
-            f.c.icon(Icon::ArrowLeft, Rect::new(header.x, header.y, header.h, header.h).square_center(header.h * 0.4), Tone::Normal);
-            let names = Fmt::<192>::of(format_args!("{}", Path(edit, config)));
-            let title = Rect::new(header.x + header.h + pad * 0.2, header.y, header.w - header.h - pad * 0.2, header.h);
-            f.c.text_fit(title, header.h * HEADER_TEXT, Tone::High, &names, Keep::End);
-        });
+        path_header(f, EditId::Up.into(), header, pad, Path(edit, config));
     }
     let row_h = h * ROW_H;
     let len = edit.rows(config, here);

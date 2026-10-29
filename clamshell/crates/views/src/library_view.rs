@@ -200,7 +200,8 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     let mut list = Rect::new(pad, tabs_h + pad * 0.5, w * LIST_W - pad, h - tabs_h - pad * 1.5);
     if let Some(group) = s.library_view().group() {
         let header = list.take_top(h * ROW_H);
-        group_header(f, group, header, pad);
+        let path = Groups { s, entry: group, own: true, between: " › " };
+        path_header(f, Id::LibraryView(LibraryViewId::Up), header, pad, path);
     }
     // The filter text typed on the bottom screen's keyboard to find an entry, over the list.
     let filter = s.library_view().filter();
@@ -233,15 +234,15 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     rows
 }
 
-/// An open group's header over the list: a back arrow and the open groups, outermost first ("Handhelds ›
-/// GBA"), cut at the start when it doesn't fit. A tap goes back out.
-fn group_header(f: &mut Frame, group: &Entry, r: Rect, pad: f32) {
-    let s = f.s;
-    f.button(Id::LibraryView(LibraryViewId::Up), r, Look::ICON, |f| {
+/// A header over a list of what is open, the Library's groups or the edit mode's folders: a back arrow and
+/// `path`, the open ones outermost first ("Handhelds › GBA"), cut at the start when it doesn't fit.
+/// Pressing it (`id`) goes back out.
+pub(super) fn path_header(f: &mut Frame, id: Id, r: Rect, pad: f32, path: impl Display) {
+    f.button(id, r, Look::ICON, |f| {
         let arrow = Rect::new(r.x, r.y, r.h, r.h);
         f.c.icon(Icon::ArrowLeft, arrow.square_center(r.h * 0.4), Tone::Normal);
         let title = Rect::new(r.x + r.h + pad * 0.2, r.y, r.w - r.h - pad * 0.2, r.h);
-        let path = Fmt::<192>::of(format_args!("{}", Groups { s, entry: group, own: true, between: " › " }));
+        let path = Fmt::<192>::of(format_args!("{path}"));
         f.c.text_fit(title, r.h * HEADER_TEXT, Tone::High, &path, Keep::End);
     });
 }
