@@ -3,7 +3,7 @@
 
 use crate::bottom::editor::Done;
 use crate::out::Out;
-use crate::profiles::picker::Kind as ProfileKind;
+use crate::profiles::picker::{Kind as ProfileKind, Owner};
 use crate::{BtId, Compositor, Control, EditorId, Effect, Id, ListId, PointerEvent, RowPart, State, Tab, WifiId};
 
 /// How a target was pressed.

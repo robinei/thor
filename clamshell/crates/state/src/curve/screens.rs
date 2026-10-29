@@ -4,14 +4,10 @@
 //! finger lifts.
 
 use super::{Curve, CurveParam, Curves};
-use crate::bottom::editor::Editors;
 use crate::effect::{Effect, Save};
 use crate::levels::slider::{Control, Slider};
-use crate::nav::lists::RowPart;
-use crate::out::Out;
 use crate::profiles::Profiles;
-use crate::profiles::picker::{self, Kind, Owner, PickerCx, PickerRow, PickerScreen, ProfileId, ProfileName};
-use crate::settings::{Setting, Settings};
+use crate::profiles::picker::{self, Kind, Owner, PickerScreen};
 
 /// Which of the curves' screens is open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,22 +39,6 @@ impl Curving {
         self.open
     }
 
-    fn picker_screen(&self) -> Option<PickerScreen> {
-        match self.open {
-            Some(CurveScreen::Picker(p)) => Some(p),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn rows_len(&self, entry: Option<&str>) -> usize {
-        self.curves.rows_len(self.picker_screen(), entry)
-    }
-
-    /// Row `i` of the picker, with the settings panel editing `entry`.
-    pub(crate) fn row(&self, i: usize, entry: Option<&str>) -> Option<PickerRow<'_>> {
-        self.curves.row(self.picker_screen(), i, entry)
-    }
-
     /// A curve's name: "Own curve" for a game's own, and "Default colours" for none or for one that is gone.
     pub fn name(&self, id: u16) -> &str {
         self.curves.shown_name(id, Kind::Curve)
@@ -68,26 +48,6 @@ impl Curving {
     /// shown as it is.
     pub fn in_force(&self, id: u16) -> Option<&Curve> {
         self.curves.get(id).map(|p| &p.body)
-    }
-
-    /// The curve tile opens the picker.
-    pub(crate) fn open_picker(&mut self) {
-        self.open = Some(CurveScreen::Picker(PickerScreen::List));
-    }
-
-    /// A row of the picker (see [`picker::on_row`]).
-    pub(crate) fn on_row(&mut self, i: usize, part: RowPart, long: bool, cx: &PickerCx, editors: &mut Editors, out: &mut Out) {
-        picker::on_row(self, i, part, long, cx, editors, out);
-    }
-
-    /// The picker's buttons, but Back (see [`picker::on`]).
-    pub(crate) fn on_picker(&mut self, id: ProfileId, settings: &Settings, editors: &mut Editors, out: &mut Out) {
-        picker::on(self, id, |c| settings.users(Setting::Curve, c), editors, out);
-    }
-
-    /// The editor saved a curve's name (see [`picker::named`]).
-    pub(crate) fn named_profile(&mut self, action: ProfileName, name: &str, out: &mut Out) {
-        picker::named(self, action, name, out);
     }
 
     /// Goes back one screen: from the edit screen to the picker, within the picker, and from the picker to
@@ -139,7 +99,10 @@ impl Owner for Curving {
         &mut self.curves
     }
     fn picker(&self) -> Option<PickerScreen> {
-        self.picker_screen()
+        match self.open {
+            Some(CurveScreen::Picker(p)) => Some(p),
+            _ => None,
+        }
     }
     fn set_picker(&mut self, screen: Option<PickerScreen>) {
         self.open = screen.map(CurveScreen::Picker);
@@ -157,6 +120,7 @@ impl Owner for Curving {
 mod tests {
     use super::*;
     use crate::bottom::editor::Purpose;
+    use crate::profiles::picker::PickerRow;
     use crate::profiles::picker::{Kind as ProfileKind, ProfileId};
     use crate::testkit::*;
     use crate::*;

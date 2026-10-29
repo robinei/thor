@@ -3,7 +3,7 @@
 
 use crate::bottom::editor::{Done, Purpose};
 use crate::out::Out;
-use crate::profiles::picker::Kind as ProfileKind;
+use crate::profiles::picker::{Kind as ProfileKind, Owner};
 use crate::{State, Tab};
 
 impl State {

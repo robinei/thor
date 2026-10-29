@@ -4,6 +4,7 @@ use crate::bottom::keyboard::{Modifier, find};
 use crate::keymap::{Button, Dir, MouseButton, Side};
 use crate::levels::slider::Control;
 use crate::profiles::picker::Users;
+use crate::profiles::picker::{PickerRow, ProfileId, ProfileName};
 use crate::settings::Setting;
 use crate::testkit::*;
 use crate::*;

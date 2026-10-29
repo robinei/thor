@@ -2,7 +2,7 @@
 //! opened from it.
 
 use crate::out::Out;
-use crate::profiles::picker::{Kind as ProfileKind, ProfileEvent, ProfileId};
+use crate::profiles::picker::{Kind as ProfileKind, Owner, ProfileEvent, ProfileId};
 use crate::settings::Setting;
 use crate::{KeymapEvent, KeymapId, RowPart, SettingsId, State};
 

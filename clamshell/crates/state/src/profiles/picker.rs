@@ -211,6 +211,45 @@ pub(crate) trait Owner {
     fn open_edit(&mut self, id: u16);
     /// The effect that saves the profiles, the change counted for the edit screen's Undo.
     fn save(&mut self) -> Effect;
+
+    /// How many rows the picker has, with the settings panel editing `entry`.
+    fn rows_len(&self, entry: Option<&str>) -> usize {
+        self.profiles().rows_len(self.picker(), entry)
+    }
+
+    /// Row `i` of the picker, with the settings panel editing `entry`.
+    fn row(&self, i: usize, entry: Option<&str>) -> Option<PickerRow<'_>> {
+        self.profiles().row(self.picker(), i, entry)
+    }
+
+    /// The kind's tile opens the picker.
+    fn open_picker(&mut self) {
+        self.set_picker(Some(PickerScreen::List));
+    }
+
+    /// A row of the picker (see [`on_row`]).
+    fn on_row(&mut self, i: usize, part: RowPart, long: bool, cx: &PickerCx, editors: &mut Editors, out: &mut Out)
+    where
+        Self: Sized,
+    {
+        on_row(self, i, part, long, cx, editors, out);
+    }
+
+    /// The picker's buttons, but Back (see [`on`]).
+    fn on_picker(&mut self, id: ProfileId, settings: &crate::settings::Settings, editors: &mut Editors, out: &mut Out)
+    where
+        Self: Sized,
+    {
+        on(self, id, |p| settings.users(Self::KIND.setting(), p), editors, out);
+    }
+
+    /// The editor saved a profile's name (see [`named`]).
+    fn named_profile(&mut self, action: ProfileName, name: &str, out: &mut Out)
+    where
+        Self: Sized,
+    {
+        named(self, action, name, out);
+    }
 }
 
 impl<B: Clone + Default + PartialEq> Profiles<B> {

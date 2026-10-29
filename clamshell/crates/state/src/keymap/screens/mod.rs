@@ -27,8 +27,7 @@ use crate::levels::slider::{Control, Slider};
 use crate::nav::lists::RowPart;
 use crate::out::Out;
 use crate::profiles::Profiles;
-use crate::profiles::picker::{self, Kind as ProfileKind, Owner, PickerCx, PickerRow, PickerScreen, ProfileId, ProfileName};
-use crate::settings::Settings;
+use crate::profiles::picker::{self, Kind as ProfileKind, Owner, PickerCx, PickerScreen};
 use crate::{Event, Tab};
 
 mod layers;
@@ -197,23 +196,6 @@ impl Keymapping {
         matches!(self.screen_in(tab), Some(Screen::Capture { .. })) && !editor_open
     }
 
-    /// The picker's screen open, if one is.
-    fn picker_screen(&self) -> Option<PickerScreen> {
-        match self.open {
-            Some(Screen::Picker(p)) => Some(p),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn rows_len(&self, entry: Option<&str>) -> usize {
-        self.keymaps.rows_len(self.picker_screen(), entry)
-    }
-
-    /// Row `i` of the picker, with the settings panel editing `entry`.
-    pub(crate) fn row(&self, i: usize, entry: Option<&str>) -> Option<PickerRow<'_>> {
-        self.keymaps.row(self.picker_screen(), i, entry)
-    }
-
     /// Whether keymap `id` is a game's own.
     pub fn is_own(&self, id: u16) -> bool {
         self.keymaps.is_own(id)
@@ -251,21 +233,6 @@ impl Keymapping {
             return None;
         }
         self.keymaps.make_own_from(&crate::keymap::preset(preset)?, key)
-    }
-
-    /// The keymap tile opens the picker.
-    pub(crate) fn open_picker(&mut self) {
-        self.open = Some(Screen::Picker(PickerScreen::List));
-    }
-
-    /// A row of the picker (see [`picker::on_row`]).
-    pub(crate) fn on_row(&mut self, i: usize, part: RowPart, long: bool, cx: &PickerCx, editors: &mut Editors, out: &mut Out) {
-        picker::on_row(self, i, part, long, cx, editors, out);
-    }
-
-    /// The picker's buttons, but Back (see [`picker::on`]).
-    pub(crate) fn on_picker(&mut self, id: ProfileId, settings: &Settings, editors: &mut Editors, out: &mut Out) {
-        picker::on(self, id, |k| settings.users(crate::settings::Setting::Keymap, k), editors, out);
     }
 
     /// The keymaps' screens' buttons, but Back (see [`Keymapping::back`]).
@@ -478,10 +445,6 @@ impl Keymapping {
     }
 
     /// The editor saved a keymap's name (see [`picker::named`]).
-    pub(crate) fn named_profile(&mut self, action: ProfileName, name: &str, out: &mut Out) {
-        picker::named(self, action, name, out);
-    }
-
     /// The editor saved a layer's name: for a new or a renamed layer.
     pub(crate) fn named(&mut self, action: KeymapName, name: &str, out: &mut Out) {
         if name.trim().is_empty() {
@@ -623,7 +586,10 @@ impl Owner for Keymapping {
         &mut self.keymaps
     }
     fn picker(&self) -> Option<PickerScreen> {
-        self.picker_screen()
+        match self.open {
+            Some(Screen::Picker(p)) => Some(p),
+            _ => None,
+        }
     }
     fn set_picker(&mut self, screen: Option<PickerScreen>) {
         self.open = screen.map(Screen::Picker);
