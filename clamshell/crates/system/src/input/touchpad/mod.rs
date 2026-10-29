@@ -10,6 +10,7 @@
 mod device;
 mod pointing;
 
+use crate::os::worker::Quiet;
 use std::io;
 
 use clamshell_state::bottom::touch::{Contact, TouchLayout};
@@ -28,7 +29,7 @@ pub(crate) enum Command {
 /// Forwards the fingers pointing to the virtual touchpad, made as the state says the second screen is.
 pub(crate) fn spawn() -> io::Result<Worker<Command>> {
     Worker::spawn(clamshell_state::Thread::Touchpad.name(), move |commands| {
-        let mut touchpad = Touchpad { layout: None, pad: None, fingers: pointing::Fingers::default() };
+        let mut touchpad = Touchpad { layout: None, pad: None, fingers: pointing::Fingers::default(), failed: None, quiet: Quiet::default() };
         for command in commands {
             match command {
                 Command::Layout(layout) => touchpad.layout = layout,
@@ -45,7 +46,13 @@ struct Touchpad {
     /// The virtual touchpad, and the layout it was made with.
     pad: Option<Pad>,
     fingers: pointing::Fingers,
+    /// When making it last failed: it is tried again only after [`RETRY`], not at every touch.
+    failed: Option<std::time::Instant>,
+    quiet: Quiet,
 }
+
+/// How long after failing to make the touchpad it is tried again.
+const RETRY: std::time::Duration = std::time::Duration::from_secs(5);
 
 struct Pad {
     device: evdev::uinput::VirtualDevice,
@@ -59,6 +66,9 @@ impl Touchpad {
         if self.pad.as_ref().map(|pad| pad.layout) == self.layout || self.fingers.any() {
             return;
         }
+        if self.failed.is_some_and(|at| at.elapsed() < RETRY) {
+            return;
+        }
         self.pad = None;
         let Some(layout) = self.layout else {
             return;
@@ -66,8 +76,15 @@ impl Touchpad {
         let (w, h) = (layout.pixels.0 as f32, layout.pixels.1 as f32);
         let resolution = i32::try_from(layout.resolution).unwrap_or(i32::MAX);
         match device::virtual_touchpad(Rect::from_corners((0.0, 0.0, w, h)), (resolution, resolution)) {
-            Ok(device) => self.pad = Some(Pad { device, layout }),
-            Err(e) => log::warn!("the virtual touchpad: {e}"),
+            Ok(device) => {
+                self.pad = Some(Pad { device, layout });
+                self.failed = None;
+                self.quiet.ok();
+            }
+            Err(e) => {
+                self.failed = Some(std::time::Instant::now());
+                self.quiet.failed("the virtual touchpad", &e);
+            }
         }
     }
 
@@ -78,8 +95,9 @@ impl Touchpad {
         };
         let size = (i32::try_from(layout.pixels.0).unwrap_or(i32::MAX), i32::try_from(layout.pixels.1).unwrap_or(i32::MAX));
         let batch: Vec<evdev::InputEvent> = self.fingers.frame(contacts, size).into_iter().map(Into::into).collect();
-        if let Err(e) = device.emit(&batch) {
-            log::warn!("the virtual touchpad: {e}");
+        match device.emit(&batch) {
+            Ok(()) => self.quiet.ok(),
+            Err(e) => self.quiet.failed("the virtual touchpad", &e),
         }
     }
 }
