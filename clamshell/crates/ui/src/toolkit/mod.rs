@@ -241,19 +241,9 @@ impl<'f, 'c> Frame<'f, 'c> {
     }
 
     /// Whether `id` is held down by a finger or the pad's A. A list item is lit where the item pressed is
-    /// now. A control whose slider is up doesn't count, since the finger is then on the slider rather
-    /// than the button.
+    /// now. A target whose slider is up was let go as the slide started (see `input::press`).
     pub fn pressed(&self, id: &Id) -> bool {
-        self.pressed.as_ref() == Some(id) && !self.sliding(id)
-    }
-
-    /// Whether `id` is a control whose slider is held: a level's, a keymap's or a curve's parameter's, or
-    /// a setting's.
-    pub fn sliding(&self, id: &Id) -> bool {
-        let Id::Control(control) = id else {
-            return false;
-        };
-        self.s.held_slider().is_some_and(|s| s.control == *control)
+        self.pressed.as_ref() == Some(id)
     }
 
     /// A text action (see [`Look::TEXT`]). Draws `label` in `r` at `size`, centred, or from the left with

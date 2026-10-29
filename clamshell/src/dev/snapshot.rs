@@ -749,12 +749,14 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                     Bottom,
                     vec![
                         tab(Tab::Dock),
+                        // As a finger does: the control is let go as the slider comes up.
                         PointerEvent::Down(volume.clone(), None).into(),
+                        PointerEvent::Up(volume).into(),
                         Slide::Start { control: Control::Volume, x: 560.0, width: 1232.0 }.into(),
                         Slide::To { x: 700.0 }.into(),
                     ],
                 ),
-                shot("keyboard.png", Bottom, vec![Slide::End.into(), PointerEvent::Up(volume).into(), tab(Tab::Keyboard)]),
+                shot("keyboard.png", Bottom, vec![Slide::End.into(), tab(Tab::Keyboard)]),
                 shot("keyboard-fn.png", Bottom, vec![key(Key::Mod(Modifier::Fn))?]),
                 shot(
                     "keyboard-mods.png",

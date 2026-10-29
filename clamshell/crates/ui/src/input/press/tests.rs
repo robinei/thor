@@ -199,14 +199,17 @@ fn a_slide_starts_when_moved_far_enough_or_held() {
     assert!(input.moved(Source::Touch(1), (300.0 + SLIDE_MOVE - 1.0, 0.0), t0()).is_empty());
     let moved = input.moved(Source::Touch(1), (300.0 + SLIDE_MOVE, 0.0), t0());
     assert_eq!(moved[0], Action::Disarm(Source::Touch(1), Timer::Slide));
-    assert_eq!(events(&moved), vec![Slide::Start { control: Control::Volume, x: 290.0 + SLIDE_MOVE, width: 600.0 }.into()]);
+    // The control is let go as the slider comes up, so it isn't shown pressed under it.
+    let start = Slide::Start { control: Control::Volume, x: 290.0 + SLIDE_MOVE, width: 600.0 };
+    assert_eq!(events(&moved), vec![PointerEvent::Up(Id::Control(Control::Volume)).into(), start.into()]);
     assert_eq!(events(&input.moved(Source::Touch(1), (400.0, 0.0), t0())), vec![Slide::To { x: 390.0 }.into()]);
     let up = input.up(Source::Touch(1), End::Release, &blank(), t0());
-    assert_eq!(events(&up), vec![Slide::End.into(), PointerEvent::Up(Id::Control(Control::Volume)).into()]);
+    assert_eq!(events(&up), vec![Slide::End.into()]);
 
     // Held still: the timer starts it.
     input.touch(Source::Mouse, &volume(), (300.0, 0.0), t0());
-    assert_eq!(events(&input.timer(Source::Mouse, Timer::Slide, &state, t0())), vec![Slide::Start { control: Control::Volume, x: 290.0, width: 600.0 }.into()]);
+    let start = Slide::Start { control: Control::Volume, x: 290.0, width: 600.0 };
+    assert_eq!(events(&input.timer(Source::Mouse, Timer::Slide, &state, t0())), vec![PointerEvent::Up(Id::Control(Control::Volume)).into(), start.into()]);
     // Lifted before either, it is a tap, which opens the tab.
     input.up(Source::Mouse, End::Release, &blank(), t0());
     input.touch(Source::Mouse, &volume(), (300.0, 0.0), t0());
@@ -223,11 +226,11 @@ fn a_keymap_parameter_slides_at_once() {
     let row = Target { id: Id::Control(control), drag: Some(Drag::Slide { control, track, at_once: true }), ..volume() };
     let mut input = Input::default();
     let down = input.touch(Source::Touch(1), &row, (300.0, 0.0), t0());
-    assert_eq!(events(&down)[2..], [Slide::Start { control, x: 290.0, width: 600.0 }.into()], "no wait");
+    assert_eq!(events(&down)[2..], [PointerEvent::Up(Id::Control(control)).into(), Slide::Start { control, x: 290.0, width: 600.0 }.into()], "no wait");
     assert!(!down.iter().any(|a| matches!(a, Action::Arm(..))), "no timers: {down:?}");
     assert_eq!(events(&input.moved(Source::Touch(1), (310.0, 0.0), t0())), vec![Slide::To { x: 300.0 }.into()]);
     let up = input.up(Source::Touch(1), End::Release, &blank(), t0());
-    assert!(events(&up).contains(&Slide::End.into()));
+    assert_eq!(events(&up), vec![Slide::End.into()]);
     assert!(!events(&up).contains(&PointerEvent::Activate(Id::Control(control)).into()), "not a tap");
 }
 

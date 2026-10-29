@@ -137,7 +137,7 @@ enum Gesture {
     /// tap.
     /// `down_x` and `x` are where it came down and where it is now, along the track.
     PendingSlide { control: Control, down_x: f32, x: f32, track: Track },
-    /// Moving the slider. The release ends the slide.
+    /// Moving the slider. The target was let go as the slide started, and the release ends the slide.
     Sliding { track: Track },
     /// Setting a level row. Holding it still doesn't long-press, and the release focuses it as a tap
     /// does.
@@ -278,13 +278,14 @@ impl Input {
         actions
     }
 
-    /// Starts a pending slide. The slider comes up under the finger.
+    /// Starts a pending slide. The target is let go, as a list's row is when the list is dragged, and the
+    /// slider comes up under the finger.
     fn start_slide(press: &mut Press) -> Vec<Action> {
         let Gesture::PendingSlide { control, x, track, .. } = press.gesture else {
             return vec![];
         };
         press.gesture = Gesture::Sliding { track };
-        vec![Action::Emit(Slide::Start { control, x, width: track.w }.into())]
+        vec![Action::Emit(PointerEvent::Up(press.id.clone()).into()), Action::Emit(Slide::Start { control, x, width: track.w }.into())]
     }
 
     /// Ends a fling, if one is on.
@@ -418,11 +419,12 @@ impl Input {
             }
             return actions;
         }
+        // The target was let go when the slide began.
+        if let Gesture::Sliding { .. } = press.gesture {
+            actions.push(Action::Emit(Slide::End.into()));
+            return actions;
+        }
         let activates = match press.gesture {
-            Gesture::Sliding { .. } => {
-                actions.push(Action::Emit(Slide::End.into()));
-                false
-            }
             Gesture::PendingSlide { .. } => {
                 actions.push(Action::Disarm(source, Timer::Slide));
                 true
@@ -430,7 +432,7 @@ impl Input {
             // A tap let go off its target doesn't count.
             Gesture::Tap => press.on_target(source),
             Gesture::LevelDrag { .. } => true,
-            Gesture::Held | Gesture::Dragging { .. } | Gesture::Pointing => false,
+            Gesture::Held | Gesture::Sliding { .. } | Gesture::Dragging { .. } | Gesture::Pointing => false,
         };
         if activates && end == End::Release {
             actions.push(Action::Emit(PointerEvent::Activate(press.id.clone()).into()));
