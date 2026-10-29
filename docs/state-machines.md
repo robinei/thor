@@ -991,7 +991,7 @@ A key from a keyboard passes the compositor's filter before the focused client s
 |---|---|---|
 | F12 down, up, on a desktop host (nested) | `HomeHeld(true)`, `HomeHeld(false)` and `HomeTap`; not passed on. On the device it reaches the window as any key | GAP (by hand) |
 | Ctrl+Alt+F1 to F12 | DRM switches to that VT; nested ignores it; not passed on | on the device |
-| F11, F10 down | `Device(WindowDown)`, `Device(WindowUp)`; not passed on | GAP |
+| F11, F10 down, on a desktop host (nested) | `Device(WindowDown)`, `Device(WindowUp)`; not passed on | GAP |
 | another key, with no keyboard focus in the state | to ClamShell's screens as the pad (`focus::desktop_key`: arrows, Enter, ...); not passed on | `desktop_keys_stand_for_the_pad` (the table) |
 | another key | to the focused surface | the nested X11 focus checks |
 
