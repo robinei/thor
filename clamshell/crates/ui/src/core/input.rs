@@ -20,11 +20,11 @@ impl Core {
     pub fn press(&mut self, source: Source, screen: Screen, (x, y): (f64, f64), time: u32) {
         let (x, y) = (x as f32, y as f32);
         let found = self.screens[screen].frames.retained.targets.iter().rev().find(|t| t.rect.contains(x, y)).cloned();
-        let bottom = screen == Screen::Bottom;
-        if bottom {
-            self.handle(Event::BottomTouched);
+        if let Some(touched) = self.screens[screen].touched.clone() {
+            self.handle(touched);
         }
         let s = &self.screens[screen];
+        let pointing = s.pointing.is_some_and(|pointing| pointing(&self.state));
         let in_content = s.content.is_some_and(|r| r.contains(x, y));
         let points = s.point_area.is_some_and(|r| r.contains(x, y));
         if found.is_none() && !in_content {
@@ -32,10 +32,8 @@ impl Core {
         }
         let now = self.clock.at(time);
         let actions = match source {
-            // While the second screen is pointing, a finger put down where it may point points too.
-            Source::Touch(_) if self.state.bottom().pointing() && points && found.as_ref().is_none_or(|t| t.drag.is_none()) => {
-                self.input.point(source, (x, y), now)
-            }
+            // While the screen is pointing, a finger put down where it may point points too.
+            Source::Touch(_) if pointing && points && found.as_ref().is_none_or(|t| t.drag.is_none()) => self.input.point(source, (x, y), now),
             _ => self.input.touch(source, found.as_ref(), points, (x, y), now),
         };
         self.run_actions(actions);

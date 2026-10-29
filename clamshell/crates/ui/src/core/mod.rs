@@ -46,15 +46,29 @@ struct ScreenCore {
     stale: bool,
     /// Where the content went in the last frame, in logical pixels (see [`crate::toolkit::FrameOut`]).
     content: Option<Rect>,
-    /// Where a finger may point in the last frame, in logical pixels.
+    /// Where a finger may point in the last frame, in logical pixels, and whether it points at once
+    /// (see [`crate::toolkit::FrameOut`]).
     point_area: Option<Rect>,
+    pointing: Option<fn(&State) -> bool>,
+    /// What a press on the screen tells the state, as the last frame declared.
+    touched: Option<Event>,
     /// What the pad's buttons do, as the last frame declared.
     pad: PadOut,
 }
 
 impl Default for ScreenCore {
     fn default() -> Self {
-        ScreenCore { frames: ScreenFrames::default(), size: (1, 1), scale: 1, stale: true, content: None, point_area: None, pad: PadOut::default() }
+        ScreenCore {
+            frames: ScreenFrames::default(),
+            size: (1, 1),
+            scale: 1,
+            stale: true,
+            content: None,
+            point_area: None,
+            pointing: None,
+            touched: None,
+            pad: PadOut::default(),
+        }
     }
 }
 
@@ -354,7 +368,8 @@ impl Core {
         let at = Placement { size_px, scale: s.scale, drift: render::orbit(self.state.clock().unix()) };
         let mut out = s.frames.record(at, layer, &self.state, &mut self.fonts, &mut self.images, &self.views);
         s.stale = false;
-        (s.content, s.point_area) = (out.content, out.point_area);
+        (s.content, s.point_area, s.pointing) = (out.content, out.point_area, out.pointing);
+        s.touched = out.touched.take();
         s.pad = std::mem::take(&mut out.pad);
         self.reports.extend(out.report.take());
         self.reports.extend(render::list_changes(&self.state, &out));

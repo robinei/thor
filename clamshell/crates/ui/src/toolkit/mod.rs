@@ -167,6 +167,13 @@ pub struct FrameOut {
     /// Where a finger may point (see `input::press` and clamshell-state's `touch`): one that comes down
     /// here, on nothing or on a target without a drag, and moves while it would still tap.
     pub point_area: Option<Rect>,
+    /// Whether the point area is a touchpad now, asked as a finger comes down: one that comes down there
+    /// then points at once. It is asked of the state at that moment, since pointing starts and ends
+    /// between frames.
+    pub pointing: Option<fn(&State) -> bool>,
+    /// What a finger or button coming down anywhere on the screen tells the state, such as that the
+    /// screen was used.
+    pub touched: Option<Event>,
     /// How many rows each scrolled list drawn shows, indexed by [`ListId::index`]. The state keeps the
     /// lists' offsets and the pad's focus within them.
     pub lists: [Option<f32>; ListId::COUNT],

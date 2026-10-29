@@ -126,6 +126,10 @@ fn windows(f: &mut Frame, body: Rect) {
 /// editor, over the whole screen. The frame starts black (see `render`).
 pub fn bottom(f: &mut Frame, screen: Rect) {
     f.body = screen;
+    // A touch anywhere on it counts as using it (see clamshell-state's `bottom::screen`), and below the
+    // bar it points at once while the state says the area is pointing.
+    f.out.touched = Some(clamshell_state::Event::BottomTouched);
+    f.out.pointing = Some(|s| s.bottom().pointing());
     if f.s.setup().wizard().is_some() {
         typing(f, screen);
         // A finger on the keyboard may point, as below the bar.
