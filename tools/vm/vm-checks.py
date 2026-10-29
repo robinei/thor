@@ -397,7 +397,9 @@ printf '%s\\n' '[Service]' 'Environment=XDG_CONFIG_HOME={CHECKS_DIR}/config' 'En
 {NULL_SINK}
 systemctl --user stop 'clamshell-run-*' 'app-graphical-clamshell-run-*' 2>/dev/null || true
 systemctl --user daemon-reload
-systemctl --user reset-failed clamshell; systemctl --user restart clamshell
+# (A stopped unit may be unloaded already: nothing failed to reset then.)
+systemctl --user reset-failed clamshell 2>/dev/null || true
+systemctl --user restart clamshell
 """
     sh("bash -s", input=script, check=True)
     if bluetooth:
