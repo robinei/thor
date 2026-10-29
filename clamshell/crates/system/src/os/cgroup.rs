@@ -51,12 +51,12 @@ pub(crate) fn gpu_ns(dir: &Path) -> u64 {
 }
 
 /// The unified hierarchy's path in a cgroup file, from its `0::` line.
-fn parse_path(cgroup: &str) -> Option<&str> {
+pub(crate) fn parse_path(cgroup: &str) -> Option<&str> {
     cgroup.lines().find_map(|l| l.strip_prefix("0::"))
 }
 
 /// The innermost unit in a cgroup path.
-fn innermost_unit(path: &str) -> Option<&str> {
+pub(crate) fn innermost_unit(path: &str) -> Option<&str> {
     path.rsplit('/').find(|part| part.ends_with(".scope") || part.ends_with(".service"))
 }
 

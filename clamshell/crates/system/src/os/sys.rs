@@ -47,8 +47,13 @@ pub(crate) fn parent_in(stat: &str) -> Option<u32> {
 /// Field `n` of a `/proc/<pid>/stat` file, counted from 1 as proc(5) numbers them. Only the 3rd field on
 /// can be read. The 2nd is the name in parentheses, which may hold anything including spaces and
 /// parentheses, so fields are counted after the last `)`.
-fn stat_field<T: std::str::FromStr>(stat: &str, n: usize) -> Option<T> {
+pub(crate) fn stat_field<T: std::str::FromStr>(stat: &str, n: usize) -> Option<T> {
     stat.rsplit_once(')')?.1.split_whitespace().nth(n.checked_sub(3)?)?.parse().ok()
+}
+
+/// The process's name, the 2nd field of a `/proc/<pid>/stat` file, without its parentheses.
+pub(crate) fn stat_name(stat: &str) -> Option<&str> {
+    stat.get(stat.find('(')? + 1..stat.rfind(')')?)
 }
 
 /// The start times of the windows' and tray icons' processes as last seen. When ClamShell acts on a

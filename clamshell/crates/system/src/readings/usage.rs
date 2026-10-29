@@ -95,15 +95,17 @@ fn read_processes() -> HashMap<u32, Counters> {
             continue;
         };
         let mine = std::fs::metadata(&dir).is_ok_and(|m| m.uid() == me);
-        let unit = cgroup::unit_of(pid).and_then(|unit| LaunchUnit::from_unit(&unit));
-        let group = match (unit, android(&dir), mine) {
+        // (Read once for the unit, Android's container and whether it may be ended.)
+        let cgroups = sys::text(dir.join("cgroup")).unwrap_or_default();
+        let unit = cgroup::parse_path(&cgroups).and_then(cgroup::innermost_unit).and_then(LaunchUnit::from_unit);
+        let group = match (unit, android(&dir, &cgroups), mine) {
             (Some(unit), ..) => Group::Launch(unit),
             (None, Some(group), _) => group,
             (None, None, true) => Group::Process(comm),
             (None, None, false) => Group::System,
         };
         let gpu = if mine { drm::clients(&dir) } else { HashMap::new() };
-        let endable = !matches!(group, Group::System) && endable(pid, &dir);
+        let endable = !matches!(group, Group::System) && endable(pid, &cgroups);
         out.insert(pid, Counters { group, cpu, gpu, memory: resident(&dir), endable });
     }
     out
@@ -115,11 +117,10 @@ fn read_processes() -> HashMap<u32, Counters> {
 /// - a login session's scope;
 /// - the user manager's own scope;
 /// - ClamShell's service.
-fn endable(pid: u32, dir: &std::path::Path) -> bool {
+fn endable(pid: u32, cgroup: &str) -> bool {
     if pid == std::process::id() {
         return false;
     }
-    let cgroup = sys::text(dir.join("cgroup")).unwrap_or_default();
     let own = |path: &str| {
         let unit = path.rsplit('/').next().unwrap_or("");
         path.contains("/session.slice/") || (unit.starts_with("session-") && unit.ends_with(".scope")) || unit == "init.scope" || unit == "clamshell.service"
@@ -130,8 +131,8 @@ fn endable(pid: u32, dir: &std::path::Path) -> bool {
 /// The group of a process in Waydroid's container, which is its LXC payload cgroup. An app's process is
 /// grouped by the app id Waydroid gives its windows (`waydroid.<package>`); Android names an app's
 /// processes after its package, as `<package>[:<name>]`. Other processes are grouped as Android's own.
-fn android(dir: &std::path::Path) -> Option<Group> {
-    if !sys::text(dir.join("cgroup"))?.contains("/lxc.payload.waydroid") {
+fn android(dir: &std::path::Path, cgroup: &str) -> Option<Group> {
+    if !cgroup.contains("/lxc.payload.waydroid") {
         return None;
     }
     Some(android_group(&std::fs::read(dir.join("cmdline")).unwrap_or_default()))
@@ -150,17 +151,11 @@ fn resident(dir: &std::path::Path) -> u64 {
     pages * rustix::param::page_size() as u64
 }
 
-/// The process name and its user plus system CPU time in clock ticks, from `/proc/<pid>/stat`.
+/// The process name and its user plus system CPU time in clock ticks (utime and stime, the 14th and 15th
+/// fields), from `/proc/<pid>/stat`.
 fn parse_stat(text: &str) -> Option<(String, u64)> {
-    let open = text.find('(')?;
-    let close = text.rfind(')')?;
-    let comm = text.get(open + 1..close)?.to_owned();
-    // After the name come state, ppid and so on. utime is the 14th field of the line, the 12th after the
-    // name.
-    let mut fields = text.get(close + 2..)?.split_whitespace();
-    let utime: u64 = fields.nth(11)?.parse().ok()?;
-    let stime: u64 = fields.next()?.parse().ok()?;
-    Some((comm, utime + stime))
+    let (utime, stime): (u64, u64) = (sys::stat_field(text, 14)?, sys::stat_field(text, 15)?);
+    Some((sys::stat_name(text)?.to_owned(), utime + stime))
 }
 
 #[cfg(test)]
