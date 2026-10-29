@@ -43,10 +43,14 @@ impl State {
     /// Runs after every event, since any may change the lists' contents. Each scrolled list keeps its top
     /// item where it is, while that item is still there, and stays within its ends.
     pub(crate) fn follow_lists(&mut self) {
-        for list in ListId::ALL {
-            let lists = self.lists();
-            let len = lists.len(list);
+        // The lists are built once (each build works out the subject and the app in front), and looked at
+        // for every list before any scroll changes.
+        let lists = self.lists();
+        let follow = ListId::ALL.map(|list| {
             let found = lists.scroll(list).anchored().and_then(|key| lists.rows(list).find(key));
+            (found, lists.len(list))
+        });
+        for (list, (found, len)) in ListId::ALL.into_iter().zip(follow) {
             if let Some(s) = self.scroll_mut(list) {
                 s.follow(found, len);
             }
