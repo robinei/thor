@@ -4,7 +4,8 @@
 
 use std::io;
 use std::sync::mpsc::Receiver;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use clamshell_state::levels::{Audio, AudioOutput, Stream};
 use clamshell_state::{Event, Reading};
@@ -58,16 +59,28 @@ fn follow(backlights: &Backlights, carried: &super::sound::Carried, commands: &R
 }
 
 /// The PipeWire graph, as `pw-dump` prints it. It is read every few seconds, so a failure is logged at
-/// debug; a missing `pw-dump` is reported at start with the other tools.
-fn dump() -> Option<Value> {
+/// debug; a missing `pw-dump` is reported at start with the other tools. Both the status's volume and
+/// the sound tab's mixer read it, so a graph read less than [`DUMP_FRESH`] ago is shared.
+fn dump() -> Option<Arc<Value>> {
     use crate::os::command;
+    static LAST: Mutex<Option<(Instant, Arc<Value>)>> = Mutex::new(None);
+    if let Some((at, graph)) = crate::os::lock(&LAST).as_ref()
+        && at.elapsed() < DUMP_FRESH
+    {
+        return Some(graph.clone());
+    }
     let ran = command::run("pw-dump", &[] as &[&str], None, command::LIMIT).inspect_err(|e| log::debug!("{e}")).ok()?;
     if !ran.status.success() {
         log::debug!("pw-dump: {}", ran.status);
         return None;
     }
-    serde_json::from_slice(&ran.stdout).inspect_err(|e| log::debug!("pw-dump: {e}")).ok()
+    let graph: Arc<Value> = Arc::new(serde_json::from_slice(&ran.stdout).inspect_err(|e| log::debug!("pw-dump: {e}")).ok()?);
+    *crate::os::lock(&LAST) = Some((Instant::now(), graph.clone()));
+    Some(graph)
 }
+
+/// How long a graph read by `pw-dump` is used again (see [`dump`]).
+const DUMP_FRESH: Duration = Duration::from_secs(1);
 
 /// The outputs and apps, with `seen`, the number of the last sound command carried out before they were
 /// read.
@@ -77,7 +90,7 @@ fn read_audio(seen: u64) -> Audio {
 
 /// The default output's volume (0-100) and whether it is muted.
 pub(crate) fn read_volume() -> Option<(u8, bool)> {
-    dump().as_ref().and_then(default_volume)
+    dump().and_then(|graph| default_volume(&graph))
 }
 
 static NULL: Value = Value::Null;
