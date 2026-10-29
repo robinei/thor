@@ -209,11 +209,10 @@ pub(crate) fn read_config(file: &Path) -> (Config, Option<String>) {
     }
 }
 
-/// Writes `config` to `file`, one place, runner or source a line as the starter is written, through a
-/// file beside it moved over it.
+/// Writes `config` to `file`, one place, runner or source a line as the starter is written, whole (see
+/// `os::fs::write_file`): a crash mid-write leaves the last library.json.
 pub(crate) fn write_config(file: &Path, config: &Config) -> std::io::Result<()> {
-    fs::write(file.with_extension("json.new"), config_text(config)?)?;
-    fs::rename(file.with_extension("json.new"), file)
+    crate::os::fs::write_file(file, config_text(config)?.as_bytes())
 }
 
 /// `config` as library.json's text: one place, runner or source a line.
