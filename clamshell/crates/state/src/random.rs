@@ -988,7 +988,7 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     let screens_on = s.idle().stage() < Stage::Off;
     ensure!(sent.status == screens_on, "2: status watched {}, screens on {screens_on}", sent.status);
     // At most one tab's watch is on, and it is the open tab's (the dock's menu shows the battery's).
-    let tab = s.bottom().tab().definition().watch;
+    let tab = (s.bottom().tab().definition().watch)(s);
     ensure!(
         sent.watched.len() <= 1 && sent.watched.iter().all(|w| Some(*w) == tab || *w == Watch::Battery || *w == Watch::Time),
         "2: watches on {:?}, the tab's {tab:?}",

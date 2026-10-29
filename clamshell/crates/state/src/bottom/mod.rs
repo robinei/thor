@@ -61,7 +61,10 @@ names!(Tab {
 #[derive(Debug)]
 pub struct TabDefinition {
     /// What is read from the system while it is open and seen.
-    pub watch: Option<Watch>,
+    pub watch: fn(&crate::State) -> Option<Watch>,
+    /// Whether the pad steps through something there rather than moving the focus, such as a dock entry
+    /// being moved (see [`crate::nav::pad`]).
+    pub steps_pad: fn(&crate::State) -> bool,
     pub button: BarPlace,
     /// With a window in front, the pad types with it rather than playing (see [`crate::nav::pad`]).
     pub types: bool,
@@ -83,18 +86,22 @@ pub enum BarPlace {
 impl Tab {
     /// Its definition.
     pub fn definition(self) -> &'static TabDefinition {
-        const fn tab(watch: Option<Watch>, button: BarPlace) -> TabDefinition {
-            TabDefinition { watch, button, types: false, restored: true }
+        const fn tab(watch: fn(&crate::State) -> Option<Watch>, button: BarPlace) -> TabDefinition {
+            TabDefinition { watch, button, steps_pad: |_| false, types: false, restored: true }
         }
-        const SPREAD: TabDefinition = tab(None, BarPlace::Spread);
-        const VOLUME: TabDefinition = tab(Some(Watch::Audio), BarPlace::Spread);
-        const BRIGHTNESS: TabDefinition = tab(Some(Watch::Backlights), BarPlace::Spread);
-        const WIFI: TabDefinition = tab(Some(Watch::Wifi), BarPlace::Spread);
-        const BLUETOOTH: TabDefinition = tab(Some(Watch::Bluetooth), BarPlace::Spread);
-        const BATTERY: TabDefinition = tab(Some(Watch::Battery), BarPlace::Spread);
-        const SYSINFO: TabDefinition = tab(Some(Watch::Metrics), BarPlace::Spread);
-        const TIME: TabDefinition = tab(Some(Watch::Time), BarPlace::Clock);
-        const WINDOWS: TabDefinition = tab(None, BarPlace::End);
+        const SPREAD: TabDefinition = tab(|_| None, BarPlace::Spread);
+        const VOLUME: TabDefinition = tab(|_| Some(Watch::Audio), BarPlace::Spread);
+        const BRIGHTNESS: TabDefinition = tab(|_| Some(Watch::Backlights), BarPlace::Spread);
+        const WIFI: TabDefinition = tab(|_| Some(Watch::Wifi), BarPlace::Spread);
+        const BLUETOOTH: TabDefinition = tab(|_| Some(Watch::Bluetooth), BarPlace::Spread);
+        const BATTERY: TabDefinition = tab(|_| Some(Watch::Battery), BarPlace::Spread);
+        const SYSINFO: TabDefinition = tab(|_| Some(Watch::Metrics), BarPlace::Spread);
+        const TIME: TabDefinition = tab(|_| Some(Watch::Time), BarPlace::Clock);
+        const WINDOWS: TabDefinition = tab(|_| None, BarPlace::End);
+        // An entry's menu open watches the battery's readings, to show what the entry costs; a tile being
+        // moved takes the pad's steps.
+        const DOCK: TabDefinition =
+            TabDefinition { watch: |s| s.dock().menu().is_some().then_some(Watch::Battery), steps_pad: |s| s.dock().moving().is_some(), ..SPREAD };
         const KEYBOARD: TabDefinition = TabDefinition { types: true, ..SPREAD };
         // Every touch there moves the pointer, so it opens only on request.
         const TOUCHPAD: TabDefinition = TabDefinition { restored: false, ..SPREAD };
@@ -109,7 +116,8 @@ impl Tab {
             Tab::Windows => &WINDOWS,
             Tab::Keyboard => &KEYBOARD,
             Tab::Touchpad => &TOUCHPAD,
-            Tab::Settings | Tab::Dock => &SPREAD,
+            Tab::Dock => &DOCK,
+            Tab::Settings => &SPREAD,
         }
     }
 }

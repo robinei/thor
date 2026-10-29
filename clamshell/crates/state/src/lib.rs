@@ -677,18 +677,14 @@ impl State {
     /// Works out where the pad goes as things are now. Returns the new route if it changed.
     fn reconcile_pad(&mut self) -> Option<PadRoute> {
         let listening = self.listening();
-        let stepping = (self.dock.moving().is_some() && self.bottom.tab() == Tab::Dock) || self.session.overview().is_some();
+        let stepping = (self.bottom.tab().definition().steps_pad)(self) || self.session.overview().is_some();
         self.pad.reconcile(self.top(), self.bottom.tab(), listening, stepping)
     }
 
     /// What the outside should have as things are now. The second screen watches what the open tab
-    /// watches; the dock with an entry's menu open watches the battery tab's readings, to show what the
-    /// entry costs. It can be seen when ClamShell's view is on the bottom screen and that screen is on.
+    /// watches. It can be seen when ClamShell's view is on the bottom screen and that screen is on.
     fn wanted(&self) -> Wanted<'_> {
-        let tab = match self.bottom.tab() {
-            Tab::Dock if self.dock.menu().is_some() => Some(Watch::Battery),
-            tab => tab.definition().watch,
-        };
+        let tab = (self.bottom.tab().definition().watch)(self);
         let settings = self.in_force();
         let bottom_off = self.bottom_off();
         Wanted {
