@@ -1058,6 +1058,8 @@ class Checks:
     def pad_unplug(self):
         if not plug_pad():
             return self.check("pad: the fake pad grabbed", False)
+        if not self._select_test_game():
+            return
         since = now()
         control("tap launch")
         launched = until(lambda: bool(units("run-")) and front() not in ("the Library", "window None"), 10)
@@ -1073,6 +1075,8 @@ class Checks:
     def pad_guide(self):
         if not plug_pad():
             return self.check("pad: the fake pad grabbed", False)
+        if not self._select_test_game():
+            return
         control("tap launch")
         launched = until(lambda: bool(units("run-")) and front() not in ("the Library", "window None"), 10)
         if not self.check("pad: a game in front", launched, f"front {front()!r}"):
@@ -1106,7 +1110,7 @@ class Checks:
         """A keymap made through the screens (the control pipe, and the pad on the edit screen): A to
         Ctrl+X, the right stick to the pointer, the gyro to the pointer while LB is held; then a game with
         it, read from the virtual devices; then Default."""
-        if not self.check("keymaps: the fake pad grabbed", plug_pad()):
+        if not self.check("keymaps: the fake pad grabbed", plug_pad()) or not self._select_test_game():
             return
         self.check("  the first start made the Nintendo layout", keymap_named("Nintendo layout") is not None, saved_keymaps())
         since = now()
@@ -1188,7 +1192,7 @@ class Checks:
         """A keymap with A to Ctrl+X, and to Ctrl+Y in a layer Back turns on while held, made through the
         screens (New layer in the layer list, a name, Back to the layer as a target); in a game: A, Back with
         A, and Back let go while A is held, read from the virtual keyboard; then the layer made Once."""
-        if not self.check("keymap layers: the fake pad grabbed", plug_pad()):
+        if not self.check("keymap layers: the fake pad grabbed", plug_pad()) or not self._select_test_game():
             return
         for line in ["tab settings", "tap scope game", "long setting keymap", "tap keymap-new", "type Layers", "tap save",
                      "tap map-from a", "tap map-to key", "tap key ctrl", "tap key x",
@@ -1253,7 +1257,7 @@ class Checks:
     def keymap_actuations(self):
         """A keymap with A to X pressed and to E held, B to Z pressed twice, Y to T with turbo and toggled,
         made through the screens; in a game, read from the virtual keyboard."""
-        if not self.check("keymap actuations: the fake pad grabbed", plug_pad()):
+        if not self.check("keymap actuations: the fake pad grabbed", plug_pad()) or not self._select_test_game():
             return
         for line in ["tab settings", "tap scope game", "long setting keymap", "tap keymap-new", "type Acts", "tap save",
                      "tap map-from a", "tap map-to key", "tap key x", "tap keymap-act hold", "tap map-to key", "tap key e",
@@ -1298,7 +1302,7 @@ class Checks:
     def rumble(self):
         """A game's rumble on the virtual pad reaches the controller: an effect uploaded to the virtual pad,
         played and stopped, read back from the fake pad's own rumble (it says what it is asked to play)."""
-        if not self.check("rumble: the fake pad grabbed", plug_pad()):
+        if not self.check("rumble: the fake pad grabbed", plug_pad()) or not self._select_test_game():
             return
         control("tap launch")
         if not self.check("  a game in front", until(lambda: bool(units("run-")) and front() not in ("the Library", "window None"), 10)):
@@ -1326,15 +1330,22 @@ class Checks:
 
     # process control
 
+    def _select_test_game(self):
+        """The Test tab's first game (test.game) selected in the Library, as the checks that launch "the
+        selected game" or set its settings need, whatever the checks before left selected."""
+        # (Its collection's place depends on which are shown: Recent and Favourites only with entries.)
+        for place in range(4):
+            control(f"tap collection {place}")
+            control("list -1000")
+            if until(lambda: (selection() or "").endswith("test.game"), 2):
+                return True
+        return self.check("the Library: test.game selected", False, f"collection {collection()!r}, selection {selection()!r}")
+
     def _launch_test_game(self):
         """The Test tab's first game (test.game, an idle mpv window) launched from the Library; its group,
         once in front (none if it didn't come)."""
-        # (Its collection's place depends on which are shown: Recent and Favourites only with entries.)
-        for collection in range(4):
-            control(f"tap collection {collection}")
-            control("list -1000")
-            if until(lambda: (selection() or "").endswith("test.game"), 2):
-                break
+        if not self._select_test_game():
+            return None
         control("tap launch")
         if not until(lambda: not front().startswith(("the Library", "window ")), 10):
             self.check("process control: the test game launched, in front", False, f"front {front()!r}, units {units('run-')}")
