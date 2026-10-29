@@ -206,32 +206,49 @@ pub(crate) fn adopt(unit: LaunchUnit, pid: u32) {
 
 /// Asks the processes of a program not started by ClamShell to end (SIGTERM), or kills them.
 pub(crate) fn end_processes(pids: &[u32], force: bool) {
-    // Only signal processes that are still the ones seen, since a process that is gone may have left its
-    // id to another.
-    let pids: Vec<u32> = pids.iter().copied().filter(|&p| sys::same_process(p)).collect();
-    if pids.is_empty() {
-        return;
-    }
-    log::info!("{} processes {pids:?}", if force { "killing" } else { "ending" });
-    let signal = if force { Signal::KILL } else { Signal::TERM };
-    for pid in pids {
-        let Some(pid) = i32::try_from(pid).ok().and_then(Pid::from_raw) else { continue };
-        if let Err(e) = rustix::process::kill_process(pid, signal) {
-            log::warn!("signalling process {pid:?}: {e}");
+    let pids = pids.to_vec();
+    // On a thread of its own, as the other effects on processes: it reads each process's facts.
+    let done = worker::detached("end", move || {
+        // Only signal processes that are still the ones seen, since a process that is gone may have left
+        // its id to another.
+        let pids: Vec<u32> = pids.into_iter().filter(|&p| sys::same_process(p)).collect();
+        if pids.is_empty() {
+            return;
         }
+        log::info!("{} processes {pids:?}", if force { "killing" } else { "ending" });
+        let signal = if force { Signal::KILL } else { Signal::TERM };
+        for pid in pids {
+            let Some(pid) = i32::try_from(pid).ok().and_then(Pid::from_raw) else { continue };
+            if let Err(e) = rustix::process::kill_process(pid, signal) {
+                log::warn!("signalling process {pid:?}: {e}");
+            }
+        }
+    });
+    if let Err(e) = done {
+        log::warn!("end: {e}");
     }
 }
 
 /// Runs a runner's `stop`, `pause` or `resume` command without waiting for it. Waydroid's runner uses
 /// these to have Android stop an app or freeze it.
 pub(crate) fn runner_command(argv: &[String]) {
-    let Some((program, args)) = argv.split_first() else {
-        return;
-    };
-    log::info!("runner command: {}", argv.join(" "));
-    match Process::new(program).args(args).stdin(Stdio::null()).process_group(0).spawn() {
-        Ok(child) => job::reap(child),
-        Err(e) => log::warn!("runner command: {program}: {e}"),
+    let argv = argv.to_vec();
+    let done = worker::detached("runner command", move || {
+        let Some((program, args)) = argv.split_first() else {
+            return;
+        };
+        log::info!("runner command: {}", argv.join(" "));
+        match Process::new(program).args(args).stdin(Stdio::null()).process_group(0).spawn() {
+            Ok(mut child) => {
+                if let Err(e) = child.wait() {
+                    log::debug!("runner command: {program}: {e}");
+                }
+            }
+            Err(e) => log::warn!("runner command: {program}: {e}"),
+        }
+    });
+    if let Err(e) = done {
+        log::warn!("runner command: {e}");
     }
 }
 
