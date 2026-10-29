@@ -60,13 +60,7 @@ impl LibraryView {
             LibraryViewId::Continue => self.continue_selected(out),
             LibraryViewId::Enqueue => self.ask_enqueue(out),
             LibraryViewId::File(action) => self.on_file(action, out),
-            LibraryViewId::Edit(id) => {
-                self.edit_tap(id, out);
-                // Left, or a pick begun: the focus goes to the Library's selection.
-                if self.edit().is_none() || self.pick().is_some() {
-                    pointer.focus_library_view(self.selected());
-                }
-            }
+            LibraryViewId::Edit(id) => self.edit_tap(id, out),
             LibraryViewId::Up => {
                 self.up();
             }

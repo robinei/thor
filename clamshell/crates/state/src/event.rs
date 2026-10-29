@@ -244,6 +244,9 @@ pub enum PointerEvent {
     Focus(Id),
     /// Touch or mouse input began. The focus ring is hidden until the pad moves focus again.
     HideFocus,
+    /// The main screen shows something else, and the focus starts on `id`, where its view says. The ring
+    /// stays as it was, and it isn't input.
+    Start(Id),
 }
 
 /// A finger sliding on a bar control. `x` is in the second screen's layout units, and the control is

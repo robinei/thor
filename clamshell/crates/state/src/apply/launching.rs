@@ -76,19 +76,11 @@ impl State {
     pub(crate) fn show_builtin(&mut self, b: Builtin) {
         self.session.cancel_front_launch();
         self.session.command(WindowCommand::Show(b));
-        match b {
-            Builtin::Device => self.pointer.focus_on(crate::Id::Device(crate::DeviceId::Wifi)),
-            Builtin::Library => self.pointer.focus_library_view(self.library_view.selected()),
-        }
     }
 
     /// Closes the Device view: the Library shows in its place if it showed.
     pub(crate) fn close_device(&mut self) {
-        let shown = self.session.shown_builtin() == Some(Builtin::Device);
         self.session.close_device();
-        if shown {
-            self.pointer.focus_library_view(self.library_view.selected());
-        }
     }
 
     /// The dock menu's Open another: launches `id` again, if that is offered (see [`State::opens_another`]).

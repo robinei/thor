@@ -15,15 +15,13 @@
 //! ([`crate::setup::Setup::holds_programs`]). The step reached isn't saved: after a restart Setup begins at
 //! Wi-Fi again.
 
-use std::sync::Arc;
-
 use super::Setup;
 use super::account::{Account, PasswordStep};
 use crate::bottom::Tab;
 use crate::bottom::editor::{Editor, Purpose};
 use crate::effect::{Effect, Save};
 use crate::out::Out;
-use crate::{Event, Id, Pointer, SetupId};
+use crate::{Event, SetupId};
 
 /// A step of Setup, in order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
@@ -71,7 +69,7 @@ impl Setup {
 
     /// A tap on one of Setup's targets. Done ends Setup for good, the Library showing next with its
     /// selection focused (`selected`) and the default tab below.
-    pub(crate) fn wizard_tap(&mut self, id: SetupId, pointer: &mut Pointer, selected: Option<&Arc<str>>, out: &mut Out) {
+    pub(crate) fn wizard_tap(&mut self, id: SetupId, out: &mut Out) {
         let Some(step) = self.wizard() else { return };
         match (id, step) {
             (SetupId::Password, Step::Password) if self.account.available() => {
@@ -82,15 +80,11 @@ impl Setup {
             (SetupId::Next, Step::Wifi) => self.step = Step::Zone,
             (SetupId::Next, Step::Zone) => {
                 self.first_start = false;
-                pointer.focus_library_view(selected);
                 out.effects.push(Effect::Save(Save::FirstStartDone));
                 out.events.push(Event::ChooseTab(Tab::default()));
             }
             (SetupId::Back, Step::Zone) => self.step = Step::Wifi,
             _ => {}
-        }
-        if let Some(step) = self.wizard().filter(|now| *now != step) {
-            pointer.focus_on(Id::Setup(step.first_target()));
         }
     }
 }
@@ -111,7 +105,7 @@ mod tests {
     use super::*;
     use crate::setup::account::{Account, AccountCommand, DIFFERENT};
     use crate::testkit::*;
-    use crate::{EditorId, Init, Reading, State};
+    use crate::{EditorId, Id, Init, Reading, State};
 
     fn first_start() -> State {
         let mut s = State::new(Init { first_start: true, account: Account::Unread, ..init() });
@@ -168,7 +162,6 @@ mod tests {
         let fx = tap(&mut s, SetupId::Next);
         assert!(fx.contains(&Effect::Save(Save::FirstStartDone)), "{fx:?}");
         assert_eq!((s.top(), s.bottom().tab()), (crate::Top::Library(crate::LibraryMode::Browse), Tab::default()));
-        assert_eq!(s.pointer().focus(), Some(&entry("zelda-lttp")));
     }
 
     /// Off the device there is no helper: once that is known, Next passes the password step.

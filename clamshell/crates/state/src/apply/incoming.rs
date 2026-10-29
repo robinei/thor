@@ -112,8 +112,8 @@ impl State {
     }
 
     /// Home. On a screen that listens for input, it leaves that screen; Home is never taken as an input.
-    /// Otherwise it goes to the Library (see [`crate::Session::home`]), with the pad's focus on its
-    /// selection if the Device view showed, which keeps running.
+    /// Otherwise it goes to the Library (see [`crate::Session::home`]); the Device view, if it showed,
+    /// keeps running.
     pub(crate) fn home(&mut self) {
         if self.listening() {
             self.keymapping.back(&mut self.keyboard);
@@ -124,11 +124,7 @@ impl State {
         if self.picking_for_app().is_some() {
             self.set_pick_aside();
         }
-        let from_device = self.session.shown_builtin() == Some(clamshell_library::Builtin::Device);
         self.session.home();
-        if from_device {
-            self.pointer.focus_library_view(self.library_view.selected());
-        }
     }
 
     /// Quitting ClamShell: where the Library and the second screen are is saved first.

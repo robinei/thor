@@ -25,8 +25,11 @@ impl State {
             self.bottom.used(&self.clock);
         }
         // Input that reached ClamShell itself, such as the pad driving the screens.
-        self.idle.own_input(self.clock.mono());
+        if !matches!(event, PointerEvent::Start(_)) {
+            self.idle.own_input(self.clock.mono());
+        }
         match event {
+            PointerEvent::Start(id) => self.pointer.focus_on(id),
             PointerEvent::Focus(id) => {
                 // A row of the Library's edit mode is selected as the focus comes to it.
                 if let Id::LibraryView(crate::LibraryViewId::Edit(crate::library_view::edit::EditId::Row(i))) = &id {
@@ -148,11 +151,9 @@ impl State {
             Id::Device(crate::DeviceId::EditLibrary) => {
                 self.library_view.start_edit();
                 self.show_builtin(clamshell_library::Builtin::Library);
-                // Order: after the Library is shown, which focuses its selection.
-                self.pointer.focus_on(crate::library_view::edit::EditId::Row(0).into());
             }
             Id::Device(id) => self.setup.tap(id, self.clock.mono(), out),
-            Id::Setup(id) => self.setup.wizard_tap(id, &mut self.pointer, self.library_view.selected(), out),
+            Id::Setup(id) => self.setup.wizard_tap(id, out),
             Id::Battery(id) => {
                 self.sys.on_battery(id, &self.session, out);
             }

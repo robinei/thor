@@ -257,7 +257,6 @@ mod tests {
         assert_eq!(s.top(), crate::Top::Device);
         assert!(effects.is_empty());
         assert!(s.session().shown_builtin().is_some());
-        assert_eq!(s.pointer().focus(), Some(&Id::Device(DeviceId::Wifi)));
         let effects = tap(&mut s, DeviceId::Close);
         assert_eq!(s.top(), crate::Top::Library(crate::LibraryMode::Browse));
         assert!(!effects.contains(&Effect::Save(Save::FirstStartDone)), "not the first start: nothing saved");
@@ -316,7 +315,6 @@ mod tests {
         s.applied(Event::Home);
         assert!(s.session().shown_builtin().is_some(), "nothing shown but the Library");
         assert_eq!(s.top(), crate::Top::Library(crate::LibraryMode::Browse));
-        assert_eq!(s.pointer().focus(), Some(&crate::testkit::entry("zelda-lttp")), "the focus on the Library's selection");
         s.applied(Event::Home);
         assert!(s.session().shown_builtin().is_some());
     }
