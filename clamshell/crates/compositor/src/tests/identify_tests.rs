@@ -174,3 +174,28 @@ fn asks_for_one_process_share_its_read() {
     assert_eq!(answered(&mut identities, 2), [(10, vec![1]), (11, vec![1])]);
     assert_eq!(calls.load(Ordering::SeqCst), 2, "one read each");
 }
+
+/// A client that hangs up while its process's read is stuck is dropped, not held until the read ends;
+/// one still connected waits on.
+#[test]
+fn a_client_hung_up_while_its_process_is_stuck_is_dropped() {
+    let (_open, gate) = mpsc::channel::<()>();
+    let gate = Mutex::new(gate);
+    let (_display, mut server) = running(move |pid| {
+        let _ = gate.lock().unwrap().recv();
+        Process { pids: vec![pid], ..Process::default() }
+    });
+    let (hung_up, hung_up_peer) = UnixStream::pair().unwrap();
+    let (waiting, _waiting_peer) = UnixStream::pair().unwrap();
+    server.admit(hung_up);
+    server.admit(waiting);
+    server.take_identified();
+    assert_eq!(server.identities.clients_waiting(), 2);
+    drop(hung_up_peer);
+    let until = Instant::now() + Duration::from_secs(5);
+    while server.identities.clients_waiting() > 1 && Instant::now() < until {
+        server.take_identified();
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(server.identities.clients_waiting(), 1, "the one hung up dropped, the other waiting");
+}

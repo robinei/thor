@@ -739,6 +739,26 @@ configured at 960×540, its unit identified), `an_unmapped_window_leaves_the_sta
 `stale_identity_facts_cannot_undo_a_placement`, `changed_facts_keep_a_windows_x11_and_process`,
 `lifecycle_messages_keep_one_window_and_ignore_late_messages`.
 
+### Clients' processes (clients.rs)
+
+A client is taken in once its process is identified (unit, ancestry, launcher's game), so that it is
+answered as its game's from its first request; an X11 window opens once its process is. The read is off
+the compositor's thread, since it can block on the process's mmap lock: one thread per process being read,
+what asks for a process already being read joining that read. Nothing is cached: a process's unit changes
+when ClamShell adopts it.
+
+    asked --the same process asked for again--> asked [joined: one read]
+    asked --read--> answered [each that waited: a client taken in, an X11 window given its process]
+    asked, a client waiting --its other end hung up--> asked [the client dropped, at the next turn; the read goes on]
+    asked --the thread can't start--> answered [no game's, warned]
+
+Tests: `a_games_client_is_answered_as_the_games_once_identified`,
+`a_client_gone_or_stuck_while_identified_holds_up_nothing` (two clients of a stuck process share its read),
+`asks_for_one_process_share_its_read`, `a_client_hung_up_while_its_process_is_stuck_is_dropped`; wm
+`a_window_opens_once_its_process_is_identified`, `a_menu_doesnt_wait_for_its_process_and_a_promoted_one_does`.
+A pid reused while its read is under way gets the old process's answer; that needs the pid to wrap within one
+read, and is accepted.
+
 ### Opening focus (session/mod.rs)
 
 On Opened the state decides whether the window comes in front (`Session::opening_focus`).

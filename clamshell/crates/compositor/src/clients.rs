@@ -120,6 +120,34 @@ impl Identities {
         }
     }
 
+    /// Drops the clients waiting whose other end hung up: there is nothing left to admit. The read of their
+    /// process goes on (a stuck one can't be ended), but what it holds is the thread alone.
+    pub(crate) fn drop_hung_up(&mut self) {
+        for ask in &mut self.asks {
+            ask.waiting.retain(|waiting| {
+                let Waiting::Client(stream) = waiting else { return true };
+                let mut fds = [rustix::event::PollFd::new(stream, rustix::event::PollFlags::empty())];
+                match rustix::event::poll(&mut fds, Some(&rustix::event::Timespec { tv_sec: 0, tv_nsec: 0 })) {
+                    Ok(_) if fds[0].revents().intersects(rustix::event::PollFlags::HUP | rustix::event::PollFlags::ERR) => {
+                        log::debug!("compositor: a client of process {} hung up while it was identified: dropped", ask.pid);
+                        false
+                    }
+                    Ok(_) => true,
+                    Err(e) => {
+                        log::warn!("compositor: a client of process {} waiting to be identified can't be polled, kept: {e}", ask.pid);
+                        true
+                    }
+                }
+            });
+        }
+    }
+
+    /// How many clients wait for their process to be identified.
+    #[cfg(test)]
+    pub(crate) fn clients_waiting(&self) -> usize {
+        self.asks.iter().flat_map(|ask| &ask.waiting).filter(|waiting| matches!(waiting, Waiting::Client(_))).count()
+    }
+
     /// The next thing that waited for a process that was identified, with the answer.
     pub(crate) fn answered(&mut self) -> Option<(Waiting, Process)> {
         while self.answered.is_empty()
@@ -153,7 +181,8 @@ impl Server {
 
     /// Takes in a client whose process was identified: a game's (see `running_of_process`) is shown only
     /// the top screen, at its resolution as it is now, so a change applies the next time the game starts.
-    /// A client gone meanwhile is taken in all the same, and ends at the next dispatch.
+    /// A client that hung up while it waited is dropped (see [`Identities::drop_hung_up`]); one gone since
+    /// the last turn is taken in all the same, and ends at the next dispatch.
     pub(crate) fn admit_identified(&mut self, stream: UnixStream, process: Process) {
         let game = self.core.state().process_game(process.unit.as_deref(), process.game.as_deref());
         let told = game.map(|(resolution, _)| clamshell_state::Reading::Told { unit: process.unit.clone(), game: process.game.clone(), resolution });
@@ -163,8 +192,10 @@ impl Server {
         }
     }
 
-    /// Hands out the processes identified since the last turn.
+    /// Hands out the processes identified since the last turn, after dropping the clients waiting that
+    /// hung up.
     pub(crate) fn take_identified(&mut self) {
+        self.identities.drop_hung_up();
         while let Some((waiting, process)) = self.identities.answered() {
             match waiting {
                 Waiting::Client(stream) => self.admit_identified(stream, process),
