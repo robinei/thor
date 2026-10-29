@@ -523,6 +523,25 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 ),
             ],
         ),
+        // The stick lights for a game: the picker, Ember's edit screen, then unlinked with the right stick
+        // picked and its hue held.
+        group(
+            vec![ff6(), ff6(), tab(Tab::Settings), PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Lights))).into()],
+            vec![
+                shot("lights.png", Bottom, vec![]),
+                shot("lights-edit.png", Bottom, vec![tap(Id::Row { list: ListId::Lights, i: 2, part: clamshell_state::RowPart::Edit })]),
+                shot(
+                    "lights-edit-unlinked.png",
+                    Bottom,
+                    vec![
+                        tap(Id::Lights(clamshell_state::lights::screens::LightsId::Linked)),
+                        tap(Id::Lights(clamshell_state::lights::screens::LightsId::Stick(clamshell_state::lights::Stick::Right))),
+                        Slide::Start { control: Control::Light(clamshell_state::lights::LightParam::Hue), x: 620.0, width: 1240.0 }.into(),
+                        Slide::To { x: 620.0 + 0.3 * 1240.0 }.into(),
+                    ],
+                ),
+            ],
+        ),
         // An SDR game's picture measured: its histogram behind Punchy's curve, its highlights taken above
         // paper white.
         group(

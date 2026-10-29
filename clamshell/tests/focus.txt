@@ -436,6 +436,44 @@ start Tab(Settings); back Activate Profile(Curve, Back)
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^- vProfile(Curve, Back)
 -- screen as in curve-edit.png
+== lights.png (bottom; the pad on both screens)
+start "ff6"; back -
+-- bar as in bottom.png except
+Tab(Windows), PadMouse, Tab(Time): vProfile(Lights, New)
+Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vProfile(Lights, Back)
+Control(Brightness): vLights[0]
+Tab(Bluetooth), Tab(Wifi), Tab(Battery): vProfile(Lights, New)
+-- screen
+Profile(Lights, Back): ^Tab(Settings) vLights[0] <Tab(Settings) >Tab(Dock)
+Profile(Lights, New): ^PadMouse vLights[0] <PadMouse >Tab(Windows)
+Lights[0]: ^Profile(Lights, Back) vLights[1] <Profile(Lights, Back) >Profile(Lights, New)
+Lights[1]: ^Lights[0] vLights[2] <Profile(Lights, Back) >Lights[2].Edit
+Lights[2]: ^Lights[1] vLights[3] <Profile(Lights, Back) >Lights[2].Edit
+Lights[2].Edit: ^Lights[1] vLights[3].Edit <Lights[2] >Tab(Windows)
+Lights[3]: ^Lights[2] v- <Profile(Lights, Back) >Lights[3].Edit
+Lights[3].Edit: ^Lights[2].Edit v- <Lights[3] >Tab(Windows)
+== lights-edit.png (bottom; the pad on both screens)
+start "ff6"; back -
+-- bar as in bottom.png except
+Tab(Windows), PadMouse, Tab(Time): vLights(Stick(Right))
+Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi): vProfile(Lights, Back)
+Tab(Battery): vLights(Stick(Right))
+-- screen
+Profile(Lights, Back): ^Tab(Settings) vLights(Stick(Left)) <Tab(Settings) >Tab(Dock)
+Lights(Stick(Left)): ^Profile(Lights, Back) vLights(Linked) <Tab(Keyboard) >Lights(Linked)
+Lights(Stick(Right)): ^Tab(Battery) vLights(Linked) <Lights(Linked) >Tab(Time)
+Lights(Linked): ^Lights(Stick(Left)) vControl(Light(Hue)) <Lights(Stick(Left)) >Lights(Stick(Right))
+Control(Light(Hue)): ^Lights(Linked) vControl(Light(Saturation)) <Lights(Stick(Left)) >Lights(Stick(Right))
+Control(Light(Saturation)): ^Control(Light(Hue)) vControl(Light(Brightness)) <Lights(Stick(Left)) >Lights(Stick(Right))
+Control(Light(Brightness)): ^Control(Light(Saturation)) vLights(Battery) <Lights(Stick(Left)) >Lights(Stick(Right))
+Lights(Battery): ^Control(Light(Brightness)) v- <Lights(Stick(Left)) >Lights(Stick(Right))
+== lights-edit-unlinked.png (bottom; the pad on both screens)
+start Lights(Stick(Right)); back Activate Profile(Lights, Back)
+-- bar as in bottom.png except
+Tab(Windows), PadMouse, Tab(Time): vLights(Stick(Right))
+Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi): vProfile(Lights, Back)
+Tab(Battery): vLights(Stick(Right))
+-- screen as in lights-edit.png
 == curve-edit-histogram.png (bottom; the pad on the second screen)
 start Tab(Settings); back Activate Profile(Curve, Back)
 -- bar as in bottom.png except

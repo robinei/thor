@@ -66,6 +66,9 @@ pub(super) fn draw(f: &mut Frame) {
     if let Some(screen) = f.s.curving().screen() {
         return super::curves::draw(f, screen);
     }
+    if let Some(screen) = f.s.lighting().screen() {
+        return super::lights::draw(f, screen);
+    }
     if let Some(setting) = f.s.prefs().menu() {
         return menu(f, setting);
     }
@@ -130,8 +133,8 @@ fn note(no_effect: bool) -> &'static str {
     if no_effect { "no effect" } else { "" }
 }
 
-/// How `value` of `setting` reads, on its tile and in its menu: the keymap's and the curve's names, and
-/// the resolution's size on the top screen once the compositor has said it.
+/// How `value` of `setting` reads, on its tile and in its menu: the keymap's, the curve's and the lights'
+/// names, and the resolution's size on the top screen once the compositor has said it.
 fn value_text(s: &State, setting: Setting, value: u16) -> Fmt<32> {
     let resolution: clamshell_state::settings::Resolution = clamshell_state::settings::Choice::of(value);
     match setting {
@@ -146,6 +149,7 @@ fn value_text(s: &State, setting: Setting, value: u16) -> Fmt<32> {
         }
         k if k.is_keymap() => Fmt::of(format_args!("{}", s.keymapping().name(value))),
         Setting::Curve => Fmt::of(format_args!("{}", s.curving().name(value))),
+        Setting::Lights => Fmt::of(format_args!("{}", s.lighting().name(value))),
         _ => {
             let mut text = Fmt::new();
             setting.describe(value, &mut text);
@@ -206,6 +210,7 @@ fn face(s: &State, tile: Tile) -> Face {
                 origin: p.tile_origin(setting),
                 active: (setting != Setting::Refresh || !s.presentation().display_modes().rates().is_empty())
                     && (setting != Setting::Fan || s.profile().fan.is_some())
+                    && (setting != Setting::Lights || s.profile().lights.is_some())
                     && !(setting.through_launch() && p.handed_over())
                     && !overruled,
                 note: if let Some(player) = player {

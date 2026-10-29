@@ -90,7 +90,7 @@ impl Kind {
         match self {
             Kind::Keymap => "Default",
             Kind::Curve => "Default colours",
-            Kind::Lights => "Off",
+            Kind::Lights => "Lights off",
         }
     }
 }

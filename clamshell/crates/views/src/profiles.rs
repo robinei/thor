@@ -69,7 +69,7 @@ fn words(kind: Kind) -> Words {
             title: "Lights",
             make_own: "Make own lights",
             new: "New lights…",
-            default_note: "All lights off",
+            default_note: "The sticks unlit",
             load_title: "Load into own lights",
             load_hint: "Its colours replace the own lights'",
             save_title: "Save own lights as",

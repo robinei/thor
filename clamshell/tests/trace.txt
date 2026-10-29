@@ -526,6 +526,29 @@ activate 30
 Slide(To { x: 1116.0 })
   Apply settings of ff6
 -- curve-edit-peak.png
+== group lights.png
+Tick 1760000000
+  Keymap 0 "Default"
+  PadRoute Ui
+  Lights(..)
+Start
+  Watch Metrics on
+Pointer(Activate(LibraryView(Entry("ff6"))))
+  Launch ff6 as ff6_09d141
+  Save Resume
+Pointer(Activate(Tab(Settings)))
+  Watch Metrics off
+Tick 1760000005
+  Save Resume
+-- lights.png
+Pointer(Activate(Row { list: Lights, i: 2, part: Edit }))
+  Lights(..)
+-- lights-edit.png
+Pointer(Activate(Lights(Linked)))
+  Save Lights(..)
+Slide(To { x: 992.0 })
+  Lights(..)
+-- lights-edit-unlinked.png
 == group curve-edit-histogram.png
 Tick 1760000000
   Keymap 0 "Default"

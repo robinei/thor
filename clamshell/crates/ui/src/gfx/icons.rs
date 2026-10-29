@@ -69,6 +69,8 @@ pub enum Icon {
     },
     /// The screens' brightness: a sun.
     Brightness,
+    /// The stick lights: two sticks, each lit from below.
+    Lights,
     /// A network that needs a password.
     Lock,
     /// Bluetooth's rune. When `connected`, it has dots beside it.
@@ -411,6 +413,7 @@ pub fn draw(c: &mut Painter, icon: Icon, r: Rect, color: Color) {
         Icon::Wifi { bars } => wifi(p, bars),
         Icon::Volume { waves, muted } => volume(p, waves, muted),
         Icon::Brightness => sun(p),
+        Icon::Lights => lights(p),
         Icon::Layers => {
             p.shape(&[(12.0, 3.5), (21.0, 8.0), (12.0, 12.5), (3.0, 8.0)], LINE);
             p.line(&[(3.0, 12.0), (12.0, 16.5), (21.0, 12.0)], LINE);
@@ -580,6 +583,17 @@ fn volume(p: &mut Pen, waves: u8, muted: bool) {
     }
 }
 
+fn lights(p: &mut Pen) {
+    for x in [6.5, 17.5] {
+        p.frame((x - 3.5, 11.0, 7.0, 7.0), 3.5, LINE);
+        p.dot(x, 14.5, 1.2);
+        for a in [50.0_f32, 90.0, 130.0] {
+            let (dx, dy) = (a.to_radians().cos(), a.to_radians().sin());
+            p.line(&[(x + 5.5 * dx, 14.5 - 5.5 * dy), (x + 8.5 * dx, 14.5 - 8.5 * dy)], 1.5);
+        }
+    }
+}
+
 fn sun(p: &mut Pen) {
     p.frame((7.5, 7.5, 9.0, 9.0), 4.5, LINE);
     for k in 0..8 {
@@ -638,6 +652,7 @@ mod tests {
             Icon::Volume { waves: 0, muted: true },
             Icon::Volume { waves: 3, muted: false },
             Icon::Brightness,
+            Icon::Lights,
             Icon::Lock,
             Icon::Bluetooth { connected: false },
             Icon::Bluetooth { connected: true },
@@ -669,7 +684,7 @@ mod tests {
         for icon in &all {
             seen.insert(variant(*icon));
         }
-        assert_eq!(seen.len(), 61, "a variant is missing from the list");
+        assert_eq!(seen.len(), 62, "a variant is missing from the list");
         all
     }
 
@@ -737,6 +752,7 @@ mod tests {
             Icon::Sharpen => 64,
             Icon::ChevronBack => 66,
             Icon::Close => 67,
+            Icon::Lights => 68,
         }
     }
 

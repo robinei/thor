@@ -466,10 +466,12 @@ curve screens and slides their parameters.
 
 ## Stick lights (lights/)
 
-Screens: the picker's (`profiles::picker`, as for keymaps and curves; Off is the default, "All lights
-off"), then Edit: the two sticks drawn lit, Linked, Hue, Saturation and Brightness (`Control::Light`, the
+Screens: the picker's (`profiles::picker`, as for keymaps and curves; Lights off is the default, "The
+sticks unlit"), then Edit: the two sticks drawn lit, Linked, Hue, Saturation and Brightness (`Control::Light`, the
 same held sliders as the curve's), and "Charging shows the battery". One Back for all of them
-(`Id::Profile(Lights, Back)`). The set chosen is `Setting::Lights` (an id, 0 Off: all lights off), per
+(`Id::Profile(Lights, Back)`). The view (`views/src/lights.rs`) draws the sticks lit in their colours;
+on a device without lights (no `lights` in its profile) the Lights tile is dimmed and the edit screen's
+header says so, and both still work. The set chosen is `Setting::Lights` (an id, 0 Off: all lights off), per
 game, runner or for all. A set holds a colour per stick (hue, saturation, brightness), Linked, and
 whether charging shows the battery (`lights::Lights`).
 

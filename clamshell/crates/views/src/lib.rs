@@ -28,6 +28,7 @@ mod keymaps;
 mod levels;
 mod library_edit;
 mod library_view;
+mod lights;
 mod notifications;
 mod overlay;
 mod profiles;

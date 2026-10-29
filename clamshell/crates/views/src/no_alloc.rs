@@ -12,6 +12,8 @@ use clamshell_state::device_view::SticksEvent;
 use clamshell_state::device_view::sticks::{Phase, Progress, StickAxis};
 use clamshell_state::keymap::{Button, Input, Keymaps, Layer, Param, Side};
 use clamshell_state::library_view::edit::EditId;
+use clamshell_state::lights::screens::LightsId;
+use clamshell_state::lights::{LightParam, Stick};
 use clamshell_state::radios::{bluetooth, wifi};
 use clamshell_state::session::tray;
 use clamshell_state::session::windows::WindowFacts;
@@ -333,6 +335,20 @@ fn warm_frames_do_not_allocate() {
                 key(Key::Mod(Modifier::Shift)),
             ],
         ),
+        ("lights tile", vec![tap(Id::Tab(Tab::Settings)), tap(Id::Settings(SettingsId::Tile(Setting::Lights)))]),
+        ("lights picker", vec![tap(Id::Tab(Tab::Settings)), PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Lights))).into()]),
+        (
+            "lights edit screen, unlinked, a slider held",
+            vec![
+                tap(Id::Tab(Tab::Settings)),
+                PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Lights))).into(),
+                tap(Id::Row { list: ListId::Lights, i: 2, part: RowPart::Edit }),
+                tap(Id::Lights(LightsId::Linked)),
+                tap(Id::Lights(LightsId::Stick(Stick::Right))),
+                Event::Slide(Slide::Start { control: Control::Light(LightParam::Hue), x: 300.0, width: 620.0 }),
+                Event::Slide(Slide::To { x: 340.0 }),
+            ],
+        ),
         ("wifi password", vec![tap(Id::Tab(Tab::Wifi)), wifi_reading(), tap(ListId::Wifi.row(1)), tap(ListId::Wifi.row(0))]),
         (
             "sliding",
@@ -518,7 +534,11 @@ fn warm_frames_do_not_allocate() {
     // For the cases that are easy to get wrong: the state each must reach, so that it tests the screen it
     // is named for.
     type Reached = fn(&State) -> bool;
-    let reached: [(&str, Reached); 10] = [
+    let reached: [(&str, Reached); 12] = [
+        ("lights picker", |s| s.lighting().screen().is_some()),
+        ("lights edit screen, unlinked, a slider held", |s| {
+            s.lighting().editing().is_some() && s.held_slider().is_some() && s.lighting().stick() == Stick::Right
+        }),
         ("notifications", |s| s.notifications().len() == 5 && s.bottom_lit()),
         ("window arrows, Home held", |s| s.session().home_held() && s.session().has_other_top_window()),
         ("keymap name editor", |s| s.bottom().editor().is_some()),
@@ -535,7 +555,8 @@ fn warm_frames_do_not_allocate() {
         let mut keymaps = Keymaps::initial();
         keymaps.get_mut(1).and_then(|k| k.add_layer("aim"));
         // Run as the device's own session, because tray icons are followed only there.
-        let mut state = State::new(Init { library: Some(clamshell_library::demo::library()), keymaps, device_session: true, ..Init::default() });
+        let lights = clamshell_state::lights::LightSets::initial();
+        let mut state = State::new(Init { library: Some(clamshell_library::demo::library()), keymaps, lights, device_session: true, ..Init::default() });
         state.apply(Event::tick(1_700_000_000), &mut Vec::new());
         // The time tab's zone in every case, since a change of zone from one case to the next is read
         // anew.

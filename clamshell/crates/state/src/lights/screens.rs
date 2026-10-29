@@ -65,7 +65,7 @@ impl Lighting {
         self.stick
     }
 
-    /// A set's name: "Own lights" for a game's own, and "Off" for none or for one that is gone.
+    /// A set's name: "Own lights" for a game's own, and "Lights off" for none or for one that is gone.
     pub fn name(&self, id: u16) -> &str {
         self.sets.shown_name(id, Kind::Lights)
     }
@@ -251,7 +251,7 @@ mod tests {
         picker(&mut s);
         tap(&mut s, row(1));
         assert_eq!(chosen(&s), Some(0));
-        assert_eq!(s.lighting().name(0), "Off");
+        assert_eq!(s.lighting().name(0), "Lights off");
         assert_eq!(s.lighting().in_force(0), Lights::default());
     }
 
