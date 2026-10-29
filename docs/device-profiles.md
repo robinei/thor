@@ -52,6 +52,7 @@ From the inventory of 2026-10-24 (paths under `clamshell/` unless noted), with w
 | Each panel's colour: primaries and white point, transfer function (gamma 2.2), peak, frame-average and black luminance, the link's bit depth (8 today: dither when compositing in 10), HDR capable or not, and where SDR white is shown (`sdr_white`: none, at the peak, until the panel is driven brighter for HDR, phase 4h of `docs/history/compositor-mvp.md`). The top panel's from gamescope's profile (R 0.680/0.320, G 0.265/0.690, B 0.150/0.060, D65; 650/650/0.002 nits); a panel without one is sRGB at gamma 2.2, SDR. Nested on a desktop the host's description is used instead | `docs/history/compositor-mvp.md`, phases 2h and 4h |
 | The AYN key (`gpio-keys-ayn`, `KEY_F24`), Back (`BTN_BACK`) | `crates/system/src/input/pad/device.rs:36`, `remap/mod.rs:203-209` |
 | The X/Y swap by driver (`rsinput`, `xpad`) | `crates/system/src/input/pad/device.rs:145-166` |
+| The built-in controller's driver (`rsinput`), which the gyro and the AYN key go with | new with several controllers (2026-10-29) |
 | The gyro: Qualcomm sensor hub, QMI service 400, 200 Hz, axis matrix | `crates/system/src/input/pad/sensor_hub/mod.rs` |
 | The keymap screen's control layout and labels | `crates/views/src/keymaps/pad.rs`, `words.rs:76-91` |
 | The fan: hwmon `pwmfan`, its curves | `crates/fan/src/main.rs:26`, `curve.rs` |

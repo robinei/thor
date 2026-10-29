@@ -1,5 +1,6 @@
-//! Where the controller's events go: the route the state chose ([`PadRoute`]) and the mapping that
-//! carries it out. That is either the game's mapping, which is the keymap in force ([`Remap`]), or one of
+//! Where a player's controller's events go: the route the state chose ([`PadRoute`]) and the mapping that
+//! carries it out. Player 1's router drives ClamShell and follows the route; another player's is always
+//! the game's, through that player's keymap ([`PadRouter::other_player`]). That is either the game's mapping, which is the keymap in force ([`Remap`]), or one of
 //! ClamShell's: navigation, typing, the pad mouse or listening. There is no I/O here. Controller and gyro
 //! events go in, and events for the virtual devices and the state come out, so switching routes is
 //! tested here. Whatever a mapping holds down is let go when the pad leaves it.
@@ -109,6 +110,11 @@ impl PadSnapshot {
         PadSnapshot { keys: Vec::new(), axes }
     }
 
+    /// The virtual pad untouched: every button up and every axis at rest, in the virtual pad's terms.
+    pub(crate) fn at_rest() -> PadSnapshot {
+        PadSnapshot::new(super::merge::PAD_AXES.iter().map(|&code| Axis { code, value: 0, rest: 0 }).collect())
+    }
+
     pub(crate) fn update(&mut self, raw: Raw) {
         if let Some((key, press)) = raw.as_key() {
             self.keys.retain(|&k| k != key);
@@ -190,6 +196,9 @@ enum Home {
 /// ClamShell's screens. With the pad mouse or typing, View is ClamShell's too, to move the pad to the
 /// second screen.
 pub(crate) struct PadRouter {
+    /// Whether this is player 1's router, which drives ClamShell: Home, its combinations and the routes
+    /// are ClamShell's. Another player's passes Home to its game as the pad's Guide.
+    drives_clamshell: bool,
     route: PadRoute,
     watch_activity: bool,
     home: Home,
@@ -223,6 +232,7 @@ impl PadRouter {
         let mut remap = Remap::new(ranges);
         remap.set_keymap(keymap, &snapshot, false, out);
         let mut router = PadRouter {
+            drives_clamshell: true,
             route,
             watch_activity: false,
             home: Home::Up,
@@ -249,6 +259,22 @@ impl PadRouter {
             router.enter_game(out);
         }
         router
+    }
+
+    /// A router for a player other than player 1: always in the game, through `keymap`, with Home the
+    /// game's Guide.
+    pub(crate) fn other_player(ranges: Ranges, snapshot: PadSnapshot, keymap: Keymap, out: &mut Out) -> PadRouter {
+        let mut router = PadRouter::new(ranges, snapshot, PadRoute::Game, keymap, out);
+        router.drives_clamshell = false;
+        router
+    }
+
+    /// One of the player's controllers is gone while Home may be held on it: letting Home go isn't a tap
+    /// of Home.
+    pub(crate) fn controller_gone(&mut self) {
+        if let Home::Held { combined } = &mut self.home {
+            *combined = true;
+        }
     }
 
     fn mapping(&mut self, route: PadRoute) -> Option<&mut dyn Mapping> {
@@ -338,30 +364,13 @@ impl PadRouter {
         log::info!("pad: {to:?}");
     }
 
-    /// Events that bring what the router holds in line with the controller as it is, after the kernel
-    /// dropped some of its events. `down` is the keys held and `axes` the axes' values. What was let go in
-    /// the meantime is let go and what was pressed is pressed. Home's press comes before the others and
-    /// its release after.
-    pub(crate) fn resync(&self, down: &[KeyCode], axes: &[(AbsoluteAxisCode, i32)], out: &mut Vec<Raw>) {
-        let start = out.len();
-        let mut held: Vec<KeyCode> = self.snapshot.keys.iter().chain(&self.taken).copied().collect();
-        held.sort_by_key(|k| k.0);
-        held.dedup();
-        out.extend(held.iter().filter(|k| !down.contains(k)).map(|&k| Raw::key(k, Press::Up)));
-        let home = down.contains(&KeyCode::BTN_MODE);
-        if home != (self.home != Home::Up) {
-            out.push(Raw::key(KeyCode::BTN_MODE, if home { Press::Down } else { Press::Up }));
-        }
-        out.extend(down.iter().filter(|&&k| k != KeyCode::BTN_MODE && !held.contains(&k)).map(|&k| Raw::key(k, Press::Down)));
-        out.extend(axes.iter().filter(|&&(code, value)| self.snapshot.value(code).is_some_and(|v| v != value)).map(|&(code, value)| Raw::abs(code, value)));
-        if out.len() > start {
-            out.push(Raw::REPORT);
-        }
-    }
-
     /// One controller event at `now`.
     pub(crate) fn event(&mut self, raw: Raw, now: Instant, out: &mut Out) {
         let key = raw.as_key();
+        if !self.drives_clamshell {
+            self.snapshot.update(raw);
+            return self.mapped(raw, now, out);
+        }
         let held = matches!(self.home, Home::Held { .. });
         match key {
             Some((KeyCode::BTN_MODE, Press::Down)) => {
@@ -489,6 +498,12 @@ impl PadRouter {
             }
             return;
         }
+        self.mapped(raw, now, out);
+    }
+
+    /// An event for the mapping in force: the route's, or the game's keymap. What the keymap doesn't know
+    /// passes through to the game's pad.
+    fn mapped(&mut self, raw: Raw, now: Instant, out: &mut Out) {
         match self.mapping(self.route) {
             Some(mapping) => mapping.event(raw, now, out),
             None if remap::known(raw) => self.with_game_snapshot(|remap, snapshot| remap.update(snapshot, now, out)),

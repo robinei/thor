@@ -60,22 +60,6 @@ fn game_activity_is_reported_once_per_keyboard_focus_loss() {
 }
 
 #[test]
-fn events_dropped_are_made_up_from_the_controller_as_it_is() {
-    let (mut r, mut out) = router(PadRoute::Game);
-    let now = Instant::now();
-    r.event(key(KeyCode::BTN_SOUTH, Press::Down), now, &mut out);
-    let mut events = Vec::new();
-    r.resync(&[KeyCode::BTN_EAST], &[(AbsoluteAxisCode::ABS_X, 1000), (AbsoluteAxisCode::ABS_RZ, 500)], &mut events);
-    assert_eq!(events, [key(KeyCode::BTN_SOUTH, Press::Up), key(KeyCode::BTN_EAST, Press::Down), Raw::abs(AbsoluteAxisCode::ABS_RZ, 500), Raw::REPORT]);
-    for e in events {
-        r.event(e, now, &mut out);
-    }
-    let mut again = Vec::new();
-    r.resync(&[KeyCode::BTN_EAST], &[(AbsoluteAxisCode::ABS_X, 1000), (AbsoluteAxisCode::ABS_RZ, 500)], &mut again);
-    assert_eq!(again, [], "in step");
-}
-
-#[test]
 fn leaving_the_pad_mouse_lets_go_of_its_buttons() {
     let (mut r, mut out) = router(PadRoute::Mouse);
     let now = Instant::now();
@@ -396,31 +380,6 @@ fn game_activity_is_an_axis_past_a_threshold() {
     assert_eq!(out.events, vec![Event::PadActive]);
 }
 
-/// After dropped events, Home's press is made up before the other buttons', so that they are Home's
-/// combination as they were; and its release after theirs, so that a button Home took is let go while
-/// still Home's.
-#[test]
-fn a_resync_presses_home_first_and_lets_it_go_last() {
-    let (mut r, mut out) = router(PadRoute::Game);
-    let now = Instant::now();
-    let mut events = Vec::new();
-    r.resync(&[KeyCode::BTN_SOUTH, KeyCode::BTN_MODE], &[], &mut events);
-    assert_eq!(events, [key(KeyCode::BTN_MODE, Press::Down), key(KeyCode::BTN_SOUTH, Press::Down), Raw::REPORT]);
-    for e in events {
-        r.event(e, now, &mut out);
-    }
-    assert!(!held(&out.pad).contains(&KeyCode::BTN_SOUTH), "A is Home's");
-    let mut events = Vec::new();
-    r.resync(&[], &[], &mut events);
-    assert_eq!(events, [key(KeyCode::BTN_SOUTH, Press::Up), key(KeyCode::BTN_MODE, Press::Up), Raw::REPORT]);
-    out.events.clear();
-    for e in events {
-        r.event(e, now, &mut out);
-    }
-    assert!(actions(&out).is_empty(), "not Home: {:?}", out.events);
-    assert!(out.pad.iter().all(|e| e.as_key().is_none_or(|(k, _)| k != KeyCode::BTN_SOUTH)), "{:?}", out.pad);
-}
-
 /// Made again for a controller in the game's route (a reconnection), the virtual pad shows what is held
 /// on it, after being left at rest while it was away.
 #[test]
@@ -430,4 +389,35 @@ fn a_reconnection_in_the_game_sends_what_is_held() {
     let mut out = Out::default();
     let _router = PadRouter::new(ranges, PadSnapshot::new(axes), PadRoute::Game, Keymap::default(), &mut out);
     assert!(out.pad.contains(&Raw::abs(AbsoluteAxisCode::ABS_X, 1000)), "{:?}", out.pad);
+}
+
+/// Another player's router is always the game's: Home is its game's Guide, as on an Xbox pad, ClamShell
+/// hears nothing of it, and its keymap remaps its buttons.
+#[test]
+fn another_players_router_passes_home_to_its_game_and_remaps_by_its_keymap() {
+    use clamshell_state::keymap::{Binding, Button, Input, Output};
+    let mut keymap = Keymap::new(1, "swap");
+    assert!(keymap.set(Input::Button(Button::A), Some(Binding::to(Output::Pad(clamshell_state::keymap::PadOut::Button(Button::B))))));
+    let ranges = Ranges { stick: Range::STICK, trigger: Range { min: 0, max: 255 } };
+    let mut out = Out::default();
+    let mut r = PadRouter::other_player(ranges, PadSnapshot::new(Vec::new()), keymap, &mut out);
+    out.pad.clear();
+    let now = Instant::now();
+    for e in [key(KeyCode::BTN_MODE, Press::Down), Raw::REPORT, key(KeyCode::BTN_SOUTH, Press::Down), Raw::REPORT] {
+        r.event(e, now, &mut out);
+    }
+    assert!(out.events.is_empty(), "nothing for ClamShell: {:?}", out.events);
+    assert_eq!(held(&out.pad), [KeyCode::BTN_EAST, KeyCode::BTN_MODE], "Guide, and A as B");
+}
+
+/// A controller that goes while Home is held on it lets Home go without it being a tap of Home.
+#[test]
+fn a_controller_gone_with_home_held_isnt_a_tap_of_home() {
+    let (mut r, mut out) = router(PadRoute::Game);
+    let now = Instant::now();
+    r.event(key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
+    r.controller_gone();
+    out.events.clear();
+    r.event(key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
+    assert_eq!(out.events, [Event::HomeHeld(false)], "let go, not a tap");
 }

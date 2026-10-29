@@ -1,5 +1,5 @@
-//! Input devices: which one to use ([`DeviceSpec`], from the environment), finding it ([`open`]), and
-//! keeping it grabbed while reading it ([`Grabbed`]).
+//! Input devices: which one to use ([`DeviceSpec`], from the environment), and keeping one grabbed while
+//! reading it ([`Grabbed`]).
 
 use std::fmt;
 use std::io;
@@ -41,33 +41,6 @@ impl fmt::Display for DeviceSpec {
             DeviceSpec::Auto => write!(f, "auto"),
         }
     }
-}
-
-/// Opens the device `spec` asks for, or else the first that `looks_right`. When searching, a device named
-/// in `ours`, one of our own virtual devices, is never chosen. If none is found, the error is of kind
-/// NotFound (`no <what>`).
-pub(crate) fn open(spec: &DeviceSpec, what: &str, looks_right: impl Fn(&RawDevice) -> bool, ours: &[&str]) -> io::Result<RawDevice> {
-    if let DeviceSpec::Path(path) = spec {
-        return RawDevice::open(path);
-    }
-    let not_ours = |d: &RawDevice| d.name().is_none_or(|n| !ours.contains(&n));
-    let candidates = evdev::raw_stream::enumerate().map(|(_, d)| d).filter(|d| {
-        not_ours(d)
-            && match spec {
-                DeviceSpec::Named(name) => d.name().is_some_and(|n| n.contains(name.as_str())),
-                _ => looks_right(d),
-            }
-    });
-    // When matching by name, prefer a device that also looks right, because a controller's motion sensor
-    // shares its name.
-    let mut first = None;
-    for d in candidates {
-        if looks_right(&d) {
-            return Ok(d);
-        }
-        first.get_or_insert(d);
-    }
-    first.ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, format!("no {what} ({spec})")))
 }
 
 /// Axes and their values.

@@ -1,5 +1,5 @@
-//! The real controller and our virtual devices: a pad identified as an Xbox 360 controller for games,
-//! and a mouse with a keyboard's keys for the pad mouse, typing and what a keymap presses.
+//! The real controllers and our virtual devices: a pad per player identified as an Xbox 360 controller for
+//! games, and a mouse with a keyboard's keys for the pad mouse, typing and what keymaps press.
 
 use std::io;
 
@@ -7,9 +7,11 @@ use evdev::raw_stream::RawDevice;
 use evdev::uinput::VirtualDevice;
 use evdev::{AbsInfo, AbsoluteAxisCode, AttributeSet, BusType, FFEffectCode, InputEvent, InputId, KeyCode, RelativeAxisCode, UinputAbsSetup};
 
-use super::codes::{AYN_KEY, BACK_KEY};
-use super::route::{Axis, PadSnapshot, Ranges, mouse_device_keys};
-use crate::os::evdev::device::{self, DeviceSpec};
+use super::codes::AYN_KEY;
+use super::merge::Normalise;
+use super::route::{Axis, PadSnapshot, mouse_device_keys};
+use super::rumble::Effects;
+use crate::os::evdev::device::DeviceSpec;
 use crate::os::evdev::{Press, Range, Raw, keyset};
 use clamshell_device::input::{AuxiliaryKey as AuxiliaryHint, Controls};
 
@@ -17,15 +19,6 @@ const VIRTUAL_PAD: &str = "clamshell pad (Xbox 360)";
 /// The virtual pad's USB ids, which are a wired Xbox 360 controller's.
 pub(crate) const VIRTUAL_IDS: (u16, u16) = (0x045e, 0x028e);
 const VIRTUAL_MOUSE: &str = "clamshell pad mouse";
-
-/// The configured controller, or else the first device other than our own with gamepad buttons and two
-/// sticks.
-pub(crate) fn find(spec: &DeviceSpec) -> io::Result<RawDevice> {
-    let gamepad = |d: &RawDevice| {
-        d.supported_keys().is_some_and(|k| k.contains(KeyCode::BTN_SOUTH)) && d.supported_absolute_axes().is_some_and(|a| a.contains(AbsoluteAxisCode::ABS_RX))
-    };
-    device::open(spec, "controller", gamepad, &[VIRTUAL_PAD])
-}
 
 /// The device the Thor's AYN button is on, its GPIO keys. It is read alongside the controller for that one
 /// key. It isn't grabbed, so other keys on it go where they would.
@@ -70,15 +63,6 @@ pub(crate) struct Capabilities {
     axes: Vec<(AbsoluteAxisCode, AbsInfo)>,
 }
 
-/// Equal means the same buttons and axes with the same ranges. The axes' current values don't count, so
-/// a controller that comes back with a stick a little off is the same controller.
-impl PartialEq for Capabilities {
-    fn eq(&self, other: &Self) -> bool {
-        let shape = |(code, a): &(AbsoluteAxisCode, AbsInfo)| (*code, a.minimum(), a.maximum(), a.fuzz(), a.flat(), a.resolution());
-        self.keys == other.keys && self.axes.iter().map(shape).eq(other.axes.iter().map(shape))
-    }
-}
-
 impl Capabilities {
     pub(crate) fn of(real: &RawDevice) -> io::Result<Capabilities> {
         let abs = real.get_abs_state()?;
@@ -94,81 +78,181 @@ impl Capabilities {
         Ok(Capabilities { keys, axes })
     }
 
-    fn range(&self, code: AbsoluteAxisCode) -> Range {
-        self.axes.iter().find(|(c, _)| *c == code).map_or(Range::STICK, |(_, a)| Range { min: a.minimum(), max: a.maximum() })
+    /// How its axes become the virtual pad's.
+    pub(crate) fn normalise(&self) -> Normalise {
+        let dpad = self.keys.iter().any(|k| DPAD_KEYS.contains(k));
+        Normalise::new(self.axes.iter().map(|(code, a)| (*code, Range { min: a.minimum(), max: a.maximum() })), dpad)
     }
 
-    pub(crate) fn ranges(&self) -> Ranges {
-        Ranges { stick: self.range(AbsoluteAxisCode::ABS_X), trigger: self.range(AbsoluteAxisCode::ABS_RZ) }
+    /// Its sticks' range, read from the left stick's x axis.
+    pub(crate) fn stick_range(&self) -> Range {
+        self.axes.iter().find(|(c, _)| *c == AbsoluteAxisCode::ABS_X).map_or(Range::STICK, |(_, a)| Range { min: a.minimum(), max: a.maximum() })
     }
 
-    /// The axes as they are now.
+    /// The axes as they are now, raw.
     pub(crate) fn snapshot(&self) -> PadSnapshot {
-        PadSnapshot::new(self.axes.iter().map(|(code, a)| Axis { code: *code, value: a.value(), rest: rest(*code, a) }).collect())
+        PadSnapshot::new(self.axes.iter().map(|(code, a)| Axis { code: *code, value: a.value(), rest: a.value() }).collect())
     }
 }
 
-/// An axis at rest: a trigger at its minimum, a stick or the hat in the middle of its range (128 for a
-/// stick of 0..255, as the DualSense's).
-fn rest(code: AbsoluteAxisCode, axis: &AbsInfo) -> i32 {
-    if super::codes::is_trigger(code) { axis.minimum() } else { crate::os::evdev::Range { min: axis.minimum(), max: axis.maximum() }.middle() }
+/// The D-pad's buttons, on controllers that have it as buttons. The virtual pad has the hat instead.
+const DPAD_KEYS: [KeyCode; 4] = [KeyCode::BTN_DPAD_UP, KeyCode::BTN_DPAD_DOWN, KeyCode::BTN_DPAD_LEFT, KeyCode::BTN_DPAD_RIGHT];
+
+/// The virtual pad's buttons: an Xbox 360 pad's, as xpad gives them. Its D-pad is the hat, since SDL
+/// takes a pad with both for one whose D-pad is its buttons, and finds none.
+pub(crate) const PAD_KEYS: [KeyCode; 11] = [
+    KeyCode::BTN_SOUTH,
+    KeyCode::BTN_EAST,
+    KeyCode::BTN_NORTH,
+    KeyCode::BTN_WEST,
+    KeyCode::BTN_TL,
+    KeyCode::BTN_TR,
+    KeyCode::BTN_SELECT,
+    KeyCode::BTN_START,
+    KeyCode::BTN_MODE,
+    KeyCode::BTN_THUMBL,
+    KeyCode::BTN_THUMBR,
+];
+
+/// A player's virtual pad, identified as a wired Xbox 360 controller so SDL, Wine and Steam map it
+/// without configuration, with games' rumble effects on it. It has an Xbox 360 pad's buttons and axes
+/// whatever the controllers are ([`PAD_KEYS`], [`super::merge::PAD_AXES`]), so it never has to be made
+/// again for another controller, and a game keeps it while controllers come and go.
+pub(crate) struct VirtualPad {
+    pub(crate) device: VirtualDevice,
+    /// Games' rumble effects on it.
+    pub(crate) effects: Effects,
+    /// The events being emitted, kept to be used again.
+    scratch: Vec<InputEvent>,
 }
 
-/// The virtual devices, kept while the controller comes and goes through an unplug or an error, so games
-/// never see their pad go. They are made for the first controller, and made again only for one with
-/// other buttons or axes.
-pub(crate) struct VirtualDevices {
-    pub(crate) made_for: Capabilities,
-    pub(crate) pad: VirtualDevice,
-    pub(crate) mouse: VirtualDevice,
-    /// The untouched pad, with every button up and every axis at rest. It is shown while no controller is
-    /// there.
-    neutral: Vec<Raw>,
-    /// Every key and button of the virtual mouse and keyboard up.
-    mouse_up: Vec<Raw>,
-}
-
-impl VirtualDevices {
-    pub(crate) fn new(caps: Capabilities, controls: Controls) -> io::Result<VirtualDevices> {
-        let mut neutral: Vec<Raw> = pad_keys(&caps, controls).map(|k| Raw::key(k, Press::Up)).collect();
-        neutral.extend(pad_axes(&caps).iter().map(|(code, a)| Raw::abs(*code, rest(*code, a))));
-        neutral.push(Raw::REPORT);
-        let mut mouse_up: Vec<Raw> = mouse_device_keys().into_iter().map(|k| Raw::key(k, Press::Up)).collect();
-        mouse_up.push(Raw::REPORT);
-        Ok(VirtualDevices { pad: virtual_pad(&caps, controls)?, mouse: virtual_mouse()?, made_for: caps, neutral, mouse_up })
+impl VirtualPad {
+    pub(crate) fn new() -> io::Result<VirtualPad> {
+        // Rumble, as an Xbox 360 pad has it. Games' effects come back on its file, which is read without
+        // blocking.
+        let ff: AttributeSet<FFEffectCode> = [FFEffectCode::FF_RUMBLE].into_iter().collect();
+        let mut builder = VirtualDevice::builder()?
+            .name(VIRTUAL_PAD)
+            .input_id(InputId::new(BusType::BUS_USB, VIRTUAL_IDS.0, VIRTUAL_IDS.1, 0x0110))
+            .with_ff(&ff)?
+            .with_ff_effects_max(super::rumble::EFFECTS_MAX)
+            .with_keys(&keyset(&PAD_KEYS))?;
+        for (i, code) in super::merge::PAD_AXES.iter().enumerate() {
+            let r = super::merge::pad_range(i);
+            // A stick's noise and dead zone as xpad gives them.
+            let (fuzz, flat) = if r == Range::STICK { (16, 128) } else { (0, 0) };
+            builder = builder.with_absolute_axis(&UinputAbsSetup::new(*code, AbsInfo::new(0, r.min, r.max, fuzz, flat, 0)))?;
+        }
+        let device = builder.build()?;
+        crate::os::set_nonblocking(&device)?;
+        Ok(VirtualPad { device, effects: Effects::default(), scratch: Vec::new() })
     }
 
-    /// Puts the virtual pad at rest and lets go of every key and button of the virtual mouse and keyboard,
-    /// when the controller is gone or its run ended in a panic. The devices themselves stay.
+    pub(crate) fn emit(&mut self, events: &[Raw]) -> io::Result<()> {
+        emit(&mut self.device, &mut self.scratch, events)
+    }
+
+    /// Every button up and every axis at rest, when its controllers are gone or a run ended in a panic.
     pub(crate) fn rest(&mut self) -> io::Result<()> {
-        emit(&mut self.pad, &self.neutral)?;
-        emit(&mut self.mouse, &self.mouse_up)
+        let mut neutral = [Raw::REPORT; PAD_KEYS.len() + super::merge::PAD_AXES.len() + 1];
+        for (slot, raw) in
+            neutral.iter_mut().zip(PAD_KEYS.iter().map(|&k| Raw::key(k, Press::Up)).chain(super::merge::PAD_AXES.iter().map(|&a| Raw::abs(a, 0))))
+        {
+            *slot = raw;
+        }
+        self.emit(&neutral)
     }
 }
 
-/// Whether the controller, found by its name and physical path, is driven by xpad or by rsinput, the
-/// Thor's own pad. These drivers give the face buttons' codes by an Xbox pad's letters rather than by
-/// place. The left button sends BTN_X, which is the code Linux calls BTN_NORTH, and PB-OS found rsinput's
-/// top button sending BTN_WEST, which is BTN_Y. Linux and ClamShell go by place: BTN_WEST is the left
-/// button and BTN_NORTH the top one.
-pub(crate) fn letter_codes(controls: Controls, name: &str, phys: &str) -> bool {
+/// The virtual mouse with a keyboard's keys, for the pad mouse, typing and what keymaps press. Every
+/// player's keymap presses on it.
+pub(crate) struct VirtualMouse {
+    device: VirtualDevice,
+    scratch: Vec<InputEvent>,
+    /// Every key and button up.
+    up: Vec<Raw>,
+}
+
+impl VirtualMouse {
+    pub(crate) fn new() -> io::Result<VirtualMouse> {
+        let mut up: Vec<Raw> = mouse_device_keys().into_iter().map(|k| Raw::key(k, Press::Up)).collect();
+        up.push(Raw::REPORT);
+        Ok(VirtualMouse { device: virtual_mouse()?, scratch: Vec::new(), up })
+    }
+
+    pub(crate) fn emit(&mut self, events: &[Raw]) -> io::Result<()> {
+        emit(&mut self.device, &mut self.scratch, events)
+    }
+
+    /// Lets go of every key and button.
+    pub(crate) fn rest(&mut self) -> io::Result<()> {
+        emit(&mut self.device, &mut self.scratch, &self.up)
+    }
+}
+
+/// The candidates for controllers: the one CLAMSHELL_GAMEPAD names, or else every device other than our
+/// own with gamepad buttons and two sticks, each with its /dev/input path.
+pub(crate) fn candidates(spec: &DeviceSpec) -> Vec<(std::path::PathBuf, RawDevice)> {
+    let not_ours = |d: &RawDevice| d.name().is_none_or(|n| n != VIRTUAL_PAD && n != VIRTUAL_MOUSE);
+    match spec {
+        DeviceSpec::Path(path) => match RawDevice::open(path) {
+            Ok(d) => vec![(path.clone(), d)],
+            Err(e) => {
+                log::debug!("pad: {}: {e}", path.display());
+                Vec::new()
+            }
+        },
+        DeviceSpec::Named(name) => {
+            let named: Vec<_> = evdev::raw_stream::enumerate().filter(|(_, d)| not_ours(d) && d.name().is_some_and(|n| n.contains(name.as_str()))).collect();
+            // A controller's motion sensor shares its name: the one that looks like a gamepad first.
+            let first = named.iter().position(|(_, d)| gamepad(d)).unwrap_or(0);
+            named.into_iter().nth(first).into_iter().collect()
+        }
+        DeviceSpec::Auto => evdev::raw_stream::enumerate().filter(|(_, d)| not_ours(d) && gamepad(d)).collect(),
+    }
+}
+
+/// Whether a device looks like a gamepad: buttons and two sticks.
+fn gamepad(d: &RawDevice) -> bool {
+    d.supported_keys().is_some_and(|k| k.contains(KeyCode::BTN_SOUTH)) && d.supported_absolute_axes().is_some_and(|a| a.contains(AbsoluteAxisCode::ABS_RX))
+}
+
+/// A controller's key, by which its player is remembered: its USB ids and its unique id where it has one
+/// (a Bluetooth controller's address, some USB controllers' serial number), or else its name. A controller
+/// without a unique id is the same controller in any port; two such of one kind share a key, and so a
+/// player.
+pub(crate) fn key(vendor: u16, product: u16, uniq: Option<&str>, name: &str) -> String {
+    match uniq.map(str::trim).filter(|u| !u.is_empty()) {
+        Some(uniq) => format!("{vendor:04x}:{product:04x}:{uniq}"),
+        None => format!("{vendor:04x}:{product:04x}:{name}"),
+    }
+}
+
+/// The kernel driver of the controller named `name` at `phys`, from /sys/class/input, if it is found.
+pub(crate) fn driver(name: &str, phys: &str) -> Option<String> {
     let inputs = match std::fs::read_dir("/sys/class/input") {
         Ok(inputs) => inputs,
         Err(e) => {
             log::warn!("pad: reading /sys/class/input: {e}");
-            return false;
+            return None;
         }
     };
     let read = |p: std::path::PathBuf| {
         std::fs::read_to_string(&p).map(|s| s.trim().to_owned()).inspect_err(|e| log::trace!("pad: reading {}: {e}", p.display())).unwrap_or_default()
     };
     let entries = inputs.filter_map(|e| e.inspect_err(|e| log::debug!("pad: reading /sys/class/input: {e}")).ok());
-    entries.map(|e| e.path().join("device")).any(|dev| {
-        read(dev.join("name")) == name
-            && read(dev.join("phys")) == phys
-            && std::fs::read_link(dev.join("device/driver"))
-                .is_ok_and(|d| d.file_name().and_then(|name| name.to_str()).is_some_and(|driver| controls.letter_code_drivers.contains(&driver)))
-    })
+    entries
+        .map(|e| e.path().join("device"))
+        .find(|dev| read(dev.join("name")) == name && read(dev.join("phys")) == phys)
+        .and_then(|dev| std::fs::read_link(dev.join("device/driver")).ok().and_then(|d| d.file_name().and_then(|n| n.to_str()).map(str::to_owned)))
+}
+
+/// Whether a controller driven by `driver` gives its face buttons by letter: xpad and rsinput, the Thor's
+/// own pad, give the codes by an Xbox pad's letters rather than by place. The left button sends BTN_X,
+/// which is the code Linux calls BTN_NORTH, and PB-OS found rsinput's top button sending BTN_WEST, which is
+/// BTN_Y. Linux and ClamShell go by place: BTN_WEST is the left button and BTN_NORTH the top one.
+pub(crate) fn letter_codes(controls: Controls, driver: Option<&str>) -> bool {
+    driver.is_some_and(|d| controls.letter_code_drivers.contains(&d))
 }
 
 /// Swaps X and Y between the two conventions. The swap is the same either way. Coming in, it turns a
@@ -189,57 +273,11 @@ pub(crate) fn swap_key(key: KeyCode) -> KeyCode {
     }
 }
 
-/// Emits events on a virtual device.
-pub(crate) fn emit(device: &mut VirtualDevice, events: &[Raw]) -> io::Result<()> {
-    let events: Vec<InputEvent> = events.iter().map(|&r| r.into()).collect();
-    device.emit(&events)
-}
-
-/// The D-pad's buttons, on controllers that have it as buttons.
-const DPAD_KEYS: [KeyCode; 4] = [KeyCode::BTN_DPAD_UP, KeyCode::BTN_DPAD_DOWN, KeyCode::BTN_DPAD_LEFT, KeyCode::BTN_DPAD_RIGHT];
-
-/// The real pad's keys that the virtual one has. That is all of them except Back, which is a keymap input
-/// that does nothing as on the pad, and the D-pad's buttons. The virtual D-pad is a hat, as on an Xbox 360
-/// pad, because SDL takes a pad with both for one whose D-pad is its buttons, and finds none. Guide is
-/// added even if the controller has none, for the AYN button as on the pad and for Home with Back.
-fn pad_keys(caps: &Capabilities, controls: Controls) -> impl Iterator<Item = KeyCode> + '_ {
-    let guide = (!caps.keys.contains(&KeyCode::BTN_MODE)).then_some(KeyCode::BTN_MODE);
-    caps.keys.iter().copied().filter(move |&k| k != BACK_KEY && controls.back_key != Some(k.0) && !DPAD_KEYS.contains(&k)).chain(guide)
-}
-
-/// The real pad's axes that the virtual one has: all of them, plus the D-pad's hat even if the controller
-/// has none.
-fn pad_axes(caps: &Capabilities) -> Vec<(AbsoluteAxisCode, AbsInfo)> {
-    let mut axes = caps.axes.clone();
-    for hat in [AbsoluteAxisCode::ABS_HAT0X, AbsoluteAxisCode::ABS_HAT0Y] {
-        if !axes.iter().any(|(code, _)| *code == hat) {
-            axes.push((hat, AbsInfo::new(0, -1, 1, 0, 0, 0)));
-        }
-    }
-    axes
-}
-
-/// A pad with the real one's buttons and axes, identified as a wired Xbox 360 controller so SDL, Wine
-/// and Steam map it without configuration.
-fn virtual_pad(caps: &Capabilities, controls: Controls) -> io::Result<VirtualDevice> {
-    // Rumble, as an Xbox 360 pad has it. Games' effects come back on its file, which is read without
-    // blocking.
-    let ff: AttributeSet<FFEffectCode> = [FFEffectCode::FF_RUMBLE].into_iter().collect();
-    let mut builder = VirtualDevice::builder()?
-        .name(VIRTUAL_PAD)
-        .input_id(InputId::new(BusType::BUS_USB, VIRTUAL_IDS.0, VIRTUAL_IDS.1, 0x0110))
-        .with_ff(&ff)?
-        .with_ff_effects_max(super::rumble::EFFECTS_MAX);
-    let keys: Vec<KeyCode> = pad_keys(caps, controls).collect();
-    if !keys.is_empty() {
-        builder = builder.with_keys(&keyset(&keys))?;
-    }
-    for (code, info) in pad_axes(caps) {
-        builder = builder.with_absolute_axis(&UinputAbsSetup::new(code, info))?;
-    }
-    let pad = builder.build()?;
-    crate::os::set_nonblocking(&pad)?;
-    Ok(pad)
+/// Emits events on a virtual device, through `scratch`, which keeps its room for the next.
+fn emit(device: &mut VirtualDevice, scratch: &mut Vec<InputEvent>, events: &[Raw]) -> io::Result<()> {
+    scratch.clear();
+    scratch.extend(events.iter().map(|&r| InputEvent::from(r)));
+    device.emit(scratch)
 }
 
 fn virtual_mouse() -> io::Result<VirtualDevice> {
@@ -265,25 +303,7 @@ pub(crate) fn normalise_controls(controls: Controls, raws: &mut [Raw]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// A stick rests in the middle of its range, whatever the range; a trigger at its bottom.
-    #[test]
-    fn sticks_rest_in_the_middle_of_their_range() {
-        let axis = |min, max| AbsInfo::new(0, min, max, 0, 0, 0);
-        assert_eq!(rest(AbsoluteAxisCode::ABS_X, &axis(0, 255)), 128, "the DualSense's");
-        assert_eq!(rest(AbsoluteAxisCode::ABS_X, &axis(-32768, 32767)), 0);
-        assert_eq!(rest(AbsoluteAxisCode::ABS_HAT0X, &axis(-1, 1)), 0);
-        assert_eq!(rest(AbsoluteAxisCode::ABS_RZ, &axis(0, 255)), 0);
-    }
     use crate::os::evdev::Press;
-
-    #[test]
-    fn a_controller_back_with_a_stick_moved_is_the_same() {
-        let caps = |x: i32| Capabilities { keys: vec![KeyCode::BTN_SOUTH], axes: vec![(AbsoluteAxisCode::ABS_X, AbsInfo::new(x, -1024, 1024, 16, 32, 0))] };
-        assert_eq!(caps(0), caps(37));
-        let other = Capabilities { axes: vec![(AbsoluteAxisCode::ABS_X, AbsInfo::new(0, -1408, 1408, 16, 32, 0))], ..caps(0) };
-        assert_ne!(caps(0), other, "another range");
-    }
 
     #[test]
     fn x_and_y_swap_between_letters_and_places() {
@@ -298,14 +318,29 @@ mod tests {
 
     #[test]
     fn control_normalisation_preserves_other_keys_and_axis_codes() {
-        let controls = Controls { back_key: Some(123), auxiliary: None, letter_code_drivers: &[], power_key: None };
+        let controls = Controls { back_key: Some(123), auxiliary: None, letter_code_drivers: &[], power_key: None, builtin_driver: None };
         let mut events =
             [Raw::key(KeyCode(123), Press::Down), Raw::key(KeyCode::BTN_SOUTH, Press::Down), Raw { kind: evdev::EventType::ABSOLUTE, code: 123, value: 1 }];
         normalise_controls(controls, &mut events);
-        assert_eq!(events.first(), Some(&Raw::key(BACK_KEY, Press::Down)));
+        assert_eq!(events.first(), Some(&Raw::key(super::super::codes::BACK_KEY, Press::Down)));
         assert_eq!(events.get(1), Some(&Raw::key(KeyCode::BTN_SOUTH, Press::Down)));
         assert_eq!(events.get(2).map(|event| event.code), Some(123));
-        let caps = Capabilities { keys: vec![KeyCode(123), KeyCode::BTN_SOUTH], axes: Vec::new() };
-        assert_eq!(pad_keys(&caps, controls).collect::<Vec<_>>(), [KeyCode::BTN_SOUTH, KeyCode::BTN_MODE]);
+        assert!(!PAD_KEYS.contains(&super::super::codes::BACK_KEY), "Back is a keymap input, not the virtual pad's");
+        assert!(PAD_KEYS.contains(&KeyCode::BTN_MODE), "Guide, for the AYN button and Home with Back");
+    }
+
+    /// A controller is known by its USB ids and its unique id, or its name without one.
+    #[test]
+    fn a_controller_is_known_by_its_ids_and_unique_id_or_name() {
+        assert_eq!(key(0x045e, 0x0b13, Some("aa:bb:cc:dd:ee:ff"), "Xbox Wireless Controller"), "045e:0b13:aa:bb:cc:dd:ee:ff");
+        assert_eq!(key(0x2020, 0x3001, Some(" "), "AYN Odin2 Gamepad"), "2020:3001:AYN Odin2 Gamepad", "a blank unique id is none");
+        assert_eq!(key(0x2dc8, 0x6003, None, "8BitDo Pro 2"), "2dc8:6003:8BitDo Pro 2");
+    }
+
+    #[test]
+    fn letter_codes_by_driver() {
+        let controls = Controls::thor();
+        assert!(letter_codes(controls, Some("xpad")) && letter_codes(controls, Some("rsinput")));
+        assert!(!letter_codes(controls, Some("hid-playstation")) && !letter_codes(controls, None));
     }
 }

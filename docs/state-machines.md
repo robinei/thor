@@ -344,6 +344,38 @@ windows is open, listening included. The focus ring hides when the route leaves 
 | listening, dock move, focus ring | `a_new_keymap_is_named_edited_and_mapped`, `moving_a_dock_entry_takes_the_pad_…`, `the_focus_ring_hides_when_the_pad_leaves_…` |
 | Down/Up light a target; Activate resolves the item pressed | `down_and_up_light_a_target`, `the_pressed_item_is_lit_where_it_is_now`, `a_press_acts_on_the_item_that_was_drawn`; a Down without Up leaves the press until the next Down: `a_down_without_its_up_lasts_until_the_next_down` |
 
+### Controllers and players' pads (system/input/pad/mod.rs, merge.rs)
+
+The pad thread takes every controller (CLAMSHELL_GAMEPAD: only that one) and keeps a virtual Xbox 360 pad
+for each player up to the count (`Players`), with fixed buttons and ranges, so a pad never has to be made
+again for another controller. A run (`Service::Session`) holds the controllers and a router per player;
+the virtual devices outlive runs and controllers.
+
+    no run --connect: the virtual devices made if missing (a pad per player)--> run [the controllers there taken]
+    run --/dev/input changed (Look), or every 5 s without inotify--> controllers not taken yet are grabbed [Controller(Connected)]
+    run --a controller's read fails (unplugged)--> it is let go: what only it held on its player's controller is released, its rumble stopped, a calibration of it ends (Sticks(Done(name, None))), the gyro goes if it was its [Controller(Disconnected) once no controller of its key is left]; then Look
+    run --Players(count, by key)--> each controller to its player (released on the old, held on the new); routers and pads added or dropped to the count (a dropped player's router lets go first)
+    run --a virtual device fails--> no run: the devices made again, the controllers said gone
+    run --panic--> no run: pads at rest, HomeHeld(false), the controllers said gone; found again at once
+
+A player's controllers are merged: a button is down while any holds it, each stick, trigger and hat axis
+is the one furthest from rest (the first controller on a tie), a controller's D-pad buttons are its hat;
+each controller's axes are put in the virtual pad's ranges first, from its own rest and range, after its
+own stick calibration. Rumble on a player's pad goes to that player's controllers with force feedback
+(player 1's only while the game has the pad; its keymap's buzz to player 1's). Programs launched are told
+to ignore every controller grabbed (`SDL_GAMECONTROLLER_IGNORE_DEVICES`). Sticks calibration is of the
+controller used last.
+
+Tests: merge `axes_are_put_in_the_virtual_pads_ranges_from_each_controllers_rest`,
+`a_button_is_down_while_any_controller_holds_it`, `each_axis_is_the_controller_furthest_from_rest`,
+`dpad_buttons_are_the_hat_merged_per_axis`, `a_controller_gone_lets_go_of_what_only_it_held`,
+`each_player_has_its_own_controller`, `a_resync_presses_home_first_and_lets_it_go_last`; pad
+`a_player_2_controller_drives_its_own_pad_through_its_own_keymap`,
+`a_controller_unplugged_lets_go_on_its_pad_and_the_players_stay`, `each_players_rumble_is_its_own`,
+`launches_ignore_every_controller_grabbed`; device `a_controller_is_known_by_its_ids_and_unique_id_or_name`.
+Grabbing, hotplug over USB and Bluetooth, uinput pads and real rumble: the VM suite (`pad_*`, one fake
+pad) and on the device with several controllers.
+
 ### Home chords and directional flicks (system/input/)
 
 The reusable `Flick` recogniser receives normalised X/Y, arms below 30%, and reports the axis further
@@ -356,14 +388,18 @@ stick through the current keymap; its physical position is still tracked. While 
 stick flicks become WindowDown / WindowUp / WindowPrevious / WindowNext. Home release emits
 `HomeHeld(false)`, and emits `HomeTap` only if no chord used it. State consumes that tap when a
 Home-held arrow already switched a window; otherwise it shows the Library. Direct Home always shows the Library. A stick still out on release remains taken
-until it returns, including during remap ticks and gyro samples. Unplugging releases Home for state.
+until it returns, including during remap ticks and gyro samples. Unplugging releases Home for state:
+at the end of a run (`losing_the_controller_releases_home_for_the_state`), and a controller of player 1
+that goes while Home is held on it lets Home go without a tap (`a_controller_gone_with_home_held_isnt_a_tap_of_home`).
 Tests: `home_flicks_once_and_neutralises_the_games_stick_until_it_returns`,
 `losing_the_controller_releases_home_for_the_state`. Away from the game, Home's press gives the mapping
 in force the right stick at rest (`home_away_from_the_game_centres_the_right_stick_for_the_mapping`). The
 D-pad pressed with Home held is Home's, as any button is
-(`home_with_the_dpad_is_a_combination_the_game_doesnt_see`). After dropped events, `resync` makes up Home's
-press before the other buttons' and its release after theirs
-(`a_resync_presses_home_first_and_lets_it_go_last`). The activity watch counts a button press or an axis
+(`home_with_the_dpad_is_a_combination_the_game_doesnt_see`). After dropped events, the merge makes up
+Home's press before the other buttons' and its release after theirs
+(`merge::a_resync_presses_home_first_and_lets_it_go_last`). Only player 1's router has Home and its
+chords; another player's passes Home to its game as Guide, remaps by its own keymap, and is always in the
+game (`another_players_router_passes_home_to_its_game_and_remaps_by_its_keymap`). The activity watch counts a button press or an axis
 past 4096 (`game_activity_is_an_axis_past_a_threshold`). The VM `pad_windows` check exercises real evdev
 routing, tab switching and bottom-slot swaps.
 
@@ -1052,8 +1088,8 @@ Tests: `quiet_input_and_inhibition_report_only_transitions_and_restart_the_timeo
 ### The pad's activity watch (state/lib.rs, sync.rs; system/input/pad/)
 
 The watch is armed while there is a top window without keyboard focus. Sync sends `PadActivity(watch)`
-when it changes; the pad's supervisor keeps the value while the controller is gone and gives it to a new
-router when one comes.
+when it changes; the pad thread keeps the value and gives it to player 1's router of each run. Only
+player 1's input counts.
 
     disarmed --keyboard focus leaves the top window--> armed [PadActivity(true)]
     armed (router) --route Game; a button down or an axis past ±4096, outside Home's chords--> disarmed in the router [PadActive]
@@ -1578,7 +1614,8 @@ the fact stays unknown and its UI is dimmed, not hidden.
 | the auxiliary button (`system/input/pad/device.rs`) | an evdev device of the profile's name and key, looked for when a controller opens; its presses become the auxiliary role; without the hint, none | device `physical_back_codes_are_normalised_and_missing_auxiliary_controls_stay_absent`; VM `pad_guide` |
 | Back | the profile's physical code becomes the Back role, in events and on resynchronisation, and is kept off the virtual pad | system `control_normalisation_preserves_other_keys_and_axis_codes`, device `physical_back_codes_…` |
 | X and Y | the controller's driver read from its sysfs link; a driver in the profile's `letter_code_drivers` swaps them | device `button_conventions_are_facts_about_the_detected_driver`, system `x_and_y_swap_between_letters_and_places` |
-| motion (`pad/mod.rs` `find_motion`) | the controller's evdev motion sensor, else the profile's sensor hub (QRTR service, rate, clock, axes), else none; looked for again after waking | device `only_the_physical_profile_claims_a_sensor_hub`, sensor hub `the_thors_frame_is_turned_a_quarter`; VM `gyro_sleep` (evdev); the hub on the device |
+| the built-in controller (`Controls::builtin_driver`) | the controller whose sysfs driver is the profile's (`rsinput` on the Thor); the gyro and the AYN button go with it, to whichever player it is given; without it there (or without the fact), with the first controller, and the sensor hub only then with any (`place_extras`) | on the device; VM `pad_guide`, `gyro_sleep` (the first controller) |
+| motion (`pad/mod.rs` `find_gyro`, `find_motion`) | one gyro, for the built-in controller if it is there, else the first controller: its evdev motion sensor, else the profile's sensor hub (QRTR service, rate, clock, axes) where that controller may have it, else none; looked for again after waking and when its controller goes; its samples go to that controller's player | device `only_the_physical_profile_claims_a_sensor_hub`, sensor hub `the_thors_frame_is_turned_a_quarter`; VM `gyro_sleep` (evdev); the hub on the device |
 | the panels' colour (`drm/`, `nested.rs`) | DRM: the profile's description of each screen; nested: the host's, once its colour management answers, else sRGB | device `panel_facts_preserve_the_documented_headroom_without_claiming_a_ten_bit_link`, `tests/device_profiles.rs` `panel_queries_follow_the_selected_profile`; which one is used: GAP |
 | the canvas (`src/session.rs`, `server.rs` `resize`) | DRM: the screens' modes, turned; nested: the profile's preview size; a host resize keeps the screens' width ratio, at least 4×4 and 2 px a screen | compositor `requested_preview_geometry_sets_the_initial_canvas_and_resize_ratio` |
 

@@ -21,8 +21,6 @@ Not aims (decided, so they are not reopened by accident):
   which keeps its own layout.
 - Running under another compositor. ClamShell is the compositor (`crates/compositor`): `clamshell --drm`
   on the device's screens, `clamshell --nested` in a window on a desktop for development.
-- More than one virtual controller for games. Games see one Xbox 360 pad; remapping and the gyro are
-  ClamShell's keymaps.
 - Themes, for now. There is one look, made for the OLED screens: black, grey text, colour only where it
   means something.
 - Animations, for now. Screens change at once, without transitions (a flung list still scrolls on and
