@@ -55,9 +55,12 @@ impl Bottom {
         self.used_at.map_or(0, |at| now.saturating_sub(at))
     }
 
-    /// The second screen is in use, so it is lit.
+    /// The second screen is in use, so it is lit. Before the clock's first reading it counts from that
+    /// (see [`Bottom::note_clock`]): a time of 0 would be long past by then.
     pub(crate) fn used(&mut self, clock: &Clock) {
-        self.used_at = Some(clock.mono());
+        if clock.read() {
+            self.used_at = Some(clock.mono());
+        }
     }
 
     /// The first clock reading: the time it goes unused counts from it.
@@ -140,9 +143,9 @@ impl Bottom {
 
     /// A critical notification came at `now`: the screen turns on if it was off by hand or by itself, and
     /// lights if it was dark for a game, as if tapped.
-    pub(crate) fn light(&mut self, now: u64) {
+    pub(crate) fn light(&mut self, clock: &Clock) {
         self.screen.off = false;
-        self.used_at = Some(now);
+        self.used(clock);
         self.woken = true;
     }
 

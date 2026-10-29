@@ -184,3 +184,15 @@ fn a_critical_notification_lights_a_screen_dark_for_a_game() {
     assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: true })), "{fx:?}");
     assert!(!s.bottom_dark() && !s.bottom_off());
 }
+
+/// A notification held before the clock's first reading (a boot-time battery warning) shows its whole
+/// time from that reading, rather than expiring at it.
+#[test]
+fn a_notification_before_the_first_tick_lasts_its_time_from_it() {
+    let mut s = state();
+    notify(&mut s, note(1, Urgency::Normal, 5000));
+    s.applied(Event::tick(1000));
+    assert_eq!(held(&s), [bus(1)], "not expired at the first reading");
+    s.applied(Event::tick(1006));
+    assert!(held(&s).is_empty());
+}

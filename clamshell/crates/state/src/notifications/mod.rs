@@ -178,8 +178,10 @@ impl Notifications {
 
     /// Runs after any event. While the bottom screen is lit (`seen`), each notification's time runs from
     /// when it was first seen, and one whose time is up is closed as expired. While it isn't, their
-    /// times start again.
-    pub(crate) fn follow(&mut self, now: u64, seen: bool, out: &mut Out) {
+    /// times start again. Before the clock's first reading (`now` is `None`), no time runs: one seen then
+    /// would be long past at the first reading.
+    pub(crate) fn follow(&mut self, now: Option<u64>, seen: bool, out: &mut Out) {
+        let Some(now) = now else { return };
         for held in &mut self.held {
             held.seen_at = if seen { Some(held.seen_at.unwrap_or(now)) } else { None };
         }

@@ -645,7 +645,7 @@ impl State {
         // program.
         let changed = self.session.follow_program(self.clock.mono());
         let lit = self.bottom_lit();
-        self.notifications.follow(self.clock.mono(), lit, out);
+        self.notifications.follow(self.clock.read().then(|| self.clock.mono()), lit, out);
         if changed {
             self.follow_pad_mouse();
         }

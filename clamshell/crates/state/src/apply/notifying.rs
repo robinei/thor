@@ -32,9 +32,8 @@ impl State {
     /// is lit.
     pub(crate) fn notify(&mut self, notification: Notification, out: &mut Out) {
         if notification.urgency == Urgency::Critical {
-            let now = self.clock.mono();
-            self.idle.own_input(now);
-            self.bottom.light(now);
+            self.idle.own_input(self.clock.mono());
+            self.bottom.light(&self.clock);
         }
         self.notifications.notified(notification, out);
     }

@@ -411,3 +411,13 @@ fn the_windows_tab_with_nothing_below_shows_no_window() {
     key(&mut s, HardwareKey::BottomView);
     assert_eq!(s.bottom().tab(), Tab::Sysinfo);
 }
+
+/// The second screen touched before the clock's first reading counts as used from that reading: it isn't
+/// dimmed at once by the time since boot.
+#[test]
+fn used_before_the_first_tick_counts_from_it() {
+    let mut s = state();
+    tap(&mut s, crate::Id::Tab(Tab::Wifi));
+    s.applied(Event::tick(10_000));
+    assert!(!s.bottom_dimmed());
+}
