@@ -11,12 +11,11 @@ use super::paint::{Painter, blend_mask};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Icon {
     Apps,
-    /// The front program's windows on the bottom screen, which ClamShell's view hides. It shows the two
-    /// screens with a window on the lower one.
+    /// Two screens with a window on the lower one.
     Windows,
-    /// The pad mouse toggle: a mouse.
+    /// A mouse.
     Mouse,
-    /// Game settings: three sliders.
+    /// Three sliders.
     Sliders,
     // Settings tiles.
     Bolt,
@@ -84,33 +83,31 @@ pub enum Icon {
     Off,
     /// Layers: three sheets stacked.
     Layers,
-    // The Library's tabs, named in library.json (see clamshell-views' `icons::named`).
+    // Kinds of media and places.
     Film,
     Tv,
     Music,
     Star,
     Clock,
-    /// A folder in the Library's list, which opens: a chevron. With the one pointing back, the window arrows.
+    /// A chevron, as on something that opens, and one pointing back.
     Chevron,
     ChevronBack,
-    /// The Tools tab: a wrench.
+    /// A wrench.
     Wrench,
-    /// Browsed entries without a picture. A folder; a file, shown as a sheet with a corner folded; the
-    /// Trash, shown as a bin; and a removable filesystem, shown as a memory card.
+    /// A folder; a file, shown as a sheet with a corner folded; a bin; and a memory card.
     Folder,
     File,
     Trash,
     Card,
-    /// A selected entry in the Files tab: a tick.
+    /// A tick, as on something selected.
     Check,
-    /// An app with no picture of its own, such as a program found by its window with no desktop file: a
-    /// window.
+    /// A window, as for an app with no picture of its own.
     App,
-    /// A browsed archive, such as a zip, 7z, rar or tar: a box.
+    /// A box, as for an archive.
     Archive,
-    /// The Library's row mark for an entry that is running: a dot.
+    /// A dot, as a row's mark.
     Dot,
-    /// Closes or dismisses something, such as a notification: a cross.
+    /// A cross, for closing or dismissing something.
     Close,
 }
 

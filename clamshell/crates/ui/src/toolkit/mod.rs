@@ -2,7 +2,8 @@
 //! the targets the screen registers and the size of the area being drawn in. Built on it are [`style`]
 //! (palette, sizes, looks), [`widgets`] (headers, menus, rows, sliders, switches, tiles),
 //! [`format`](mod@format) (text without allocation) and [`scroll`] (scrolled lists). The screens
-//! themselves are in `views`.
+//! themselves are in `views`, which also hold everything about ClamShell's things: the words for numbers
+//! and times, which icon stands for what, and an entry's pictures.
 
 mod clock;
 pub mod format;
