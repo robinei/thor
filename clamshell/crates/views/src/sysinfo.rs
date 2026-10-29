@@ -5,8 +5,10 @@ use clamshell_state::status::metrics::{HISTORY, Ring};
 
 use clamshell_ui::gfx::{Canvas, Rect, Rgb};
 use clamshell_ui::toolkit::Frame;
-use clamshell_ui::toolkit::format::{Fan, Fmt, Frequency, HoursMinutes, Percent, Temp};
+use clamshell_ui::toolkit::format::Fmt;
 use clamshell_ui::toolkit::style::{self, SURFACE, Tone};
+
+use super::format::{Fan, Frequency, HoursMinutes, Percent, Temp};
 
 /// Sizes and positions of the label, value and detail, and the graph's share at the bottom, all as
 /// fractions of a tile's height.

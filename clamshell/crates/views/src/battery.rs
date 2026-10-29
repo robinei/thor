@@ -15,9 +15,11 @@ use clamshell_state::{Id, State};
 
 use clamshell_ui::gfx::{Align, Keep, LINE, Rect};
 use clamshell_ui::toolkit::Frame;
-use clamshell_ui::toolkit::format::{Bytes, Duration, Fmt, MaybeShare, Share};
+use clamshell_ui::toolkit::format::Fmt;
 use clamshell_ui::toolkit::style::{self, Look, SURFACE, SURFACE_HI, Tone};
 use clamshell_ui::toolkit::widgets::{self, HeaderRight};
+
+use super::format::{Bytes, Duration, MaybeShare, Share};
 
 /// The top row's height, and the sizes of the level and the other text, as fractions of the area's
 /// height. The text is a little smaller than other tabs' body text so that the figures fit.

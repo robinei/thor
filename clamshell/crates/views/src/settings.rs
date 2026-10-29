@@ -17,10 +17,12 @@ use clamshell_state::{GRID_COLUMNS, Id, ListId, SettingsId, SettingsLevel, State
 use clamshell_ui::gfx::icons::Icon;
 use clamshell_ui::gfx::{Align, Rect, Rgb};
 use clamshell_ui::toolkit::Frame;
-use clamshell_ui::toolkit::format::{Fmt, Variables};
+use clamshell_ui::toolkit::format::Fmt;
 use clamshell_ui::toolkit::scroll::Scrolled;
 use clamshell_ui::toolkit::style::{self, Text, Tone};
 use clamshell_ui::toolkit::widgets::{self, TileFace, TileShape};
+
+use super::format::Variables;
 
 /// The height of the level tabs' row, as a fraction of the area's height.
 const TABS_H: f32 = 0.1;

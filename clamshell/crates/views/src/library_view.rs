@@ -11,10 +11,12 @@ use clamshell_state::{Entry, Event, Id, Launch, LibraryViewEvent, LibraryViewId,
 use clamshell_ui::gfx::icons::Icon;
 use clamshell_ui::gfx::{Column, Keep, Rect, Span, WRAP_LINE};
 use clamshell_ui::input::nav::Dir;
-use clamshell_ui::toolkit::format::{Bytes, DaysAgo, Fmt, PlayTime};
+use clamshell_ui::toolkit::format::Fmt;
 use clamshell_ui::toolkit::scroll::Scrolled;
 use clamshell_ui::toolkit::style::{self, Look, RADIUS_L, SURFACE_HI, Tone};
 use clamshell_ui::toolkit::{Frame, PadMove, PadUse, widgets};
+
+use super::format::{Bytes, DaysAgo, PlayTime};
 
 /// The tab bar's height and text size, as fractions of the screen's height.
 pub(super) const TABS_H: f32 = 0.08;

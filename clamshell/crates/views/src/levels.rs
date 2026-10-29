@@ -13,10 +13,12 @@ use clamshell_state::{AudioId, Id, ListId, RowPart};
 
 use clamshell_ui::gfx::icons::Icon;
 use clamshell_ui::gfx::{Align, Column, Keep, Rect};
-use clamshell_ui::toolkit::format::{self, Fmt};
+use clamshell_ui::toolkit::format::Fmt;
 use clamshell_ui::toolkit::scroll::Scrolled;
 use clamshell_ui::toolkit::style::{self, Look, Text, Tone};
 use clamshell_ui::toolkit::{Drag, Frame, Track, widgets};
+
+use super::format;
 
 /// A row's height, as a fraction of the area's height.
 const ROW_H: f32 = 0.11;

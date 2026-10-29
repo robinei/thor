@@ -20,6 +20,7 @@ mod dark;
 mod device;
 mod dock;
 mod editor;
+mod format;
 mod keyboard;
 mod keymaps;
 mod levels;

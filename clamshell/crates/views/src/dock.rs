@@ -13,11 +13,13 @@ use clamshell_state::session::tray::TrayEntry;
 use clamshell_state::{DockId, Event, Id, ListId, PadInput, PointerEvent};
 
 use clamshell_ui::gfx::{Keep, Rect};
-use clamshell_ui::toolkit::format::{Bytes, Fmt, MaybeShare, Share};
+use clamshell_ui::toolkit::format::Fmt;
 use clamshell_ui::toolkit::scroll::Scrolled;
 use clamshell_ui::toolkit::style::{self, Look, Text, Tone};
 use clamshell_ui::toolkit::widgets::{self, CAPTION_Y, HeaderRight, TileFace, TileShape};
 use clamshell_ui::toolkit::{Frame, PadUse};
+
+use super::format::{Bytes, MaybeShare, Share};
 
 /// The grid always has room for at least this many rows, so that a few entries still get normal-sized
 /// tiles.
