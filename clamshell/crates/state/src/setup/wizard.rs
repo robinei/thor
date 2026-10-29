@@ -135,7 +135,7 @@ mod tests {
     #[test]
     fn setup_goes_password_wifi_zone_and_done_ends_it_for_good() {
         let mut s = first_start();
-        assert_eq!((s.top(), s.setup().wizard()), (crate::Top::Setup(Step::Password), Some(Step::Password)));
+        assert_eq!((s.top(), s.setup().wizard()), (crate::Top::App { app: crate::BuiltinApp::Setup, view: Step::Password as u8 }, Some(Step::Password)));
         assert_eq!(s.pointer().focus(), Some(&Id::Setup(SetupId::Password)));
         account(&mut s, true, false);
         tap(&mut s, SetupId::Next);

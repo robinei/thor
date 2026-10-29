@@ -31,6 +31,9 @@ pub struct BuiltinAppDefinition {
     pub(crate) typed: fn(&mut State, Stroke, &mut Out),
     /// The entry the settings panel edits while it is in front, if any.
     pub subject: fn(&State) -> Option<Arc<str>>,
+    /// For an app that shows by itself rather than being opened: whether it is needed now. While it is,
+    /// it runs and is in front, over anything; when it no longer is, it closes.
+    pub needed: Option<fn(&State) -> bool>,
 }
 
 /// Nothing, for a hook an app doesn't need.
@@ -59,6 +62,8 @@ pub enum DockPlace {
     PinnedFirst,
     /// While it runs, where a running entry goes.
     WhileRunning,
+    /// Never on the dock.
+    Never,
 }
 
 /// The Library (see [`crate::library_view`]): its list, its edit mode, or a pick.
@@ -80,6 +85,7 @@ const LIBRARY: BuiltinAppDefinition = BuiltinAppDefinition {
     },
     // The selection, where a browsed file that belongs to a library entry stands for that entry.
     subject: |s| s.library_view.selected().cloned().map(|id| s.library_view.entry_of_file(&id).unwrap_or(id)),
+    needed: None,
 };
 
 /// The Device view (see [`crate::setup`]).
@@ -91,6 +97,20 @@ const DEVICE: BuiltinAppDefinition = BuiltinAppDefinition {
     view: no_view,
     typed: not_typed,
     subject: no_subject,
+    needed: None,
+};
+
+/// Setup, the first start's steps (see [`crate::setup::wizard`]): shown while the account or the first
+/// start needs them; its view is the step. Keys typed go to its editor alone.
+const SETUP: BuiltinAppDefinition = BuiltinAppDefinition {
+    runs: Runs::WhileOpen,
+    dock: DockPlace::Never,
+    home: false,
+    watches: &[Watch::Account],
+    view: |s| s.setup.wizard().map_or(0, |step| step as u8),
+    typed: not_typed,
+    subject: no_subject,
+    needed: Some(|s| s.setup.wizard().is_some()),
 };
 
 /// `app`'s definition.
@@ -98,12 +118,18 @@ pub fn definition(app: BuiltinApp) -> &'static BuiltinAppDefinition {
     match app {
         BuiltinApp::Library => &LIBRARY,
         BuiltinApp::Device => &DEVICE,
+        BuiltinApp::Setup => &SETUP,
     }
 }
 
 /// Whether entry `id` is an app always pinned to the dock, which can't be unpinned.
 pub fn always_pinned(id: &str) -> bool {
     BuiltinApp::of(id).is_some_and(|app| definition(app).dock == DockPlace::PinnedFirst)
+}
+
+/// The app needed now, if one is (see [`BuiltinAppDefinition::needed`]).
+pub(crate) fn needed(s: &State) -> Option<BuiltinApp> {
+    BuiltinApp::ALL.into_iter().find(|app| definition(*app).needed.is_some_and(|needed| needed(s)))
 }
 
 /// The home app (see [`BuiltinAppDefinition::home`]).

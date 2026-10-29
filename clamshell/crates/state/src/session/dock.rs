@@ -161,6 +161,7 @@ impl Dock {
                 let (at, pinned) = match crate::builtin_apps::definition(b).dock {
                     crate::builtin_apps::DockPlace::PinnedFirst => (0, true),
                     crate::builtin_apps::DockPlace::WhileRunning => (self.items.len(), false),
+                    crate::builtin_apps::DockPlace::Never => continue,
                 };
                 self.items.insert(at, DockItem { id: b.id().into(), pinned });
                 added = true;

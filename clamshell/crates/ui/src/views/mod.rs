@@ -59,10 +59,6 @@ pub fn top(f: &mut Frame, screen: Rect) {
     f.body = screen;
     match f.s.top() {
         Top::App { app, .. } => apps::view(app)(f, screen),
-        Top::Setup(step) => {
-            f.start(clamshell_state::Id::Setup(step.first_target()));
-            setup::draw(f, screen);
-        }
         // The window is shown over the view, which isn't drawn.
         Top::Window { .. } => {}
     }

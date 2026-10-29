@@ -76,7 +76,7 @@ pub fn library() -> Library {
     }
     // ClamShell's own screens, as a library.json with a Tools place would have them.
     let tools = games.len();
-    for builtin in crate::BuiltinApp::ALL {
+    for builtin in crate::BuiltinApp::ENTRIES {
         games.push(Entry {
             launch: Launch::Builtin(builtin),
             app: true,

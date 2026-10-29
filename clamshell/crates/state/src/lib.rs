@@ -536,7 +536,8 @@ impl State {
     /// 5. What is shown: a launch's first window, then a group whose window came back, so the one that
     ///    came back ends in front (`a_launchs_first_window_is_shown_before_a_window_that_came_back`);
     ///    then going back to what was before when the window in front closed. Once that front is settled,
-    ///    Setup is put in front if it shows, and apps' file choosers are picked over their program or set
+    ///    an app needed now (Setup) is put in front and one no longer needed closed (`State::follow_needed`),
+    ///    and apps' file choosers are picked over their program or set
     ///    aside ([`State::follow_portal`]); then the overview follows what is in front.
     /// 6. In the background: entries paused, thawed or ended by their setting, once the front is settled
     ///    (`a_paused_game_shown_when_the_front_closes_is_thawed_at_once`).
@@ -608,10 +609,8 @@ impl State {
         self.session.follow_front_launch(self.clock.mono());
         self.session.follow_replacement(self.clock.mono());
         self.session.follow_front(self.clock.mono());
-        // Setup is drawn in the Library's place: while it shows, the Library is in front, over any window.
-        if self.setup.wizard().is_some() && self.session.shown_builtin() != Some(builtin_apps::home()) {
-            self.show_builtin(builtin_apps::home());
-        }
+        // An app needed now (Setup) is in front, over any window; one no longer needed closes.
+        self.follow_needed();
         // Order: once the front is settled (a launch's window, a closed window's replacement), which an
         // app's pick is shown over or set aside for; before the overview, which follows what is in front, so
         // a pick shown or a program back after it is what the overview and the next steps see.

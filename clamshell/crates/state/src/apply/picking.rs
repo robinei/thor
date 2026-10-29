@@ -64,8 +64,8 @@ impl State {
         // A program with no window left (closed to its tray, say) can't come in front: its request is
         // picked over whatever is.
         let windowless = |program: &crate::session::windows::Group| !self.session.windows().iter().any(|w| w.group.as_ref() == Some(program));
-        // While Setup shows, the requests wait: it is drawn in the Library's place.
-        while !matches!(self.top(), crate::Top::Setup(_))
+        // While an app needed now shows (Setup), the requests wait: it is in front of the home app.
+        while crate::builtin_apps::needed(self).is_none()
             && self.pick_free()
             && let Some(i) = self.portal.asked.iter().position(|w| w.program.as_ref().is_none_or(|p| Some(p) == front.as_ref() || windowless(p)))
         {

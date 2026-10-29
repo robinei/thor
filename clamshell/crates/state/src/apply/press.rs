@@ -132,15 +132,12 @@ impl State {
                             self.editor_done(done, out);
                         }
                     }
-                    // While Setup shows, the keyboard is only for its editor.
-                    Some(_) if self.setup.wizard().is_some() => {}
                     Some(stroke) if self.keymapping.capturing(self.bottom.tab(), self.bottom.editor().is_some()) => {
                         self.keymapping.captured(crate::keymap::screens::chord(stroke), out);
                     }
                     Some(stroke) => match self.top() {
                         crate::Top::App { app, .. } => (crate::builtin_apps::definition(app).typed)(self, stroke, out),
                         crate::Top::Window { .. } => out.effects.push(Effect::Compositor(Compositor::Key(stroke))),
-                        crate::Top::Setup(_) => {}
                     },
                     None => {}
                 }

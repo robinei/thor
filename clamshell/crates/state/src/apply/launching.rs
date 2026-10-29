@@ -78,6 +78,23 @@ impl State {
         self.session.command(WindowCommand::Show(b));
     }
 
+    /// Puts the app needed now, if one is, in front, over any window, and closes one that runs and is no
+    /// longer needed (see [`crate::builtin_apps::BuiltinAppDefinition::needed`]).
+    pub(crate) fn follow_needed(&mut self) {
+        let needed = crate::builtin_apps::needed(self);
+        for app in BuiltinApp::ALL {
+            let shows_by_need = crate::builtin_apps::definition(app).needed.is_some();
+            if shows_by_need && needed != Some(app) && self.session.runs_builtin(app) {
+                self.close_app(app);
+            }
+        }
+        if let Some(app) = needed
+            && self.session.shown_builtin() != Some(app)
+        {
+            self.show_builtin(app);
+        }
+    }
+
     /// Closes `app`, which runs while open: the home shows in its place if it showed.
     pub(crate) fn close_app(&mut self, app: BuiltinApp) {
         self.session.close_app(app);

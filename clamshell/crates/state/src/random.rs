@@ -262,7 +262,7 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
             .map(Id::Device),
         ),
         // The step's own; the tab's below are the step's tab's.
-        Top::Setup(_) => ids.extend([SetupId::Password, SetupId::Next, SetupId::Back].map(Id::Setup)),
+        Top::App { app: BuiltinApp::Setup, .. } => ids.extend([SetupId::Password, SetupId::Next, SetupId::Back].map(Id::Setup)),
         // The edit mode's: its tabs, its rows, and its actions.
         Top::App { app: BuiltinApp::Library, .. } if s.library_view().edit().is_some() && s.library_view().pick().is_none() => {
             use crate::library_view::edit::EditId;
@@ -893,10 +893,7 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     // The user's programs aren't started while the account holds them: unread, unreadable or without a
     // password (see `crate::setup::wizard`). And Setup, while it shows, is in front.
     ensure!(!(s.setup().holds_programs() && effects.iter().any(|e| matches!(e, Effect::Launch { .. }))), "launched while the account holds programs");
-    ensure!(
-        s.setup().wizard().is_none() || s.session().shown_builtin() == Some(clamshell_library::BuiltinApp::Library),
-        "Setup shows but the Library isn't in front"
-    );
+    ensure!(s.setup().wizard().is_none() || s.session().shown_builtin() == Some(clamshell_library::BuiltinApp::Setup), "Setup is needed but not in front");
     // 4. Live window ids are unique.
     for (i, window) in s.session().windows().iter().enumerate() {
         ensure!(!s.session().windows().iter().skip(i + 1).any(|other| other.id == window.id), "duplicate window id {}", window.id);
@@ -1041,7 +1038,7 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         PadRoute::Mouse
     } else {
         match (s.top(), s.bottom().tab()) {
-            (Top::Setup(_) | Top::App { .. }, _) => PadRoute::Ui,
+            (Top::App { .. }, _) => PadRoute::Ui,
             (_, Tab::Keyboard) => PadRoute::Keys,
             _ => PadRoute::Game,
         }
@@ -1128,7 +1125,8 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     for r in running {
         ensure!(items.iter().any(|i| i.id == r.id), "5: {} runs off the dock", r.id);
     }
-    for b in clamshell_library::BuiltinApp::ALL.into_iter().filter(|b| session.runs_builtin(*b)) {
+    let on_dock = |b: &clamshell_library::BuiltinApp| crate::builtin_apps::definition(*b).dock != crate::builtin_apps::DockPlace::Never;
+    for b in clamshell_library::BuiltinApp::ALL.into_iter().filter(|b| session.runs_builtin(*b) && on_dock(b)) {
         ensure!(items.iter().any(|i| &*i.id == b.id()), "5: built-in {b:?} runs off the dock");
     }
 

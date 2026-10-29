@@ -4,7 +4,7 @@
 
 use clamshell_state::BuiltinApp;
 
-use super::{device, library_view};
+use super::{device, library_view, setup};
 use crate::gfx::Rect;
 use crate::toolkit::Frame;
 
@@ -13,5 +13,6 @@ pub(super) fn view(app: BuiltinApp) -> fn(&mut Frame, Rect) {
     match app {
         BuiltinApp::Library => library_view::app,
         BuiltinApp::Device => device::draw,
+        BuiltinApp::Setup => setup::draw,
     }
 }

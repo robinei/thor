@@ -34,22 +34,28 @@ pub enum BuiltinApp {
     Library,
     /// Calibrating the controller and the screen, the password and remote login.
     Device,
+    /// The first start's steps. It has no entry: it shows by itself while needed.
+    Setup,
 }
 
 impl BuiltinApp {
-    pub const ALL: [BuiltinApp; 2] = [BuiltinApp::Library, BuiltinApp::Device];
+    /// Every one, in declaration order (see [`BuiltinApp::index`]).
+    pub const ALL: [BuiltinApp; 3] = [BuiltinApp::Library, BuiltinApp::Device, BuiltinApp::Setup];
+    /// Those that are library entries.
+    pub const ENTRIES: [BuiltinApp; 2] = [BuiltinApp::Library, BuiltinApp::Device];
 
     /// Its entry's id.
     pub fn id(self) -> &'static str {
         match self {
             BuiltinApp::Library => "builtin:library",
             BuiltinApp::Device => "builtin:device",
+            BuiltinApp::Setup => "builtin:setup",
         }
     }
 
     /// The built-in whose entry is `id`, if one is.
     pub fn of(id: &str) -> Option<BuiltinApp> {
-        BuiltinApp::ALL.into_iter().find(|b| b.id() == id)
+        BuiltinApp::ENTRIES.into_iter().find(|b| b.id() == id)
     }
 
     /// Its place in [`BuiltinApp::ALL`].
@@ -62,6 +68,7 @@ impl BuiltinApp {
         match self {
             BuiltinApp::Library => "Library",
             BuiltinApp::Device => "Device",
+            BuiltinApp::Setup => "Setup",
         }
     }
 
@@ -72,6 +79,7 @@ impl BuiltinApp {
             BuiltinApp::Device => {
                 "Calibrates the controller's sticks and gyro and the top screen's refresh rate; sets the password and remote login; Wi-Fi and the time zone."
             }
+            BuiltinApp::Setup => "The first start's steps: the password, Wi-Fi and the time zone.",
         }
     }
 }

@@ -610,7 +610,7 @@ impl Builder<'_> {
     /// Adds ClamShell's own screens no source placed, in no place: they are entries all the same, the
     /// Library always on the dock.
     fn unplaced_builtins(&mut self) {
-        for builtin in clamshell_library::BuiltinApp::ALL {
+        for builtin in clamshell_library::BuiltinApp::ENTRIES {
             if !self.games.iter().any(|g| g.launch == Launch::Builtin(builtin)) {
                 self.games.push(builtin_entry(builtin));
             }

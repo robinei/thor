@@ -21,6 +21,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) {
     let Some(step) = f.s.setup().wizard() else {
         return;
     };
+    f.start(clamshell_state::Id::Setup(step.first_target()));
     let (pad, small, heading) = (f.pad(), f.text(Text::Small), f.text(Text::Heading));
     let mut area = style::content(screen).inset(pad);
 

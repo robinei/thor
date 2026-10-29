@@ -88,10 +88,10 @@ impl Setup {
     }
 
     /// Whether the account is read for itself: at start, so that one without a password brings Setup back
-    /// (see [`wizard`]), again until it reads, and while Setup shows. The Device view has it read while it
-    /// runs, as its definition says (see [`crate::builtin_apps`]).
+    /// (see [`wizard`]), and again until it reads. Setup and the Device view have it read while they run,
+    /// as their definitions say (see [`crate::builtin_apps`]).
     pub fn reads_account(&self) -> bool {
-        matches!(self.account, Account::Unread | Account::Failed(_)) || self.wizard().is_some()
+        matches!(self.account, Account::Unread | Account::Failed(_))
     }
 
     /// Whether the user's programs are held: launches and autostart wait (see

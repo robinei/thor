@@ -80,7 +80,8 @@ How areas cooperate:
    was last sent (`Sent`); only differences become effects, in one fixed order. Effects that are
    commands (launch, quit, save) come from the rules; effects that describe a condition come from sync.
 
-**Built-in apps.** ClamShell's own apps on the main screen (the Library, the Device view) are each a
+**Built-in apps.** ClamShell's own apps on the main screen (the Library, the Device view, and Setup,
+which shows by itself while needed) are each a
 `BuiltinApp`: who it is as a library entry (id, title, summary) in the library crate; what it does as its
 `BuiltinAppDefinition` in `crates/state/src/builtin_apps.rs` (always runs or while open, its dock place,
 whether it is the home, what it watches while it runs, and its hooks: which of its views shows, what a
