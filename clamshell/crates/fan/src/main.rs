@@ -155,21 +155,15 @@ fn main() {
     }
 }
 
+/// The machine's profile (see [`DeviceProfile::detect`]). An identifying file that couldn't be read is
+/// an error here: read as empty, it could make the daemon drive another machine's fan.
 fn identify(root: &Path) -> Result<DeviceProfile, String> {
     let forced = std::env::var("CLAMSHELL_DEVICE").ok();
-    let read = |relative: &str| -> Result<Vec<u8>, String> {
-        let path = root.join(relative);
-        match fs::read(&path) {
-            Ok(bytes) => Ok(bytes),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-            Err(error) => Err(format!("{}: {error}", path.display())),
-        }
-    };
-    let compatible = read("sys/firmware/devicetree/base/compatible")?;
-    let vendor = read("sys/class/dmi/id/sys_vendor")?;
-    let product = read("sys/class/dmi/id/product_name")?;
-    DeviceProfile::identify(forced.as_deref(), &compatible, &String::from_utf8_lossy(&vendor), &String::from_utf8_lossy(&product))
-        .map_err(|name| format!("unknown CLAMSHELL_DEVICE {name:?}"))
+    let (profile, unread) = DeviceProfile::detect(root, forced.as_deref())?;
+    match unread.first() {
+        Some(problem) => Err(problem.clone()),
+        None => Ok(profile),
+    }
 }
 
 #[cfg(test)]

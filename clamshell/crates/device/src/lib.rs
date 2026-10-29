@@ -191,6 +191,32 @@ impl DeviceProfile {
             unknown => Err(unknown),
         }
     }
+
+    /// The profile of the machine whose /sys is under `root`, or `forced`'s (CLAMSHELL_DEVICE), with the
+    /// identifying files that couldn't be read, each said: read as empty, they may have made it another
+    /// profile. A missing file is no problem (no device tree, or no DMI). A forced unknown name is an
+    /// error.
+    pub fn detect(root: &std::path::Path, forced: Option<&str>) -> Result<(Self, Vec<String>), String> {
+        let mut unread = Vec::new();
+        let mut read = |relative: &str| {
+            let path = root.join(relative);
+            match std::fs::read(&path) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    if error.kind() != std::io::ErrorKind::NotFound {
+                        unread.push(format!("{}: {error}", path.display()));
+                    }
+                    Vec::new()
+                }
+            }
+        };
+        let compatible = read("sys/firmware/devicetree/base/compatible");
+        let vendor = read("sys/class/dmi/id/sys_vendor");
+        let product = read("sys/class/dmi/id/product_name");
+        let profile = Self::identify(forced, &compatible, &String::from_utf8_lossy(&vendor), &String::from_utf8_lossy(&product))
+            .map_err(|name| format!("unknown CLAMSHELL_DEVICE {name:?}; use thor, vm, vm-hdr or generic"))?;
+        Ok((profile, unread))
+    }
 }
 #[cfg(test)]
 mod tests {
