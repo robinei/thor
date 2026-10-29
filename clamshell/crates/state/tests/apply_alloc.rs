@@ -1,5 +1,6 @@
 //! `State::apply` allocates nothing for the events that come all the time, once the state is warm: ticks,
-//! readings, the windows and units listed again, presses and the pad's focus, with notifications held. The counts are printed
+//! readings, the windows and units listed again, presses and the pad's focus, with notifications held, the
+//! Library showing a browsed file, and a runner of a running entry that pauses its entries together. The counts are printed
 //! (`cargo test -p clamshell-state --test apply_alloc -- --nocapture`), and with CLAMSHELL_ALLOC_TRACE set,
 //! where each allocation came from.
 #![allow(clippy::unwrap_used, unsafe_code)]
@@ -11,8 +12,8 @@ use clamshell_state::radios::wifi::{Network, Wifi};
 use clamshell_state::session::windows::WindowFacts;
 use clamshell_state::status::metrics::Metrics;
 use clamshell_state::{
-    Control, Effect, EntryAct, Event, HardwareKey, Id, Init, LaunchUnit, LibraryViewEvent, ListEvent, ListId, Notification, NotificationEvent, NotificationId,
-    PointerEvent, Reading, Slide, State, Status, Tab, Urgency, WindowEvent,
+    Control, Effect, EntryAct, Event, HardwareKey, Id, Init, LaunchUnit, LibraryViewEvent, LibraryViewId, ListEvent, ListId, Notification, NotificationEvent,
+    NotificationId, PointerEvent, Reading, Slide, State, Status, Tab, Urgency, WindowEvent,
 };
 
 thread_local! {
@@ -74,19 +75,22 @@ fn count(s: &mut State, event: Event, effects: &mut Vec<Effect>) -> usize {
 }
 
 /// A warm state: up, with two programs of ours running, each with a window, one of them in front, and a
-/// terminal of the user's in another group.
+/// terminal of the user's in another group. Firefox's runner pauses its entries together, so each settle
+/// follows it.
 fn warm() -> (State, Vec<WindowFacts>, Vec<LaunchUnit>) {
+    let mut library = clamshell_library::demo::library();
+    let runner = clamshell_library::RunnerOf {
+        pause: vec!["pause".to_owned()].into(),
+        resume: vec!["resume".to_owned()].into(),
+        ..clamshell_library::RunnerOf::new("web", "Web", false)
+    };
+    library.entries_mut().iter_mut().find(|g| &*g.id == "desktop:firefox").unwrap().runner = Some(runner);
     let window_rules = clamshell_state::session::below::WindowRules::from_list(vec![clamshell_state::session::below::WindowRule {
         owner: "desktop:foot".into(),
         app_id: "foot".into(),
         title: Some("lower".into()),
     }]);
-    let mut s = State::new(Init {
-        library: Some(clamshell_library::demo::library()),
-        window_rules,
-        account: clamshell_state::setup::account::Account::NoHelper,
-        ..Init::default()
-    });
+    let mut s = State::new(Init { library: Some(library), window_rules, account: clamshell_state::setup::account::Account::NoHelper, ..Init::default() });
     let mut effects = Vec::new();
     s.apply(Event::Start, &mut effects);
     s.apply(Event::Tick { unix_secs: T0, mono_secs: 10 }, &mut effects);
@@ -236,6 +240,20 @@ fn allocations_per_event() {
             run(&name("tick while a launch waits"), s, &|i| Event::Tick { unix_secs: T0 + 5000 + i, mono_secs: 5000 + i });
         }
     }
+    // The Library shows a browsed file, selected in the Files tab, so each event asks for the library entry
+    // of its file (the settings panel's subject). Moving to and from the tab sends what to watch, so the
+    // collections aren't stepped here.
+    let files = s.library_view().library().collections.iter().position(|c| c.name == "Files").unwrap();
+    let tap = |s: &mut State, id: Id| s.apply(Event::Pointer(PointerEvent::Activate(id)), &mut Vec::new());
+    tap(&mut s, Id::LibraryView(LibraryViewId::Collection(files as u16)));
+    tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
+    tap(&mut s, Id::LibraryView(LibraryViewId::Entry("browse:Files/Home/notes.txt".into())));
+    assert_eq!(s.library_view().selected().map(|id| &**id), Some("browse:Files/Home/notes.txt"));
+    run("a browsed file: tick, same minute", &mut s, &|i| Event::Tick { unix_secs: T0 + 9000 + i, mono_secs: 9000 + i });
+    run("a browsed file: status reading, changing", &mut s, &|i| {
+        Event::Reading(Reading::Status(Status { battery: Some(50 + i as u8 % 2), ..Status::default() }))
+    });
+    run("a browsed file: Library list stepped", &mut s, &|i| LibraryViewEvent::ListStep(if i % 2 == 0 { 1 } else { -1 }).into());
     for (name, n) in &rows {
         println!("{n:4}  {name}");
     }
