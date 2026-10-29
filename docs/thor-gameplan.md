@@ -82,7 +82,9 @@ Android kept. Written 2026-10-14, before having the device; everything here is u
   ClamShell reading the hub itself (`pad::sensor_hub`, no uinput device).
 - Stick lights: `/sys/devices/platform/multi-led{l,r}{1-4}/leds/rgb:*/multi_intensity` and `power-led`
   (HTR3212); their channels are out of order (red is written `0 0 255`: ROCKNIX's `ledcontrol` and
-  `battery_led_status`). Armada's kernel turns them off in suspend.
+  `battery_led_status`; its `analog_sticks_ledcontrol` writes blue, green, red). Armada's kernel turns
+  them off in suspend. ClamShell's Lights setting sets the sticks' LEDs (the device profile's
+  `StickLights`, `system/lights.rs`); it leaves `power-led` alone.
 - Power: 4-18 W; at 5 W the three CPU clusters cap at 1344/1785/1977 MHz. The fan: Kettle reported a
   curve in the device tree, but in Armada's and ROCKNIX's device trees the thermal zones' trip points
   link to no cooling device (checked 2026-10-20 in our built DTB: only the GPU's throttling is linked), so
@@ -479,6 +481,12 @@ Each subsystem, then hibernate with each in use (hibernate matters more to me th
 - [ ] Sleep while busy: an idle session (ClamShell, PipeWire, Steam in its tray, Waydroid up)
       stays under the busy thresholds (the user's processes 0.3 core, the network 100 kB/s), so it
       sleeps; a Steam download keeps it awake (`sleep: not now` in the journal).
+- [ ] Stick lights: Settings, Lights, Ember for All: both sticks orange (a wrong order shows blue:
+      the channel order is `StickLights::thor`'s); the sliders change them live; unlinked, one stick
+      only; brightness 1 % barely lit, 100 % full; charging with "Charging shows the battery" on, red to
+      green by the charge, back to the colour unplugged; on again after sleep; off when ClamShell
+      stops. If nothing lights: `ls -l /sys/class/leds/rgb:l1/` (the power group's write access, from
+      `73-thor-power.rules`) and `lights:` in ClamShell's log.
 - [ ] A second controller paired over Bluetooth while the Thor's own pad is grabbed: what ClamShell
       does with it (`CLAMSHELL_GAMEPAD`), and whether games get it as a second player.
 
