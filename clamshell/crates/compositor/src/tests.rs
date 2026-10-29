@@ -977,4 +977,40 @@ mod xwayland_shell {
         );
         assert_eq!(checked, 3);
     }
+
+    /// A buffer of Xwayland's that can't be drawn leaves Xwayland connected: it carries every X11 program.
+    #[test]
+    fn a_refused_x11_buffer_leaves_xwayland_connected() {
+        enum Refusal {
+            Committed,
+            StillConnected,
+        }
+        let (mut display, mut server) = ServerBuilder::new().build();
+        let client = spawn_client(&mut display, ClientState { xwayland: true, ..ClientState::default() }, |globals, mut queue, steps| {
+            let qh = queue.handle();
+            let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
+            let shell: xwayland_shell_v1::XwaylandShellV1 = globals.bind(&qh, 1..=1, ()).unwrap();
+            let surface = compositor.create_surface(&qh, ());
+            shell.get_xwayland_surface(&surface, &qh, ()).set_serial(7, 0);
+            surface.commit();
+            let mut client = Client::default();
+            queue.roundtrip(&mut client).unwrap();
+            steps.step(Refusal::Committed);
+            queue.roundtrip(&mut client).expect("no protocol error");
+            steps.step(Refusal::StillConnected);
+        });
+        let checked = client.serve(
+            &mut display,
+            &mut server,
+            |_| {},
+            |_, server, step| {
+                if let Refusal::Committed = step {
+                    let surface = crate::x11::shell::take(server, 7).unwrap();
+                    server.refuse_buffer(&surface, "test");
+                    server.refuse_buffer(&surface, "test");
+                }
+            },
+        );
+        assert_eq!(checked, 2);
+    }
 }

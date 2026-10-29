@@ -188,7 +188,7 @@ pub(crate) fn elements(
             Ok(())
         });
         if let Err(error) = imported {
-            server.reject_client(surface, &format!("cannot import window {} buffer: {error}", placed.id));
+            server.refuse_buffer(surface, &format!("cannot import window {} buffer: {error}", placed.id));
             continue;
         }
         let geometry = placed.geometry;

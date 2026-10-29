@@ -160,6 +160,22 @@ impl Server {
         }
     }
 
+    /// A buffer of `surface` that can't be drawn. A Wayland client is disconnected for it, as for any
+    /// request it can't make; Xwayland isn't, since it carries every X11 program: its window just isn't
+    /// drawn, logged as a warning once for the surface.
+    pub(crate) fn refuse_buffer(&self, surface: &WlSurface, message: &str) {
+        let xwayland = surface.client().and_then(|c| c.get_data::<crate::clients::ClientState>().map(|s| s.xwayland)).unwrap_or(false);
+        if !xwayland {
+            return self.reject_client(surface, message);
+        }
+        let first = smithay::wayland::compositor::with_states(surface, |states| states.data_map.insert_if_missing(|| BufferRefused));
+        if first {
+            log::warn!("compositor: an X11 surface {:?} isn't drawn: {message}", surface.id());
+        } else {
+            log::debug!("compositor: an X11 surface {:?} isn't drawn: {message}", surface.id());
+        }
+    }
+
     /// Flush client titles once for the frame, after all requests in the dispatch batch.
     pub fn frame(&mut self) {
         self.flush_x11_changes();
@@ -214,3 +230,7 @@ impl Server {
         self.core.handle(clamshell_state::Event::Reading(clamshell_state::Reading::Histogram(Box::new(histogram))));
     }
 }
+
+/// Marks a surface whose buffer couldn't be drawn, so that it is warned of once (see
+/// [`Server::refuse_buffer`]).
+struct BufferRefused;
