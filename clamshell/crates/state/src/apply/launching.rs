@@ -24,7 +24,7 @@ impl State {
             // A built-in isn't a process: Quit closes one that runs while open; one that always runs stays.
             EntryAct::Quit | EntryAct::ForceKill if let Some(app) = BuiltinApp::of(&id) => {
                 if crate::builtin_apps::definition(app).runs == crate::builtin_apps::Runs::WhileOpen {
-                    self.close_app(app);
+                    self.session.close_app(app);
                 }
             }
             EntryAct::Quit => self.session.quit(&id, self.clock.mono(), self.library_view.library(), out),
@@ -85,7 +85,7 @@ impl State {
         for app in BuiltinApp::ALL {
             let shows_by_need = crate::builtin_apps::definition(app).needed.is_some();
             if shows_by_need && needed != Some(app) && self.session.runs_app(app) {
-                self.close_app(app);
+                self.session.close_app(app);
             }
         }
         if let Some(app) = needed
@@ -93,11 +93,6 @@ impl State {
         {
             self.show_app(app);
         }
-    }
-
-    /// Closes `app`, which runs while open: the home shows in its place if it showed.
-    pub(crate) fn close_app(&mut self, app: BuiltinApp) {
-        self.session.close_app(app);
     }
 
     /// The dock menu's Open another: launches `id` again, if that is offered (see [`State::opens_another`]).

@@ -549,8 +549,9 @@ impl State {
     ///    ([`crate::Session::follow_windows`], which compares with the windows the last pass saw). Owners
     ///    are worked out from facts and claims, so each of these sees the same.
     /// 4. The window rules send windows down, which reads the owners 3 found
-    ///    (`a_found_programs_window_goes_down_by_its_rule_as_it_is_found`); then the tab left since the
-    ///    last settle, by a choice or by a window moved down, is settled ([`State::follow_tab`],
+    ///    (`a_found_programs_window_goes_down_by_its_rule_as_it_is_found`); while Setup shows, the second
+    ///    screen takes the tab its step needs; then the tab left since the last settle, by a choice, a
+    ///    window moved down or Setup, is settled ([`State::follow_tab`],
     ///    `the_tab_a_rule_leaves_is_settled_in_the_same_event`).
     /// 5. What is shown: a launch's first window, then a group whose window came back, so the one that
     ///    came back ends in front (`a_launchs_first_window_is_shown_before_a_window_that_came_back`);

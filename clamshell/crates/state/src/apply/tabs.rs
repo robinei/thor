@@ -26,11 +26,6 @@ impl State {
         self.bottom.open_on_keyboard(editor, self.clock.mono());
     }
 
-    /// Goes back to the tab the keyboard came up from, if it did.
-    fn back_from_keyboard(&mut self) {
-        self.bottom.back_from_keyboard();
-    }
-
     /// Runs after any event: the second screen's tab is not the one the last settle saw, `left` (its watch
     /// follows in sync, see [`crate::sync::Sent::watches`]). What the tab left had going ends: the dock's
     /// menu or move, and the modifiers armed on the keymaps' capture screen. The
@@ -95,7 +90,7 @@ impl State {
             }
         }
         if on_keyboard && self.bottom.editor().is_none() {
-            self.back_from_keyboard();
+            self.bottom.back_from_keyboard();
         }
     }
 }
