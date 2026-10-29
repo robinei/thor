@@ -101,15 +101,56 @@ pub(crate) struct Cursor {
     theme: CursorTheme,
     size: u32,
     cached: Vec<(CursorIcon, Vec<Frame>)>,
+    /// The theme's images of the cursors read at start (see [`PRELOADED`]), until each is first shown.
+    read: Vec<(CursorIcon, Vec<Image>)>,
 }
+
+/// The cursors whose images are read as ClamShell starts, so that showing them reads no file on the
+/// compositor's thread: those programs ask for all the time. Another is read the first time it shows.
+const PRELOADED: [CursorIcon; 17] = [
+    CursorIcon::Default,
+    CursorIcon::Pointer,
+    CursorIcon::Text,
+    CursorIcon::Grab,
+    CursorIcon::Grabbing,
+    CursorIcon::Move,
+    CursorIcon::Wait,
+    CursorIcon::Progress,
+    CursorIcon::Crosshair,
+    CursorIcon::NotAllowed,
+    CursorIcon::EwResize,
+    CursorIcon::NsResize,
+    CursorIcon::NeswResize,
+    CursorIcon::NwseResize,
+    CursorIcon::ColResize,
+    CursorIcon::RowResize,
+    CursorIcon::Help,
+];
 
 impl Cursor {
     pub fn new() -> Self {
-        Self {
+        let mut cursor = Self {
             theme: CursorTheme::load(&std::env::var("XCURSOR_THEME").unwrap_or_else(|_| "default".into())),
             size: std::env::var("XCURSOR_SIZE").ok().and_then(|size| size.parse().ok()).unwrap_or(24).clamp(1, 256),
             cached: Vec::new(),
+            read: Vec::new(),
+        };
+        let read: Vec<_> = PRELOADED.iter().map(|icon| (*icon, cursor.images(*icon))).collect();
+        if read.iter().any(|(_, images)| images.is_none()) {
+            log::warn!("compositor: the cursor theme lacks some cursors (and its default): the built-in pointer stands for them");
         }
+        cursor.read = read.into_iter().map(|(icon, images)| (icon, images.unwrap_or_else(|| vec![fallback()]))).collect();
+        cursor
+    }
+
+    /// The theme's images of `icon`, else of its default cursor, if it has either.
+    fn images(&self, icon: CursorIcon) -> Option<Vec<Image>> {
+        self.theme
+            .load_icon(icon.name())
+            .or_else(|| self.theme.load_icon("default"))
+            .and_then(|path| std::fs::read(path).ok())
+            .and_then(|bytes| parse_xcursor(&bytes))
+            .filter(|images| !images.is_empty())
     }
 
     /// The cursor's elements, with its hotspot `at` (where the scene places it, see `scene`), added to
@@ -292,17 +333,13 @@ impl Cursor {
         let index = if let Some(index) = self.cached.iter().position(|(cached, _)| *cached == icon) {
             index
         } else {
-            let images = self
-                .theme
-                .load_icon(icon.name())
-                .or_else(|| self.theme.load_icon("default"))
-                .and_then(|path| std::fs::read(path).ok())
-                .and_then(|bytes| parse_xcursor(&bytes))
-                .filter(|images| !images.is_empty());
-            let images = images.unwrap_or_else(|| {
-                log::warn!("compositor: no usable cursor theme image for {}, using the built-in pointer", icon.name());
-                vec![fallback()]
-            });
+            let images = match self.read.iter().position(|(read, _)| *read == icon) {
+                Some(i) => self.read.swap_remove(i).1,
+                None => self.images(icon).unwrap_or_else(|| {
+                    log::warn!("compositor: no usable cursor theme image for {}, using the built-in pointer", icon.name());
+                    vec![fallback()]
+                }),
+            };
             let nearest = images.iter().min_by_key(|image| image.size.abs_diff(self.size)).map(|image| image.size);
             let mut frames = Vec::new();
             for image in images.into_iter().filter(|image| Some(image.size) == nearest) {
