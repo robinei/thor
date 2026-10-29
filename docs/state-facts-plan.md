@@ -2,7 +2,7 @@
 
 From four read-only reviews of the state crate (the session; shelf, the bottom screen, the pad and
 pointer; levels, radios, status, idle, presentation, setup and settings; and `apply`, `settle` and
-`sync`), after `window-model-plan.md`.
+`sync`), after `history/window-model-plan.md`.
 
 ## The aim
 
