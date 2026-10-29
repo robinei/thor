@@ -789,7 +789,7 @@ pub fn render(fresh: &(dyn Fn(bool) -> State + Sync), now: u64, dir: &Path) -> R
 fn render_group(state: State, group: Group, now: u64, dir: &Path) -> Result<(), Error> {
     walk_group(state, group, now, &mut |state: &State, _: &[Event], name: &str, screen| {
         let path = dir.join(name);
-        let events = clamshell_ui::snapshot(&clamshell_ui::VIEWS, state, screen, size(screen), 1, &path)
+        let events = clamshell_ui::snapshot(&clamshell_views::VIEWS, state, screen, size(screen), 1, &path)
             .map_err(|e| Error::Render(path.display().to_string(), e.to_string()))?;
         log::info!("wrote {}", path.display());
         Ok(events)
@@ -906,8 +906,8 @@ mod tests {
                 scope.spawn(move || {
                     let frames = |screen| {
                         (
-                            clamshell_ui::Frames::new(clamshell_ui::VIEWS, screen, size(screen)).unwrap(),
-                            clamshell_ui::Frames::new(clamshell_ui::VIEWS, screen, size(screen)).unwrap(),
+                            clamshell_ui::Frames::new(clamshell_views::VIEWS, screen, size(screen)).unwrap(),
+                            clamshell_ui::Frames::new(clamshell_views::VIEWS, screen, size(screen)).unwrap(),
                         )
                     };
                     let (mut top, mut bottom) = (frames(Screen::Top), frames(Screen::Bottom));
@@ -950,8 +950,8 @@ mod tests {
         fn shot(&mut self, state: &State, log: &[Event], name: &str, screen: Screen) -> Result<Vec<Event>, Error> {
             let _ = writeln!(self.trace, "-- {name}");
             let path = self.dir.join(name);
-            let events =
-                clamshell_ui::snapshot(&clamshell_ui::VIEWS, state, screen, size(screen), 1, &path).map_err(|e| Error::Render(name.into(), e.to_string()))?;
+            let events = clamshell_ui::snapshot(&clamshell_views::VIEWS, state, screen, size(screen), 1, &path)
+                .map_err(|e| Error::Render(name.into(), e.to_string()))?;
             // The pad moves after the frame reported back, as on a live screen.
             self.maps.push(self.mapper.map(state, &[log, &events].concat(), name, screen));
             Ok(events)

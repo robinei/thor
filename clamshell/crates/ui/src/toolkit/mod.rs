@@ -5,17 +5,17 @@
 //! themselves are in `views`.
 
 mod clock;
-pub(crate) mod format;
+pub mod format;
 mod icons;
-pub(crate) mod scroll;
-pub(crate) mod style;
-pub(crate) mod widgets;
+pub mod scroll;
+pub mod style;
+pub mod widgets;
 
 use clamshell_state::{Event, Id, ItemKey, ListId, PointerEvent, State, Tab};
 
 use crate::gfx::images::Images;
 use crate::gfx::{Canvas, Rect};
-pub(crate) use clock::{LocalTime, Scratch};
+pub use clock::{LocalTime, Scratch};
 use style::{Look, PRESSED, RADIUS_S, Text, Tone};
 
 /// Something drawn that can be tapped or focused. Its rect is in layout units while drawing, and in the
@@ -111,7 +111,7 @@ pub enum Sideways {
 
 /// A button of the pad that a badge stands for (see [`widgets::key_action`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PadKey {
+pub enum PadKey {
     B,
     Y,
     X,
@@ -120,7 +120,7 @@ pub(crate) enum PadKey {
 
 impl PadKey {
     /// Its name on the badge.
-    pub(crate) fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             PadKey::B => "B",
             PadKey::Y => "Y",
@@ -130,7 +130,7 @@ impl PadKey {
     }
 
     /// Its place in [`PadOut::keys`], for the buttons there.
-    pub(crate) fn index(self) -> Option<usize> {
+    pub fn index(self) -> Option<usize> {
         match self {
             PadKey::B => None,
             PadKey::Y => Some(0),
@@ -160,12 +160,12 @@ pub struct Frame<'f, 'c> {
     pub c: &'f mut Canvas<'c>,
     pub s: &'f State,
     pub images: &'f mut Images,
-    pub(crate) scratch: &'f mut Scratch,
-    pub(crate) targets: &'f mut Vec<Target>,
-    pub(crate) out: FrameOut,
+    pub scratch: &'f mut Scratch,
+    pub targets: &'f mut Vec<Target>,
+    pub out: FrameOut,
     /// The area the screen's content goes in; on the second screen, the area below the bar. Sizes are
     /// fractions of its height (see [`Frame::pad`], [`Frame::text`]).
-    pub(crate) body: Rect,
+    pub body: Rect,
     /// The target pressed, where the item it came down on is now (see `Lists::pressed`).
     pressed: Option<Id>,
 }
@@ -178,29 +178,29 @@ impl<'f, 'c> Frame<'f, 'c> {
     }
 
     /// The area the screen's content goes in.
-    pub(crate) fn body(&self) -> Rect {
+    pub fn body(&self) -> Rect {
         self.body
     }
 
     /// The padding, and the unit other spacing is counted in (see [`style::pad`]).
-    pub(crate) fn pad(&self) -> f32 {
+    pub fn pad(&self) -> f32 {
         style::pad(self.body.h)
     }
 
     /// A text size (see [`Text`]).
-    pub(crate) fn text(&self, t: Text) -> f32 {
+    pub fn text(&self, t: Text) -> f32 {
         t.size(self.body.h)
     }
 
     /// A tappable, focusable area. Draws its background (lit while pressed), then `content`, then the
     /// focus ring if it is focused. `rect` becomes its target.
-    pub(crate) fn button(&mut self, id: Id, rect: Rect, look: Look, content: impl FnOnce(&mut Self)) {
+    pub fn button(&mut self, id: Id, rect: Rect, look: Look, content: impl FnOnce(&mut Self)) {
         self.button_in(id, rect, rect, look, content);
     }
 
     /// [`Frame::button`] for something drawn smaller than its target. The background and the focus ring
     /// follow `shown`, and the target is `rect`.
-    pub(crate) fn button_in(&mut self, id: Id, rect: Rect, shown: Rect, look: Look, content: impl FnOnce(&mut Self)) {
+    pub fn button_in(&mut self, id: Id, rect: Rect, shown: Rect, look: Look, content: impl FnOnce(&mut Self)) {
         let pressed = self.pressed(&id);
         let background = if pressed && look.press_fill { Some(PRESSED) } else { look.fill };
         if let Some(color) = background {
@@ -220,19 +220,19 @@ impl<'f, 'c> Frame<'f, 'c> {
     }
 
     /// The focus ring of a button of `look` shown at `shown`.
-    pub(crate) fn ring(&mut self, shown: Rect, look: Look) {
+    pub fn ring(&mut self, shown: Rect, look: Look) {
         self.c.outline(shown.inset(look.ring), look.radius.max(RADIUS_S), 2.0, Tone::Accent);
     }
 
     /// Whether `id` is held down by a finger or the pad's A. A list item is lit where the item pressed is
     /// now. A control whose slider is up doesn't count, since the finger is then on the slider rather
     /// than the button.
-    pub(crate) fn pressed(&self, id: &Id) -> bool {
+    pub fn pressed(&self, id: &Id) -> bool {
         self.pressed.as_ref() == Some(id) && !self.sliding(id)
     }
 
     /// Whether `id` is a control whose held slider is up, such as the bar's or a keymap parameter's.
-    pub(crate) fn sliding(&self, id: &Id) -> bool {
+    pub fn sliding(&self, id: &Id) -> bool {
         let Id::Control(control) = id else {
             return false;
         };
@@ -243,7 +243,7 @@ impl<'f, 'c> Frame<'f, 'c> {
     /// A text action (see [`Look::TEXT`]). Draws `label` in `r` at `size`, centred, or from the left with
     /// [`crate::gfx::Align::Start`]. It is in `tone` (blue for an action, see [`Tone::Fn`]), and white
     /// while pressed. The whole of `r` is its target.
-    pub(crate) fn text_button(&mut self, id: Id, r: Rect, size: f32, tone: Tone, label: &str, align: crate::gfx::Align) {
+    pub fn text_button(&mut self, id: Id, r: Rect, size: f32, tone: Tone, label: &str, align: crate::gfx::Align) {
         let tone = if self.pressed(&id) { Tone::High } else { tone };
         self.button(id, r, Look::TEXT, |f| {
             let w = f.c.text_width(size, label).min(r.w);
@@ -254,60 +254,60 @@ impl<'f, 'c> Frame<'f, 'c> {
 
     /// Gives the last target a track. The caller passes it because whatever drew the track knows where
     /// it is.
-    pub(crate) fn track(&mut self, track: Track) {
+    pub fn track(&mut self, track: Track) {
         if let Some(t) = self.targets.last_mut() {
             t.track = Some(track);
         }
     }
 
     /// How the pad reaches the last target drawn.
-    pub(crate) fn pad_use(&mut self, pad: PadUse) {
+    pub fn pad_use(&mut self, pad: PadUse) {
         if let Some(t) = self.targets.last_mut() {
             t.pad = pad;
         }
     }
 
     /// B goes back by pressing `id`, as the screen's own back.
-    pub(crate) fn back(&mut self, id: Id) {
+    pub fn back(&mut self, id: Id) {
         self.back_with(PointerEvent::Activate(id).into());
     }
 
     /// B goes back by `event`, as the screen's own back.
-    pub(crate) fn back_with(&mut self, event: Event) {
+    pub fn back_with(&mut self, event: Event) {
         if !self.out.pad.back.as_ref().is_some_and(|(_, over)| *over) {
             self.out.pad.back = Some((event, false));
         }
     }
 
     /// B goes back by pressing `id`, over the whole screen (an editor's Cancel).
-    pub(crate) fn back_over(&mut self, id: Id) {
+    pub fn back_over(&mut self, id: Id) {
         self.out.pad.back = Some((PointerEvent::Activate(id).into(), true));
     }
 
     /// The Library's list is drawn, with left and right going as `sideways` says.
-    pub(crate) fn list(&mut self, sideways: Sideways) {
+    pub fn list(&mut self, sideways: Sideways) {
         self.out.pad.list = Some(sideways);
     }
 
     /// The bar's tab `tab` is drawn, after those left of it, with its button's target `id`.
-    pub(crate) fn bar_tab(&mut self, tab: Tab, id: Id) {
+    pub fn bar_tab(&mut self, tab: Tab, id: Id) {
         if let Some(slot) = self.out.pad.tabs.iter_mut().find(|t| t.is_none()) {
             *slot = Some((tab, id));
         }
     }
 
     /// The view is in `mode`, which takes the pad's buttons.
-    pub(crate) fn mode(&mut self, mode: PadMode) {
+    pub fn mode(&mut self, mode: PadMode) {
         self.out.pad.mode = Some(mode);
     }
 
     /// The focus starts on `id` when nothing better is known.
-    pub(crate) fn start(&mut self, id: Id) {
+    pub fn start(&mut self, id: Id) {
         self.out.pad.start = Some(id);
     }
 
     /// `key` presses `id`.
-    pub(crate) fn key(&mut self, key: PadKey, id: Id) {
+    pub fn key(&mut self, key: PadKey, id: Id) {
         match key.index().and_then(|i| self.out.pad.keys.get_mut(i)) {
             Some(slot) => *slot = Some(id),
             None => self.back(id),

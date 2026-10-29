@@ -5,19 +5,19 @@
 //! The crate's layers:
 //! - `gfx` draws geometry, the canvas, text, icons and images, and holds no state;
 //! - `toolkit` is the immediate-mode kit the screens are drawn with;
-//! - `views` are the screens themselves, and `render` draws one frame of them;
+//! - `render` draws one frame of the views, which are given to it ([`Views`]; ClamShell's are the
+//!   clamshell-views crate);
 //! - `input` turns presses and the pad into events (the pure parts);
 //! - `core` is all of it, for the compositor to host: the state, the event queue, input by screen, timers
 //!   as deadlines, and each screen drawn into a pixmap ([`Core`]).
 
 mod core;
-mod gfx;
-mod input;
-mod render;
-mod screens;
+pub mod gfx;
+pub mod input;
+pub mod render;
+pub mod screens;
 pub mod threads;
-mod toolkit;
-mod views;
+pub mod toolkit;
 
 pub use crate::core::Core;
 
@@ -59,9 +59,6 @@ pub struct Views {
     pub overlay: fn(&mut toolkit::Frame, gfx::Rect, Screen),
     pub mode_input: fn(toolkit::PadMode, clamshell_state::PadInput) -> Option<clamshell_state::Event>,
 }
-
-/// ClamShell's views.
-pub const VIEWS: Views = Views { top: views::top, bottom: views::bottom, overlay: views::overlay, mode_input: views::mode_input };
 
 /// Renders one screen without Wayland, at `size` logical pixels and integer `scale`, to a PNG file, with
 /// its overlay over it as the compositor shows it. For checking layouts and for automated tests. Returns

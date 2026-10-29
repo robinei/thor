@@ -2,10 +2,10 @@
 //! cover presses from touch, the mouse and keys ([`press`]), flinging a list ([`fling`]), the pad's focus
 //! ([`focus`]) and the direction the focus steps in ([`nav`]).
 
-pub(crate) mod fling;
-pub(crate) mod focus;
-pub(crate) mod nav;
-pub(crate) mod press;
+pub mod fling;
+pub mod focus;
+pub mod nav;
+pub mod press;
 
-pub(crate) use press::{Action, EventClock, Input, Timer, points};
+pub use press::{Action, EventClock, Input, Timer, points};
 pub use press::{End, Source};

@@ -85,7 +85,7 @@ impl Bounds {
     }
 
     /// The smallest rectangle holding both.
-    pub(crate) fn union(&self, o: Bounds) -> Bounds {
+    pub fn union(&self, o: Bounds) -> Bounds {
         match (self.is_empty(), o.is_empty()) {
             (true, _) => o,
             (_, true) => *self,
@@ -215,13 +215,13 @@ impl Recording {
     }
 
     /// The buffer pixels drawn over the background: around every command but the clears.
-    pub(crate) fn ink(&self) -> Bounds {
+    pub fn ink(&self) -> Bounds {
         self.cmds.iter().filter(|c| !matches!(c.op, Op::Clear(_))).fold(Bounds::EMPTY, |d, c| d.union(c.bounds))
     }
 
     /// The bytes of every text drawn, run together, for tests of what a view says.
-    #[cfg(test)]
-    pub(crate) fn all_text(&self) -> &[u8] {
+    #[cfg(any(test, feature = "dev"))]
+    pub fn all_text(&self) -> &[u8] {
         &self.text
     }
 

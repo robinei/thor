@@ -58,7 +58,7 @@ impl Scratch {
     /// The local time at `unix_secs`. It is in `zone` when given; that is the time tab's reading, which
     /// follows the system's zone as it changes. Before there is a reading, it is in the system's zone as
     /// the program found it.
-    pub(crate) fn local(&mut self, unix_secs: u64, zone: Option<&str>) -> LocalTime {
+    pub fn local(&mut self, unix_secs: u64, zone: Option<&str>) -> LocalTime {
         let minute = unix_secs / 60;
         if self.zone.as_ref().map(|(name, _)| name.as_str()) != zone {
             let tz = zone.and_then(|z| jiff::tz::db().get(z).inspect_err(|e| log::warn!("time zone {z}: {e}")).ok());

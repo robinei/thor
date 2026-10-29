@@ -480,29 +480,4 @@ mod tests {
         app.handle(Event::LibraryView(LibraryViewEvent::Rows(20)));
         assert_eq!(app.log.get(10..), Some(&["apply 20".to_owned(), "effects 20".to_owned()][..]));
     }
-
-    /// When the main screen shows another view, the focus starts where that view says: the Device
-    /// view's first row, the Library's selection, the edit mode's row.
-    #[test]
-    #[allow(clippy::expect_used)]
-    fn the_focus_starts_where_the_view_shown_says() {
-        use clamshell_state::library_view::edit::EditId;
-        use clamshell_state::{DeviceId, EntryAct, Init};
-        let account = clamshell_state::setup::account::Account::NoHelper;
-        let state = State::new(Init { library: Some(clamshell_library::demo::library()), account, ..Init::default() });
-        let mut core = Core::new(state, crate::VIEWS, || {}).expect("a core");
-        for screen in Screen::BOTH {
-            core.resize(screen, (1280, 720), 1);
-        }
-        let device = || Event::Entry("builtin:device".into(), EntryAct::Play);
-        core.handle(device());
-        assert_eq!(core.state.pointer().focus(), Some(&Id::Device(DeviceId::Wifi)));
-        core.handle(Event::Home);
-        let selection = core.state.library_view().selected().cloned().map(|id| Id::LibraryView(clamshell_state::LibraryViewId::Entry(id)));
-        assert_eq!(core.state.pointer().focus(), selection.as_ref());
-        core.handle(device());
-        core.handle(PointerEvent::Activate(Id::Device(DeviceId::EditLibrary)).into());
-        let row = core.state.library_view().edit().map(|e| Id::from(EditId::Row(e.cursor() as u16)));
-        assert_eq!(core.state.pointer().focus(), row.as_ref());
-    }
 }

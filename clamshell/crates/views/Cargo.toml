@@ -1,0 +1,21 @@
+[package]
+name = "clamshell-views"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "ClamShell's screens: the built-in apps' views and the second screen's tabs, drawn with clamshell-ui"
+
+[dependencies]
+clamshell-state.workspace = true
+clamshell-ui.workspace = true
+
+[dev-dependencies]
+clamshell-library = { workspace = true, features = ["demo"] }
+clamshell-ui = { workspace = true, features = ["dev"] }
+tiny-skia.workspace = true
+
+[lints]
+workspace = true

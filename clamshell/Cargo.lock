@@ -226,6 +226,7 @@ dependencies = [
  "clamshell-state",
  "clamshell-system",
  "clamshell-ui",
+ "clamshell-views",
  "image",
  "jiff",
  "log",
@@ -243,6 +244,7 @@ dependencies = [
  "clamshell-library",
  "clamshell-state",
  "clamshell-ui",
+ "clamshell-views",
  "command-fds",
  "drm-ffi",
  "libc",
@@ -331,6 +333,16 @@ dependencies = [
  "tempfile",
  "tiny-skia",
  "xkeysym",
+]
+
+[[package]]
+name = "clamshell-views"
+version = "0.1.0"
+dependencies = [
+ "clamshell-library",
+ "clamshell-state",
+ "clamshell-ui",
+ "tiny-skia",
 ]
 
 [[package]]

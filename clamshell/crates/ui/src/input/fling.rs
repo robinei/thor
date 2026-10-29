@@ -13,7 +13,7 @@ use clamshell_state::{ListId, State};
 use crate::toolkit::scroll::InList;
 
 /// How often a fling steps: about once a frame.
-pub(crate) const FLING_EVERY: Duration = Duration::from_millis(16);
+pub const FLING_EVERY: Duration = Duration::from_millis(16);
 /// How fast a fling slows down. The speed after t seconds is multiplied by e^(-t/τ), where τ = 1 / this.
 const FRICTION: f32 = 3.0;
 /// A drag let go faster than `START`, in rows per second, flings on. A fling slower than `STOP` ends.
@@ -32,7 +32,7 @@ const SAMPLE_EVERY: Duration = Duration::from_millis(10);
 
 /// A finger's last positions along y, newest first, [`SAMPLE_EVERY`] apart.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct Trail([Option<(Instant, f32)>; 8]);
+pub struct Trail([Option<(Instant, f32)>; 8]);
 
 impl Trail {
     pub fn new(now: Instant, y: f32) -> Trail {
@@ -64,7 +64,7 @@ impl Trail {
 
 /// A list moving on by itself, and when it last stepped.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct Fling {
+pub struct Fling {
     pub list: ListId,
     motion: Motion,
     at: Instant,

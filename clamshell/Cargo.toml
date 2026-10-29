@@ -20,6 +20,7 @@ clamshell-state = { path = "crates/state" }
 clamshell-system = { path = "crates/system" }
 clamshell-library = { path = "crates/library" }
 clamshell-ui = { path = "crates/ui" }
+clamshell-views = { path = "crates/views" }
 clamshell-compositor = { path = "crates/compositor" }
 clamshell-fan = { path = "crates/fan" }
 xkeysym = "0.2"
@@ -85,6 +86,7 @@ serde_json.workspace = true
 clamshell-system.workspace = true
 clamshell-library.workspace = true
 clamshell-ui.workspace = true
+clamshell-views.workspace = true
 clamshell-compositor.workspace = true
 log.workspace = true
 jiff.workspace = true

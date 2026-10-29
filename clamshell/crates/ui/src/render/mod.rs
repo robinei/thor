@@ -14,10 +14,6 @@
 //! - Screen pixels are the touchscreen's, used for the virtual touchpad. They are the buffer pixels of
 //!   the second screen, which fills its output.
 
-#[cfg(test)]
-#[allow(unsafe_code, clippy::unwrap_used, clippy::expect_used)]
-mod no_alloc;
-
 #[cfg(any(test, feature = "dev"))]
 use clamshell_state::LibraryViewEvent;
 use clamshell_state::{Event, ListEvent, ListId, State};
@@ -36,10 +32,10 @@ use crate::{Layer, Screen};
 /// irregular path within ±MARGIN. This keeps static elements such as the bar's icons and the clock from
 /// sitting on the same pixels for hours, while nothing reaches the edge or is cut off. Tap areas move
 /// with the picture.
-pub(crate) const MARGIN: u32 = 4;
+pub const MARGIN: u32 = 4;
 
 /// The burn-in drift at `unix_secs`, in buffer pixels.
-pub(crate) fn orbit(unix_secs: u64) -> (i32, i32) {
+pub fn orbit(unix_secs: u64) -> (i32, i32) {
     let minutes = (unix_secs / 60) as f32;
     let tau = std::f32::consts::TAU;
     let reach = MARGIN as f32;
@@ -50,7 +46,7 @@ pub(crate) fn orbit(unix_secs: u64) -> (i32, i32) {
 
 /// The layout's size inside the margin, in layout units, and the offset in buffer pixels to draw it at
 /// for a drift of `(dx, dy)`.
-pub(crate) fn inset(size_px: (u32, u32), scale: u32, (dx, dy): (i32, i32)) -> ((f32, f32), (i32, i32)) {
+pub fn inset(size_px: (u32, u32), scale: u32, (dx, dy): (i32, i32)) -> ((f32, f32), (i32, i32)) {
     let scale = scale.max(1) as f32;
     let w = size_px.0.saturating_sub(2 * MARGIN) as f32 / scale;
     let h = size_px.1.saturating_sub(2 * MARGIN) as f32 / scale;
@@ -59,7 +55,7 @@ pub(crate) fn inset(size_px: (u32, u32), scale: u32, (dx, dy): (i32, i32)) -> ((
 
 /// Where a frame goes: the buffer's size in pixels, its scale, and the burn-in drift.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Placement {
+pub struct Placement {
     pub size_px: (u32, u32),
     pub scale: u32,
     pub drift: (i32, i32),
@@ -68,7 +64,7 @@ pub(crate) struct Placement {
 /// What a screen keeps from its last frame: what can be tapped in it, in surface pixels, kept text, the
 /// latest frame's recording, and the one the next frame is recorded into (the one before, until then).
 #[derive(Default)]
-pub(crate) struct Retained {
+pub struct Retained {
     pub targets: Vec<Target>,
     pub scratch: Scratch,
     pub latest: Recording,
@@ -77,19 +73,19 @@ pub(crate) struct Retained {
 
 impl Retained {
     /// What the frame recorded into `next` changes from the latest, or `None` if it looks the same.
-    pub(crate) fn damage(&self) -> Option<Bounds> {
+    pub fn damage(&self) -> Option<Bounds> {
         self.next.damage(&self.latest)
     }
 
     /// The frame recorded into `next` becomes the latest.
-    pub(crate) fn advance(&mut self) {
+    pub fn advance(&mut self) {
         std::mem::swap(&mut self.latest, &mut self.next);
     }
 }
 
 /// Records `layer` for `state` into `retained.next`, and moves its targets and the touchpad area into
 /// surface pixels. A screen's frame starts with the whole buffer black, an overlay's clear.
-pub(crate) fn record(
+pub fn record(
     retained: &mut Retained,
     at: Placement,
     layer: Layer,
@@ -133,7 +129,7 @@ pub(crate) fn record(
 /// whole recording played.
 #[cfg(any(test, feature = "dev"))]
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn render(
+pub fn render(
     pixmap: &mut tiny_skia::Pixmap,
     retained: &mut Retained,
     at: Placement,
@@ -156,7 +152,7 @@ pub(crate) fn render(
 /// Brings `pixmap`, a buffer that holds frame `held` of `history` (0 if none), up to the frame recorded
 /// last in `retained` (its `latest`). Only the commands that meet what changed since `held` are played,
 /// within it. Returns the frame the buffer now holds and the area drawn.
-pub(crate) fn draw_damaged(
+pub fn draw_damaged(
     pixmap: &mut tiny_skia::Pixmap,
     held: u64,
     retained: &Retained,
@@ -176,7 +172,7 @@ pub(crate) fn draw_damaged(
 /// into a buffer, which may be one of several used in turn, and drawn by more than one consumer (the
 /// compositor's texture and its scanout buffers), each catching up from the frame it holds.
 #[derive(Default)]
-pub(crate) struct ScreenFrames {
+pub struct ScreenFrames {
     pub retained: Retained,
     history: History,
     /// What the frame recorded last changed from the one before.
@@ -187,7 +183,7 @@ pub(crate) struct ScreenFrames {
 
 impl ScreenFrames {
     /// Records the next frame (see [`record`]).
-    pub(crate) fn record(&mut self, at: Placement, layer: Layer, state: &State, fonts: &mut DrawCache, images: &mut Images, views: &crate::Views) -> FrameOut {
+    pub fn record(&mut self, at: Placement, layer: Layer, state: &State, fonts: &mut DrawCache, images: &mut Images, views: &crate::Views) -> FrameOut {
         let out = record(&mut self.retained, at, layer, state, fonts, images, views);
         self.damage = self.retained.damage();
         if let Some(damage) = self.damage {
@@ -199,19 +195,19 @@ impl ScreenFrames {
     }
 
     /// What the frame recorded last changes from the one before, or `None` if it looks the same.
-    pub(crate) fn damage(&self) -> Option<Bounds> {
+    pub fn damage(&self) -> Option<Bounds> {
         self.damage
     }
 
     /// Has every buffer draw all of the frame, `all` (after the layer's size changed).
-    pub(crate) fn redraw_all(&mut self, all: Bounds) {
+    pub fn redraw_all(&mut self, all: Bounds) {
         self.undrawn = Some(all);
     }
 
     /// Draws the frame recorded last into `pixmap`, which holds frame `held` (0 for none): what changed
     /// since (see [`draw_damaged`]). The first buffer to draw after frames were recorded adds what they
     /// changed to the history. Returns the frame the pixmap now holds and the area drawn.
-    pub(crate) fn draw(&mut self, pixmap: &mut tiny_skia::Pixmap, held: u64, fonts: &mut DrawCache, images: &Images) -> (u64, Bounds) {
+    pub fn draw(&mut self, pixmap: &mut tiny_skia::Pixmap, held: u64, fonts: &mut DrawCache, images: &Images) -> (u64, Bounds) {
         if let Some(undrawn) = self.undrawn.take() {
             self.history.push(undrawn);
         }
@@ -220,12 +216,12 @@ impl ScreenFrames {
 
     /// What a buffer holding frame `held` lacks of the latest frame: what changed since, or all of it.
     /// Frames recorded and not yet drawn by any buffer are not counted: call it after a buffer has drawn.
-    pub(crate) fn since(&self, held: u64) -> Bounds {
+    pub fn since(&self, held: u64) -> Bounds {
         self.history.since(held, Bounds::of_size(self.retained.latest.size()))
     }
 
     /// Whether a buffer that holds frame `held` has something to draw.
-    pub(crate) fn behind(&self, held: u64) -> bool {
+    pub fn behind(&self, held: u64) -> bool {
         self.undrawn.is_some() || held != self.history.frame
     }
 }
@@ -235,7 +231,7 @@ const AGES: usize = 4;
 
 /// What changed in each of the last frames drawn, to bring a buffer drawn a few frames ago up to date.
 #[derive(Debug, Default)]
-pub(crate) struct History {
+pub struct History {
     /// How many frames have been drawn. Frame 0 is none.
     frame: u64,
     damage: [Bounds; AGES],
@@ -263,7 +259,7 @@ impl History {
 
 /// What the state doesn't know yet about the lists a frame drew: how many rows each one shows. A count
 /// the state already has, give or take rounding, is not reported.
-pub(crate) fn list_changes(state: &State, out: &FrameOut) -> impl Iterator<Item = Event> {
+pub fn list_changes(state: &State, out: &FrameOut) -> impl Iterator<Item = Event> {
     ListId::ALL.into_iter().filter_map(move |list| {
         let rows = out.lists.get(list.index()).copied().flatten()?;
         let known = state.lists().scroll(list).visible().is_some_and(|v| (v - rows).abs() < 1e-3);
@@ -274,7 +270,7 @@ pub(crate) fn list_changes(state: &State, out: &FrameOut) -> impl Iterator<Item 
 /// What a frame drawn without Wayland reports back to the state, as a live frame would: the Library's rows and
 /// the lists' visible rows.
 #[cfg(any(test, feature = "dev"))]
-pub(crate) fn frame_events(state: &State, out: &FrameOut) -> Vec<Event> {
+pub fn frame_events(state: &State, out: &FrameOut) -> Vec<Event> {
     let mut events: Vec<Event> = out.list_rows.filter(|&r| r != state.library_view().rows()).map(|r| LibraryViewEvent::Rows(r).into()).into_iter().collect();
     events.extend(list_changes(state, out));
     events
@@ -312,104 +308,6 @@ mod tests {
             assert!(dx.unsigned_abs() <= MARGIN && dy.unsigned_abs() <= MARGIN);
             assert!((dx - last.0).abs() <= 2 && (dy - last.1).abs() <= 2);
             last = (dx, dy);
-        }
-    }
-}
-
-#[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used, clippy::indexing_slicing)]
-mod frame_times {
-    //! How long a frame takes to draw at the Thor's size: a whole frame recorded and played straight into
-    //! a buffer, as a live view draws a frame that changed everywhere; only the playing; and recording a
-    //! frame and finding it unchanged, which is what every event costs a visible screen. Run it by hand:
-    //! `cargo test --release -p clamshell-ui frame_times -- --ignored --nocapture`.
-
-    use super::*;
-    use clamshell_state::{Event, Id, Init, PointerEvent, Tab};
-    use std::time::{Duration, Instant};
-
-    fn state(events: Vec<Event>) -> State {
-        let mut s = State::new(Init { library: Some(clamshell_library::demo::library()), ..Init::default() });
-        s.apply(Event::tick(1_700_000_000), &mut Vec::new());
-        for e in events {
-            s.apply(e, &mut Vec::new());
-        }
-        s
-    }
-
-    fn median(mut v: Vec<Duration>) -> Duration {
-        v.sort();
-        v[v.len() / 2]
-    }
-
-    /// Two buffers drawing one screen's frames: one draws nearly each frame, the other now and then; both
-    /// hold what a whole frame draws, also after a frame no buffer drew.
-    #[test]
-    fn a_buffer_that_draws_now_and_then_catches_up() {
-        let (w, h) = (480u32, 270u32);
-        let at = Placement { size_px: (w, h), scale: 1, drift: (0, 0) };
-        let (mut fonts, mut images) = (DrawCache::load(), Images::synchronous());
-        let mut frames = ScreenFrames::default();
-        let (mut every, mut sometimes) = (tiny_skia::Pixmap::new(w, h).unwrap(), tiny_skia::Pixmap::new(w, h).unwrap());
-        let (mut held_every, mut held_sometimes) = (0, 0);
-        for step in 0..7 {
-            // The Library's selection a row further down each frame.
-            let s = state(vec![Event::LibraryView(LibraryViewEvent::ListStep(step + 1))]);
-            frames.record(at, Screen::Top.into(), &s, &mut fonts, &mut images, &crate::VIEWS);
-            // At step 4 no buffer draws: what it changed is kept for the next draw.
-            if step != 4 {
-                held_every = frames.draw(&mut every, held_every, &mut fonts, &images).0;
-            }
-            if step % 3 == 2 {
-                held_sometimes = frames.draw(&mut sometimes, held_sometimes, &mut fonts, &images).0;
-                let mut whole = tiny_skia::Pixmap::new(w, h).unwrap();
-                render(&mut whole, &mut Retained::default(), at, Screen::Top.into(), &s, &mut fonts, &mut images, &crate::VIEWS).unwrap();
-                assert!(every.data() == whole.data() && sometimes.data() == whole.data(), "step {step}");
-            }
-        }
-    }
-
-    #[test]
-    #[ignore = "a measurement, by hand in release"]
-    fn frame_times() {
-        let tab = |t| vec![Event::Pointer(PointerEvent::Activate(Id::Tab(t)))];
-        let cases = [
-            ("top: the Library", Screen::Top, (1920u32, 1080u32), vec![]),
-            ("bottom: dock", Screen::Bottom, (1240, 1080), tab(Tab::Dock)),
-            ("bottom: settings", Screen::Bottom, (1240, 1080), tab(Tab::Settings)),
-            ("bottom: keyboard", Screen::Bottom, (1240, 1080), tab(Tab::Keyboard)),
-        ];
-        let (mut fonts, mut images) = (DrawCache::load(), Images::synchronous());
-        for (name, screen, size, events) in cases {
-            let s = state(events);
-            let at = Placement { size_px: size, scale: 1, drift: (1, -2) };
-            let mut retained = Retained::default();
-            let mut pixmap = tiny_skia::Pixmap::new(size.0, size.1).unwrap();
-            let rounds = 200;
-            let (mut full, mut checked, mut played) = (Vec::new(), Vec::new(), Vec::new());
-            for round in 0..rounds + 20 {
-                // A whole frame: recorded and played into the buffer.
-                let t = Instant::now();
-                render(&mut pixmap, &mut retained, at, screen.into(), &s, &mut fonts, &mut images, &crate::VIEWS).unwrap();
-                let f = t.elapsed();
-                // Recorded again and found unchanged, which is all an event that changes nothing costs.
-                let t = Instant::now();
-                record(&mut retained, at, screen.into(), &s, &mut fonts, &mut images, &crate::VIEWS);
-                assert_eq!(retained.damage(), None);
-                let c = t.elapsed();
-                // Only played.
-                let t = Instant::now();
-                play(&mut pixmap, &retained.next, Bounds::of_size(size), &mut fonts, &images);
-                let p = t.elapsed();
-                // The first rounds warm the caches.
-                if round >= 20 {
-                    full.push(f);
-                    checked.push(c);
-                    played.push(p);
-                }
-            }
-            let ms = |v: Vec<Duration>| median(v).as_secs_f64() * 1e3;
-            println!("{name:18} whole frame {:>7.3} ms   played {:>7.3} ms   recorded and compared {:>7.3} ms", ms(full), ms(played), ms(checked),);
         }
     }
 }

@@ -16,7 +16,7 @@ use crate::screens::{Screen, Screens};
 use crate::toolkit::{PadOut, PadUse, Sideways, Target};
 
 /// What the last frames drew on each screen, and the screens' sizes in surface pixels.
-pub(crate) trait Drawn {
+pub trait Drawn {
     fn targets(&self, screen: Screen) -> &[Target];
     fn size(&self, screen: Screen) -> (f32, f32);
     /// What the pad's buttons do there, as the screen's views declared (see [`PadOut`]).
@@ -25,7 +25,7 @@ pub(crate) trait Drawn {
 
 /// Where the pad's focus may go.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PadScope {
+pub enum PadScope {
     /// The Library is in front and the focus is in its list or on its tabs. Up and down step through the
     /// games, and left and right through the collections.
     LibraryViewList,
@@ -43,7 +43,7 @@ fn on_actions(s: &State, d: &impl Drawn) -> bool {
     s.pad().on_top() && d.targets(Screen::Top).iter().any(|t| t.pad == PadUse::Held && s.pointer().focused(&t.id))
 }
 
-pub(crate) fn scope(s: &State, d: &impl Drawn) -> PadScope {
+pub fn scope(s: &State, d: &impl Drawn) -> PadScope {
     let in_list =
         d.pad(Screen::Top).list.is_some() && matches!(s.pointer().focus(), Some(Id::LibraryView(LibraryViewId::Entry(_) | LibraryViewId::Collection(_))));
     match (s.pad().on_top(), in_list) {
@@ -55,7 +55,7 @@ pub(crate) fn scope(s: &State, d: &impl Drawn) -> PadScope {
 
 /// Where the focus goes on `screen` when nothing better is known, as the screen declared: such as the
 /// Library's selected game, or the open tab's button.
-pub(crate) fn default_focus(d: &impl Drawn, screen: Screen) -> Option<Id> {
+pub fn default_focus(d: &impl Drawn, screen: Screen) -> Option<Id> {
     d.pad(screen).start.clone()
 }
 
@@ -66,12 +66,12 @@ fn pad_screen(s: &State, d: &impl Drawn) -> Screen {
 }
 
 /// Whether the last frame drew `id` on `screen`, or on either screen if `screen` is `None`.
-pub(crate) fn drawn_on(d: &impl Drawn, screen: Option<Screen>, id: &Id) -> bool {
+pub fn drawn_on(d: &impl Drawn, screen: Option<Screen>, id: &Id) -> bool {
     Screen::BOTH.into_iter().filter(|s| screen.is_none_or(|on| on == *s)).any(|s| d.targets(s).iter().any(|t| &t.id == id))
 }
 
 /// The screen the focus is on. It is the top one when the focus isn't on anything drawn.
-pub(crate) fn focus_screen(s: &State, d: &impl Drawn) -> Screen {
+pub fn focus_screen(s: &State, d: &impl Drawn) -> Screen {
     match s.pointer().focus() {
         Some(focus) if drawn_on(d, Some(Screen::Bottom), focus) && !drawn_on(d, Some(Screen::Top), focus) => Screen::Bottom,
         _ => Screen::Top,
@@ -81,7 +81,7 @@ pub(crate) fn focus_screen(s: &State, d: &impl Drawn) -> Screen {
 /// Moves the focus onto the second screen. It stays where it is if that is drawn there. Otherwise it
 /// goes where it last was on that screen, as kept in `memory`, if that is still drawn, and failing that
 /// to the open tab.
-pub(crate) fn focus_bottom(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>) -> Event {
+pub fn focus_bottom(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>) -> Event {
     let bottom = Some(Screen::Bottom);
     let current = s.pointer().focus().cloned().filter(|id| drawn_on(d, bottom, id));
     let remembered = memory.bottom.clone().filter(|id| drawn_on(d, bottom, id));
@@ -92,7 +92,7 @@ pub(crate) fn focus_bottom(s: &State, d: &impl Drawn, memory: &Screens<Option<Id
 /// Moves the focus to the other screen, with the Library in front. It goes where it last was on that screen if
 /// that is still drawn, else to the screen's default, else to the first thing drawn there. Where it was
 /// is remembered in `memory`.
-pub(crate) fn switch_screen(s: &State, d: &impl Drawn, memory: &mut Screens<Option<Id>>) -> Option<Event> {
+pub fn switch_screen(s: &State, d: &impl Drawn, memory: &mut Screens<Option<Id>>) -> Option<Event> {
     let from = focus_screen(s, d);
     let to = from.other();
     memory[from] = s.pointer().focus().cloned();
@@ -114,7 +114,7 @@ fn focused_entry(s: &State) -> Option<usize> {
 /// The targets the pad may move between, each with its screen, as the views marked them (see [`PadUse`]).
 /// On targets reached by holding A, they are those alone. Otherwise they are the targets it moves to on
 /// the screens the pad may use.
-pub(crate) fn candidates<'d>(s: &State, d: &'d impl Drawn) -> Vec<(Screen, &'d Target)> {
+pub fn candidates<'d>(s: &State, d: &'d impl Drawn) -> Vec<(Screen, &'d Target)> {
     let (screens, pad): (&[Screen], PadUse) = if on_actions(s, d) {
         (&[Screen::Top], PadUse::Held)
     } else if scope(s, d) == PadScope::BottomOnly {
@@ -138,7 +138,7 @@ fn placed(d: &impl Drawn, screen: Screen, t: &Target) -> NavTarget {
 
 /// Pad-style focus movement over the screens' targets, as if the second screen were right below the
 /// main one.
-pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, dir: Dir) -> Option<Event> {
+pub fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, dir: Dir) -> Option<Event> {
     // On the Library's actions, reached by holding A, up and down move through them only.
     if on_actions(s, d) {
         let rows: Vec<NavTarget> = candidates(s, d).into_iter().map(|(screen, t)| placed(d, screen, t)).collect();
@@ -218,12 +218,12 @@ pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, 
 /// go. Otherwise it brings the focus back there first, so that a target drawn by a closed tab isn't
 /// pressed unseen.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum PadPress {
+pub enum PadPress {
     Press(Id),
     Focus(Event),
 }
 
-pub(crate) fn press(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>) -> Option<PadPress> {
+pub fn press(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>) -> Option<PadPress> {
     let screen = (scope(s, d) == PadScope::BottomOnly).then_some(Screen::Bottom);
     match s.pointer().focus() {
         Some(id) if drawn_on(d, screen, id) => Some(PadPress::Press(id.clone())),
@@ -234,7 +234,7 @@ pub(crate) fn press(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>) -> 
 
 /// The shoulders. On the Library they move a page through the list. Elsewhere they step through the bar's
 /// tabs from left to right, opening and focusing each.
-pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
+pub fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     // On the Library's actions, the Library stays where it is.
     if on_actions(s, d) {
         return vec![];
@@ -265,7 +265,7 @@ fn on_library_view(s: &State, d: &impl Drawn) -> bool {
 }
 
 /// L2 and R2 go to the Library's first or last entry.
-pub(crate) fn trigger(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
+pub fn trigger(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     if on_actions(s, d) {
         return vec![];
     }
@@ -279,7 +279,7 @@ pub(crate) fn trigger(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
 /// Y, X and Start press what their badges show on the screen the pad is on (see [`pad_screen`]): on the
 /// Library the details' actions (favourite, on the dock and Continue; for a browsed file Copy, Paste and
 /// Select), picking Save here and Save as; with a keyboard drawn, X is Backspace. Elsewhere they do nothing.
-pub(crate) fn shortcut(s: &State, d: &impl Drawn, button: PadInput) -> Vec<Event> {
+pub fn shortcut(s: &State, d: &impl Drawn, button: PadInput) -> Vec<Event> {
     let i = match button {
         PadInput::Y => 0,
         PadInput::X => 1,
@@ -294,7 +294,7 @@ pub(crate) fn shortcut(s: &State, d: &impl Drawn, button: PadInput) -> Vec<Event
 /// the pad may use; otherwise the back of the screen the pad is on (see [`pad_screen`]), such as a tab's
 /// page or menu, the edit mode's form or folder, a pick's Cancel, Setup's step, the Device view's Close,
 /// or the Library's actions, typed search or open group.
-pub(crate) fn back(s: &State, d: &impl Drawn) -> Option<Event> {
+pub fn back(s: &State, d: &impl Drawn) -> Option<Event> {
     let usable = |screen: &Screen| *screen == Screen::Bottom || s.pad().on_top();
     let over = Screen::BOTH.into_iter().filter(usable).find_map(|screen| d.pad(screen).back.as_ref().filter(|(_, over)| *over));
     over.or(d.pad(pad_screen(s, d)).back.as_ref()).map(|(event, _)| event.clone())
@@ -324,7 +324,7 @@ const DESKTOP_KEYS: [(Keysym, PadInput); 16] = [
 
 /// The pad input a desktop key stands for. A is always given as pressed; the caller knows key up from
 /// key down.
-pub(crate) fn desktop_key(sym: Keysym) -> Option<PadInput> {
+pub fn desktop_key(sym: Keysym) -> Option<PadInput> {
     DESKTOP_KEYS.iter().find(|(k, _)| *k == sym).map(|(_, input)| *input)
 }
 
@@ -385,11 +385,6 @@ mod tests {
                 bottom: PadOut { tabs: Tab::ALL.map(|t| Some((t, Id::Tab(t)))), ..start(Id::Tab(s.bottom().tab())) },
             },
         )
-    }
-
-    /// Both screens drawn for `s`, as the views draw them.
-    fn frames(s: &State) -> crate::PadView {
-        crate::PadFrames::new(crate::VIEWS, (1280, 720), (1280, 720)).record(s)
     }
 
     fn focus(s: &mut State, id: Id) {
@@ -557,7 +552,6 @@ mod tests {
             "not down to the second screen"
         );
         assert_eq!(shoulder(&s, &d, 1), vec![]);
-        assert_eq!(shortcut(&s, &frames(&s), PadInput::Y), vec![], "the badges faded: nothing");
     }
 
     #[test]
@@ -576,88 +570,6 @@ mod tests {
                 "{dir:?}: {to:?}"
             );
         }
-    }
-
-    #[test]
-    fn b_on_library_views_actions_goes_back_to_the_entry() {
-        let mut s = state();
-        focus(&mut s, Id::LibraryView(LibraryViewId::Launch));
-        let g = entry(&s, s.library_view().cursor().index);
-        assert_eq!(back(&s, &frames(&s)), Some(PointerEvent::Focus(g).into()));
-    }
-
-    #[test]
-    fn y_x_and_start_act_on_library_view_only_while_the_pad_is_there() {
-        let mut s = state();
-        let g = entry(&s, 0);
-        focus(&mut s, g);
-        let favourite = Id::LibraryView(LibraryViewId::Favourite);
-        assert_eq!(shortcut(&s, &frames(&s), PadInput::Y), vec![PointerEvent::Activate(favourite).into()]);
-        focus(&mut s, Id::Tab(Tab::Sysinfo));
-        assert_eq!(shortcut(&s, &frames(&s), PadInput::Y), vec![], "the second screen: not the Library's");
-        assert_eq!(shortcut(&s, &frames(&s), PadInput::X), vec![]);
-        // Typing with the pad: X is Backspace.
-        s.apply(PointerEvent::Activate(Id::Tab(Tab::Keyboard)).into(), &mut Vec::new());
-        focus(&mut s, Id::Tab(Tab::Keyboard));
-        let backspace =
-            clamshell_state::bottom::keyboard::find(clamshell_state::bottom::keyboard::Key::Named(clamshell_state::bottom::keyboard::Named::Backspace));
-        let d = frames(&s);
-        assert_eq!(shortcut(&s, &d, PadInput::X), backspace.map(|b| PointerEvent::Activate(Id::Key(b)).into()).into_iter().collect::<Vec<_>>());
-        assert_eq!(shortcut(&s, &d, PadInput::Y), vec![]);
-    }
-
-    /// B goes back on the screen the pad is on, as it shows: a keymap's screen left open on the settings
-    /// tab isn't gone back in from another tab.
-    #[test]
-    fn b_goes_back_only_in_what_is_shown() {
-        use clamshell_state::profiles::picker::{Kind, ProfileId};
-        let mut s = state();
-        s.apply(PointerEvent::Activate(Id::Tab(Tab::Settings)).into(), &mut Vec::new());
-        s.apply(PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Keymap))).into(), &mut Vec::new());
-        focus(&mut s, Id::Tab(Tab::Settings));
-        let keymap_back = PointerEvent::Activate(Id::Profile(Kind::Keymap, ProfileId::Back)).into();
-        assert_eq!(back(&s, &frames(&s)), Some(keymap_back), "the keymaps' screen shown");
-        s.apply(PointerEvent::Activate(Id::Tab(Tab::Dock)).into(), &mut Vec::new());
-        focus(&mut s, Id::Tab(Tab::Dock));
-        assert_eq!(back(&s, &frames(&s)), None, "the dock shown: nothing to go back from");
-    }
-
-    /// Picking, B cancels, Left goes out of the open folder and Right opens the selected one.
-    #[test]
-    fn picking_b_cancels_and_left_and_right_go_through_folders() {
-        let mut s = state();
-        let files = s.library_view().library().collections.iter().position(|c| c.name == "Files").unwrap_or(0);
-        s.apply(PointerEvent::Activate(Id::LibraryView(LibraryViewId::Collection(files as u16))).into(), &mut Vec::new());
-        s.apply(PointerEvent::Activate(Id::LibraryView(LibraryViewId::Launch)).into(), &mut Vec::new());
-        assert!(s.library_view().group().is_some(), "in Home");
-        s.apply(
-            Event::Portal(clamshell_state::PortalEvent::Asked(clamshell_state::FileRequest {
-                id: 1,
-                title: String::new(),
-                asks: clamshell_state::Asks::Open { folder: true },
-                patterns: Vec::new(),
-                asker: Vec::new(),
-                folder: Some("/home/thor".into()),
-            })),
-            &mut Vec::new(),
-        );
-        assert!(s.library_view().pick().is_some());
-        let g = entry(&s, s.library_view().cursor().index);
-        focus(&mut s, g);
-        let d = frames(&s);
-        assert_eq!(back(&s, &d), Some(PointerEvent::Activate(Id::LibraryView(LibraryViewId::CancelPick)).into()));
-        let memory = Screens::default();
-        assert_eq!(navigate(&s, &d, &memory, Dir::Left), Some(PointerEvent::Activate(Id::LibraryView(LibraryViewId::Up)).into()));
-    }
-
-    /// The Device view's focus starts on its first row.
-    #[test]
-    fn the_device_views_focus_starts_on_its_first_row() {
-        let account = clamshell_state::setup::account::Account::NoHelper;
-        let mut s = State::new(Init { library: Some(clamshell_library::demo::library()), account, ..Init::default() });
-        s.apply(Event::Entry("builtin:device".into(), clamshell_state::EntryAct::Play), &mut Vec::new());
-        assert_eq!(s.top(), clamshell_state::Top::App { app: clamshell_state::BuiltinApp::Device, view: 0 });
-        assert_eq!(default_focus(&frames(&s), Screen::Top), Some(Id::Device(clamshell_state::DeviceId::Wifi)));
     }
 
     #[test]

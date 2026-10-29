@@ -37,7 +37,7 @@ readings, ticks, windows, units ─▶ Event ───┤
       keeps the frame's targets for input                                     with Events
 ```
 
-- **The UI** (crates/ui) owns `State`; the compositor (crates/compositor) hosts it and runs the event loop:
+- **The UI** (crates/ui, the framework; ClamShell's screens are crates/views, given to it) owns `State`; the compositor (crates/compositor) hosts it and runs the event loop:
   input becomes events through the last frame's targets (each recording the item it showed), events from the
   system threads arrive on a channel, and every event goes through `State::apply`. Views are functions of
   `&State`; the canvas records commands, and a screen is drawn only where its recording changed.

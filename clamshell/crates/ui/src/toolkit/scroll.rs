@@ -27,7 +27,7 @@ const RING_ROOM: f32 = 4.0;
 
 /// A list being drawn. It is begun with [`Scrolled::begin`], its rows are drawn where [`Scrolled::row`]
 /// says, and it is finished with [`Scrolled::end`].
-pub(crate) struct Scrolled {
+pub struct Scrolled {
     list: ListId,
     area: Rect,
     row_h: f32,

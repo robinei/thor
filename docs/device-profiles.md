@@ -53,7 +53,7 @@ From the inventory of 2026-10-24 (paths under `clamshell/` unless noted), with w
 | The AYN key (`gpio-keys-ayn`, `KEY_F24`), Back (`BTN_BACK`) | `crates/system/src/input/pad/device.rs:36`, `remap/mod.rs:203-209` |
 | The X/Y swap by driver (`rsinput`, `xpad`) | `crates/system/src/input/pad/device.rs:145-166` |
 | The gyro: Qualcomm sensor hub, QMI service 400, 200 Hz, axis matrix | `crates/system/src/input/pad/sensor_hub/mod.rs` |
-| The keymap screen's control layout and labels | `crates/ui/src/views/keymaps/pad.rs`, `words.rs:76-91` |
+| The keymap screen's control layout and labels | `crates/views/src/keymaps/pad.rs`, `words.rs:76-91` |
 | The fan: hwmon `pwmfan`, its curves | `crates/fan/src/main.rs:26`, `curve.rs` |
 | The charge switches (`retroid_*`) and the default hold method | `crates/system/src/power/tuning.rs` |
 | Refresh choices from announced modes; frame-cap convenience values are UI policy, and upscale choices are relative sizes | `crates/state/src/settings/mod.rs:313-318` |

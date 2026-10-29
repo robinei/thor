@@ -38,7 +38,8 @@ readings, ticks, windows, units ─▶ Event ───┤
 |---|---|
 | `crates/state` | the state and its rules; events in, effects out; no I/O, no threads |
 | `crates/system` | a thread per outside concern (systemd and launches, the controller, Wi-Fi, Bluetooth, sound, storage, files, ...), each turning effects into actions and what it sees into events; the game library read from disk |
-| `crates/ui` | the UI without a backend (`ui::Core`): owns `State`, draws the views into pixmaps on the CPU (tiny-skia, fontdue, the built-in Noto Sans), turns input into events |
+| `crates/ui` | the UI framework without a backend (`ui::Core`): owns `State`, draws the views it is given into pixmaps on the CPU (tiny-skia, fontdue, the built-in Noto Sans), the toolkit they are drawn with, and input turned into events; it knows no screen of ClamShell's |
+| `crates/views` | ClamShell's screens (`clamshell_views::VIEWS`): the built-in apps' views (`apps.rs`), the second screen's bar and tabs, the overlays, drawn with the UI's toolkit |
 | `crates/compositor` | the Wayland compositor (Smithay): hosts the UI and runs the event loop; the screens through DRM and libinput (`--drm`) or a window on a desktop (`--nested`), the windows, Xwayland |
 | `crates/device` | facts the hardware can't announce: the screens' connectors and rotation, the panels, charging, the fan's curves (`fan.rs`), the gyro, the controls (`docs/device-profiles.md`) |
 | `crates/library` | the game library's model (entries, groups, tabs), sorting, name patterns, and the parts of Steam's formats that need no disk |
@@ -46,7 +47,8 @@ readings, ticks, windows, units ─▶ Event ───┤
 | `src/` | the program: starts the threads, connects effects to them, the command line, the control pipe and the snapshots |
 
 The UI and the system crate don't depend on each other: the binary hands the compositor a closure that
-passes each effect to the system crate's dispatcher.
+passes each effect to the system crate's dispatcher. Nor does the UI framework depend on the views: the
+binary gives it them in its `Config` (`Views`).
 
 ## The state
 
@@ -86,7 +88,7 @@ which shows by itself while needed) are each a
 `BuiltinAppDefinition` in `crates/state/src/builtin_apps.rs` (always runs or while open, its dock place,
 whether it is the home, what it watches while it runs, and its hooks: which of its views shows, what a
 key typed does, what the settings panel edits); its rules in its own area and `Id` variant; and its view
-in the UI (`views/apps.rs`), found by the same `BuiltinApp`. `State::top()` says `Top::App { app, view }`
+in the views crate (`crates/views/src/apps.rs`), found by the same `BuiltinApp`. `State::top()` says `Top::App { app, view }`
 for any of them. Shared code (the session, the dock, sync) reads the
 definitions, never which app it is, so a new app is an entry, a definition, an area and a view.
 

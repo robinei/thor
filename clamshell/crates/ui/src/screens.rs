@@ -13,7 +13,7 @@ pub enum Screen {
 impl Screen {
     pub const BOTH: [Screen; 2] = [Screen::Top, Screen::Bottom];
 
-    pub(crate) fn other(self) -> Screen {
+    pub fn other(self) -> Screen {
         match self {
             Screen::Top => Screen::Bottom,
             Screen::Bottom => Screen::Top,
@@ -38,7 +38,7 @@ impl From<Screen> for Layer {
 
 /// A `T` for each screen.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct Screens<T> {
+pub struct Screens<T> {
     pub top: T,
     pub bottom: T,
 }

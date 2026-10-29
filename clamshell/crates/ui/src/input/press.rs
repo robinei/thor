@@ -35,29 +35,29 @@ use crate::toolkit::scroll::InList;
 use crate::toolkit::{Target, Track};
 
 /// A finger on a list that moves this far up or down, in logical pixels, drags the list.
-pub(crate) const DRAG_START: f32 = 12.0;
+pub const DRAG_START: f32 = 12.0;
 
 /// A finger that would tap starts pointing when it moves this far, in logical pixels.
-pub(crate) const POINT_START: f32 = 24.0;
+pub const POINT_START: f32 = 24.0;
 /// A finger on nothing, with no tap to keep, starts pointing when it moves this far. This is just past a
 /// still finger's jitter.
-pub(crate) const BLANK_POINT_START: f32 = 4.0;
+pub const BLANK_POINT_START: f32 = 4.0;
 /// How far off its target, in logical pixels, a finger may lift and still tap it.
-pub(crate) const TOUCH_SLACK: f32 = 12.0;
+pub const TOUCH_SLACK: f32 = 12.0;
 
 /// The keyboard points until no finger has pointed for this long.
-pub(crate) const POINT_IDLE: Duration = Duration::from_millis(1000);
+pub const POINT_IDLE: Duration = Duration::from_millis(1000);
 
 /// A press held this long is a hold: keys start repeating, modifiers lock.
-pub(crate) const LONG_PRESS: Duration = Duration::from_millis(450);
+pub const LONG_PRESS: Duration = Duration::from_millis(450);
 /// The key repeat interval while held: 25 per second.
-pub(crate) const REPEAT: Duration = Duration::from_millis(40);
+pub const REPEAT: Duration = Duration::from_millis(40);
 
 /// Turns the compositor's event times, in milliseconds on its monotonic clock, into instants. It
 /// measures from the earliest base seen, since an event handled late only looks later. So a batch of
 /// events handled at once keeps the times they happened at, which a fling's speed needs.
 #[derive(Debug, Default)]
-pub(crate) struct EventClock {
+pub struct EventClock {
     base: Option<(Instant, u32)>,
 }
 
@@ -88,7 +88,7 @@ pub enum Source {
 /// The timers: the hold, for a long press or key repeat; the wait before a slide; a fling's steps; and
 /// pointing going idle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum Timer {
+pub enum Timer {
     Hold,
     Slide,
     /// A fling's next step.
@@ -100,13 +100,13 @@ pub(crate) enum Timer {
 /// Whether a finger on `id` may point. That is anywhere on the second screen below the bar. It excludes
 /// the Library's targets on the main screen, where a finger is where it means, and the bar's and the dark
 /// screen's targets.
-pub(crate) fn points(id: &Id) -> bool {
+pub fn points(id: &Id) -> bool {
     !matches!(id, Id::LibraryView(_) | Id::Tab(_) | Id::Control(_) | Id::PadMouse | Id::Wake)
 }
 
 /// What the caller does.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum Action {
+pub enum Action {
     /// Applies the event to the state.
     Emit(Event),
     /// Starts or restarts the source's timer, to call [`Input::timer`] after the duration.
@@ -181,7 +181,7 @@ impl Press {
 
 /// The presses in progress, one per source, and a fling.
 #[derive(Debug, Default)]
-pub(crate) struct Input {
+pub struct Input {
     presses: Vec<(Source, Press)>,
     /// A list moving on after a drag. It uses the timer of the source that dragged it.
     fling: Option<(Source, Fling)>,

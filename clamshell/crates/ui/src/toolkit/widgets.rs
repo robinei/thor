@@ -17,7 +17,7 @@ use crate::gfx::{Align, Canvas, Column, Keep, LINE, Rect, Rgb};
 /// under it. When they don't all fit, the row scrolls: it starts as far along as it must for the current
 /// tab and the one after it to show, so a tap on the last shown brings the next in, and a dim ‹ or › at an
 /// end says there are more that way. Returns where the next tab would start.
-pub(crate) fn tabs<'a, I>(f: &mut Frame, area: Rect, size: f32, inner: f32, max: f32, items: I) -> f32
+pub fn tabs<'a, I>(f: &mut Frame, area: Rect, size: f32, inner: f32, max: f32, items: I) -> f32
 where
     I: IntoIterator<Item = (Id, Option<Icon>, &'a str, bool)>,
     I::IntoIter: Clone,
@@ -106,13 +106,13 @@ const SLIDER_AWAY: f32 = 0.12;
 const SLIDER_BELOW: f32 = 0.8;
 /// The shade behind a held slider and its card. It is dark and see-through, so what is under them shows
 /// dimmed.
-pub(crate) const SHADE: Rgb = SURFACE_HI;
-pub(crate) const SHADE_ALPHA: f32 = 0.85;
+pub const SHADE: Rgb = SURFACE_HI;
+pub const SHADE_ALPHA: f32 = 0.85;
 
 /// A held slider, such as volume or brightness over the bar, or a keymap parameter in its row. The
 /// fields are the slider, the x its track's positions count from, the height of its middle, its size
 /// (the height of the bar or the row), the room its card may use, and what the card says.
-pub(crate) struct HeldSlider<'a> {
+pub struct HeldSlider<'a> {
     pub slider: &'a clamshell_state::levels::slider::Slider,
     pub x0: f32,
     pub cy: f32,
@@ -126,7 +126,7 @@ pub(crate) struct HeldSlider<'a> {
 /// laid out as it was when the finger went down, with the value lit and the thumb where it is now. The
 /// value is also shown on a small card where the finger doesn't cover it: below the slider, or above it
 /// if there is no room below, on the side away from the finger.
-pub(crate) fn held_slider(f: &mut Frame, held: HeldSlider) {
+pub fn held_slider(f: &mut Frame, held: HeldSlider) {
     let HeldSlider { slider, x0, cy, h, within, icon, text } = held;
     let track = Track { x0: x0 + slider.track_start(), w: slider.length };
     let thumb = h * SLIDER_THUMB;
@@ -148,7 +148,7 @@ pub(crate) fn held_slider(f: &mut Frame, held: HeldSlider) {
 }
 
 /// The width of a card's content, an icon and a line of text, at size `h` (see [`card`]).
-pub(crate) fn card_width(f: &mut Frame, h: f32, icon: bool, text: &str) -> f32 {
+pub fn card_width(f: &mut Frame, h: f32, icon: bool, text: &str) -> f32 {
     let icon_w = if icon { h * SLIDER_ICON * 1.3 } else { 0.0 };
     icon_w + f.c.text_width(h * SLIDER_TEXT, text)
 }
@@ -156,7 +156,7 @@ pub(crate) fn card_width(f: &mut Frame, h: f32, icon: bool, text: &str) -> f32 {
 /// A small shaded card over whatever is under it, with an icon and a line of text. Its content starts at
 /// `x`, `y` and is sized by `h`, the height of the bar or of a panel row. Used for a held slider's value
 /// and for the bar's notices.
-pub(crate) fn card(f: &mut Frame, x: f32, y: f32, h: f32, icon: Option<Icon>, text: &str) {
+pub fn card(f: &mut Frame, x: f32, y: f32, h: f32, icon: Option<Icon>, text: &str) {
     let side = h * SLIDER_ICON;
     let size = h * SLIDER_TEXT;
     let icon_w = if icon.is_some() { side * 1.3 } else { 0.0 };
@@ -171,7 +171,7 @@ pub(crate) fn card(f: &mut Frame, x: f32, y: f32, h: f32, icon: Option<Icon>, te
 
 /// A level along `track` at height `cy`, `thick` thick. The line is dim the whole way and lit up to
 /// `value`, where the thumb of radius `thumb` sits. Without a value only the dim line is drawn.
-pub(crate) fn track(c: &mut Canvas, track: Track, cy: f32, thick: f32, thumb: f32, value: Option<u8>, lit: Tone) {
+pub fn track(c: &mut Canvas, track: Track, cy: f32, thick: f32, thumb: f32, value: Option<u8>, lit: Tone) {
     let Track { x0, w } = track;
     c.rounded(Rect::new(x0, cy - thick / 2.0, w, thick), thick / 2.0, Tone::Dim);
     if let Some(v) = value {
@@ -188,12 +188,12 @@ const SWITCH_W: f32 = 0.85;
 const KNOB: f32 = 0.38;
 
 /// An on/off switch, centred in its button `r`. When on, it is green with the knob on the right.
-pub(crate) fn switch(f: &mut Frame, id: Id, r: Rect, on: bool) {
+pub fn switch(f: &mut Frame, id: Id, r: Rect, on: bool) {
     f.button(id, r, Look::ICON, |f| switch_shape(f.c, r, on));
 }
 
 /// Draws a switch centred in `r`, sized by the height of `r`.
-pub(crate) fn switch_shape(c: &mut Canvas, r: Rect, on: bool) {
+pub fn switch_shape(c: &mut Canvas, r: Rect, on: bool) {
     let (h, w) = (r.h * SWITCH_H, r.h * SWITCH_W);
     let track = r.centered(w, h);
     c.rounded(track, h / 2.0, if on { Tone::Go.rgb() } else { SURFACE_HI });
@@ -203,7 +203,7 @@ pub(crate) fn switch_shape(c: &mut Canvas, r: Rect, on: bool) {
 
 /// What a status row shows: its icon and name in `tone`, a lock before the state if `lock`, and the
 /// state in its own tone.
-pub(crate) struct RowFace<'a> {
+pub struct RowFace<'a> {
     pub icon: Icon,
     pub name: &'a str,
     pub tone: Tone,
@@ -219,7 +219,7 @@ const STATE_W: f32 = 0.22;
 
 /// A row in a list of things that have a state, such as networks or devices. It shows the icon, the
 /// name cut to fit, and the state on the right. `pad` is the list's padding and `size` its text size.
-pub(crate) fn status_row(f: &mut Frame, id: Id, r: Rect, pad: f32, size: f32, face: RowFace) {
+pub fn status_row(f: &mut Frame, id: Id, r: Rect, pad: f32, size: f32, face: RowFace) {
     f.button(id, r, Look::ROW, |f| {
         let icon = r.h * ROW_ICON;
         f.c.icon(face.icon, Rect::new(r.x + pad * 0.5, r.y + (r.h - icon) / 2.0, icon, icon), face.tone);
@@ -239,7 +239,7 @@ pub(crate) fn status_row(f: &mut Frame, id: Id, r: Rect, pad: f32, size: f32, fa
 /// Where a tile's picture goes: its size and its top, as fractions of the tile's height. `cut` says
 /// whether a caption too long for the tile is cut or runs over its edges. When it is cut, the value is
 /// the room left at its two sides together, in logical pixels.
-pub(crate) struct TileShape {
+pub struct TileShape {
     pub icon: f32,
     pub icon_y: f32,
     pub cut: Option<f32>,
@@ -255,7 +255,7 @@ impl TileShape {
 
 /// What a tile shows besides its picture: the caption under it, a dot in the top right corner (for
 /// example for a game's own setting, or the game in front), and small dim text in the top left corner.
-pub(crate) struct TileFace<'a> {
+pub struct TileFace<'a> {
     pub caption: &'a str,
     pub caption_tone: Tone,
     pub dot: Option<Tone>,
@@ -264,12 +264,12 @@ pub(crate) struct TileFace<'a> {
 
 /// The caption's size and top and the corner note's size, as fractions of the tile's height.
 const CAPTION: f32 = 0.15;
-pub(crate) const CAPTION_Y: f32 = 0.62;
+pub const CAPTION_Y: f32 = 0.62;
 const NOTE: f32 = 0.09;
 
 /// A tile of a grid, such as settings or the dock. It has no background. `picture` is given the tile's
 /// rect and draws over the caption.
-pub(crate) fn tile(f: &mut Frame, id: Id, r: Rect, shape: &TileShape, face: TileFace, picture: impl FnOnce(&mut Frame, Rect)) {
+pub fn tile(f: &mut Frame, id: Id, r: Rect, shape: &TileShape, face: TileFace, picture: impl FnOnce(&mut Frame, Rect)) {
     f.button(id, r, Look::TILE, |f| {
         if let Some(tone) = face.dot {
             f.c.circle(r.x + r.w - r.h * 0.1, r.y + r.h * 0.1, r.h * 0.03, tone);
@@ -306,7 +306,7 @@ fn greyed(color: u32) -> u32 {
 
 /// An entry's picture. This is its box art, or its screenshot (such as a video's frame) if it has
 /// neither box art nor an icon.
-pub(crate) fn picture(entry: &Entry) -> Option<(&std::path::Path, Slot)> {
+pub fn picture(entry: &Entry) -> Option<(&std::path::Path, Slot)> {
     match (&entry.box_front, &entry.icon, &entry.details.shot) {
         (Some(art), _, _) => Some((art, Slot::Art)),
         (None, None, Some(shot)) => Some((shot, Slot::Shot)),
@@ -315,7 +315,7 @@ pub(crate) fn picture(entry: &Entry) -> Option<(&std::path::Path, Slot)> {
 }
 
 /// Whether an entry's picture is its screenshot, such as a video's frame, which is landscape.
-pub(crate) fn wide_picture(entry: &Entry) -> bool {
+pub fn wide_picture(entry: &Entry) -> bool {
     matches!(picture(entry), Some((_, Slot::Shot)))
 }
 
@@ -323,7 +323,7 @@ pub(crate) fn wide_picture(entry: &Entry) -> bool {
 /// with neither box art nor an icon gets its screenshot, such as a video's frame, instead. If there is
 /// no picture, or it hasn't loaded, the placeholder or an app's icon is drawn in a portrait box as high
 /// as `r`. Returns the rectangle drawn.
-pub(crate) fn cover(c: &mut Canvas, images: &mut Images, entry: &Entry, r: Rect, radius: f32, portrait: f32) -> Rect {
+pub fn cover(c: &mut Canvas, images: &mut Images, entry: &Entry, r: Rect, radius: f32, portrait: f32) -> Rect {
     let scale = c.scale();
     let (pw, ph) = ((r.w * scale).round() as u32, (r.h * scale).round() as u32);
     if let Some(img) = picture(entry).and_then(|(path, slot)| images.get(&entry.id, slot, path, pw, ph)) {
@@ -337,7 +337,7 @@ pub(crate) fn cover(c: &mut Canvas, images: &mut Images, entry: &Entry, r: Rect,
 }
 
 /// How far into a video the viewer is: a track `r` wide, with the part watched (`fraction`) in amber.
-pub(crate) fn progress(c: &mut Canvas, r: Rect, fraction: f32) {
+pub fn progress(c: &mut Canvas, r: Rect, fraction: f32) {
     c.rounded(r, r.h / 2.0, SURFACE_HI);
     let done = (r.w * fraction.clamp(0.0, 1.0)).max(r.h);
     c.rounded(Rect::new(r.x, r.y, done, r.h), r.h / 2.0, Tone::Accent);
@@ -345,7 +345,7 @@ pub(crate) fn progress(c: &mut Canvas, r: Rect, fraction: f32) {
 
 /// An entry's screenshot fitted into `r`, at its bottom left. Nothing is drawn if there is no screenshot
 /// or it hasn't loaded yet.
-pub(crate) fn shot(c: &mut Canvas, images: &mut Images, entry: &Entry, r: Rect) {
+pub fn shot(c: &mut Canvas, images: &mut Images, entry: &Entry, r: Rect) {
     let scale = c.scale();
     let (pw, ph) = ((r.w * scale).round() as u32, (r.h * scale).round() as u32);
     if let Some(img) = entry.details.shot.as_deref().and_then(|path| images.get(&entry.id, Slot::Shot, path, pw, ph)) {
@@ -356,7 +356,7 @@ pub(crate) fn shot(c: &mut Canvas, images: &mut Images, entry: &Entry, r: Rect) 
 /// An entry's picture in `r`, or its icon if it has none (see [`icon`]). The picture is fitted in and
 /// centred across `r`, and placed vertically as `align` says, `Start` being the top. `grey` is for an
 /// entry shown as stopped.
-pub(crate) fn art(c: &mut Canvas, images: &mut Images, entry: &Entry, r: Rect, radius: f32, align: Align, grey: bool) {
+pub fn art(c: &mut Canvas, images: &mut Images, entry: &Entry, r: Rect, radius: f32, align: Align, grey: bool) {
     let scale = c.scale();
     let (pw, ph) = ((r.w * scale).round() as u32, (r.h * scale).round() as u32);
     match picture(entry).and_then(|(path, slot)| images.get(&entry.id, slot, path, pw, ph)) {
@@ -380,7 +380,7 @@ pub(crate) fn art(c: &mut Canvas, images: &mut Images, entry: &Entry, r: Rect, r
 /// A list row's picture in the square `r`. A folder with an icon or glyph shows that, since its picture
 /// is for the details. Otherwise the entry's picture (box art or a video's frame) is cropped to fill
 /// `r`, keeping its middle, and without a picture its icon is drawn.
-pub(crate) fn thumb(c: &mut Canvas, images: &mut Images, entry: &Entry, r: Rect, radius: f32, grey: bool) {
+pub fn thumb(c: &mut Canvas, images: &mut Images, entry: &Entry, r: Rect, radius: f32, grey: bool) {
     if entry.is_group() && (entry.icon.is_some() || entry.glyph.is_some()) {
         return icon(c, images, entry, r, radius, grey);
     }
@@ -396,7 +396,7 @@ pub(crate) fn thumb(c: &mut Canvas, images: &mut Images, entry: &Entry, r: Rect,
 /// An entry's icon, square in the middle of `r`. In order of preference it is the entry's own icon image
 /// (an app's or a folder's), one of the UI's glyphs by name (for a browsed folder or file), the UI's app
 /// glyph for an app, and otherwise, for a game, a placeholder in the game's colour.
-pub(crate) fn icon(c: &mut Canvas, images: &mut Images, entry: &Entry, r: Rect, radius: f32, grey: bool) {
+pub fn icon(c: &mut Canvas, images: &mut Images, entry: &Entry, r: Rect, radius: f32, grey: bool) {
     let scale = c.scale();
     let side = (r.w.min(r.h) * 0.8 * scale).round() as u32;
     if let Some(img) = entry.icon.as_deref().and_then(|path| images.get(&entry.id, Slot::Icon, path, side, side)) {
@@ -425,7 +425,7 @@ const MENU_BUTTON_H: f32 = 0.085;
 const MENU_W: f32 = 0.45;
 
 /// What a header has on its right: nothing, or an action (blue text).
-pub(crate) enum HeaderRight<'a> {
+pub enum HeaderRight<'a> {
     None,
     Action(Id, &'a str),
     /// A dim note, as what a plot below shows.
@@ -435,7 +435,7 @@ pub(crate) enum HeaderRight<'a> {
 /// A screen's header at the top of the content area. It has a back arrow on the left, whose target is
 /// `back`, then the title, either after the arrow or centred, and an action on the right. Returns the
 /// area below it.
-pub(crate) fn header(f: &mut Frame, back: Option<Id>, title: &str, centred: bool, right: HeaderRight) -> Rect {
+pub fn header(f: &mut Frame, back: Option<Id>, title: &str, centred: bool, right: HeaderRight) -> Rect {
     let pad = f.pad();
     let mut area = style::content(f.body());
     let mut bar = area.take_top(f.body().h * HEADER_H);
@@ -480,7 +480,7 @@ pub(crate) fn header(f: &mut Frame, back: Option<Id>, title: &str, centred: bool
 /// A menu of text actions, each `(target, label, tone)`, going down `area` from its top. When they don't
 /// fit, as in a program's long tray menu, they continue in further columns. Items past the last column
 /// that fits are left out.
-pub(crate) fn menu<L: std::ops::Deref<Target = str>>(f: &mut Frame, area: Rect, items: impl IntoIterator<Item = (Id, L, Tone)>) {
+pub fn menu<L: std::ops::Deref<Target = str>>(f: &mut Frame, area: Rect, items: impl IntoIterator<Item = (Id, L, Tone)>) {
     let pad = f.pad();
     let h = f.body().h * MENU_BUTTON_H;
     let size = f.text(Text::Body);
@@ -497,14 +497,14 @@ pub(crate) fn menu<L: std::ops::Deref<Target = str>>(f: &mut Frame, area: Rect, 
 }
 
 /// A menu's width in `area`, for text at `size`.
-pub(crate) fn menu_w(area: Rect, size: f32) -> f32 {
+pub fn menu_w(area: Rect, size: f32) -> f32 {
     (area.w * MENU_W).max(size * 6.0).min(area.w)
 }
 
 /// A list's row. It shows its label in `tone`, after a dot if it is the one in force, and a dim note in
 /// a column on the right. At the end there is an Edit action with a target of its own, or empty room
 /// for one so the notes line up with rows that have it.
-pub(crate) struct ListRow<'a> {
+pub struct ListRow<'a> {
     pub label: &'a str,
     pub tone: Tone,
     pub mark: bool,
@@ -513,7 +513,7 @@ pub(crate) struct ListRow<'a> {
 }
 
 /// A list row's end: nothing, an empty Edit column, or Edit.
-pub(crate) enum EditCell {
+pub enum EditCell {
     None,
     Empty,
     Edit(Id),
@@ -524,7 +524,7 @@ const NOTE_W: f32 = 0.36;
 const EDIT_W: f32 = 0.14;
 
 /// A list's row (see [`ListRow`]) over `r`, with `id` as its main target and its text at `size`.
-pub(crate) fn list_row(f: &mut Frame, id: Id, mut r: Rect, pad: f32, size: f32, row: ListRow) {
+pub fn list_row(f: &mut Frame, id: Id, mut r: Rect, pad: f32, size: f32, row: ListRow) {
     let edit = match row.edit {
         EditCell::None => None,
         EditCell::Empty => {
@@ -554,12 +554,12 @@ pub(crate) fn list_row(f: &mut Frame, id: Id, mut r: Rect, pad: f32, size: f32, 
 }
 
 /// A switch's width in a row, for the row's text size.
-pub(crate) fn switch_w(size: f32) -> f32 {
+pub fn switch_w(size: f32) -> f32 {
     size * 2.3
 }
 
 /// A switch's row: a dim `label` on the left and the switch on the right. The whole row is its target.
-pub(crate) fn switch_row(f: &mut Frame, id: Id, row: Rect, size: f32, label: &str, on: bool) {
+pub fn switch_row(f: &mut Frame, id: Id, row: Rect, size: f32, label: &str, on: bool) {
     f.button(id, row, Look::ROW, |f| {
         let inner = row.inset(size * 0.4);
         let sw = Rect::new(inner.right() - switch_w(size), row.y, switch_w(size), row.h);
@@ -570,12 +570,12 @@ pub(crate) fn switch_row(f: &mut Frame, id: Id, row: Rect, size: f32, label: &st
 
 /// A value's row: a dim `label` on the left and `value` on the right, brighter when `changed` from its
 /// default. The caller provides its target, such as a held slider's or a choice's.
-pub(crate) fn value_row(f: &mut Frame, row: Rect, size: f32, label: &str, value: &str, changed: bool) {
+pub fn value_row(f: &mut Frame, row: Rect, size: f32, label: &str, value: &str, changed: bool) {
     toned_value_row(f, row, size, label, value, Tone::high_if(changed));
 }
 
 /// [`value_row`] with its value in `tone`: dim, as its label, for a value that does nothing now.
-pub(crate) fn toned_value_row(f: &mut Frame, row: Rect, size: f32, label: &str, value: &str, tone: Tone) {
+pub fn toned_value_row(f: &mut Frame, row: Rect, size: f32, label: &str, value: &str, tone: Tone) {
     let inner = row.inset(size * 0.4);
     let vw = f.c.text_width(size, value).min(inner.w * 0.5);
     f.c.text_fit(Rect::new(inner.x, row.y, inner.w - vw - size * 0.3, row.h), size, Tone::Dim, label, Keep::Start);
@@ -585,7 +585,7 @@ pub(crate) fn toned_value_row(f: &mut Frame, row: Rect, size: f32, label: &str, 
 /// An action and the pad button that does it, as a target filling `r`. It shows the button's name in a
 /// ring, or a pill for a longer name, then the label in `tone`.
 /// Its button presses it, unless faded.
-pub(crate) fn key_action(f: &mut Frame, id: Id, r: Rect, key: &str, label: &str, tone: Tone, faded: bool) {
+pub fn key_action(f: &mut Frame, id: Id, r: Rect, key: &str, label: &str, tone: Tone, faded: bool) {
     if let Some(key) = [PadKey::B, PadKey::Y, PadKey::X, PadKey::Start].into_iter().find(|k| k.name() == key).filter(|_| !faded) {
         f.key(key, id.clone());
     }
@@ -595,7 +595,7 @@ pub(crate) fn key_action(f: &mut Frame, id: Id, r: Rect, key: &str, label: &str,
 }
 
 /// How wide [`key_action`] draws `key`'s badge and `label` in a rect `h` high.
-pub(crate) fn key_action_width(f: &mut Frame, h: f32, key: &str, label: &str) -> f32 {
+pub fn key_action_width(f: &mut Frame, h: f32, key: &str, label: &str) -> f32 {
     let d = h * 0.78;
     let ring_w = d.max(f.c.text_width(d * 0.55, key) + d * 0.6);
     // (With room to spare, so the label isn't cut at its last letter.)
@@ -604,7 +604,7 @@ pub(crate) fn key_action_width(f: &mut Frame, h: f32, key: &str, label: &str) ->
 
 /// A button's badge and what it does, drawn as [`key_action`] draws them but as a hint with nothing to
 /// tap. Returns its width.
-pub(crate) fn key_hint(f: &mut Frame, r: Rect, key: &str, label: &str) -> f32 {
+pub fn key_hint(f: &mut Frame, r: Rect, key: &str, label: &str) -> f32 {
     key_label(f, r, key, label, Tone::Dim, false)
 }
 
@@ -632,14 +632,14 @@ fn key_label(f: &mut Frame, r: Rect, key: &str, label: &str, tone: Tone, faded: 
 }
 
 /// Text centred in `r`, cut to fit.
-pub(crate) fn centred_text(f: &mut Frame, r: Rect, size: f32, tone: Tone, text: &str) {
+pub fn centred_text(f: &mut Frame, r: Rect, size: f32, tone: Tone, text: &str) {
     let w = f.c.text_width(size, text).min(r.w);
     f.c.text_fit(Rect::new(r.x + (r.w - w) / 2.0, r.y, w + 1.0, r.h), size, tone, text, Keep::Start);
 }
 
 /// Text centred in `r`. If it doesn't fit on one line, it is split at the space nearest the middle onto
 /// two.
-pub(crate) fn centred_lines(f: &mut Frame, r: Rect, size: f32, tone: Tone, text: &str) {
+pub fn centred_lines(f: &mut Frame, r: Rect, size: f32, tone: Tone, text: &str) {
     let line = size * LINE;
     if f.c.text_width(size, text) <= r.w {
         centred_text(f, Rect::new(r.x, r.y + (r.h - line) / 2.0, r.w, line), size, tone, text);
@@ -660,12 +660,12 @@ pub(crate) fn centred_lines(f: &mut Frame, r: Rect, size: f32, tone: Tone, text:
 const HINT: f32 = 0.8;
 
 /// The height of a hint line, the small dim text at the bottom of a screen.
-pub(crate) fn hint_h(f: &Frame) -> f32 {
+pub fn hint_h(f: &Frame) -> f32 {
     f.text(Text::Body) * HINT * LINE * 1.25
 }
 
 /// A small dim hint along the bottom of `area`. Returns the room above it.
-pub(crate) fn hint(f: &mut Frame, mut area: Rect, text: &str) -> Rect {
+pub fn hint(f: &mut Frame, mut area: Rect, text: &str) -> Rect {
     let h = hint_h(f);
     let line = area.take_bottom(h);
     let size = f.text(Text::Body) * HINT;
@@ -676,7 +676,7 @@ pub(crate) fn hint(f: &mut Frame, mut area: Rect, text: &str) -> Rect {
 /// A screen's scrolled list, such as networks, devices, keymaps or layers. The rows go in `area` above a
 /// hint line and reach a little into the side margins for their pressed look. The scroll bar is just
 /// right of them.
-pub(crate) struct ListArea {
+pub struct ListArea {
     pub pad: f32,
     /// The rows' text size.
     pub size: f32,
@@ -713,7 +713,7 @@ impl ListArea {
 
 /// Lines of text, each `(size, tone, text)`, centred across `col`'s width one under another. Lines that
 /// don't fit are left out.
-pub(crate) fn text_lines(f: &mut Frame, col: &mut Column, lines: &[(f32, Tone, &str)]) {
+pub fn text_lines(f: &mut Frame, col: &mut Column, lines: &[(f32, Tone, &str)]) {
     for &(size, tone, text) in lines {
         let Some(r) = col.next(size * LINE) else {
             return;

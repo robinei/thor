@@ -18,7 +18,7 @@ use super::images::Images;
 use super::record::{Bounds, Op, Px, Recording};
 
 /// The pixels a painter draws into, premultiplied, red first: `width` by `height`, rows one after another.
-pub(crate) struct Pixels<'a> {
+pub struct Pixels<'a> {
     data: &'a mut [u8],
     width: u32,
     height: u32,
@@ -170,7 +170,7 @@ pub struct Painter<'a> {
 }
 
 impl<'a> Painter<'a> {
-    pub(crate) fn new(target: Pixels<'a>, scale: f32, (dx, dy): (i32, i32), cache: &'a mut DrawCache) -> Self {
+    pub fn new(target: Pixels<'a>, scale: f32, (dx, dy): (i32, i32), cache: &'a mut DrawCache) -> Self {
         let clip = (0, 0, target.width() as i32, target.height() as i32);
         Painter { target, scale, offset: (dx as f32, dy as f32), clip, cache }
     }

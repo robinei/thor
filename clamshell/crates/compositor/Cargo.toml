@@ -34,6 +34,7 @@ winit-wayland = { version = "=0.31.0-beta.3", default-features = false, optional
 nested = ["smithay/backend_winit", "dep:winit-wayland"]
 
 [dev-dependencies]
+clamshell-views.workspace = true
 clamshell-library = { workspace = true, features = ["demo"] }
 x11rb = { version = "0.13.2", features = ["shape"] }
 tempfile.workspace = true
