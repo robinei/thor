@@ -53,6 +53,7 @@ From the inventory of 2026-10-24 (paths under `clamshell/` unless noted), with w
 | The AYN key (`gpio-keys-ayn`, `KEY_F24`), Back (`BTN_BACK`) | `crates/system/src/input/pad/device.rs:36`, `remap/mod.rs:203-209` |
 | The X/Y swap by driver (`rsinput`, `xpad`) | `crates/system/src/input/pad/device.rs:145-166` |
 | The built-in controller's driver (`rsinput`), which the gyro and the AYN key go with | new with several controllers (2026-10-29) |
+| The stick lights' LEDs (`multi-led{l,r}{1-4}`) and their channel order (blue, green, red, from ROCKNIX's `analog_sticks_ledcontrol`) | new with the Lights setting (2026-10-29) |
 | The gyro: Qualcomm sensor hub, QMI service 400, 200 Hz, axis matrix | `crates/system/src/input/pad/sensor_hub/mod.rs` |
 | The keymap screen's control layout and labels | `crates/views/src/keymaps/pad.rs`, `words.rs:76-91` |
 | The fan: hwmon `pwmfan`, its curves | `crates/fan/src/main.rs:26`, `curve.rs` |

@@ -42,7 +42,7 @@ readings, ticks, windows, units ─▶ Event ───┤
 | `crates/ui` | the UI framework without a backend (`ui::Core`): owns `State`, draws the views it is given into pixmaps on the CPU (tiny-skia, fontdue, the built-in Noto Sans), the toolkit they are drawn with, and input turned into events; it knows no screen of ClamShell's |
 | `crates/views` | ClamShell's screens (`clamshell_views::VIEWS`): the built-in apps' views (`apps.rs`), the second screen's bar and tabs, the overlays, drawn with the UI's toolkit |
 | `crates/compositor` | the Wayland compositor (Smithay): hosts the UI and runs the event loop; the screens through DRM and libinput (`--drm`) or a window on a desktop (`--nested`), the windows, Xwayland |
-| `crates/device` | facts the hardware can't announce: the screens' connectors and rotation, the panels, charging, the fan's curves (`fan.rs`), the gyro, the controls (`docs/device-profiles.md`) |
+| `crates/device` | facts the hardware can't announce: the screens' connectors and rotation, the panels, charging, the fan's curves (`fan.rs`), the gyro, the controls, the stick lights (`docs/device-profiles.md`) |
 | `crates/library` | the game library's model (entries, groups, tabs), sorting, name patterns, and the parts of Steam's formats that need no disk |
 | `crates/fan` | the fan daemon `clamshell-fan`, a system service setting the fan's speed from the temperatures by the curve of the mode the Fan setting picks, and the small library with its mode protocol (`clamshell_fan_mode`) |
 | `src/` | the program: starts the threads, connects effects to them, the command line, the control pipe and the snapshots |

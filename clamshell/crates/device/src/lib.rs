@@ -5,6 +5,7 @@ pub mod fan;
 pub mod gyro;
 pub mod input;
 pub mod layout;
+pub mod lights;
 pub mod preview;
 use colour::PanelColour;
 
@@ -87,6 +88,8 @@ pub struct DeviceProfile {
     pub sensor_hub: Option<gyro::SensorHub>,
     pub fan: Option<fan::Fan>,
     pub charge: charge::Charge,
+    /// The lights under the sticks, if the device has them.
+    pub lights: Option<lights::StickLights>,
     pub control_layout: layout::ControlLayout,
     pub preview: preview::Preview,
 }
@@ -120,6 +123,7 @@ impl DeviceProfile {
             sensor_hub: Some(gyro::SensorHub::thor()),
             fan: Some(fan::Fan::thor()),
             charge: charge::Charge::thor(),
+            lights: Some(lights::StickLights::thor()),
             control_layout: layout::ControlLayout::thor(),
             preview: preview::Preview::reference(),
         }
@@ -135,6 +139,7 @@ impl DeviceProfile {
             sensor_hub: None,
             fan: None,
             charge: charge::Charge::standard(),
+            lights: None,
             control_layout: layout::ControlLayout::thor(),
             preview: preview::Preview::reference(),
         }
@@ -164,6 +169,7 @@ impl DeviceProfile {
             sensor_hub: None,
             fan: None,
             charge: charge::Charge::standard(),
+            lights: None,
             control_layout: layout::ControlLayout::standard(),
             preview: preview::Preview::reference(),
         }
