@@ -102,10 +102,9 @@ pub struct Core {
     outbox: VecDeque<Effect>,
     /// The events waiting while another is handled.
     queue: EventQueue,
-    /// What the frames recorded since the last [`Core::frames_done`] report: what a view reported (see
-    /// [`crate::toolkit::FrameOut::report`]), and the lists' rows.
-    report: Option<Event>,
-    lists: Vec<Event>,
+    /// What the frames recorded since the last [`Core::frames_done`] report, in order: what views reported
+    /// (see [`crate::toolkit::FrameOut::report`]), and the lists' rows.
+    reports: Vec<Event>,
 }
 
 impl Core {
@@ -144,8 +143,7 @@ impl Core {
             effects: Vec::new(),
             outbox: VecDeque::new(),
             queue: EventQueue::default(),
-            report: None,
-            lists: Vec::new(),
+            reports: Vec::new(),
         })
     }
 
@@ -355,10 +353,8 @@ impl Core {
         s.stale = false;
         s.body = out.touchpad_area;
         s.pad = std::mem::take(&mut out.pad);
-        if let Some(event) = out.report.take() {
-            self.report = Some(event);
-        }
-        self.lists.extend(render::list_changes(&self.state, &out));
+        self.reports.extend(out.report.take());
+        self.reports.extend(render::list_changes(&self.state, &out));
         if whole {
             s.frames.redraw_all(Bounds::of_size(size_px));
             return Some(Bounds::of_size(size_px));
@@ -401,11 +397,8 @@ impl Core {
     /// The frames recorded since the last call are done: the state learns what they report. The list's
     /// row count follows the layout, and the state keeps the selection within it.
     pub fn frames_done(&mut self) {
-        if let Some(event) = self.report.take() {
-            self.handle(event);
-        }
-        let lists = std::mem::take(&mut self.lists);
-        self.handle_all(lists);
+        let reports = std::mem::take(&mut self.reports);
+        self.handle_all(reports);
     }
 }
 

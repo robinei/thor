@@ -145,7 +145,7 @@ impl PadKey {
 #[derive(Debug, Clone, Default)]
 pub struct FrameOut {
     /// An event the frame tells the state once it is drawn, such as how many rows a list shows when that
-    /// changed. The last reported wins.
+    /// changed. The last reported in a frame wins; each frame's is told.
     pub report: Option<Event>,
     /// The area below the bar on the second screen, where a finger may point (see clamshell-state's
     /// `touch`).
