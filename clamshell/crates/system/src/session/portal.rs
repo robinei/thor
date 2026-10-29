@@ -19,7 +19,7 @@ use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use clamshell_state::{Asks, Event, FileRequest, PortalEvent};
@@ -32,8 +32,7 @@ const NAME: &str = "org.freedesktop.impl.portal.desktop.clamshell";
 const PATH: &str = "/org/freedesktop/portal/desktop";
 const FILE_CHOOSER: &str = "org.freedesktop.impl.portal.FileChooser";
 const REQUEST: &str = "org.freedesktop.impl.portal.Request";
-const BUS_NAME: &str = "org.freedesktop.DBus";
-const BUS_PATH: &str = "/org/freedesktop/DBus";
+use crate::os::lock;
 
 /// How long to wait before trying the bus, or the name, again.
 const RETRY: Duration = Duration::from_secs(5);
@@ -122,9 +121,7 @@ impl<S: Sink + Clone> Service for Server<S> {
             }
         }
         let mut bus = Bus::session()?;
-        // Flag 4 is DBUS_NAME_FLAG_DO_NOT_QUEUE. Reply 1 means we are the primary owner, 4 that we already were.
-        let (reply,): (u32,) = bus.call(BUS_NAME, BUS_PATH, BUS_NAME, "RequestName", (NAME, 4u32))?;
-        if !matches!(reply, 1 | 4) {
+        if !bus.request_name(NAME)? {
             return Err(Error::Taken);
         }
         log::info!("portal: {NAME} is ours");
@@ -181,12 +178,9 @@ impl<S: Sink> Server<S> {
     fn tend(&mut self, bus: &mut Bus) -> dbus::Result<bool> {
         let new: Vec<(u32, String)> = lock(&self.requests).iter().filter(|p| !p.asker_found && !p.closed).map(|p| (p.request.id, p.handle.clone())).collect();
         for (id, handle) in &new {
-            let pid = sender(handle).and_then(|name| {
-                bus.call::<(u32,)>(BUS_NAME, BUS_PATH, BUS_NAME, "GetConnectionUnixProcessID", (name.as_str(),))
-                    .inspect_err(|e| log::warn!("portal: request {id}: the asking process of {name}: {e}"))
-                    .ok()
-            });
-            let asker = pid.map(|(pid,)| crate::os::sys::lineage(pid)).unwrap_or_default();
+            let pid =
+                sender(handle).and_then(|name| bus.pid_of(&name).inspect_err(|e| log::warn!("portal: request {id}: the asking process of {name}: {e}")).ok());
+            let asker = pid.map(crate::os::sys::lineage).unwrap_or_default();
             if let Some(p) = lock(&self.requests).iter_mut().find(|p| p.request.id == *id) {
                 (p.request.asker, p.asker_found) = (asker, true);
             }
@@ -222,10 +216,6 @@ impl<S: Sink> Server<S> {
 fn sender(handle: &str) -> Option<String> {
     let sender = handle.strip_prefix("/org/freedesktop/portal/desktop/request/")?.split('/').next()?;
     Some(format!(":{}", sender.replace('_', ".")))
-}
-
-fn lock(requests: &Requests) -> std::sync::MutexGuard<'_, Vec<Pending>> {
-    requests.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// The calls' arguments: the request's handle, the app's id, its window, the title and the options.

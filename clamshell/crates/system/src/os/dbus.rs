@@ -78,6 +78,10 @@ impl Error {
     }
 }
 
+/// The bus itself, as a service: its name and path.
+pub(crate) const BUS_NAME: &str = "org.freedesktop.DBus";
+pub(crate) const BUS_PATH: &str = "/org/freedesktop/DBus";
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// A value of any type, as property maps and variant arguments hold them.
@@ -149,6 +153,19 @@ impl Bus {
     }
 
     /// Calls `method` of `interface` on `path` at `dest` with `args`, and returns the reply's values.
+    /// Asks for the well-known name `name`, not waiting in line behind another owner. Whether it is ours.
+    pub(crate) fn request_name(&mut self, name: &str) -> Result<bool> {
+        // Flag 4 is DBUS_NAME_FLAG_DO_NOT_QUEUE. Reply 1 means we are the primary owner, 4 that we already were.
+        let (reply,): (u32,) = self.call(BUS_NAME, BUS_PATH, BUS_NAME, "RequestName", (name, 4u32))?;
+        Ok(matches!(reply, 1 | 4))
+    }
+
+    /// The process of the connection called `name` (unique, or well-known).
+    pub(crate) fn pid_of(&mut self, name: &str) -> Result<u32> {
+        let (pid,): (u32,) = self.call(BUS_NAME, BUS_PATH, BUS_NAME, "GetConnectionUnixProcessID", (name,))?;
+        Ok(pid)
+    }
+
     pub fn call<R: ReadAll>(&mut self, dest: &str, path: &str, interface: &str, method: &str, args: impl AppendAll) -> Result<R> {
         let mut message = Message::new_method_call(dest, path, interface, method).map_err(Error::Reply)?;
         message.append_all(args);

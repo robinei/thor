@@ -31,8 +31,7 @@ const WATCHER_PATH: &str = "/StatusNotifierWatcher";
 const ITEM: &str = "org.kde.StatusNotifierItem";
 const ITEM_PATH: &str = "/StatusNotifierItem";
 const MENU: &str = "com.canonical.dbusmenu";
-const BUS_NAME: &str = "org.freedesktop.DBus";
-const BUS_PATH: &str = "/org/freedesktop/DBus";
+use crate::os::dbus::{BUS_NAME, BUS_PATH};
 
 /// How long to wait before trying the bus again.
 const RETRY: Duration = Duration::from_secs(5);
@@ -211,9 +210,7 @@ const WATCHER_XML: &str = r#"<node><interface name="org.kde.StatusNotifierWatche
 /// Serves the watcher if no one else does, returning the icons registered with it. None if another
 /// program has the name.
 fn serve_watcher(bus: &mut Bus) -> Result<Option<Arc<Mutex<Watched>>>, Error> {
-    // Flag 4 is DBUS_NAME_FLAG_DO_NOT_QUEUE. Reply 1 means we are the primary owner, 4 that we already were.
-    let (reply,): (u32,) = bus.call(BUS_NAME, BUS_PATH, BUS_NAME, "RequestName", (WATCHER, 4u32))?;
-    if !matches!(reply, 1 | 4) {
+    if !bus.request_name(WATCHER)? {
         log::info!("tray: reading the watcher there");
         return Ok(None);
     }
@@ -328,11 +325,7 @@ fn read_item(bus: &mut Bus, key: &str, dirs: &[PathBuf]) -> Result<(TrayItem, Op
     let all = bus.get_all(name, path, ITEM)?;
     let props = Props(&all);
     let text = |k: &str| props.str(k).unwrap_or_default();
-    let pid = bus
-        .call::<(u32,)>(BUS_NAME, BUS_PATH, BUS_NAME, "GetConnectionUnixProcessID", (name,))
-        .inspect_err(|e| log::debug!("tray: {key}: its process: {e}"))
-        .ok()
-        .map(|(pid,)| pid);
+    let pid = bus.pid_of(name).inspect_err(|e| log::debug!("tray: {key}: its process: {e}")).ok();
     // Remember the process as it is now, so that anything done to it later by its id can check it is
     // still the same process.
     if let Some(pid) = pid {

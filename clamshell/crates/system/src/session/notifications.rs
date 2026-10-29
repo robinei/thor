@@ -27,8 +27,6 @@ use crate::{Closed, Sink};
 const NAME: &str = "org.freedesktop.Notifications";
 const PATH: &str = "/org/freedesktop/Notifications";
 const INTERFACE: &str = "org.freedesktop.Notifications";
-const BUS_NAME: &str = "org.freedesktop.DBus";
-const BUS_PATH: &str = "/org/freedesktop/DBus";
 
 /// How long to wait before trying the bus, or the name, again.
 const RETRY: Duration = Duration::from_secs(5);
@@ -90,9 +88,7 @@ impl<S: Sink + Clone> Service for Server<S> {
 
     fn connect(&mut self) -> Result<Bus, Error> {
         let mut bus = Bus::session()?;
-        // Flag 4 is DBUS_NAME_FLAG_DO_NOT_QUEUE. Reply 1 means we are the primary owner, 4 that we already were.
-        let (reply,): (u32,) = bus.call(BUS_NAME, BUS_PATH, BUS_NAME, "RequestName", (NAME, 4u32))?;
-        if !matches!(reply, 1 | 4) {
+        if !bus.request_name(NAME)? {
             return Err(Error::Taken);
         }
         log::info!("notifications: {NAME} is ours");
