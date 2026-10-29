@@ -204,8 +204,15 @@ impl Remap {
         self.buzz = None;
     }
 
+    /// Where `axis` rests: a trigger at its minimum, the hat at 0, a stick in the middle of its range.
     fn axis_rest(&self, axis: AbsoluteAxisCode) -> i32 {
-        if Side::ALL.into_iter().any(|s| trigger_axis(s) == axis) { self.ranges.trigger.min } else { 0 }
+        if crate::input::pad::codes::is_trigger(axis) {
+            self.ranges.trigger.min
+        } else if crate::input::pad::codes::HAT.contains(&axis) {
+            0
+        } else {
+            self.ranges.stick.middle()
+        }
     }
 
     /// Takes the outputs to be what the keymap makes of `snap` already, without sending anything.

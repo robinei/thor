@@ -77,7 +77,12 @@ pub(crate) fn trigger_axis(s: Side) -> AbsoluteAxisCode {
     }
 }
 
-pub(super) const HAT: [AbsoluteAxisCode; 2] = [AbsoluteAxisCode::ABS_HAT0X, AbsoluteAxisCode::ABS_HAT0Y];
+/// Whether `axis` is a trigger's.
+pub(crate) fn is_trigger(axis: AbsoluteAxisCode) -> bool {
+    Side::ALL.into_iter().any(|s| trigger_axis(s) == axis)
+}
+
+pub(crate) const HAT: [AbsoluteAxisCode; 2] = [AbsoluteAxisCode::ABS_HAT0X, AbsoluteAxisCode::ABS_HAT0Y];
 
 pub(super) fn mouse_code(m: MouseButton) -> KeyCode {
     match m {

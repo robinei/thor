@@ -110,13 +110,14 @@ impl Capabilities {
 
     /// The axes as they are now.
     pub(crate) fn snapshot(&self) -> PadSnapshot {
-        PadSnapshot::new(self.axes.iter().map(|(code, a)| Axis { code: *code, value: a.value(), rest: rest(a) }).collect())
+        PadSnapshot::new(self.axes.iter().map(|(code, a)| Axis { code: *code, value: a.value(), rest: rest(*code, a) }).collect())
     }
 }
 
-/// An axis at rest: a stick at 0, a trigger at its minimum.
-fn rest(axis: &AbsInfo) -> i32 {
-    if axis.minimum() < 0 { 0 } else { axis.minimum() }
+/// An axis at rest: a trigger at its minimum, a stick or the hat in the middle of its range (128 for a
+/// stick of 0..255, as the DualSense's).
+fn rest(code: AbsoluteAxisCode, axis: &AbsInfo) -> i32 {
+    if super::codes::is_trigger(code) { axis.minimum() } else { crate::os::evdev::Range { min: axis.minimum(), max: axis.maximum() }.middle() }
 }
 
 /// The virtual devices, kept while the controller comes and goes through an unplug or an error, so games
@@ -136,7 +137,7 @@ pub(crate) struct VirtualDevices {
 impl VirtualDevices {
     pub(crate) fn new(caps: Capabilities, controls: Controls) -> io::Result<VirtualDevices> {
         let mut neutral: Vec<Raw> = pad_keys(&caps, controls).map(|k| Raw::key(k, Press::Up)).collect();
-        neutral.extend(pad_axes(&caps).iter().map(|(code, a)| Raw::abs(*code, rest(a))));
+        neutral.extend(pad_axes(&caps).iter().map(|(code, a)| Raw::abs(*code, rest(*code, a))));
         neutral.push(Raw::REPORT);
         let mut mouse_up: Vec<Raw> = mouse_device_keys().into_iter().map(|k| Raw::key(k, Press::Up)).collect();
         mouse_up.push(Raw::REPORT);
@@ -271,6 +272,16 @@ pub(crate) fn normalise_controls(controls: Controls, raws: &mut [Raw]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A stick rests in the middle of its range, whatever the range; a trigger at its bottom.
+    #[test]
+    fn sticks_rest_in_the_middle_of_their_range() {
+        let axis = |min, max| AbsInfo::new(0, min, max, 0, 0, 0);
+        assert_eq!(rest(AbsoluteAxisCode::ABS_X, &axis(0, 255)), 128, "the DualSense's");
+        assert_eq!(rest(AbsoluteAxisCode::ABS_X, &axis(-32768, 32767)), 0);
+        assert_eq!(rest(AbsoluteAxisCode::ABS_HAT0X, &axis(-1, 1)), 0);
+        assert_eq!(rest(AbsoluteAxisCode::ABS_RZ, &axis(0, 255)), 0);
+    }
     use crate::os::evdev::Press;
 
     #[test]

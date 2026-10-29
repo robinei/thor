@@ -99,7 +99,7 @@ pub(crate) struct PadSnapshot {
 pub(crate) struct Axis {
     pub(crate) code: AbsoluteAxisCode,
     pub(crate) value: i32,
-    /// The axis' value at rest: the middle of a stick (0), or the bottom of a trigger.
+    /// The axis' value at rest: the middle of a stick's range, or the bottom of a trigger.
     pub(crate) rest: i32,
 }
 

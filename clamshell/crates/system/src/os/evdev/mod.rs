@@ -101,6 +101,11 @@ impl Range {
     /// A stick's full range on most controllers. It is assumed when a controller doesn't give one.
     pub(crate) const STICK: Range = Range { min: -32768, max: 32767 };
 
+    /// Its middle, where a stick rests: 0 for -32768..32767, 128 for 0..255.
+    pub(crate) fn middle(self) -> i32 {
+        i32::try_from((i64::from(self.min) + i64::from(self.max) + 1) / 2).unwrap_or(0)
+    }
+
     /// A value as -1..1 from the middle, for sticks.
     pub(crate) fn centered(self, v: i32) -> f32 {
         let mid = (self.min as f32 + self.max as f32) / 2.0;
