@@ -254,6 +254,9 @@ struct Pads {
     samples: Vec<Sample>,
     /// When controllers are next looked for, when /dev/input isn't watched.
     next_look: Option<Instant>,
+    /// Controllers are to be looked for: /dev/input changed, one failed, or it is time to. However many
+    /// reasons gather, they are looked for once (see [`PadThread::route_events`]).
+    look_due: bool,
     /// The system sleeps: the gyro stays closed until it wakes.
     asleep: bool,
 }
@@ -639,6 +642,7 @@ impl Pads {
             raws: Vec::new(),
             samples: Vec::new(),
             next_look: None,
+            look_due: false,
             asleep: false,
         }
     }
@@ -842,6 +846,13 @@ impl<S: Sink> PadThread<S> {
             if !self.take_commands(pads, commands)? {
                 return Ok(());
             }
+            // Once for every reason gathered since the last look. A device plugged in or out brings a run
+            // of changes to /dev/input (each node made, then given its owner, mode and ACL), each a Look;
+            // a look opens every input device, and closing one waits for the kernel (an RCU grace period),
+            // so a look per Look kept the controllers unread for seconds, a controller gone among them.
+            if std::mem::take(&mut pads.look_due) {
+                self.look(pads);
+            }
             self.route_merged(pads, Instant::now());
             self.emit(pads)?;
             // Wake for events, commands, when a mapping wants a tick, and to look for controllers.
@@ -851,7 +862,7 @@ impl<S: Sink> PadThread<S> {
             let now = Instant::now();
             self.read(pads, now);
             if pads.next_look.is_some_and(|at| now >= at) {
-                self.look(pads);
+                pads.look_due = true;
                 pads.next_look = self.look_every.map(|every| now + every);
             }
             self.route_merged(pads, now);
@@ -886,11 +897,10 @@ impl<S: Sink> PadThread<S> {
         }
     }
 
-    /// Reads every controller and the gyro. A controller that fails is let go; then controllers are
-    /// looked for again, since one gone may be back at once on another node.
+    /// Reads every controller and the gyro. A controller that fails is let go, and controllers are to be
+    /// looked for again, since one gone may be back at once, even on the same node.
     fn read(&mut self, pads: &mut Pads, _now: Instant) {
         let mut i = 0;
-        let mut lost = false;
         while i < pads.controllers.len() {
             let Some(c) = pads.controllers.get_mut(i) else { break };
             match read_controller(c, self.controls, &mut pads.raws) {
@@ -913,7 +923,7 @@ impl<S: Sink> PadThread<S> {
                 }
                 Err(e) => {
                     self.drop_controller(pads, i, &e);
-                    lost = true;
+                    pads.look_due = true;
                     continue;
                 }
             }
@@ -925,17 +935,15 @@ impl<S: Sink> PadThread<S> {
             log::warn!("pad: gyro: {e}");
             pads.motion = None;
         }
-        if lost {
-            self.look(pads);
-        }
     }
 
     /// Carries out the waiting commands. Those about the run are handled here and the rest by
-    /// [`PadThread::apply`]. Returns false once the commands' sender is gone.
+    /// [`PadThread::apply`]; a Look is noted, for the run to look once however many came. Returns false
+    /// once the commands' sender is gone.
     fn take_commands(&mut self, pads: &mut Pads, commands: &Receiver<Command>) -> Result<bool, Ended<io::Error>> {
         loop {
             match commands.try_recv() {
-                Ok(Command::Look) => self.look(pads),
+                Ok(Command::Look) => pads.look_due = true,
                 // The gyro, and its stream, is closed before sleep and found again after.
                 Ok(Command::Sleep(Ack(done))) => {
                     pads.asleep = true;
@@ -1136,6 +1144,40 @@ mod tests {
         assert_eq!(&l[..2], [(9_000, 3_000), (0, 0)]);
         let l = levels([(games, None)].into_iter(), PadRoute::Game, RumbleStrength::Off);
         assert_eq!(l[0], (0, 0), "the setting off");
+    }
+
+    /// Looks that come together are looked for once: each Look is only noted, the other commands are
+    /// carried out meanwhile, and the run looks once for all of them. (A look per Look, each opening every
+    /// input device, kept the controllers unread for seconds after a device was plugged in or out.)
+    #[test]
+    fn looks_that_come_together_are_one_look() {
+        let (sink, _events) = std::sync::mpsc::channel();
+        let mut thread = PadThread {
+            bell: Bell::new().unwrap(),
+            spec: DeviceSpec::Path("/nonexistent/event0".into()),
+            controls: clamshell_device::input::Controls::generic(),
+            sensor_hub: None,
+            taken: Taken::default(),
+            sink,
+            route: PadRoute::Ui,
+            watch_activity: false,
+            keymaps: Default::default(),
+            devices: None,
+            rumble_setting: RumbleStrength::default(),
+            sticks: Default::default(),
+            players: Players::default(),
+            told: Vec::new(),
+            look_every: None,
+        };
+        let mut pads = Pads::new(Player::ONE, &thread.keymaps, PadRoute::Ui, false);
+        let (commands, received) = std::sync::mpsc::channel();
+        for command in [Command::Look, Command::Route(PadRoute::Game), Command::Look, Command::Look] {
+            commands.send(command).unwrap();
+        }
+        assert!(thread.take_commands(&mut pads, &received).unwrap());
+        assert!(pads.look_due, "noted, to look once");
+        assert_eq!(thread.route, PadRoute::Game, "the other commands carried out meanwhile");
+        assert!(received.try_recv().is_err(), "every command taken");
     }
 
     /// Launched programs are told to ignore every controller grabbed, but not ones with the virtual pad's

@@ -352,7 +352,7 @@ again for another controller. A run (`Service::Session`) holds the controllers a
 the virtual devices outlive runs and controllers.
 
     no run --connect: the virtual devices made if missing (a pad per player)--> run [the controllers there taken]
-    run --/dev/input changed (Look), or every 5 s without inotify--> controllers not taken yet are grabbed [Controller(Connected)]
+    run --/dev/input changed (Look), or every 5 s without inotify--> controllers not taken yet are grabbed [Controller(Connected)]; the Looks waiting are looked for once
     run --a controller's read fails (unplugged)--> it is let go: what only it held on its player's controller is released, its rumble stopped, a calibration of it ends (Sticks(Done(name, None))), the gyro goes if it was its [Controller(Disconnected) once no controller of its key is left]; then Look
     run --Players(count, by key)--> each controller to its player (released on the old, held on the new); routers and pads added or dropped to the count (a dropped player's router lets go first)
     run --a virtual device fails--> no run: the devices made again, the controllers said gone
@@ -372,7 +372,7 @@ Tests: merge `axes_are_put_in_the_virtual_pads_ranges_from_each_controllers_rest
 `each_player_has_its_own_controller`, `a_resync_presses_home_first_and_lets_it_go_last`; pad
 `a_player_2_controller_drives_its_own_pad_through_its_own_keymap`,
 `a_controller_unplugged_lets_go_on_its_pad_and_the_players_stay`, `each_players_rumble_is_its_own`,
-`launches_ignore_every_controller_grabbed`; device `a_controller_is_known_by_its_ids_and_unique_id_or_name`.
+`launches_ignore_every_controller_grabbed`, `looks_that_come_together_are_one_look`; device `a_controller_is_known_by_its_ids_and_unique_id_or_name`.
 Grabbing, hotplug over USB and Bluetooth, uinput pads and real rumble: the VM suite (`pad_*`, one fake
 pad) and on the device with several controllers.
 
