@@ -383,6 +383,8 @@ fn warm_frames_do_not_allocate() {
             "dark while a game runs",
             vec![
                 Event::Units(vec![LaunchUnit { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 0 }]),
+                // The second screen's setting, from Off when idle past On to Dark in game.
+                tap(Id::Settings(SettingsId::Tile(Setting::BottomScreen))),
                 tap(Id::Settings(SettingsId::Tile(Setting::BottomScreen))),
             ],
         ),
@@ -496,7 +498,7 @@ fn warm_frames_do_not_allocate() {
     // For the cases that are easy to get wrong: the state each must reach, so that it tests the screen it
     // is named for.
     type Reached = fn(&State) -> bool;
-    let reached: [(&str, Reached); 9] = [
+    let reached: [(&str, Reached); 10] = [
         ("notifications", |s| s.notifications().len() == 5 && s.bottom_lit()),
         ("window arrows, Home held", |s| s.session().home_held() && s.session().has_other_top_window()),
         ("keymap name editor", |s| s.bottom().editor().is_some()),
@@ -506,6 +508,7 @@ fn warm_frames_do_not_allocate() {
         ("dock, a tray menu", |s| s.dock().tray_open()),
         ("battery, a program's menu", |s| s.sys().spender_menu().is_some()),
         ("time", |s| s.bottom().tab() == Tab::Time),
+        ("dark while a game runs", |s| s.bottom_dark()),
     ];
     let base = || {
         // The Nintendo layout, with a layer added.
