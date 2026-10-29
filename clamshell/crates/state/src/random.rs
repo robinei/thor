@@ -980,16 +980,15 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         ensure!(sent.route == Some(s.pad().route()), "2: route sent {:?}, state {:?}", sent.route, s.pad().route());
         let in_force = s.keymapping().in_force(s.in_force().get(Setting::Keymap));
         ensure!(sent.keymap.as_ref() == Some(&in_force), "2: keymap sent {:?}, in force {}", sent.keymap.as_ref().map(|k| k.id), in_force.id);
-        let by_app = clamshell_library::BuiltinApp::ALL
-            .into_iter()
-            .any(|app| s.session().runs_app(app) && crate::builtin_apps::definition(app).watches.contains(&crate::Watch::Account));
+        let seen = s.idle().stage() < Stage::Off;
+        let by_app = matches!(s.top(), Top::App { app, .. } if seen && crate::builtin_apps::definition(app).watches.contains(&crate::Watch::Account));
         let reads = s.setup().reads_account() || by_app;
         ensure!(sent.account == reads, "2: account watched {}, read {reads}", sent.account);
     }
     let screens_on = s.idle().stage() < Stage::Off;
     ensure!(sent.status == screens_on, "2: status watched {}, screens on {screens_on}", sent.status);
     // At most one tab's watch is on, and it is the open tab's (the dock's menu shows the battery's).
-    let tab = s.bottom().tab().watch();
+    let tab = s.bottom().tab().definition().watch;
     ensure!(
         sent.watched.len() <= 1 && sent.watched.iter().all(|w| Some(*w) == tab || *w == Watch::Battery || *w == Watch::Time),
         "2: watches on {:?}, the tab's {tab:?}",

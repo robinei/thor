@@ -684,7 +684,7 @@ impl State {
     fn wanted(&self) -> Wanted<'_> {
         let tab = match self.bottom.tab() {
             Tab::Dock if self.dock.menu().is_some() => Some(Watch::Battery),
-            tab => tab.watch(),
+            tab => tab.definition().watch,
         };
         let settings = self.in_force();
         let bottom_off = self.bottom_off();
@@ -704,7 +704,7 @@ impl State {
             bottom_seen: !self.bottom.shows_windows(&self.session) && !bottom_off && !self.bottom_dark(),
             tab,
             account: self.setup.reads_account(),
-            apps: clamshell_library::BuiltinApp::ALL.map(|app| self.session.runs_app(app)),
+            apps: clamshell_library::BuiltinApp::ALL.map(|app| matches!(self.top(), Top::App { app: front, .. } if front == app)),
             ui_up: self.ui_up,
             keymap: self.keymapping.version_of(settings.get(Setting::Keymap)),
             keymapping: &self.keymapping,

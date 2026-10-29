@@ -51,8 +51,8 @@ pub(crate) struct Wanted<'a> {
     pub(crate) ui_up: bool,
     /// The account is to be read for itself (see [`crate::setup::Setup::reads_account`]).
     pub(crate) account: bool,
-    /// The built-in apps that run, by [`clamshell_library::BuiltinApp::index`]; what they watch is read
-    /// while they do (see [`crate::builtin_apps`]).
+    /// The built-in app in front, by [`clamshell_library::BuiltinApp::index`]; what it watches is read
+    /// while it is seen (see [`crate::builtin_apps`]), as a tab's is.
     pub(crate) apps: [bool; clamshell_library::BuiltinApp::ALL.len()],
     /// The keymap in force (see [`Keymapping::version_of`]), and the keymaps it is taken from.
     pub(crate) keymap: (u16, u64),
@@ -291,9 +291,9 @@ impl Sent {
         }
     }
 
-    /// The bar's status is watched while the screens are on; the account while it is to be read for itself
-    /// or an app that runs reads it, with the UI up; the open tab's watch while the tab can be seen and the
-    /// UI is up; and what a running app watches (see [`crate::builtin_apps`]) while the UI is up.
+    /// The bar's status is watched while the screens are on; the account while it is to be read for itself,
+    /// with the UI up; and what the open tab or the app in front watches while it can be seen and the UI is
+    /// up (see [`crate::builtin_apps`]).
     fn watches(&mut self, w: &Wanted, out: &mut Out) {
         let screens_off = w.stage >= Stage::Off;
         let seen = w.ui_up && w.bottom_seen && !screens_off;
@@ -304,8 +304,8 @@ impl Sent {
         };
         let wanted = |watch: Watch| match watch {
             Watch::Status => !screens_off,
-            Watch::Account => w.ui_up && (w.account || by_app(watch)),
-            tab => (seen && w.tab == Some(tab)) || (w.ui_up && by_app(tab)),
+            Watch::Account => w.ui_up && (w.account || (!screens_off && by_app(watch))),
+            tab => (seen && w.tab == Some(tab)) || (w.ui_up && !screens_off && by_app(tab)),
         };
         // The bar's status and the account first, then the tab's: the one left off before the one opened on.
         let order = [Watch::Status, Watch::Account].into_iter().map(|watch| (watch, None));

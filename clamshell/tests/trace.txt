@@ -717,6 +717,8 @@ Start
   Watch Metrics on
 Pointer(Activate(LibraryView(Entry("builtin:device"))))
   Watch Account on
+Pointer(Activate(Device(EditLibrary)))
+  Watch Account off
 Tick 1760000005
   Save Resume
 -- library-edit.png

@@ -22,7 +22,8 @@ pub struct BuiltinAppDefinition {
     pub dock: DockPlace,
     /// Home goes to it, it is in front when nothing else is, and the pick of a file is made in it.
     pub home: bool,
-    /// What is read from the system while it runs.
+    /// What is read from the system while it is in front and seen, as a tab's watch is while it is open
+    /// and seen.
     pub watches: &'static [Watch],
     /// Which of its views shows, a number of its own. When it changes, the focus starts where the new
     /// view says, as when another app comes in front (see [`crate::Top::App`]).

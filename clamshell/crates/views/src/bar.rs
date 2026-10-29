@@ -9,6 +9,7 @@
 //! bar, which stays visible under it. The slider is a track with the current level under the finger, and
 //! the level as a number beside it.
 
+use clamshell_state::bottom::BarPlace;
 use clamshell_state::bottom::notice::NoticeKind;
 use clamshell_state::levels::slider::{Control, Slider};
 use clamshell_state::{Id, State, Tab};
@@ -140,8 +141,9 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
     // Before the line, every tab, spread evenly. Volume and brightness land near the middle, and their
     // slider makes do with the room on either side. Each button opens its tab. Holding or sliding on
     // volume or brightness brings up the slider, which runs along the screen's whole width.
-    let cell = bar.w.max(0.0) / Tab::ALL.into_iter().filter(|t| t.in_bar()).count() as f32;
-    for (i, tab) in Tab::ALL.into_iter().filter(|t| t.in_bar()).enumerate() {
+    let spread = |t: &Tab| t.definition().button == BarPlace::Spread;
+    let cell = bar.w.max(0.0) / Tab::ALL.into_iter().filter(spread).count() as f32;
+    for (i, tab) in Tab::ALL.into_iter().filter(spread).enumerate() {
         let (id, icon, tone) = tab_button(f.s, tab);
         let slides = matches!(id, Id::Control(_));
         icon_button(f, id, Rect::new(i as f32 * cell, 0.0, cell, bar_h), icon, tone);

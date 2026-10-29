@@ -86,11 +86,13 @@ How areas cooperate:
 which shows by itself while needed) are each a
 `BuiltinApp`: who it is as a library entry (id, title, summary) in the library crate; what it does as its
 `BuiltinAppDefinition` in `crates/state/src/builtin_apps.rs` (always runs or while open, its dock place,
-whether it is the home, what it watches while it runs, and its hooks: which of its views shows, what a
+whether it is the home, what it watches while it is in front, and its hooks: which of its views shows, what a
 key typed does, what the settings panel edits); its rules in its own area and `Id` variant; and its view
 in the views crate (`crates/views/src/apps.rs`), found by the same `BuiltinApp`. `State::top()` says `Top::App { app, view }`
 for any of them. Shared code (the session, the dock, sync) reads the
 definitions, never which app it is, so a new app is an entry, a definition, an area and a view.
+The second screen's tabs follow the same pattern: each `Tab`'s `TabDefinition` in the state (what it
+watches while seen, where its button is in the bar) and its view in `crates/views/src/tabs.rs`.
 
 ## Windows
 

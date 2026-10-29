@@ -32,6 +32,7 @@ mod radio;
 mod settings;
 mod setup;
 mod sysinfo;
+mod tabs;
 mod time;
 mod touchpad;
 mod wifi;
@@ -136,22 +137,7 @@ pub fn bottom(f: &mut Frame, screen: Rect) {
     }
     let body = bar::draw(f, screen);
     f.body = body;
-    match f.s.bottom().tab() {
-        Tab::Settings => settings::draw(f),
-        // While a browsed file's name or the account password is being typed, the editor replaces the
-        // keyboard.
-        Tab::Keyboard => typing(f, body),
-        Tab::Dock => dock::draw(f),
-        Tab::Touchpad => touchpad::draw(f),
-        Tab::Sysinfo => sysinfo::draw(f),
-        Tab::Wifi => wifi::draw(f),
-        Tab::Battery => battery::draw(f),
-        Tab::Bluetooth => bluetooth::draw(f),
-        Tab::Volume => levels::draw_volume(f),
-        Tab::Brightness => levels::draw_brightness(f),
-        Tab::Time => time::draw(f),
-        Tab::Windows => windows(f, body),
-    }
+    tabs::view(f.s.bottom().tab())(f);
     // While pointing, the area below the bar is a touchpad and its contents are faded. The touchpad tab
     // has nothing to fade.
     if f.s.bottom().pointing() && f.s.bottom().tab() != Tab::Touchpad {

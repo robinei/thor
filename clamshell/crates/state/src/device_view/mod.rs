@@ -289,18 +289,20 @@ mod tests {
         assert!(s.session().shown_app().is_some());
     }
 
-    /// The account is read while the view is open, from when the UI is up (and once at start, see
-    /// [`crate::setup::wizard`]).
+    /// The account is read while the view is in front and seen, from when the UI is up (and once at start,
+    /// see [`crate::setup::wizard`]), as its definition says.
     #[test]
-    fn the_account_is_watched_while_the_view_is_open() {
+    fn the_account_is_watched_while_the_view_is_in_front() {
         let mut s = State::new(init());
         assert!(!s.applied(Event::tick(1)).contains(&Effect::Watch(crate::Watch::Account, true)), "the UI isn't up");
         s.applied(Event::Start);
         available(&mut s, true);
-        // Opened from the Library; Home leaves it running, and Close closes it.
-        let fx = s.applied(Event::Entry("builtin:device".into(), crate::EntryAct::Play));
+        let device = || Event::Entry("builtin:device".into(), crate::EntryAct::Play);
+        let fx = s.applied(device());
         assert!(fx.contains(&Effect::Watch(crate::Watch::Account, true)), "{fx:?}");
-        assert!(!s.applied(Event::Home).contains(&Effect::Watch(crate::Watch::Account, false)));
+        // Home leaves it running behind the Library: not read meanwhile.
+        assert!(s.applied(Event::Home).contains(&Effect::Watch(crate::Watch::Account, false)));
+        assert!(s.applied(device()).contains(&Effect::Watch(crate::Watch::Account, true)), "in front again");
         assert!(tap(&mut s, DeviceId::Close).contains(&Effect::Watch(crate::Watch::Account, false)));
     }
 

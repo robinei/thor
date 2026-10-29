@@ -317,7 +317,7 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 | Setup (`setup::wizard`), worked out from the account and the step reached: Read without a password or Failed → the password step, at any start; Unread at the first start → the password step, reading; else, at the first start, the step reached. Steps Password (typed twice; Next only with NoHelper), Wi-Fi (Skip or Next), Time zone (Back, Done); the step's tab is chosen below, but the bottom screen shows only the keyboard (and the editor), the bar hidden, keys only to the editor; Setup is an app shown by need (`BuiltinApp::Setup`, its definition's `needed`): put in front over any window while needed, closed when not (settle, `follow_needed`); Done → `Save(FirstStartDone)`, the default tab |  `setup_goes_password_wifi_zone_and_done_ends_it_for_good`, `without_a_helper_the_password_step_is_passed`, `an_unreadable_account_keeps_setup_and_holds_programs`, `keys_without_an_editor_go_nowhere_while_setup_shows` |
 | the Device entry → it runs (on the dock) and shows; Close or Quit → closed, the Library in its place if it showed | `the_device_view_runs_on_the_dock_until_it_is_closed`,  `the_device_entry_opens_it_and_close_goes_back_to_library_view` |
 | Home with the view shown → the Library, the view still running; repeated Home stays on the Library | `home_goes_to_the_library_from_the_device_view` |
-| unread or Failed, open, or Setup showing, while the UI is up → `Watch(Account)` on (so a failed read is read again); otherwise off | `the_account_is_watched_while_the_view_is_open` |
+| unread or Failed, or the Device view or Setup in front with the screens on (their definitions' watches), while the UI is up → `Watch(Account)` on (so a failed read is read again); otherwise off | `the_account_is_watched_while_the_view_is_in_front` |
 | Wifi / Zone rows → their tab, its watch | `the_wifi_and_zone_rows_open_their_tabs` |
 | Password → editor for the current, the new, then the new again → `Account(Password)`; the two differing → `AccountChanged(Err)` | `the_password_is_typed_below_the_current_one_first` |
 | Ssh with a password → `Account(Ssh)`; further taps do nothing until AccountChanged, at most 30 s | `remote_login_needs_a_password`, `remote_login_waits_for_its_answer_before_another_tap`, `remote_login_is_asked_again_after_30_s_without_an_answer` |
@@ -1612,7 +1612,7 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
    emits nothing.
 2. **What was sent mirrors the state:** the last PadRoute is `pad().route()`; the last Keymap is the
    keymap in force; Status is watched iff the screens are on; Account iff the UI is up and the account is
-   unread or unreadable, the Device view runs, or Setup shows; the last Apply is `(program, in_force)`; the last Outputs is (screens on, bottom on);
+   unread or unreadable, or the Device view or Setup is in front with the screens on; the last Apply is `(program, in_force)`; the last Outputs is (screens on, bottom on);
    the last Refresh is the calibration's rate while it runs, else the rate of the entry launched last
    while its window is yet to show, else the rate of the settings in force, at the modes known.
    Once ClamShell set a brightness level, the last Brightness is that level, or a third of it (at

@@ -55,24 +55,52 @@ names!(Tab {
     Windows: "windows";
 });
 
-impl Tab {
-    /// Whether the tab has a button among the bar's spread ones. The time tab's button is the clock, and
-    /// the windows' tab's is at the bar's right end.
-    pub fn in_bar(self) -> bool {
-        !matches!(self, Tab::Time | Tab::Windows)
-    }
+/// What one of the second screen's tabs is, declared in one place as the built-in apps are (see
+/// [`crate::builtin_apps`]): what is read from the system while it is seen, and where its button is in the
+/// bar. Its rules are its own area's, and how it looks its view in clamshell-views, found by its [`Tab`].
+#[derive(Debug)]
+pub struct TabDefinition {
+    /// What is read from the system while it is open and seen.
+    pub watch: Option<Watch>,
+    pub button: BarPlace,
+}
 
-    /// What the tab watches while open, meaning what is read from the system for it.
-    pub fn watch(self) -> Option<Watch> {
+/// Where a tab's button is in the bar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BarPlace {
+    /// Among the buttons spread along it, in [`Tab::ALL`]'s order.
+    Spread,
+    /// The clock.
+    Clock,
+    /// At its right end.
+    End,
+}
+
+impl Tab {
+    /// Its definition.
+    pub fn definition(self) -> &'static TabDefinition {
+        const fn tab(watch: Option<Watch>, button: BarPlace) -> TabDefinition {
+            TabDefinition { watch, button }
+        }
+        const SPREAD: TabDefinition = tab(None, BarPlace::Spread);
+        const VOLUME: TabDefinition = tab(Some(Watch::Audio), BarPlace::Spread);
+        const BRIGHTNESS: TabDefinition = tab(Some(Watch::Backlights), BarPlace::Spread);
+        const WIFI: TabDefinition = tab(Some(Watch::Wifi), BarPlace::Spread);
+        const BLUETOOTH: TabDefinition = tab(Some(Watch::Bluetooth), BarPlace::Spread);
+        const BATTERY: TabDefinition = tab(Some(Watch::Battery), BarPlace::Spread);
+        const SYSINFO: TabDefinition = tab(Some(Watch::Metrics), BarPlace::Spread);
+        const TIME: TabDefinition = tab(Some(Watch::Time), BarPlace::Clock);
+        const WINDOWS: TabDefinition = tab(None, BarPlace::End);
         match self {
-            Tab::Volume => Some(Watch::Audio),
-            Tab::Brightness => Some(Watch::Backlights),
-            Tab::Wifi => Some(Watch::Wifi),
-            Tab::Bluetooth => Some(Watch::Bluetooth),
-            Tab::Battery => Some(Watch::Battery),
-            Tab::Time => Some(Watch::Time),
-            Tab::Sysinfo => Some(Watch::Metrics),
-            Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Touchpad | Tab::Windows => None,
+            Tab::Volume => &VOLUME,
+            Tab::Brightness => &BRIGHTNESS,
+            Tab::Wifi => &WIFI,
+            Tab::Bluetooth => &BLUETOOTH,
+            Tab::Battery => &BATTERY,
+            Tab::Sysinfo => &SYSINFO,
+            Tab::Time => &TIME,
+            Tab::Windows => &WINDOWS,
+            Tab::Settings | Tab::Dock | Tab::Keyboard | Tab::Touchpad => &SPREAD,
         }
     }
 }
