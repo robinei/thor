@@ -18,7 +18,7 @@ trap stop EXIT INT TERM
 # script among them: one from an older checkout may not start the session at all); then the console's
 # login again if the session isn't up.
 for _ in $(seq 1 60); do timeout 8 python3 tools/vm/vm.py ssh true 2> /dev/null && break; sleep 4; done
-python3 tools/vm/vm.py sync > /dev/null
+python3 tools/vm/vm.py sync > /dev/null || { echo "syncing the VM's files failed (log: $LOG)"; exit 1; }
 timeout 8 python3 tools/vm/vm.py ssh 'systemctl --user is-active clamshell' 2> /dev/null | grep -q '^active' \
     || python3 tools/vm/vm.py ssh 'sudo systemctl daemon-reload; sudo systemctl restart getty@tty1' > /dev/null
 up=""
@@ -28,8 +28,8 @@ for _ in $(seq 1 60); do
 done
 [ -n "$up" ] || { echo "the VM didn't start ClamShell (log: $LOG)"; exit 1; }
 # (The session again, with the unit as synced.)
-python3 tools/vm/vm.py restart > /dev/null
+python3 tools/vm/vm.py restart > /dev/null || { echo "restarting the session failed (log: $LOG)"; exit 1; }
 sleep 3
-python3 tools/vm/vm.py bluetooth
+python3 tools/vm/vm.py bluetooth || { echo "the Bluetooth test device didn't come up (log: $LOG)"; exit 1; }
 sleep 5
 python3 -u tools/vm/vm-checks.py "$@"

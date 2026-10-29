@@ -196,7 +196,11 @@ def service():
     unit = (REPO / "packages/thor-session/root/usr/lib/systemd/user/clamshell.service").read_text()
     start = (f"ExecStartPre=/bin/sh -c '{copy_local(A.program)}'\nExecStart={local(A.program)} --drm\n"
              "Environment=CLAMSHELL_DEVICE=vm\nEnvironment=CLAMSHELL_SCANOUT=1")
-    return unit.replace("ExecStart=/usr/bin/clamshell --drm", start)
+    unit = unit.replace("ExecStart=/usr/bin/clamshell --drm", start)
+    unit = unit.replace("ExecStopPost=-/usr/bin/clamshell ", f"ExecStopPost=-{local(A.program)} ")
+    if "/usr/bin/clamshell" in unit:
+        sys.exit("clamshell.service runs /usr/bin/clamshell in a way vm.py doesn't replace with this build")
+    return unit
 
 
 def session_files():

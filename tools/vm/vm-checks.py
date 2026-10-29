@@ -1358,7 +1358,7 @@ class Checks:
         self.check("tray: a program's icon registered", logged(since, "Tray test", 10), journal(since).strip()[-300:])
         self.check("  its process moved into a scope of ours", until(lambda: "clamshell-run-" in cgroup(), 8),
                    f"{cgroup()!r}; {[line for line in journal(since).splitlines() if 'adopt' in line][-3:]}")
-        sh("pkill -f thor-checks-tray-item || true")
+        sh("pkill -f '^python3 -c # thor-checks-tray-item' || true")
 
     def clipboard(self):
         """Text set by a program that then quits is still on the clipboard (ClamShell offers it)."""
@@ -1405,7 +1405,7 @@ class Checks:
         target = f"file://{home}/thor-portal-check.txt"
         saved = until(lambda: control("tap save-here") or target in answer(), 10, every=0.5)
         self.check("  Save here in Home answers with the name there", saved, answer())
-        sh("pkill -f portal_ask || true")
+        sh(f"pkill -f '^{vm.local(binary)} ' || true")
 
     # A long run
 
