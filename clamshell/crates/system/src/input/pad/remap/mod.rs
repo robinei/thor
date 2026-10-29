@@ -467,20 +467,23 @@ impl Remap {
     }
 
     /// Takes the gyro's current rate, `dt` after its last sample. The pointer moves by it, or a stick
-    /// follows it.
+    /// follows it. Bound to neither, it changes nothing: the pad isn't worked out again at each of its
+    /// many samples a second.
     pub(crate) fn motion(&mut self, rate: Rate, dt: f32, snap: &PadSnapshot, out: &mut Out) {
         self.gyro = rate;
-        if let Some(b) = self.gyro_binding(snap)
-            && b.output == Output::Pointer
-        {
-            let px = step(&GYRO_POINTER, b.speed);
-            let (x, y) = gyro_turn(&b, rate);
-            let gain = gyro_gain(&b, (x, y));
-            // Turning left (yaw) moves the pointer left, and tilting the top back (pitch) moves it up.
-            self.carry.add(-x * gain * dt * px, -y * gain * dt * px);
-            self.flush_pointer(out);
+        let Some(b) = self.gyro_binding(snap) else { return };
+        match b.output {
+            Output::Pointer => {
+                let px = step(&GYRO_POINTER, b.speed);
+                let (x, y) = gyro_turn(&b, rate);
+                let gain = gyro_gain(&b, (x, y));
+                // Turning left (yaw) moves the pointer left, and tilting the top back (pitch) moves it up.
+                self.carry.add(-x * gain * dt * px, -y * gain * dt * px);
+                self.flush_pointer(out);
+            }
+            Output::Stick(_) => self.update(snap, Instant::now(), out),
+            _ => {}
         }
-        self.update(snap, Instant::now(), out);
     }
 
     /// Handles time passing. Actuations move on at a hold's time, a double's window, a tap's end or
