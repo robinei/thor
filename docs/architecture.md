@@ -169,15 +169,17 @@ and fixed once. Seven rules:
   clipped to it, from the background up, so blending stays exact. Each pixmap knows the frame it holds, so a
   reused one also gets what changed since it last held a frame. An idle tick costs a recording and a
   comparison, about 0.02 ms.
-- **Input.** A frame keeps its targets (a rectangle, an id, and the key of the list item it showed). A
-  touch is matched against the frame the user saw and carries that item's key, so a list that re-sorted
+- **Input.** A frame keeps its targets (a rectangle, an id, the key of the list item it showed, what a
+  finger along it sets, such as a level or a slider, and what holding it does). A touch is matched against the frame the user saw and carries that item's key, so a list that re-sorted
   meanwhile doesn't redirect it. Pad navigation moves between the same targets by direction. What the
   pad's other buttons do is declared by the views as they draw (`PadOut`): B's and the Back button's
   back (an editor's Cancel over everything, else the back of the screen the pad is on), where the focus
   starts, and what Y, X and Start press (a `key_action` badge binds its button unless faded; a drawn
   keyboard binds X to Backspace), what a list does with the pad's moves (the Library's: a game a step,
   tabs or folders sideways, pages, ends and the wheel), and a mode that takes the buttons (a dock tile
-  moving, the overview). A frame may also report an event, as the Library its rows on screen. The
+  moving, the overview), and the tabs the shoulders step through. A frame also says where its content
+  goes (the windows' area below the bar), where a finger may point, and what a touch on the screen tells
+  the state. A frame may also report an event, as the Library its rows on screen. The
   framework knows no screen of ClamShell's. So a button does what the screen shows, and a new screen gets its
   pad meaning by using the shared widgets. Whether the pad may use the top screen stays the state's
   (`Pad::on_top`): under a window, the top screen's last frame is old.
