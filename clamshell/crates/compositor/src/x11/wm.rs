@@ -590,6 +590,8 @@ impl Wm {
                         }
                         if withdrawn {
                             Self::property(&self.atoms, wire, xid, "WM_STATE", self.atoms.get("WM_STATE"), &[0, 0])?;
+                            // EWMH: a withdrawn window's state is the client's to set again.
+                            wire.request(DeletePropertyRequest { window: xid, property: self.atoms.get("_NET_WM_STATE") }, 0, false)?;
                         }
                     }
                 }
