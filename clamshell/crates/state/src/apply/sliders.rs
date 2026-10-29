@@ -75,6 +75,12 @@ impl State {
         }
     }
 
+    /// The slider held, of whichever kind: a level's, a keymap's or a curve's parameter's, or a setting's.
+    pub fn held_slider(&self) -> Option<Slider> {
+        let levels = self.levels.slider().copied();
+        levels.or(self.keymapping.edit().slider).or(self.curving.slider()).or(self.prefs.slider())
+    }
+
     /// A setting's slider held, if one is (see [`crate::Prefs::slider`]).
     pub fn setting_slider(&self) -> Option<Slider> {
         self.prefs.slider()

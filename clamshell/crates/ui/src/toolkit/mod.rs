@@ -233,13 +233,13 @@ impl<'f, 'c> Frame<'f, 'c> {
         self.pressed.as_ref() == Some(id) && !self.sliding(id)
     }
 
-    /// Whether `id` is a control whose held slider is up, such as the bar's or a keymap parameter's.
+    /// Whether `id` is a control whose slider is held: a level's, a keymap's or a curve's parameter's, or
+    /// a setting's.
     pub fn sliding(&self, id: &Id) -> bool {
         let Id::Control(control) = id else {
             return false;
         };
-        let up = |s: Option<clamshell_state::levels::slider::Slider>| s.is_some_and(|s| s.control == *control);
-        up(self.s.levels().slider().copied()) || up(self.s.keymapping().edit().slider)
+        self.s.held_slider().is_some_and(|s| s.control == *control)
     }
 
     /// A text action (see [`Look::TEXT`]). Draws `label` in `r` at `size`, centred, or from the left with

@@ -259,6 +259,7 @@ mod tests {
         assert!(s.applied(Slide::Start { control: Control::Curve(CurveParam::Highlights), x: 300.0, width: 620.0 }.into()).is_empty());
         let slider = s.curving().slider().unwrap();
         assert_eq!(slider.start, CurveParam::Highlights.position(before.highlights));
+        assert_eq!(s.held_slider().map(|s| s.control), Some(slider.control), "the slider held, as the UI sees it");
         // Moving right raises the peak at once, without saving yet.
         let fx = s.applied(Slide::To { x: 360.0 }.into());
         assert!(saved(&fx).is_none(), "{fx:?}");
