@@ -150,7 +150,7 @@ mod tests {
     fn overlay_at(s: &State, drift: (i32, i32)) -> Retained {
         let mut retained = Retained::default();
         let at = Placement { size_px: (960, 540), scale: 1, drift };
-        record(&mut retained, at, Layer::Overlay(crate::Screen::Top), s, &mut DrawCache::load(), &mut Images::synchronous());
+        record(&mut retained, at, Layer::Overlay(crate::Screen::Top), s, &mut DrawCache::load(), &mut Images::synchronous(), &crate::VIEWS);
         retained
     }
 

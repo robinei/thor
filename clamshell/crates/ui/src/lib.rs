@@ -45,19 +45,35 @@ pub struct Config {
     /// The screens' logical sizes.
     pub top_size: (u32, u32),
     pub bottom_size: (u32, u32),
+    /// What is drawn on them.
+    pub views: Views,
 }
+
+/// The views the framework draws on each layer, given to it rather than known to it: the main screen's,
+/// the second screen's and the overlays, and what a mode a view declared does with the pad's buttons (see
+/// `toolkit::PadMode`).
+#[derive(Clone, Copy)]
+pub struct Views {
+    pub top: fn(&mut toolkit::Frame, gfx::Rect),
+    pub bottom: fn(&mut toolkit::Frame, gfx::Rect),
+    pub overlay: fn(&mut toolkit::Frame, gfx::Rect, Screen),
+    pub mode_input: fn(toolkit::PadMode, clamshell_state::PadInput) -> Option<clamshell_state::Event>,
+}
+
+/// ClamShell's views.
+pub const VIEWS: Views = Views { top: views::top, bottom: views::bottom, overlay: views::overlay, mode_input: views::mode_input };
 
 /// Renders one screen without Wayland, at `size` logical pixels and integer `scale`, to a PNG file, with
 /// its overlay over it as the compositor shows it. For checking layouts and for automated tests. Returns
 /// the events a live frame would send the state, such as the Library's rows and the lists' rows.
 #[cfg(any(test, feature = "dev"))]
-pub fn snapshot(state: &State, screen: Screen, size: (u32, u32), scale: u32, path: &std::path::Path) -> Result<Vec<Event>, Error> {
+pub fn snapshot(views: &Views, state: &State, screen: Screen, size: (u32, u32), scale: u32, path: &std::path::Path) -> Result<Vec<Event>, Error> {
     let at = Placement { size_px: (size.0 * scale, size.1 * scale), scale, drift: (0, 0) };
     let (mut fonts, mut images) = (DrawCache::load(), Images::synchronous());
     let mut pixmap = tiny_skia::Pixmap::new(at.size_px.0, at.size_px.1).ok_or("no pixmap")?;
-    let rendered = render::render(&mut pixmap, &mut Retained::default(), at, screen.into(), state, &mut fonts, &mut images)?;
+    let rendered = render::render(&mut pixmap, &mut Retained::default(), at, screen.into(), state, &mut fonts, &mut images, views)?;
     let mut overlay = tiny_skia::Pixmap::new(at.size_px.0, at.size_px.1).ok_or("no pixmap")?;
-    render::render(&mut overlay, &mut Retained::default(), at, Layer::Overlay(screen), state, &mut fonts, &mut images)?;
+    render::render(&mut overlay, &mut Retained::default(), at, Layer::Overlay(screen), state, &mut fonts, &mut images, views)?;
     pixmap.draw_pixmap(0, 0, overlay.as_ref(), &tiny_skia::PixmapPaint::default(), tiny_skia::Transform::identity(), None);
     pixmap.save_png(path)?;
     Ok(render::frame_events(state, &rendered))
@@ -78,12 +94,13 @@ pub struct Frames {
     latest: usize,
     fonts: DrawCache,
     images: Images,
+    views: Views,
 }
 
 #[cfg(any(test, feature = "dev"))]
 impl Frames {
-    /// For `screen` at `size` pixels.
-    pub fn new(screen: Screen, size: (u32, u32)) -> Result<Frames, Error> {
+    /// For `screen` at `size` pixels, drawn by `views`.
+    pub fn new(views: Views, screen: Screen, size: (u32, u32)) -> Result<Frames, Error> {
         let buffer = || tiny_skia::Pixmap::new(size.0, size.1).map(|p| (p, 0)).ok_or("no pixmap");
         Ok(Frames {
             screen,
@@ -93,13 +110,14 @@ impl Frames {
             latest: 1,
             fonts: DrawCache::load(),
             images: Images::synchronous(),
+            views,
         })
     }
 
     /// Draws `state` as the next frame. Returns the pixels shown, premultiplied RGBA, and the events a
     /// live frame would send the state.
     pub fn draw(&mut self, state: &State) -> (&[u8], Vec<Event>) {
-        let out = self.frames.record(self.at, self.screen.into(), state, &mut self.fonts, &mut self.images);
+        let out = self.frames.record(self.at, self.screen.into(), state, &mut self.fonts, &mut self.images, &self.views);
         if self.frames.damage().is_some() {
             let next = (self.latest + 1) % self.buffers.len();
             if let Some((pixmap, held)) = self.buffers.get_mut(next) {
@@ -116,7 +134,7 @@ impl Frames {
     pub fn whole(&mut self, state: &State) -> Result<&[u8], Error> {
         let (pixmap, _) = self.buffers.first_mut().ok_or("no buffer")?;
         let mut retained = Retained::default();
-        render::record(&mut retained, self.at, self.screen.into(), state, &mut self.fonts, &mut self.images);
+        render::record(&mut retained, self.at, self.screen.into(), state, &mut self.fonts, &mut self.images, &self.views);
         gfx::paint::play_unbounded(&mut *pixmap, &retained.next, &mut self.fonts, &self.images);
         Ok(pixmap.data())
     }
@@ -130,6 +148,7 @@ pub struct PadFrames {
     retained: screens::Screens<Retained>,
     fonts: DrawCache,
     images: Images,
+    views: Views,
 }
 
 /// Both screens' targets as one frame of each placed them.
@@ -162,14 +181,15 @@ impl PadTarget {
 
 #[cfg(any(test, feature = "dev"))]
 impl PadFrames {
-    /// For screens of `top` and `bottom` pixels.
-    pub fn new(top: (u32, u32), bottom: (u32, u32)) -> PadFrames {
+    /// For screens of `top` and `bottom` pixels, drawn by `views`.
+    pub fn new(views: Views, top: (u32, u32), bottom: (u32, u32)) -> PadFrames {
         let at = |size_px| Placement { size_px, scale: 1, drift: (0, 0) };
         PadFrames {
             at: screens::Screens { top: at(top), bottom: at(bottom) },
             retained: screens::Screens::default(),
             fonts: DrawCache::load(),
             images: Images::synchronous(),
+            views,
         }
     }
 
@@ -178,7 +198,7 @@ impl PadFrames {
         let mut view = PadView { targets: screens::Screens::default(), sizes: screens::Screens::default(), pads: screens::Screens::default() };
         for screen in Screen::BOTH {
             let at = self.at[screen];
-            view.pads[screen] = render::record(&mut self.retained[screen], at, screen.into(), state, &mut self.fonts, &mut self.images).pad;
+            view.pads[screen] = render::record(&mut self.retained[screen], at, screen.into(), state, &mut self.fonts, &mut self.images, &self.views).pad;
             view.targets[screen] = self.retained[screen].targets.clone();
             view.sizes[screen] = (at.size_px.0 as f32, at.size_px.1 as f32);
         }

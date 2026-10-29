@@ -98,7 +98,7 @@ impl Server {
         let observed = trace.clone();
         let wake: std::sync::Arc<dyn Fn() + Send + Sync> = std::sync::Arc::new(wake);
         let identities = crate::clients::Identities::new(identify, wake.clone());
-        let mut core = Core::new(state, move || wake())?;
+        let mut core = Core::new(state, config.views, move || wake())?;
         core.observe_events(move |event, state| observed.borrow_mut().record(event, state));
         let mut server = Self {
             clock,

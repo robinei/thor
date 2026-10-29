@@ -85,7 +85,7 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
     // Nested, the screens are the device's own sizes, as pixels of the host's window; on the screens,
     // they are taken from the outputs.
     let preview = if host == Host::Nested { env.profile.preview } else { env.profile.preview.half() };
-    let config = Config { top_size: preview.top, bottom_size: preview.bottom };
+    let config = Config { top_size: preview.top, bottom_size: preview.bottom, views: clamshell_ui::VIEWS };
     let global = state.prefs().settings().global;
     // The threads send to the compositor's event loop, so they start once it exists. Effects are
     // dispatched only after that.

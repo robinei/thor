@@ -132,7 +132,7 @@ impl Screen1 {
 
     /// Records `state`, and plays what changed since the last frame.
     fn draw(&mut self, state: &State, cache: &mut DrawCache, images: &mut crate::gfx::images::Images) {
-        self.frames.record(self.at, self.layer, state, cache, images);
+        self.frames.record(self.at, self.layer, state, cache, images, &crate::VIEWS);
         if self.frames.damage().is_some() {
             self.held = self.frames.draw(&mut self.pixmap, self.held, cache, images).0;
         }

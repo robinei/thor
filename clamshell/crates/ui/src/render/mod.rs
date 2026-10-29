@@ -29,7 +29,6 @@ use crate::gfx::paint::play;
 use crate::gfx::record::{Bounds, Recording};
 use crate::gfx::{Canvas, DrawCache, Rect};
 use crate::toolkit::{Frame, FrameOut, Scratch, Target};
-use crate::views;
 use crate::{Layer, Screen};
 
 /// OLED burn-in protection. Every screen is laid out inside a black margin of MARGIN buffer pixels on
@@ -90,7 +89,15 @@ impl Retained {
 
 /// Records `layer` for `state` into `retained.next`, and moves its targets and the touchpad area into
 /// surface pixels. A screen's frame starts with the whole buffer black, an overlay's clear.
-pub(crate) fn record(retained: &mut Retained, at: Placement, layer: Layer, state: &State, fonts: &mut DrawCache, images: &mut Images) -> FrameOut {
+pub(crate) fn record(
+    retained: &mut Retained,
+    at: Placement,
+    layer: Layer,
+    state: &State,
+    fonts: &mut DrawCache,
+    images: &mut Images,
+    views: &crate::Views,
+) -> FrameOut {
     let scale = at.scale.max(1);
     let ((lw, lh), offset) = inset(at.size_px, scale, at.drift);
     let mut out = {
@@ -101,9 +108,9 @@ pub(crate) fn record(retained: &mut Retained, at: Placement, layer: Layer, state
         let mut f = Frame::new(&mut canvas, state, images, &mut retained.scratch, &mut retained.targets);
         let layout = Rect::new(0.0, 0.0, lw, lh);
         match layer {
-            Layer::Screen(Screen::Top) => views::top(&mut f, layout),
-            Layer::Screen(Screen::Bottom) => views::bottom(&mut f, layout),
-            Layer::Overlay(screen) => views::overlay(&mut f, layout, screen),
+            Layer::Screen(Screen::Top) => (views.top)(&mut f, layout),
+            Layer::Screen(Screen::Bottom) => (views.bottom)(&mut f, layout),
+            Layer::Overlay(screen) => (views.overlay)(&mut f, layout, screen),
         }
         f.finish()
     };
@@ -125,6 +132,7 @@ pub(crate) fn record(retained: &mut Retained, at: Placement, layer: Layer, state
 /// Draws `layer` for `state` into `pixmap`, which must be `at`'s size, as [`record`] and then the
 /// whole recording played.
 #[cfg(any(test, feature = "dev"))]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn render(
     pixmap: &mut tiny_skia::Pixmap,
     retained: &mut Retained,
@@ -133,12 +141,13 @@ pub(crate) fn render(
     state: &State,
     fonts: &mut DrawCache,
     images: &mut Images,
+    views: &crate::Views,
 ) -> Result<FrameOut, Error> {
     let (w, h) = at.size_px;
     if (pixmap.width(), pixmap.height()) != (w, h) {
         return Err(format!("a {}x{} pixmap for a {w}x{h} frame", pixmap.width(), pixmap.height()).into());
     }
-    let out = record(retained, at, layer, state, fonts, images);
+    let out = record(retained, at, layer, state, fonts, images, views);
     play(pixmap, &retained.next, Bounds::of_size(at.size_px), fonts, images);
     retained.advance();
     Ok(out)
@@ -178,8 +187,8 @@ pub(crate) struct ScreenFrames {
 
 impl ScreenFrames {
     /// Records the next frame (see [`record`]).
-    pub(crate) fn record(&mut self, at: Placement, layer: Layer, state: &State, fonts: &mut DrawCache, images: &mut Images) -> FrameOut {
-        let out = record(&mut self.retained, at, layer, state, fonts, images);
+    pub(crate) fn record(&mut self, at: Placement, layer: Layer, state: &State, fonts: &mut DrawCache, images: &mut Images, views: &crate::Views) -> FrameOut {
+        let out = record(&mut self.retained, at, layer, state, fonts, images, views);
         self.damage = self.retained.damage();
         if let Some(damage) = self.damage {
             self.undrawn = Some(self.undrawn.map_or(damage, |undrawn| undrawn.union(damage)));
@@ -346,7 +355,7 @@ mod frame_times {
         for step in 0..7 {
             // The Library's selection a row further down each frame.
             let s = state(vec![Event::LibraryView(LibraryViewEvent::ListStep(step + 1))]);
-            frames.record(at, Screen::Top.into(), &s, &mut fonts, &mut images);
+            frames.record(at, Screen::Top.into(), &s, &mut fonts, &mut images, &crate::VIEWS);
             // At step 4 no buffer draws: what it changed is kept for the next draw.
             if step != 4 {
                 held_every = frames.draw(&mut every, held_every, &mut fonts, &images).0;
@@ -354,7 +363,7 @@ mod frame_times {
             if step % 3 == 2 {
                 held_sometimes = frames.draw(&mut sometimes, held_sometimes, &mut fonts, &images).0;
                 let mut whole = tiny_skia::Pixmap::new(w, h).unwrap();
-                render(&mut whole, &mut Retained::default(), at, Screen::Top.into(), &s, &mut fonts, &mut images).unwrap();
+                render(&mut whole, &mut Retained::default(), at, Screen::Top.into(), &s, &mut fonts, &mut images, &crate::VIEWS).unwrap();
                 assert!(every.data() == whole.data() && sometimes.data() == whole.data(), "step {step}");
             }
         }
@@ -381,11 +390,11 @@ mod frame_times {
             for round in 0..rounds + 20 {
                 // A whole frame: recorded and played into the buffer.
                 let t = Instant::now();
-                render(&mut pixmap, &mut retained, at, screen.into(), &s, &mut fonts, &mut images).unwrap();
+                render(&mut pixmap, &mut retained, at, screen.into(), &s, &mut fonts, &mut images, &crate::VIEWS).unwrap();
                 let f = t.elapsed();
                 // Recorded again and found unchanged, which is all an event that changes nothing costs.
                 let t = Instant::now();
-                record(&mut retained, at, screen.into(), &s, &mut fonts, &mut images);
+                record(&mut retained, at, screen.into(), &s, &mut fonts, &mut images, &crate::VIEWS);
                 assert_eq!(retained.damage(), None);
                 let c = t.elapsed();
                 // Only played.

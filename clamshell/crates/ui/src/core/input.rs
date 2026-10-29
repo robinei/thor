@@ -119,7 +119,7 @@ impl Core {
         self.fresh();
         // A mode drawn takes the pad's buttons first: a dock tile being moved, or the overview.
         if let Some(mode) = self.screens.bottom.pad.mode.or(self.overlays.top.pad.mode) {
-            if let Some(event) = crate::views::mode_input(mode, input) {
+            if let Some(event) = (self.views.mode_input)(mode, input) {
                 self.handle(event);
             }
             return;

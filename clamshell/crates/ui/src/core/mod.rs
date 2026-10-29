@@ -75,6 +75,8 @@ type EventObserver = Box<dyn FnMut(&Event, &State)>;
 
 pub struct Core {
     state: State,
+    /// What is drawn (see [`crate::Views`]).
+    views: crate::Views,
     state_revision: u64,
     event_observer: Option<EventObserver>,
     fonts: DrawCache,
@@ -110,7 +112,7 @@ impl Core {
     /// The core for `state`. Fonts for characters the built-in one lacks are found, and images decoded,
     /// on threads of their own; `wake` is called from those threads when something came back, so that
     /// the host runs the core.
-    pub fn new(state: State, wake: impl Fn() + Send + Sync + 'static) -> Result<Core, Error> {
+    pub fn new(state: State, views: crate::Views, wake: impl Fn() + Send + Sync + 'static) -> Result<Core, Error> {
         let (arrived, arrivals) = std::sync::mpsc::channel();
         let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(wake);
         let fonts = {
@@ -126,6 +128,7 @@ impl Core {
         };
         Ok(Core {
             state,
+            views,
             state_revision: 0,
             event_observer: None,
             fonts,
@@ -348,7 +351,7 @@ impl Core {
         };
         let size_px = (s.size.0 * s.scale, s.size.1 * s.scale);
         let at = Placement { size_px, scale: s.scale, drift: render::orbit(self.state.clock().unix()) };
-        let mut out = s.frames.record(at, layer, &self.state, &mut self.fonts, &mut self.images);
+        let mut out = s.frames.record(at, layer, &self.state, &mut self.fonts, &mut self.images, &self.views);
         s.stale = false;
         s.body = out.touchpad_area;
         s.pad = std::mem::take(&mut out.pad);
@@ -487,7 +490,7 @@ mod tests {
         use clamshell_state::{DeviceId, EntryAct, Init};
         let account = clamshell_state::setup::account::Account::NoHelper;
         let state = State::new(Init { library: Some(clamshell_library::demo::library()), account, ..Init::default() });
-        let mut core = Core::new(state, || {}).expect("a core");
+        let mut core = Core::new(state, crate::VIEWS, || {}).expect("a core");
         for screen in Screen::BOTH {
             core.resize(screen, (1280, 720), 1);
         }

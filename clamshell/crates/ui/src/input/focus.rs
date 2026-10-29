@@ -250,11 +250,11 @@ pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     if n == 0 {
         return vec![];
     }
-    let at = tabs.iter().flatten().position(|t| *t == s.bottom().tab()).unwrap_or(0) as i32;
+    let at = tabs.iter().flatten().position(|(t, _)| *t == s.bottom().tab()).unwrap_or(0) as i32;
     let next = (at + step).rem_euclid(n) as usize;
     match tabs.iter().flatten().nth(next) {
-        // Focus the tab's icon. For volume and brightness, the icon's target is their control.
-        Some(&tab) => vec![PointerEvent::Activate(Id::Tab(tab)).into(), PointerEvent::Focus(crate::views::bar::tab_target(tab)).into()],
+        // Open the tab and focus its button, as the bar declared it.
+        Some((tab, id)) => vec![PointerEvent::Activate(Id::Tab(*tab)).into(), PointerEvent::Focus(id.clone()).into()],
         None => vec![],
     }
 }
@@ -382,14 +382,14 @@ mod tests {
             },
             Screens {
                 top: PadOut { list: Some(Sideways::Collections), ..start(entry(s, s.library_view().cursor().index)) },
-                bottom: PadOut { tabs: Tab::ALL.map(Some), ..start(Id::Tab(s.bottom().tab())) },
+                bottom: PadOut { tabs: Tab::ALL.map(|t| Some((t, Id::Tab(t)))), ..start(Id::Tab(s.bottom().tab())) },
             },
         )
     }
 
     /// Both screens drawn for `s`, as the views draw them.
     fn frames(s: &State) -> crate::PadView {
-        crate::PadFrames::new((1280, 720), (1280, 720)).record(s)
+        crate::PadFrames::new(crate::VIEWS, (1280, 720), (1280, 720)).record(s)
     }
 
     fn focus(s: &mut State, id: Id) {
@@ -523,8 +523,11 @@ mod tests {
         let open = s.bottom().tab();
         let at = Tab::ALL.iter().position(|t| *t == open).unwrap_or(0);
         let next = Tab::ALL[(at + 1) % Tab::ALL.len()];
-        let icon = crate::views::bar::tab_target(next);
-        assert_eq!(shoulder(&s, &d, 1), vec![PointerEvent::Activate(Id::Tab(next)).into(), PointerEvent::Focus(icon).into()], "its icon in the bar focused");
+        assert_eq!(
+            shoulder(&s, &d, 1),
+            vec![PointerEvent::Activate(Id::Tab(next)).into(), PointerEvent::Focus(Id::Tab(next)).into()],
+            "its button, as declared"
+        );
         let g = entry(&s, 0);
         focus(&mut s, g);
         let page = s.library_view().rows() as i32;

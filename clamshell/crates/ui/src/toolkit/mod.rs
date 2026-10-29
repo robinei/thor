@@ -85,8 +85,8 @@ pub struct PadOut {
     /// The Library's list, drawn: up and down step through it, the shoulders page and the triggers go to
     /// its ends, and left and right go as this says.
     pub list: Option<Sideways>,
-    /// The bar's tabs, left to right, which the shoulders step through.
-    pub tabs: [Option<Tab>; Tab::ALL.len()],
+    /// The bar's tabs, left to right, each with its button's target, which the shoulders step through.
+    pub tabs: [Option<(Tab, Id)>; Tab::ALL.len()],
     /// A mode of the view's that takes the pad's buttons before anything else does.
     pub mode: Option<PadMode>,
 }
@@ -289,10 +289,10 @@ impl<'f, 'c> Frame<'f, 'c> {
         self.out.pad.list = Some(sideways);
     }
 
-    /// The bar's tab `tab` is drawn, after those left of it.
-    pub(crate) fn bar_tab(&mut self, tab: Tab) {
+    /// The bar's tab `tab` is drawn, after those left of it, with its button's target `id`.
+    pub(crate) fn bar_tab(&mut self, tab: Tab, id: Id) {
         if let Some(slot) = self.out.pad.tabs.iter_mut().find(|t| t.is_none()) {
-            *slot = Some(tab);
+            *slot = Some((tab, id));
         }
     }
 

@@ -88,7 +88,7 @@ pub struct Mapper<'a> {
 
 impl<'a> Mapper<'a> {
     pub fn new(fresh: &'a dyn Fn() -> State, size: fn(Screen) -> (u32, u32)) -> Mapper<'a> {
-        Mapper { fresh, frames: PadFrames::new(size(Screen::Top), size(Screen::Bottom)), size }
+        Mapper { fresh, frames: PadFrames::new(clamshell_ui::VIEWS, size(Screen::Top), size(Screen::Bottom)), size }
     }
 
     /// The state after `log` and then `more`.

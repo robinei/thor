@@ -148,11 +148,11 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
         if slides {
             f.track(Track { x0: screen.x, w: screen.w });
         }
-        f.bar_tab(tab);
+        f.bar_tab(tab, tab_target(tab));
     }
     // Then, right of the line, the clock's and the windows' tabs.
-    f.bar_tab(Tab::Time);
-    f.bar_tab(Tab::Windows);
+    f.bar_tab(Tab::Time, Id::Tab(Tab::Time));
+    f.bar_tab(Tab::Windows, Id::Tab(Tab::Windows));
     body
 }
 

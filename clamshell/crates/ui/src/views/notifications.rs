@@ -90,7 +90,7 @@ mod tests {
     fn overlay(s: &State) -> Retained {
         let mut retained = Retained::default();
         let at = Placement { size_px: (1240, 1080), scale: 1, drift: (0, 0) };
-        record(&mut retained, at, Layer::Overlay(Screen::Bottom), s, &mut DrawCache::load(), &mut Images::synchronous());
+        record(&mut retained, at, Layer::Overlay(Screen::Bottom), s, &mut DrawCache::load(), &mut Images::synchronous(), &crate::VIEWS);
         retained
     }
 
