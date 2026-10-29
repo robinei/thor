@@ -26,12 +26,27 @@ pub fn send(path: Option<&PathBuf>, line: &str) -> std::io::Result<()> {
 /// How long to wait before trying a pipe that couldn't be opened again.
 const RETRY: std::time::Duration = std::time::Duration::from_secs(5);
 
-/// Creates the pipe at `path` if it doesn't exist.
-fn create(path: &Path) {
-    if !path.exists()
-        && let Err(e) = rustix::fs::mknodat(rustix::fs::CWD, path, rustix::fs::FileType::Fifo, rustix::fs::Mode::from_raw_mode(0o600), 0)
-    {
-        log::warn!("control: {}: {e}", path.display());
+/// Creates the pipe at `path` if it doesn't exist. Something else there is replaced: read as the pipe,
+/// a file would end at once, every time it is opened again. Whether `path` is a pipe now.
+fn create(path: &Path) -> bool {
+    use std::os::unix::fs::FileTypeExt;
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_fifo() => return true,
+        Ok(_) => {
+            log::warn!("control: {} isn't a pipe; replacing it with one", path.display());
+            if let Err(e) = std::fs::remove_file(path) {
+                log::warn!("control: {}: {e}", path.display());
+                return false;
+            }
+        }
+        Err(_) => {}
+    }
+    match rustix::fs::mknodat(rustix::fs::CWD, path, rustix::fs::FileType::Fifo, rustix::fs::Mode::from_raw_mode(0o600), 0) {
+        Ok(()) => true,
+        Err(e) => {
+            log::warn!("control: {}: {e}", path.display());
+            false
+        }
     }
 }
 
@@ -41,16 +56,18 @@ const LONGEST: usize = 4096;
 /// Reads commands from the pipe at `path`, one per line, and sends their events. The pipe is created if it
 /// doesn't exist, and created again if it is deleted. The thread is started again after a panic.
 pub fn spawn(path: PathBuf, sink: impl Sink) {
-    create(&path);
     // Each writer closes the pipe after its line, so it is opened again for the next one.
     let spawned = worker::lasting("control", move || {
         loop {
+            if !create(&path) {
+                std::thread::sleep(RETRY);
+                continue;
+            }
             let file = match std::fs::File::open(&path) {
                 Ok(file) => file,
                 Err(e) => {
                     log::warn!("control: {}: {e}; trying again", path.display());
                     std::thread::sleep(RETRY);
-                    create(&path);
                     continue;
                 }
             };
@@ -122,5 +139,17 @@ mod tests {
         let (sink, events) = std::sync::mpsc::channel();
         read(std::io::BufReader::with_capacity(64, input.as_bytes()), Path::new("pipe"), &sink).unwrap();
         assert_eq!(events.try_iter().count(), 2 * parse("home").unwrap().len());
+    }
+
+    /// A file where the pipe goes is replaced with the pipe, rather than read to its end over and over.
+    #[test]
+    fn a_file_in_the_pipes_place_is_replaced() {
+        use std::os::unix::fs::FileTypeExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("control");
+        std::fs::write(&path, "home\n").unwrap();
+        assert!(create(&path));
+        assert!(std::fs::symlink_metadata(&path).unwrap().file_type().is_fifo());
+        assert!(create(&path), "and kept");
     }
 }
