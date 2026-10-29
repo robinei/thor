@@ -133,7 +133,8 @@ impl DeviceView {
                 out.effects.push(Effect::CalibrateRefresh);
             }
             DeviceId::Refresh => {}
-            DeviceId::Close | DeviceId::EditLibrary => {}
+            DeviceId::Close => out.events.push(Event::Entry(clamshell_library::BuiltinApp::Device.id().into(), crate::EntryAct::Quit)),
+            DeviceId::EditLibrary => out.events.push(crate::LibraryViewEvent::Edit.into()),
         }
     }
 
@@ -217,6 +218,14 @@ mod tests {
         let effects = tap(&mut s, DeviceId::Close);
         assert_eq!(s.top(), crate::Top::App { app: crate::BuiltinApp::Library, view: 0 });
         assert!(!effects.contains(&Effect::Save(Save::FirstStartDone)), "not the first start: nothing saved");
+    }
+
+    #[test]
+    fn edit_library_brings_the_library_up_in_its_edit_mode() {
+        let mut s = State::new(init());
+        launch_now(&mut s, "builtin:device");
+        tap(&mut s, DeviceId::EditLibrary);
+        assert_eq!(s.top(), crate::Top::App { app: crate::BuiltinApp::Library, view: 1 }, "its view 1: the edit mode");
     }
 
     /// The Device view is an entry that runs while it is open: on the dock, shown again by its tile after

@@ -3,6 +3,7 @@
 //! a place, a runner), or by a tap (on or off). Lists and commands are typed as words, a word with spaces
 //! in double quotes.
 
+use clamshell_library::BuiltinApp;
 use clamshell_library::config::{BrowseRoot, BuiltinPlace, Config, MountRule, Rule, Runner, RunnerKind, Scan, Source};
 
 /// What a form edits.
@@ -266,7 +267,7 @@ impl ItemRef<'_> {
                     visit(id, if r.name.is_empty() { id } else { &r.name });
                 }
             }
-            (_, Field::Builtin) => [("library", "Library"), ("device", "Device")].iter().for_each(|(k, l)| visit(k, l)),
+            (_, Field::Builtin) => BuiltinApp::ENTRIES.iter().for_each(|app| visit(app.name(), app.title())),
             _ => {}
         }
     }
@@ -390,7 +391,11 @@ impl Item {
                     "desktop" => Source::Desktop(Rule { place: Some(place), ..Rule::default() }),
                     "steam" => Source::Steam(Rule { place: Some(place), ..Rule::default() }),
                     "removable" => Source::Removable(MountRule { within: Some(place), ..MountRule::default() }),
-                    _ => Source::Builtin(BuiltinPlace { id: "device".into(), place }),
+                    // (The first that isn't the home, which is there already.)
+                    _ => {
+                        let app = BuiltinApp::ENTRIES.into_iter().find(|app| !crate::builtin_apps::definition(*app).home).unwrap_or_default();
+                        Source::Builtin(BuiltinPlace { id: app.name().into(), place })
+                    }
                 };
             }
             (Item::Runner(r), Field::Kind) => {

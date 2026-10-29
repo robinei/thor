@@ -591,9 +591,9 @@ impl Builder<'_> {
 
     /// Places one of ClamShell's own screens, as a `builtin` source says.
     fn builtin(&mut self, source: &content::BuiltinPlace) {
-        let id = format!("builtin:{}", source.id.trim());
-        let Some(builtin) = clamshell_library::BuiltinApp::of(&id) else {
-            return self.problems.push(format!("builtin {}: not one of ClamShell's screens (library, device)", source.id));
+        let Some(builtin) = clamshell_library::BuiltinApp::ENTRIES.into_iter().find(|app| app.name() == source.id.trim()) else {
+            let names: Vec<&str> = clamshell_library::BuiltinApp::ENTRIES.map(clamshell_library::BuiltinApp::name).into();
+            return self.problems.push(format!("builtin {}: not one of ClamShell's screens ({})", source.id, names.join(", ")));
         };
         if self.games.iter().any(|g| g.launch == Launch::Builtin(builtin)) {
             return self.problems.push(format!("builtin {}: placed twice", source.id));

@@ -44,6 +44,11 @@ impl BuiltinApp {
     /// Those that are library entries.
     pub const ENTRIES: [BuiltinApp; 2] = [BuiltinApp::Library, BuiltinApp::Device];
 
+    /// Its name in library.json's `builtin` places.
+    pub fn name(self) -> &'static str {
+        self.id().strip_prefix("builtin:").unwrap_or_default()
+    }
+
     /// Its entry's id.
     pub fn id(self) -> &'static str {
         match self {

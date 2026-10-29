@@ -123,6 +123,10 @@ impl LibraryView {
             LibraryViewEvent::ClearFilter => {
                 self.set_filter(String::new());
             }
+            LibraryViewEvent::Edit => {
+                self.start_edit();
+                out.events.push(Event::Entry(clamshell_library::BuiltinApp::Library.id().into(), crate::EntryAct::Show));
+            }
         }
     }
 

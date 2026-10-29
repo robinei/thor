@@ -291,6 +291,8 @@ pub enum LibraryViewEvent {
     /// The pad's Start (C on the desktop) plays the selected folder's next video, such as a series'
     /// next episode.
     Continue,
+    /// The Library comes in front, in its edit mode.
+    Edit,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
