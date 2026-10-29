@@ -80,7 +80,7 @@ fn carry_out(command: Command) -> Result<(), String> {
         }
         Command::WaylandFilter => {
             // ClamShell's files in RAM, where the Android script writes the filter's settings.
-            let settings = paths.runtime.clone().unwrap_or_else(std::env::temp_dir).join("clamshell");
+            let settings = paths.runtime.clone().ok_or("wayland filter: no XDG_RUNTIME_DIR, where its settings are")?.join("clamshell");
             clamshell_system::waydroid::run(settings).map_err(|e| format!("wayland filter: {e}"))
         }
         Command::ClipboardGet => {
