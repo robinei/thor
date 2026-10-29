@@ -443,18 +443,22 @@ impl Levels {
                 self.change(now, |l| l.set(level, value, out));
             }
             LevelEvent::Step(level, direction) => {
-                self.change(now, |l| l.step(level, direction, out));
+                self.change(now, |l| {
+                    l.step(level, direction, out);
+                });
             }
         }
     }
 
     /// The pad's left or right on a level row steps it, as if the finger set it and lifted.
-    pub(crate) fn step(&mut self, level: Level, direction: i16, out: &mut Out) {
+    /// Returns whether the level is known, so stepped (at an end, to where it is).
+    pub(crate) fn step(&mut self, level: Level, direction: i16, out: &mut Out) -> bool {
         let Some(now) = self.level(level) else {
-            return;
+            return false;
         };
         let value = (i16::from(now) + direction.signum() * STEP).clamp(0, 100) as u8;
         self.set(level, value, out);
+        true
     }
 
     /// Mutes or unmutes the output, once its volume is known. Returns whether it did.

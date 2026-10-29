@@ -34,8 +34,8 @@ pub enum HardwareKey {
 }
 
 impl State {
-    /// A hardware key. A level key steps the level and shows it. The others take a screenshot or run
-    /// their Home combination.
+    /// A hardware key. A level key steps the level and shows it, once it is known. The others take a
+    /// screenshot or run their Home combination.
     pub(crate) fn on_hardware_key(&mut self, key: HardwareKey, out: &mut Out) {
         let (level, direction) = match key {
             HardwareKey::VolumeUp => (Level::Volume, 1),
@@ -65,8 +65,11 @@ impl State {
             HardwareKey::WindowNext => return self.session.step_window(true),
         };
         let control = if level == Level::Volume { Control::Volume } else { Control::Brightness };
-        self.bottom.notice_mut().show(NoticeKind::Level(control), self.clock.mono());
-        self.levels.change(self.clock.mono(), |l| l.step(level, direction, out));
+        let mut known = false;
+        self.levels.change(self.clock.mono(), |l| known = l.step(level, direction, out));
+        if known {
+            self.bottom.notice_mut().show(NoticeKind::Level(control), self.clock.mono());
+        }
     }
 }
 
@@ -101,6 +104,8 @@ mod tests {
     fn the_mute_key_shows_the_level_only_when_it_changes_something() {
         let mut s = state();
         s.applied(Event::tick(100));
+        assert_eq!(s.applied(Event::HardwareKey(HardwareKey::VolumeUp)), vec![], "the volume unknown");
+        assert!(s.bottom().notice().is_none(), "nor its key");
         assert_eq!(s.applied(Event::HardwareKey(HardwareKey::Mute)), vec![], "the volume unknown");
         assert!(s.bottom().notice().is_none());
         s.applied(Reading::Status(Status { volume: Some(50), ..Status::default() }).into());
