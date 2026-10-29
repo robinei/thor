@@ -4,7 +4,6 @@
 //! finger lifts.
 
 use super::{Curve, CurveParam, Curves};
-use crate::Tab;
 use crate::bottom::editor::Editors;
 use crate::effect::{Effect, Save};
 use crate::levels::slider::{Control, Slider};
@@ -44,11 +43,6 @@ impl Curving {
     /// The curves' screen open over the settings tab, if one is.
     pub fn screen(&self) -> Option<CurveScreen> {
         self.open
-    }
-
-    /// The curves' screen that is open, while the settings tab is the one shown (`tab`).
-    pub(crate) fn screen_in(&self, tab: Tab) -> Option<CurveScreen> {
-        self.open.filter(|_| tab == Tab::Settings)
     }
 
     /// A parameter's slider, while a finger is on it.
@@ -284,7 +278,6 @@ mod tests {
         let mut s = new_state();
         picker(&mut s);
         tap(&mut s, Id::Row { list: ListId::Curves, i: 2, part: RowPart::Edit });
-        assert_eq!(s.pad_back(), Some(Id::Profile(ProfileKind::Curve, ProfileId::Back)));
         profile(&mut s, ProfileId::Back);
         assert_eq!(s.curving().screen(), Some(CurveScreen::Picker(PickerScreen::List)));
         profile(&mut s, ProfileId::Back);

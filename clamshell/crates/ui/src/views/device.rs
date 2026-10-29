@@ -57,6 +57,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) {
         (None, None) => Fmt::of(format_args!("Not connected")),
     };
     let connected = s.sys().status().wifi.is_some();
+    f.start(Id::Device(DeviceId::Wifi));
     f.button(Id::Device(DeviceId::Wifi), wifi, Look::ROW, |f| widgets::value_row(f, wifi, size, "Wi-Fi", &value, connected));
 
     let zone = col.take(row_h);
@@ -111,6 +112,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) {
     col.skip(row_h * 0.3);
     let end = col.take(row_h);
     let inner = Rect::new(end.x + size * 0.4, end.y, end.w - size * 0.8, end.h);
+    f.back(Id::Device(DeviceId::Close));
     f.text_button(Id::Device(DeviceId::Close), inner, size, Tone::Fn, "Close", Align::Start);
 
     if let Some(p) = device.sticks() {

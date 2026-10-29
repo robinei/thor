@@ -27,7 +27,7 @@ use crate::input::focus::Drawn;
 use crate::input::{Action, EventClock, Input, Source, Timer};
 use crate::render::{self, Placement, ScreenFrames};
 use crate::screens::{Layer, Screen, Screens};
-use crate::toolkit::Target;
+use crate::toolkit::{PadOut, Target};
 
 /// What came back from the font finder's and the image decoder's threads.
 enum Arrival {
@@ -46,11 +46,13 @@ struct ScreenCore {
     stale: bool,
     /// The second screen's area below the bar in the last frame, in logical pixels.
     body: Option<Rect>,
+    /// What the pad's buttons do, as the last frame declared.
+    pad: PadOut,
 }
 
 impl Default for ScreenCore {
     fn default() -> Self {
-        ScreenCore { frames: ScreenFrames::default(), size: (1, 1), scale: 1, stale: true, body: None }
+        ScreenCore { frames: ScreenFrames::default(), size: (1, 1), scale: 1, stale: true, body: None, pad: PadOut::default() }
     }
 }
 
@@ -62,6 +64,10 @@ impl Drawn for Screens<ScreenCore> {
     fn size(&self, screen: Screen) -> (f32, f32) {
         let (w, h) = self[screen].size;
         (w as f32, h as f32)
+    }
+
+    fn pad(&self, screen: Screen) -> &PadOut {
+        &self[screen].pad
     }
 }
 
@@ -300,9 +306,10 @@ impl Core {
         };
         let size_px = (s.size.0 * s.scale, s.size.1 * s.scale);
         let at = Placement { size_px, scale: s.scale, drift: render::orbit(self.state.clock().unix()) };
-        let out = s.frames.record(at, layer, &self.state, &mut self.fonts, &mut self.images);
+        let mut out = s.frames.record(at, layer, &self.state, &mut self.fonts, &mut self.images);
         s.stale = false;
         s.body = out.touchpad_area;
+        s.pad = std::mem::take(&mut out.pad);
         self.rows = self.rows.or(out.list_rows.filter(|&rows| rows != self.state.library_view().rows()));
         self.lists.extend(render::list_changes(&self.state, &out));
         if whole {

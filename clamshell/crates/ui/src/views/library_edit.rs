@@ -70,6 +70,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect, edit: &Edit) -> usize {
     // The open folders, outermost first, over the list, going back out.
     if edit.open(config).next().is_some() {
         let header = list.take_top(h * ROW_H);
+        f.back(EditId::Up.into());
         f.button(EditId::Up.into(), header, Look::ICON, |f| {
             f.c.icon(Icon::ArrowLeft, Rect::new(header.x, header.y, header.h, header.h).square_center(header.h * 0.4), Tone::Normal);
             let names = Fmt::<192>::of(format_args!("{}", Path(edit, config)));
@@ -202,6 +203,7 @@ fn form_view(f: &mut Frame, h: f32, config: &Config, open: &Form, body: Rect) {
     y += detail;
     let half = left.w * 0.3;
     f.text_button(EditId::Save.into(), Rect::new(left.x, y, half, detail * ACTION), detail, Tone::Fn, "Save", Align::Start);
+    f.back(EditId::Cancel.into());
     f.text_button(EditId::Cancel.into(), Rect::new(left.x + half, y, half, detail * ACTION), detail, Tone::Fn, "Cancel", Align::Start);
     // Why Save didn't save.
     if let Some(problem) = edit_problem(f) {
@@ -288,6 +290,7 @@ impl std::fmt::Display for Taken<'_, '_, '_> {
 
 /// The Done button at the tabs' right end.
 fn done(f: &mut Frame, r: Rect, size: f32) {
+    f.back(EditId::Done.into());
     f.text_button(EditId::Done.into(), r, size, Tone::Fn, "Done", Align::End);
 }
 

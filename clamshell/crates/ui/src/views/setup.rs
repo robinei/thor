@@ -97,6 +97,7 @@ fn buttons(f: &mut Frame, row: Rect, step: Step) {
     let back = row.cell(4, 1, 0.0, 0);
     let next = row.cell(4, 1, 0.0, 3);
     if step == Step::Zone {
+        f.back(Id::Setup(SetupId::Back));
         f.text_button(Id::Setup(SetupId::Back), back, size, Tone::Fn, "Back", Align::Center);
     }
     let joined = s.radios().wifi().networks.iter().any(|n| n.connected);

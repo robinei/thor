@@ -153,7 +153,13 @@ and fixed once. Seven rules:
   comparison, about 0.02 ms.
 - **Input.** A frame keeps its targets (a rectangle, an id, and the key of the list item it showed). A
   touch is matched against the frame the user saw and carries that item's key, so a list that re-sorted
-  meanwhile doesn't redirect it. Pad navigation moves between the same targets by direction.
+  meanwhile doesn't redirect it. Pad navigation moves between the same targets by direction. What the
+  pad's other buttons do is declared by the views as they draw (`PadOut`): B's and the Back button's
+  back (an editor's Cancel over everything, else the back of the screen the pad is on), where the focus
+  starts, and what Y, X and Start press (a `key_action` badge binds its button unless faded; a drawn
+  keyboard binds X to Backspace). So a button does what the screen shows, and a new screen gets its
+  pad meaning by using the shared widgets. Whether the pad may use the top screen stays the state's
+  (`Pad::on_top`): under a window, the top screen's last frame is old.
 - **Text** comes from a built-in font with fallbacks found through fontconfig; glyphs are rasterised once
   and cached.
 

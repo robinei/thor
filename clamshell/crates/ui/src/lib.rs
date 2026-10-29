@@ -137,6 +137,7 @@ pub struct PadFrames {
 pub struct PadView {
     targets: screens::Screens<Vec<toolkit::Target>>,
     sizes: screens::Screens<(f32, f32)>,
+    pads: screens::Screens<toolkit::PadOut>,
 }
 
 /// A direction the pad moves the focus in.
@@ -174,10 +175,10 @@ impl PadFrames {
 
     /// Records both screens for `state`.
     pub fn record(&mut self, state: &State) -> PadView {
-        let mut view = PadView { targets: screens::Screens::default(), sizes: screens::Screens::default() };
+        let mut view = PadView { targets: screens::Screens::default(), sizes: screens::Screens::default(), pads: screens::Screens::default() };
         for screen in Screen::BOTH {
             let at = self.at[screen];
-            render::record(&mut self.retained[screen], at, screen.into(), state, &mut self.fonts, &mut self.images);
+            view.pads[screen] = render::record(&mut self.retained[screen], at, screen.into(), state, &mut self.fonts, &mut self.images).pad;
             view.targets[screen] = self.retained[screen].targets.clone();
             view.sizes[screen] = (at.size_px.0 as f32, at.size_px.1 as f32);
         }
@@ -193,6 +194,10 @@ impl input::focus::Drawn for PadView {
 
     fn size(&self, screen: Screen) -> (f32, f32) {
         self.sizes[screen]
+    }
+
+    fn pad(&self, screen: Screen) -> &toolkit::PadOut {
+        &self.pads[screen]
     }
 }
 
@@ -229,7 +234,7 @@ impl PadView {
     }
 
     /// What the pad's B does in `state`.
-    pub fn back(state: &State) -> Option<Event> {
-        input::focus::back(state)
+    pub fn back(&self, state: &State) -> Option<Event> {
+        input::focus::back(state, self)
     }
 }

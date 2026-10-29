@@ -8,8 +8,8 @@ use clamshell_state::bottom::keyboard::{self, Key, KeyPos, Keyboard, LAYOUT, Mod
 
 use crate::gfx::icons::Icon;
 use crate::gfx::{Align, Canvas, Rect};
-use crate::toolkit::Frame;
 use crate::toolkit::style::{Look, Tone};
+use crate::toolkit::{Frame, PadKey};
 
 /// Label sizes as fractions of a key's height: the main label, and the small ones above and below.
 const MAIN_TEXT: f32 = 0.3;
@@ -55,6 +55,10 @@ fn cells(body: Rect) -> impl Iterator<Item = (KeyPos, &'static Slot, Rect)> {
 
 pub(super) fn draw(f: &mut Frame, body: Rect) {
     let kb = &f.s.keyboard();
+    // For typing with the pad, X is Backspace.
+    if let Some(pos) = keyboard::find(Key::Named(Named::Backspace)) {
+        f.key(PadKey::X, Id::Key(pos));
+    }
     // The cell is also the tap area: a touch between labels goes to the nearer key.
     for (pos, slot, cell) in cells(body) {
         f.button(Id::Key(pos), cell, Look::KEY, |f| draw_key(f.c, kb, slot, cell));

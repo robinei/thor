@@ -93,11 +93,6 @@ impl Prefs {
         self.menu
     }
 
-    /// The menu open while the settings tab is the one shown (`tab`).
-    pub(crate) fn menu_in(&self, tab: crate::Tab) -> Option<Setting> {
-        self.menu.filter(|_| tab == crate::Tab::Settings)
-    }
-
     pub(crate) fn open_menu(&mut self, setting: Setting) {
         self.menu = Some(setting);
     }

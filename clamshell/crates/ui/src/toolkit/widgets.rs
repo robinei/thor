@@ -7,7 +7,7 @@ use clamshell_state::{Entry, Id};
 
 use super::scroll::Scrolled;
 use super::style::{self, Look, SURFACE_HI, Text, Tone};
-use super::{Frame, Track};
+use super::{Frame, PadKey, Track};
 use crate::gfx::icons::Icon;
 use crate::gfx::images::{Images, Slot};
 use crate::gfx::{Align, Canvas, Column, Keep, LINE, Rect, Rgb};
@@ -444,6 +444,7 @@ pub(crate) fn header(f: &mut Frame, back: Option<Id>, title: &str, centred: bool
     let left_w = match back {
         Some(id) => {
             let r = bar.take_left(bar.h);
+            f.back(id.clone());
             f.button(id, r, Look::ICON, |f| f.c.icon(Icon::ArrowLeft, r.square_center(r.h * 0.45), Tone::Normal));
             r.w
         }
@@ -583,7 +584,11 @@ pub(crate) fn toned_value_row(f: &mut Frame, row: Rect, size: f32, label: &str, 
 
 /// An action and the pad button that does it, as a target filling `r`. It shows the button's name in a
 /// ring, or a pill for a longer name, then the label in `tone`.
+/// Its button presses it, unless faded.
 pub(crate) fn key_action(f: &mut Frame, id: Id, r: Rect, key: &str, label: &str, tone: Tone, faded: bool) {
+    if let Some(key) = [PadKey::B, PadKey::Y, PadKey::X, PadKey::Start].into_iter().find(|k| k.name() == key).filter(|_| !faded) {
+        f.key(key, id.clone());
+    }
     f.button(id, r, Look::ICON, |f| {
         key_label(f, r, key, label, tone, faded);
     });

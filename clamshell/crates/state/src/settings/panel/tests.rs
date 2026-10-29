@@ -155,7 +155,6 @@ fn a_tiles_menu_picks_a_value_and_resets_to_the_level_below() {
     tap(&mut s, Id::Tab(crate::Tab::Settings));
     long(&mut s, fps.clone());
     assert_eq!(s.prefs().menu(), Some(Setting::FpsCap));
-    assert_eq!(s.pad_back(), Some(Id::Settings(SettingsId::Back)));
     // The cap's values, and no Reset while the game follows All's.
     assert_eq!(s.lists().len(ListId::Values), Setting::FpsCap.choices().len());
     assert_eq!(s.menu_row(3), Some(Some(45)));

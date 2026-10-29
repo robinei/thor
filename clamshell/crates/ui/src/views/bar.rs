@@ -99,6 +99,8 @@ pub(super) fn height(screen: Rect) -> f32 {
 
 /// Draws the bar along the top of `screen` and returns the area below it.
 pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
+    // The pad starts on the open tab's button.
+    f.start(tab_target(f.s.bottom().tab()));
     let bar_h = height(screen);
     let mut body = screen;
     let mut bar = body.take_top(bar_h);

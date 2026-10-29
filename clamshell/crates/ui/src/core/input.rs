@@ -146,14 +146,9 @@ impl Core {
         match input {
             PadInput::A(true) => self.press_focus(Source::PadA),
             PadInput::A(false) => self.up(Source::PadA, End::Release, std::time::Instant::now()),
-            PadInput::B => self.handle_all(focus::back(&self.state)),
+            // The Back button is B on ClamShell's screens.
+            PadInput::B | PadInput::Back => self.handle_all(focus::back(&self.state, &self.screens)),
             PadInput::Y | PadInput::X | PadInput::Start => self.handle_all(focus::shortcut(&self.state, &self.screens, input)),
-            // The Back button does what the screen has for back, such as the edit screen's other layer.
-            PadInput::Back => {
-                if let Some(id) = self.state.pad_back() {
-                    self.handle(PointerEvent::Activate(id).into());
-                }
-            }
             PadInput::Shoulder(step) => self.handle_all(focus::shoulder(&self.state, &self.screens, step)),
             PadInput::Trigger(step) => self.handle_all(focus::trigger(&self.state, &self.screens, step)),
             PadInput::Switch if self.state.pad().on_top() => {

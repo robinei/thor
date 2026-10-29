@@ -289,11 +289,9 @@ fn the_keymap_screens_stay_with_their_tab_and_listen_only_in_view() {
     tap(&mut s, Id::Row { list: ListId::Keymaps, i: 2, part: RowPart::Edit });
     open(&mut s, Input::Button(Button::LB));
     assert_eq!(s.pad().route(), PadRoute::Listen);
-    // On another tab the pad doesn't listen and its Back does nothing here. Back on the settings tab,
-    // everything is as it was left.
+    // On another tab the pad doesn't listen. Back on the settings tab, everything is as it was left.
     let fx = tap(&mut s, Id::Tab(Tab::Dock));
     assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Ui)]);
-    assert_eq!(s.pad_back(), None);
     let fx = tap(&mut s, Id::Tab(Tab::Settings));
     assert!(fx.contains(&Effect::PadRoute(PadRoute::Listen)), "{fx:?}");
     assert_eq!((s.keymapping().screen(), s.keymapping().edit().selected), (Some(Screen::Edit(1)), Some(Input::Button(Button::LB))));
@@ -395,11 +393,6 @@ fn layers_are_added_shown_edited_and_fall_through() {
     keymap(&mut s, KeymapId::DeleteLayer);
     let k = s.keymapping().keymaps().get(1).unwrap();
     assert_eq!((k.layer_name(Layer(2)), k.get_of(Layer::BASE, Input::Button(Button::LB), Actuation::Hold)), (None, None));
-    // While a control is being picked, the pad's Back gives up.
-    let mut s = edit_screen();
-    open(&mut s, a);
-    keymap(&mut s, KeymapId::Target(Target::Pick));
-    assert_eq!(s.pad_back(), Some(Id::Profile(ProfileKind::Keymap, ProfileId::Back)), "picking: back");
 }
 
 /// Adds a layer named `name` with the edit screen's + button. The new layer is shown.

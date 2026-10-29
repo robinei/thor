@@ -51,13 +51,17 @@ pub fn top(f: &mut Frame, screen: Rect) {
     match f.s.top() {
         Top::Library(LibraryMode::Edit) => {
             if let Some(edit) = f.s.library_view().edit() {
+                f.start(clamshell_state::library_view::edit::EditId::Row(edit.cursor() as u16).into());
                 f.out.list_rows = Some(library_edit::draw(f, screen, edit));
             }
         }
         // Picking shows the Library, in the edit mode too.
         Top::Library(LibraryMode::Browse | LibraryMode::Pick) => f.out.list_rows = Some(library_view::draw(f, screen)),
         Top::Device => device::draw(f, screen),
-        Top::Setup(_) => setup::draw(f, screen),
+        Top::Setup(step) => {
+            f.start(clamshell_state::Id::Setup(step.first_target()));
+            setup::draw(f, screen);
+        }
         // The window is shown over the view, which isn't drawn.
         Top::Window { .. } => {}
     }

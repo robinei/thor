@@ -79,6 +79,7 @@ impl Picking {
 /// title centred and Cancel on the right. There is no back arrow, since choosing something closes it and
 /// Cancel gives up. Returns the area below it.
 fn choice_header(f: &mut Frame, title: &str) -> Rect {
+    f.back(Id::Profile(Kind::Keymap, ProfileId::Back));
     widgets::header(f, None, title, true, HeaderRight::Action(Id::Profile(Kind::Keymap, ProfileId::Back), "Cancel"))
 }
 

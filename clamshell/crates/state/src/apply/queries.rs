@@ -1,10 +1,10 @@
 //! What the UI and the rules ask that needs more than one area: an entry, the settings in force, the
-//! settings panel, the pad's Back, the profiles' names.
+//! settings panel, the profiles' names.
 
 use crate::bottom::screen::Power;
-use crate::profiles::picker::{Kind as ProfileKind, PickerCx, ProfileId};
+use crate::profiles::picker::{Kind as ProfileKind, PickerCx};
 use crate::settings::{BottomWhenIdle, Values};
-use crate::{Entry, Panel, Resume, SettingsId, State};
+use crate::{Entry, Panel, Resume, State};
 
 impl State {
     /// A library entry by its id. An entry that is still running after leaving the library, because its
@@ -60,26 +60,6 @@ impl State {
             discharging: self.sys.status().discharging,
             refreshing: self.setup.calibrating(),
         }
-    }
-
-    /// What the pad's Back button does on ClamShell's screens, as the target it activates. In the editor
-    /// it is Cancel. In the dock's menu or move mode it is the dock's Back. On the keymap screens it goes
-    /// back one screen, or gives up picking a control. Nothing else has a back of its own. On the edit
-    /// screen while the pad listens, Back comes in as an input to remap.
-    pub fn pad_back(&self) -> Option<crate::Id> {
-        if self.bottom.editor().is_some() {
-            return Some(crate::Id::Editor(crate::EditorId::Cancel));
-        }
-        if (self.dock.menu().is_some() || self.dock.moving().is_some()) && self.bottom.tab() == crate::Tab::Dock {
-            return Some(crate::Id::Dock(crate::DockId::Back));
-        }
-        if self.curving.screen_in(self.bottom.tab()).is_some() {
-            return Some(crate::Id::Profile(ProfileKind::Curve, ProfileId::Back));
-        }
-        if self.prefs.menu_in(self.bottom.tab()).is_some() {
-            return Some(crate::Id::Settings(SettingsId::Back));
-        }
-        self.keymapping.screen_in(self.bottom.tab()).map(|_| crate::Id::Profile(ProfileKind::Keymap, ProfileId::Back))
     }
 
     /// Where the Library and the second screen are, to come back to.

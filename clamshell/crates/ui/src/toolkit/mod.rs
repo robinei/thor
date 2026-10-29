@@ -11,7 +11,7 @@ pub(crate) mod scroll;
 pub(crate) mod style;
 pub(crate) mod widgets;
 
-use clamshell_state::{Id, ItemKey, ListId, State};
+use clamshell_state::{Event, Id, ItemKey, ListId, PointerEvent, State};
 
 use crate::gfx::images::Images;
 use crate::gfx::{Canvas, Rect};
@@ -55,8 +55,52 @@ impl Track {
     }
 }
 
+/// What the pad's buttons do on a screen, as its views declare while drawing what they act on. The pad's
+/// input reads it from the last frame (see `input::focus`), so a button does what the screen shows.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PadOut {
+    /// B and the Back button, and whether it is over the whole screen, as an editor's is, rather than
+    /// the screen's own. The last declared wins: what is drawn inside goes back first.
+    pub back: Option<(Event, bool)>,
+    /// Where the focus goes on the screen when nothing better is known.
+    pub start: Option<Id>,
+    /// What Y, X and Start press, as their badges show.
+    pub keys: [Option<Id>; 3],
+}
+
+/// A button of the pad that a badge stands for (see [`widgets::key_action`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PadKey {
+    B,
+    Y,
+    X,
+    Start,
+}
+
+impl PadKey {
+    /// Its name on the badge.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            PadKey::B => "B",
+            PadKey::Y => "Y",
+            PadKey::X => "X",
+            PadKey::Start => "Start",
+        }
+    }
+
+    /// Its place in [`PadOut::keys`], for the buttons there.
+    pub(crate) fn index(self) -> Option<usize> {
+        match self {
+            PadKey::B => None,
+            PadKey::Y => Some(0),
+            PadKey::X => Some(1),
+            PadKey::Start => Some(2),
+        }
+    }
+}
+
 /// What a frame tells the rest of the program besides its picture and targets.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct FrameOut {
     /// How many rows the Library's list on the main screen shows. The state keeps the selection within them.
     pub list_rows: Option<usize>,
@@ -66,6 +110,7 @@ pub struct FrameOut {
     /// How many rows each scrolled list drawn shows, indexed by [`ListId::index`]. The state keeps the
     /// lists' offsets and the pad's focus within them.
     pub lists: [Option<f32>; ListId::COUNT],
+    pub pad: PadOut,
 }
 
 /// One screen's drawing pass. It holds the canvas, the state it shows, the images and kept text, the
@@ -171,6 +216,36 @@ impl<'f, 'c> Frame<'f, 'c> {
     pub(crate) fn track(&mut self, track: Track) {
         if let Some(t) = self.targets.last_mut() {
             t.track = Some(track);
+        }
+    }
+
+    /// B goes back by pressing `id`, as the screen's own back.
+    pub(crate) fn back(&mut self, id: Id) {
+        self.back_with(PointerEvent::Activate(id).into());
+    }
+
+    /// B goes back by `event`, as the screen's own back.
+    pub(crate) fn back_with(&mut self, event: Event) {
+        if !self.out.pad.back.as_ref().is_some_and(|(_, over)| *over) {
+            self.out.pad.back = Some((event, false));
+        }
+    }
+
+    /// B goes back by pressing `id`, over the whole screen (an editor's Cancel).
+    pub(crate) fn back_over(&mut self, id: Id) {
+        self.out.pad.back = Some((PointerEvent::Activate(id).into(), true));
+    }
+
+    /// The focus starts on `id` when nothing better is known.
+    pub(crate) fn start(&mut self, id: Id) {
+        self.out.pad.start = Some(id);
+    }
+
+    /// `key` presses `id`.
+    pub(crate) fn key(&mut self, key: PadKey, id: Id) {
+        match key.index().and_then(|i| self.out.pad.keys.get_mut(i)) {
+            Some(slot) => *slot = Some(id),
+            None => self.back(id),
         }
     }
 

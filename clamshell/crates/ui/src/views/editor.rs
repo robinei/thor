@@ -52,6 +52,7 @@ fn field_with(f: &mut Frame, title: &str, text: &str, cancel: (Id, &str), save: 
 
     let buttons = Rect::new(row.x + pad * 0.5, row.y, row.w - pad * 0.5, row.h);
     let (cancel_id, cancel_label) = cancel;
+    f.back_over(cancel_id.clone());
     let cancel = buttons.cell(2, 1, pad * 0.5, 0);
     f.text_button(cancel_id, cancel, cancel.h * BUTTON_TEXT, Tone::Fn, cancel_label, Align::Center);
     let (save_id, save_label) = save;

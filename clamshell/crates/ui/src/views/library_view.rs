@@ -6,7 +6,7 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use clamshell_state::{Entry, Id, Launch, LibraryViewId, ListId, State, Tab};
+use clamshell_state::{Entry, Id, Launch, LibraryViewEvent, LibraryViewId, ListId, PointerEvent, State, Tab};
 
 use crate::gfx::icons::Icon;
 use crate::gfx::{Column, Keep, Rect, Span, WRAP_LINE};
@@ -64,6 +64,23 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     let tabs_h = h * TABS_H;
     // Picking, the Files tab alone.
     let picking = s.library_view().pick().is_some();
+    // The pad starts on the selection. B goes back from the details' actions to it, clears what was typed,
+    // or goes out of the open group; picking, it cancels (the header's B), and Left goes out instead.
+    let selection = s.library_view().selected().map(|id| Id::LibraryView(LibraryViewId::Entry(id.clone())));
+    if let Some(id) = selection.clone() {
+        f.start(id);
+    }
+    if !picking {
+        if s.library_view().in_actions(s.pointer()) {
+            if let Some(id) = selection {
+                f.back_with(PointerEvent::Focus(id).into());
+            }
+        } else if !s.library_view().filter().is_empty() {
+            f.back_with(LibraryViewEvent::ClearFilter.into());
+        } else if s.library_view().group().is_some() {
+            f.back(Id::LibraryView(LibraryViewId::Up));
+        }
+    }
     let collections = s.library_view().library().collections.iter().enumerate().filter(|(i, _)| !picking || *i == s.library_view().current());
     let items = collections.map(|(i, coll)| {
         let icon = coll.icon.as_deref().and_then(Icon::named);

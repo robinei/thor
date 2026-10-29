@@ -142,6 +142,7 @@ impl<'a> Mapper<'a> {
         let focusable: Vec<PadTarget> = view.focusable(state).into_iter().filter(|t| ids.insert(t.id.clone())).collect();
         let drawn = view.drawn(screen);
         let start = view.start(state);
+        let back = view.back(state);
         let mut views = vec![view];
         let mut failures = Vec::new();
         let mut nodes: HashMap<Id, Node> =
@@ -197,7 +198,7 @@ impl<'a> Mapper<'a> {
         }
         let targets: Vec<(PadTarget, [Move; 4])> =
             focusable.into_iter().filter(|t| t.screen == screen).map(|t| (t.clone(), moves.get(&t.id).cloned().unwrap_or_else(stays))).collect();
-        let (head, sections) = text(state, name, screen, start.as_ref(), &targets);
+        let (head, sections) = text(state, back.as_ref(), name, screen, start.as_ref(), &targets);
         Map { name: name.to_owned(), head, sections, targets, drawn, start, failures }
     }
 
@@ -353,7 +354,7 @@ fn event(e: &Event) -> String {
 }
 
 /// The map as text: its head and its target lines by section.
-fn text(state: &State, name: &str, screen: Screen, start: Option<&Id>, targets: &[(PadTarget, [Move; 4])]) -> (String, [Vec<Line>; 4]) {
+fn text(state: &State, back: Option<&Event>, name: &str, screen: Screen, start: Option<&Id>, targets: &[(PadTarget, [Move; 4])]) -> (String, [Vec<Line>; 4]) {
     let screen = screen_name(screen);
     let pad = if PadView::both_screens(state) && state.library_view().in_actions(state.pointer()) {
         "the Library's actions"
@@ -362,7 +363,7 @@ fn text(state: &State, name: &str, screen: Screen, start: Option<&Id>, targets: 
     } else {
         "the second screen"
     };
-    let back = PadView::back(state).map_or("-".into(), |e| event(&e));
+    let back = back.map_or("-".into(), event);
     let head = format!("== {name} ({screen}; the pad on {pad})\nstart {}; back {back}\n", start.map_or("-".into(), short));
     let mut sections: [Vec<Line>; 4] = Default::default();
     for (t, moves) in targets {

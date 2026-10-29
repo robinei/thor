@@ -270,7 +270,7 @@ Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness)
 == keymap-edit-slider.png (bottom; the pad listening for inputs)
 == keymap-edit-back.png (bottom; the pad listening for inputs)
 == keymap-layer-picker.png (bottom; the pad on both screens)
-start "zelda-lttp"; back Activate Km(Back)
+start "zelda-lttp"; back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time): vKm(Back)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): vLayers[0]
@@ -295,7 +295,7 @@ Km(RenameLayer): ^Km(LayerOnce) vKm(Clear) <Km(Back) >Tab(Touchpad)
 Km(Clear): ^Km(RenameLayer) vKm(DeleteLayer) <Km(Back) >Tab(Touchpad)
 Km(DeleteLayer): ^Km(Clear) v- <Km(Back) >Tab(Touchpad)
 == keymap-layer-clear.png (bottom; the pad on both screens)
-start "zelda-lttp"; back Activate Km(Back)
+start "zelda-lttp"; back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time): vKm(ConfirmClear)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): vKm(Back)
@@ -304,7 +304,7 @@ Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(ConfirmClear)
 Km(Back): ^Tab(Settings) vKm(ConfirmClear) <Tab(Settings) >Tab(Dock)
 Km(ConfirmClear): ^Km(Back) vKm(Back) <Km(Back) >Tab(Touchpad)
 == keymap-layers.png (bottom; the pad on both screens)
-start "zelda-lttp"; back Activate Km(Back)
+start "zelda-lttp"; back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time): vKm(Back)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): vLayers[0]
@@ -315,14 +315,14 @@ Layers[0]: ^Control(Brightness) vLayers[1] <Tab(Settings) >Km(Back)
 Layers[1]: ^Layers[0] v- <Tab(Settings) >Km(Back)
 == keymap-edit-layer-key.png (bottom; the pad listening for inputs)
 == keymap-layer-list.png (bottom; the pad on both screens)
-start "zelda-lttp"; back Activate Km(Back)
+start "zelda-lttp"; back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time): vKm(Back)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): vLayers[0]
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(Back)
 -- screen as in keymap-layer-picker.png
 == keymap-mouse.png (bottom; the pad on both screens)
-start "zelda-lttp"; back Activate Km(Back)
+start "zelda-lttp"; back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time): vKm(Back)
 Tab(Settings), Tab(Dock), Tab(Keyboard): vKm(Target(To(Mouse(Left))))
@@ -374,7 +374,7 @@ Keymaps[2].Edit: ^Keymaps[1] vKeymaps[3].Edit <Keymaps[2] >Tab(Windows)
 Keymaps[3]: ^Keymaps[2] v- <Km(Back) >Keymaps[3].Edit
 Keymaps[3].Edit: ^Keymaps[2].Edit v- <Keymaps[3] >Tab(Windows)
 == keymap-menu.png (bottom; the pad on both screens)
-start "ff6"; back Activate Km(Back)
+start "ff6"; back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time): vKm(Edit)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): vKm(Back)
@@ -386,14 +386,14 @@ Km(Rename): ^Km(Edit) vKm(Duplicate) <Km(Back) >Tab(Touchpad)
 Km(Duplicate): ^Km(Rename) vKm(Delete) <Km(Back) >Tab(Touchpad)
 Km(Delete): ^Km(Duplicate) v- <Km(Back) >Tab(Touchpad)
 == keymap-delete.png (bottom; the pad on both screens)
-start "ff6"; back Activate Km(Back)
+start "ff6"; back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(Back)
 -- screen
 Km(Back): ^Tab(Settings) vKm(ConfirmDelete) <Tab(Settings) >Tab(Dock)
 Km(ConfirmDelete): ^Km(Back) v- <Km(Back) >Tab(Touchpad)
 == curves.png (bottom; the pad on both screens)
-start "ff6"; back Activate Profile(Curve, Back)
+start "ff6"; back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time): vProfile(Curve, New)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vProfile(Curve, Back)
@@ -411,7 +411,7 @@ Curves[3].Edit: ^Curves[2].Edit vCurves[4].Edit <Curves[3] >Tab(Windows)
 Curves[4]: ^Curves[3] v- <Profile(Curve, Back) >Curves[4].Edit
 Curves[4].Edit: ^Curves[3].Edit v- <Curves[4] >Tab(Windows)
 == curves-reset.png (bottom; the pad on both screens)
-start "ff6"; back Activate Profile(Curve, Back)
+start "ff6"; back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time): vProfile(Curve, New)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vProfile(Curve, Back)
@@ -430,7 +430,7 @@ Curves[4]: ^Curves[3] vCurves[5] <Profile(Curve, Back) >Curves[4].Edit
 Curves[4].Edit: ^Curves[3].Edit vCurves[5] <Curves[4] >Tab(Windows)
 Curves[5]: ^Curves[4] v- <Profile(Curve, Back) >Curves[4].Edit
 == curve-edit.png (bottom; the pad on both screens)
-start "ff6"; back Activate Profile(Curve, Back)
+start "ff6"; back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vProfile(Curve, Back)
 -- screen
@@ -443,7 +443,7 @@ Control(Curve(Highlights)): ^Control(Curve(Start)) vControl(Curve(Saturation)) <
 Control(Curve(Saturation)): ^Control(Curve(Highlights)) vControl(Setting(HdrPeak)) <Profile(Curve, Back) >Tab(Windows)
 Control(Setting(HdrPeak)): ^Control(Curve(Saturation)) v- <Profile(Curve, Back) >Tab(Windows)
 == curve-edit-slider.png (bottom; the pad on both screens)
-start "ff6"; back Activate Profile(Curve, Back)
+start "ff6"; back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vProfile(Curve, Back)
 -- screen as in curve-edit.png
@@ -468,7 +468,7 @@ start Tab(Settings); back Activate Profile(Curve, Back)
 Tab(Windows), PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^- vProfile(Curve, Back)
 -- screen as in curve-edit.png
 == keymaps-chosen.png (bottom; the pad on both screens)
-start "ff6"; back Activate Km(Back)
+start "ff6"; back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time): vKm(New)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vKm(Back)
@@ -504,7 +504,7 @@ Keymaps[3]: ^Keymaps[2] vKeymaps[4] <Km(Back) >Keymaps[3].Edit
 Keymaps[3].Edit: ^Keymaps[2].Edit vKeymaps[4] <Keymaps[3] >Tab(Windows)
 Keymaps[4]: ^Keymaps[3] v- <Km(Back) >Keymaps[3].Edit
 == keymap-own-menu.png (bottom; the pad on both screens)
-start "ff6"; back Activate Km(Back)
+start "ff6"; back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time): vKm(Edit)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): vKm(Back)
@@ -516,7 +516,7 @@ Km(LoadFrom): ^Km(Edit) vKm(SaveAs) <Km(Back) >Tab(Touchpad)
 Km(SaveAs): ^Km(LoadFrom) vKm(Reset) <Km(Back) >Tab(Touchpad)
 Km(Reset): ^Km(SaveAs) v- <Km(Back) >Tab(Touchpad)
 == keymap-own-kept.png (bottom; the pad on both screens)
-start "ff6"; back Activate Km(Back)
+start "ff6"; back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time): vKm(New)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vKm(Back)
@@ -524,7 +524,7 @@ Control(Brightness): vKeymaps[0]
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(New)
 -- screen as in keymap-own.png
 == keymap-load.png (bottom; the pad on both screens)
-start "ff6"; back Activate Km(Back)
+start "ff6"; back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time): vKeymaps[0]
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vKm(Back)
@@ -535,14 +535,14 @@ Keymaps[0]: ^Control(Brightness) vKeymaps[1] <Km(Back) >Tab(Windows)
 Keymaps[1]: ^Keymaps[0] vKeymaps[2] <Km(Back) >Tab(Windows)
 Keymaps[2]: ^Keymaps[1] v- <Km(Back) >Tab(Windows)
 == keymap-save.png (bottom; the pad on both screens)
-start "ff6"; back Activate Km(Back)
+start "ff6"; back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time): vKeymaps[0]
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vKm(Back)
 Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKeymaps[0]
 -- screen as in keymap-load.png
 == keymap-replace.png (bottom; the pad on both screens)
-start "ff6"; back Activate Km(Back)
+start "ff6"; back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vKm(Back)
 -- screen
@@ -583,7 +583,7 @@ Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): ^- vDock[1]
 Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^- vDock[2]
 -- screen as in launcher-running.png
 == dock-menu.png (bottom; the pad on the second screen)
-start Tab(Dock); back -
+start Tab(Dock); back Activate Dock(Back)
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time): ^- vDock(Pin)
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): ^- vDock(Back)
@@ -661,7 +661,7 @@ Time(Zone): ^Control(Brightness) vTime(Ntp) <Tab(Settings) >Tab(Windows)
 Time(Ntp): ^Time(Zone) vTime(TwelveHour) <Tab(Settings) >Tab(Windows)
 Time(TwelveHour): ^Time(Ntp) v- <Tab(Settings) >Tab(Windows)
 == time-zones.png (bottom; the pad on both screens)
-start "zelda-lttp"; back Activate Time(Back)
+start "zelda-lttp"; back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time): vTime[0]
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vTime(Back)
@@ -937,14 +937,14 @@ Edit(Cancel): ^Edit(Field(7)) vTab(Touchpad) <Edit(Save) >Edit(Field(7))
 == library-pick.png (top; the pad on both screens)
 start "browse:Files/Home/emulator.sh"; back Activate CancelPick
 -- library
-Collection(5): ^"browse:Files/Home/Roms" v"browse:Files/Home/notes.txt" <- >Up
+Collection(5): ^"browse:Files/Home/Roms" v"browse:Files/Home/notes.txt" <Up >-
 CancelPick: ^- vUp <Up >-
 Up: ^Collection(5) v"browse:Files/Home/Pictures" <"browse:Files/Home/Pictures" >CancelPick
-"browse:Files/Home/Pictures": ^[ListStep(-2)] v"browse:Files/Home/Roms" <Collection(5) >Up
-"browse:Files/Home/Roms": ^"browse:Files/Home/Pictures" v"browse:Files/Home/emulator.sh" <Collection(5) >Up
-"browse:Files/Home/emulator.sh": ^"browse:Files/Home/Roms" v"browse:Files/Home/notes.txt" <Collection(5) >Up
-"browse:Files/Home/notes.txt": ^"browse:Files/Home/emulator.sh" v"browse:Files/Home/snes.png" <Collection(5) >Up
-"browse:Files/Home/snes.png": ^"browse:Files/Home/notes.txt" vTab(Keyboard) <Collection(5) >Up
+"browse:Files/Home/Pictures": ^[ListStep(-2)] v"browse:Files/Home/Roms" <Up >[Activate "browse:Files/Home/Pictures"]
+"browse:Files/Home/Roms": ^"browse:Files/Home/Pictures" v"browse:Files/Home/emulator.sh" <Up >[Activate "browse:Files/Home/Roms"]
+"browse:Files/Home/emulator.sh": ^"browse:Files/Home/Roms" v"browse:Files/Home/notes.txt" <Up >-
+"browse:Files/Home/notes.txt": ^"browse:Files/Home/emulator.sh" v"browse:Files/Home/snes.png" <Up >-
+"browse:Files/Home/snes.png": ^"browse:Files/Home/notes.txt" vTab(Keyboard) <Up >-
 == library-pick-chosen.png (top; the pad on both screens)
 start Edit(Pick(4)); back Activate Edit(Cancel)
 -- library as in library-edit-command-top.png
@@ -961,21 +961,21 @@ Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness)
 == portal-save.png (top; the pad on both screens)
 start "browse:Files/Home/notes.txt"; back Activate CancelPick
 -- library
-Collection(5): ^"browse:Files/Home/emulator.sh" v"browse:Files/Home/snes.png" <- >Up
+Collection(5): ^"browse:Files/Home/emulator.sh" v"browse:Files/Home/snes.png" <Up >-
 CancelPick: ^- vUp <SaveHere >-
 SaveHere: ^- vUp <Up >CancelPick
 SaveAs: ^- vUp <Up >SaveHere
 Up: ^SaveAs v"browse:Files/Home/Pictures" <"browse:Files/Home/Pictures" >SaveAs
-"browse:Files/Home/Pictures": ^[ListStep(-3)] v"browse:Files/Home/Roms" <Collection(5) >Up
-"browse:Files/Home/Roms": ^"browse:Files/Home/Pictures" v"browse:Files/Home/emulator.sh" <Collection(5) >Up
-"browse:Files/Home/emulator.sh": ^"browse:Files/Home/Roms" v"browse:Files/Home/notes.txt" <Collection(5) >Up
-"browse:Files/Home/notes.txt": ^"browse:Files/Home/emulator.sh" v"browse:Files/Home/snes.png" <Collection(5) >Up
-"browse:Files/Home/snes.png": ^"browse:Files/Home/notes.txt" vTab(Keyboard) <Collection(5) >Up
+"browse:Files/Home/Pictures": ^[ListStep(-3)] v"browse:Files/Home/Roms" <Up >[Activate "browse:Files/Home/Pictures"]
+"browse:Files/Home/Roms": ^"browse:Files/Home/Pictures" v"browse:Files/Home/emulator.sh" <Up >[Activate "browse:Files/Home/Roms"]
+"browse:Files/Home/emulator.sh": ^"browse:Files/Home/Roms" v"browse:Files/Home/notes.txt" <Up >-
+"browse:Files/Home/notes.txt": ^"browse:Files/Home/emulator.sh" v"browse:Files/Home/snes.png" <Up >-
+"browse:Files/Home/snes.png": ^"browse:Files/Home/notes.txt" vTab(Keyboard) <Up >-
 == portal-replace.png (top; the pad on both screens)
 start SaveHere; back Activate CancelPick
 -- library as in portal-save.png
 == setup-password.png (top; the pad on both screens)
-start Setup(Password); back Activate Setup(Back)
+start Setup(Password); back -
 -- screen
 Setup(Password): ^- vKey[0,4] <- >-
 == setup-typing.png (bottom; the pad on both screens)
@@ -996,7 +996,7 @@ Editor(Cancel), Editor(Save): ^-
 == setup-problem.png (top; the pad on both screens)
 start Key[2,4]; back Activate Editor(Cancel)
 == setup-wifi.png (top; the pad on both screens)
-start Key[2,4]; back Activate Setup(Back)
+start Key[2,4]; back -
 -- screen
 Wifi(Power): ^- vWifi[0] <Wifi[0] >Setup(Next)
 Wifi[0]: ^Wifi(Power) vWifi[1] <- >Wifi(Power)

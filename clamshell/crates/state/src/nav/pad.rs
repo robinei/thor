@@ -66,7 +66,7 @@ pub enum PadInput {
     Trigger(i32),
     /// View/Select moves focus to the other screen.
     Switch,
-    /// The Back button goes back one screen (see [`crate::State::pad_back`]).
+    /// The Back button: B on ClamShell's screens.
     Back,
 }
 

@@ -6,24 +6,21 @@
 //! in the Library's list up and down step through the games. With anything else in front, it stays on the
 //! second screen.
 
-use clamshell_state::bottom::keyboard;
 use clamshell_state::levels::Level;
-use clamshell_state::library_view::edit::EditId;
-use clamshell_state::profiles::picker::{Kind, ProfileId};
-use clamshell_state::{
-    DockId, EditorId, Event, Id, LevelEvent, LibraryMode, LibraryViewEvent, LibraryViewId, PadInput, PointerEvent, RowPart, State, Tab, Top,
-};
+use clamshell_state::{DockId, Event, Id, LevelEvent, LibraryMode, LibraryViewEvent, LibraryViewId, PadInput, PointerEvent, RowPart, State, Tab, Top};
 use xkeysym::Keysym;
 
 use crate::gfx::Rect;
 use crate::input::nav::{self, Dir, NavTarget};
 use crate::screens::{Screen, Screens};
-use crate::toolkit::Target;
+use crate::toolkit::{PadOut, Target};
 
 /// What the last frames drew on each screen, and the screens' sizes in surface pixels.
 pub(crate) trait Drawn {
     fn targets(&self, screen: Screen) -> &[Target];
     fn size(&self, screen: Screen) -> (f32, f32);
+    /// What the pad's buttons do there, as the screen's views declared (see [`PadOut`]).
+    fn pad(&self, screen: Screen) -> &PadOut;
 }
 
 /// Where the pad's focus may go.
@@ -54,15 +51,16 @@ pub(crate) fn scope(s: &State) -> PadScope {
     }
 }
 
-/// Where the focus goes on `screen` when nothing better is known: the Library's selected game on the top
-/// screen, or the open tab's button on the bottom one.
-pub(crate) fn default_focus(s: &State, screen: Screen) -> Option<Id> {
-    match screen {
-        Screen::Top if let Some(step) = s.setup().wizard() => Some(Id::Setup(step.first_target())),
-        Screen::Top if let Some(edit) = s.library_view().edit().filter(|_| s.library_view().pick().is_none()) => Some(EditId::Row(edit.cursor() as u16).into()),
-        Screen::Top => s.library_view().selected().cloned().map(|g| Id::LibraryView(LibraryViewId::Entry(g))),
-        Screen::Bottom => Some(Id::Tab(s.bottom().tab())),
-    }
+/// Where the focus goes on `screen` when nothing better is known, as the screen declared: such as the
+/// Library's selected game, or the open tab's button.
+pub(crate) fn default_focus(d: &impl Drawn, screen: Screen) -> Option<Id> {
+    d.pad(screen).start.clone()
+}
+
+/// The screen whose buttons the pad's B and Y, X and Start act on: the one the focus is on, or the second
+/// screen while the pad may not use the top one.
+fn pad_screen(s: &State, d: &impl Drawn) -> Screen {
+    if s.pad().on_top() { focus_screen(s, d) } else { Screen::Bottom }
 }
 
 /// Whether the last frame drew `id` on `screen`, or on either screen if `screen` is `None`.
@@ -85,7 +83,7 @@ pub(crate) fn focus_bottom(s: &State, d: &impl Drawn, memory: &Screens<Option<Id
     let bottom = Some(Screen::Bottom);
     let current = s.pointer().focus().cloned().filter(|id| drawn_on(d, bottom, id));
     let remembered = memory.bottom.clone().filter(|id| drawn_on(d, bottom, id));
-    let target = current.or(remembered).or_else(|| default_focus(s, Screen::Bottom)).unwrap_or(Id::Tab(Tab::default()));
+    let target = current.or(remembered).or_else(|| default_focus(d, Screen::Bottom)).unwrap_or(Id::Tab(Tab::default()));
     PointerEvent::Focus(target).into()
 }
 
@@ -99,7 +97,7 @@ pub(crate) fn switch_screen(s: &State, d: &impl Drawn, memory: &mut Screens<Opti
     let drawn = |id: &Id| drawn_on(d, Some(to), id);
     let remembered = memory[to].clone().filter(drawn);
     let first = d.targets(to).first().map(|t| t.id.clone());
-    let target = remembered.or_else(|| default_focus(s, to).filter(drawn)).or(first)?;
+    let target = remembered.or_else(|| default_focus(d, to).filter(drawn)).or(first)?;
     Some(PointerEvent::Focus(target).into())
 }
 
@@ -164,8 +162,16 @@ pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, 
         let step = match dir {
             Dir::Up => Some(to(from.saturating_sub(1))),
             Dir::Down if !at_end => Some(to(from + 1)),
-            // Picking, the Files tab is the only one: left and right go to the pick's header instead.
-            Dir::Left | Dir::Right if s.library_view().pick().is_some() => None,
+            // Picking, the Files tab is the only one: left goes out of the open folder, right opens the
+            // selected one.
+            Dir::Left if s.library_view().pick().is_some() => {
+                return s.library_view().group().map(|_| PointerEvent::Activate(Id::LibraryView(LibraryViewId::Up)).into());
+            }
+            Dir::Right if s.library_view().pick().is_some() => {
+                // Pressing the selected entry opens it.
+                let folder = s.library_view().entry_at(from).filter(|e| e.is_group());
+                return folder.map(|e| PointerEvent::Activate(Id::LibraryView(LibraryViewId::Entry(e.id.clone()))).into());
+            }
             Dir::Left => Some(LibraryViewEvent::CollectionStep(-1)),
             Dir::Right => Some(LibraryViewEvent::CollectionStep(1)),
             Dir::Down => None,
@@ -222,7 +228,7 @@ pub(crate) fn press(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>) -> 
     let screen = (scope(s) == PadScope::BottomOnly).then_some(Screen::Bottom);
     match s.pointer().focus() {
         Some(id) if drawn_on(d, screen, id) => Some(PadPress::Press(id.clone())),
-        _ if s.pad().on_top() => default_focus(s, Screen::Top).map(|id| PadPress::Focus(PointerEvent::Focus(id).into())),
+        _ if s.pad().on_top() => default_focus(d, Screen::Top).map(|id| PadPress::Focus(PointerEvent::Focus(id).into())),
         _ => Some(PadPress::Focus(focus_bottom(s, d, memory))),
     }
 }
@@ -266,85 +272,28 @@ pub(crate) fn trigger(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
     vec![]
 }
 
-/// Y, X and Start run the details' actions while the pad is on the Library (see clamshell-state's `actions`).
-/// For an entry these are favourite, on the dock and Continue; for a browsed file, Copy, Paste and
-/// Select. Saving, Start is Save here and Y Save as. On the second screen with the keyboard open, for
-/// typing with the pad, X is Backspace. Elsewhere they do nothing.
+/// Y, X and Start press what their badges show on the screen the pad is on (see [`pad_screen`]): on the
+/// Library the details' actions (favourite, on the dock and Continue; for a browsed file Copy, Paste and
+/// Select), picking Save here and Save as; with a keyboard drawn, X is Backspace. Elsewhere they do nothing.
 pub(crate) fn shortcut(s: &State, d: &impl Drawn, button: PadInput) -> Vec<Event> {
-    if on_library_view(s, d) && s.library_view().pick().is_some_and(|p| p.saves()) {
-        let id = match button {
-            PadInput::Start => LibraryViewId::SaveHere,
-            PadInput::Y => LibraryViewId::SaveAs,
-            _ => return vec![],
-        };
-        return vec![PointerEvent::Activate(Id::LibraryView(id)).into()];
-    }
-    let event = match button {
-        PadInput::Y => LibraryViewEvent::ToggleFavourite,
-        PadInput::X => LibraryViewEvent::TogglePin,
-        PadInput::Start => LibraryViewEvent::Continue,
+    let i = match button {
+        PadInput::Y => 0,
+        PadInput::X => 1,
+        PadInput::Start => 2,
         _ => return vec![],
     };
-    if on_library_view(s, d) {
-        return vec![event.into()];
-    }
-    let backspace = keyboard::find(keyboard::Key::Named(keyboard::Named::Backspace));
-    match (button, backspace) {
-        (PadInput::X, Some(pos)) if s.bottom().tab() == Tab::Keyboard => vec![PointerEvent::Activate(Id::Key(pos)).into()],
-        _ => vec![],
-    }
+    let keys = &d.pad(pad_screen(s, d)).keys;
+    keys.get(i).cloned().flatten().map(|id| PointerEvent::Activate(id).into()).into_iter().collect()
 }
 
-/// B cancels the editor if one is open. Otherwise it goes back a page in the Time tab or one of the
-/// keymaps' screens, closes the Device view, or, with the Library in focus, goes back from the Library's actions,
-/// clears the search, or leaves the Library's open group.
-pub(crate) fn back(s: &State) -> Option<Event> {
-    if s.bottom().editor().is_some() {
-        return Some(PointerEvent::Activate(Id::Editor(EditorId::Cancel)).into());
-    }
-    if s.bottom().tab() == Tab::Time && s.sys().time_page() != clamshell_state::TimePage::Main {
-        return Some(PointerEvent::Activate(Id::Time(clamshell_state::TimeId::Back)).into());
-    }
-    if s.curving().screen().is_some() {
-        return Some(PointerEvent::Activate(Id::Profile(Kind::Curve, ProfileId::Back)).into());
-    }
-    if s.keymapping().screen().is_some() {
-        return Some(PointerEvent::Activate(Id::Profile(Kind::Keymap, ProfileId::Back)).into());
-    }
-    // A pick is left as it was.
-    // Only while the Library is in front: with a window there, its edit mode or pick is behind it.
-    let library_shown = matches!(s.top(), Top::Library(_));
-    if s.library_view().pick().is_some() && library_shown {
-        return Some(PointerEvent::Activate(Id::LibraryView(LibraryViewId::CancelPick)).into());
-    }
-    // The Library's edit mode goes out of the open folder, or else leaves.
-    if let Some(edit) = s.library_view().edit().filter(|_| library_shown) {
-        let open = s.library_view().config_shown().and_then(|c| edit.open(c).next()).is_some();
-        let id = match (edit.form().is_some(), open) {
-            (true, _) => EditId::Cancel,
-            (false, true) => EditId::Up,
-            (false, false) => EditId::Done,
-        };
-        return Some(PointerEvent::Activate(id.into()).into());
-    }
-    // Setup goes back a step, where it can.
-    if matches!(s.top(), Top::Setup(_)) {
-        return Some(PointerEvent::Activate(Id::Setup(clamshell_state::SetupId::Back)).into());
-    }
-    // The Device view in the Library's place goes back to the Library.
-    if s.top() == Top::Device {
-        return Some(PointerEvent::Activate(Id::Device(clamshell_state::DeviceId::Close)).into());
-    }
-    // On the Library's actions, which holding A led to, go back to the entry in the list.
-    if matches!(s.pointer().focus(), Some(Id::LibraryView(id)) if !matches!(id, LibraryViewId::Entry(_) | LibraryViewId::Collection(_) | LibraryViewId::Up)) {
-        return default_focus(s, Screen::Top).map(|id| PointerEvent::Focus(id).into());
-    }
-    // In the Library, clear what was typed to find an entry, or else leave the open group.
-    let in_library_view = matches!(s.pointer().focus(), Some(Id::LibraryView(_)));
-    if in_library_view && !s.library_view().filter().is_empty() {
-        return Some(clamshell_state::LibraryViewEvent::ClearFilter.into());
-    }
-    (in_library_view && s.library_view().group().is_some()).then(|| PointerEvent::Activate(Id::LibraryView(LibraryViewId::Up)).into())
+/// B, and the Back button, go back as the screens declared: an editor's Cancel first, on either screen
+/// the pad may use; otherwise the back of the screen the pad is on (see [`pad_screen`]), such as a tab's
+/// page or menu, the edit mode's form or folder, a pick's Cancel, Setup's step, the Device view's Close,
+/// or the Library's actions, typed search or open group.
+pub(crate) fn back(s: &State, d: &impl Drawn) -> Option<Event> {
+    let usable = |screen: &Screen| *screen == Screen::Bottom || s.pad().on_top();
+    let over = Screen::BOTH.into_iter().filter(usable).find_map(|screen| d.pad(screen).back.as_ref().filter(|(_, over)| *over));
+    over.or(d.pad(pad_screen(s, d)).back.as_ref()).map(|(event, _)| event.clone())
 }
 
 /// On a desktop, keys stand in for the pad. The arrows move the focus, Enter or Space is A (press and
@@ -382,8 +331,8 @@ mod tests {
     use clamshell_state::settings::Setting;
     use clamshell_state::{Init, ListId, SettingsId};
 
-    /// Targets on each screen, with both screens 100 by 100.
-    struct Fake(Screens<Vec<Target>>);
+    /// Targets on each screen, with both screens 100 by 100, and what the pad's buttons do there.
+    struct Fake(Screens<Vec<Target>>, Screens<PadOut>);
 
     impl Drawn for Fake {
         fn targets(&self, screen: Screen) -> &[Target] {
@@ -392,6 +341,10 @@ mod tests {
 
         fn size(&self, _: Screen) -> (f32, f32) {
             (100.0, 100.0)
+        }
+
+        fn pad(&self, screen: Screen) -> &PadOut {
+            &self.1[screen]
         }
     }
 
@@ -408,14 +361,23 @@ mod tests {
     }
 
     fn drawn(s: &State) -> Fake {
-        Fake(Screens {
-            top: vec![t(0.0, 0.0, entry(s, 0)), t(0.0, 20.0, entry(s, 1))],
-            bottom: vec![
-                t(0.0, 0.0, Id::Tab(Tab::Settings)),
-                t(50.0, 0.0, Id::Tab(Tab::Sysinfo)),
-                t(0.0, 50.0, Id::Settings(SettingsId::Tile(Setting::Power))),
-            ],
-        })
+        let start = |id: Id| PadOut { start: Some(id), ..PadOut::default() };
+        Fake(
+            Screens {
+                top: vec![t(0.0, 0.0, entry(s, 0)), t(0.0, 20.0, entry(s, 1))],
+                bottom: vec![
+                    t(0.0, 0.0, Id::Tab(Tab::Settings)),
+                    t(50.0, 0.0, Id::Tab(Tab::Sysinfo)),
+                    t(0.0, 50.0, Id::Settings(SettingsId::Tile(Setting::Power))),
+                ],
+            },
+            Screens { top: start(entry(s, s.library_view().cursor().index)), bottom: start(Id::Tab(s.bottom().tab())) },
+        )
+    }
+
+    /// Both screens drawn for `s`, as the views draw them.
+    fn frames(s: &State) -> crate::PadView {
+        crate::PadFrames::new((1280, 720), (1280, 720)).record(s)
     }
 
     fn focus(s: &mut State, id: Id) {
@@ -528,10 +490,13 @@ mod tests {
         s.apply(PointerEvent::Activate(Id::Tab(Tab::Wifi)).into(), &mut Vec::new());
         let part = |i, part| Id::Row { list: ListId::Wifi, i, part };
         // Row 3 has an Edit part, row 4 doesn't, and row 2 isn't drawn.
-        let d = Fake(Screens {
-            top: vec![],
-            bottom: vec![t(0.0, 30.0, part(3, RowPart::Main)), t(50.0, 30.0, part(3, RowPart::Edit)), t(0.0, 40.0, part(4, RowPart::Main))],
-        });
+        let d = Fake(
+            Screens {
+                top: vec![],
+                bottom: vec![t(0.0, 30.0, part(3, RowPart::Main)), t(50.0, 30.0, part(3, RowPart::Edit)), t(0.0, 40.0, part(4, RowPart::Main))],
+            },
+            Screens::default(),
+        );
         let memory = Screens::default();
         focus(&mut s, part(3, RowPart::Edit));
         assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(PointerEvent::Focus(part(4, RowPart::Main)).into()));
@@ -577,8 +542,7 @@ mod tests {
             "not down to the second screen"
         );
         assert_eq!(shoulder(&s, &d, 1), vec![]);
-        assert_eq!(shortcut(&s, &d, PadInput::Y), vec![LibraryViewEvent::ToggleFavourite.into()], "sent, but the state has no shortcut there");
-        assert_eq!(s.library_view().shortcut(clamshell_state::library_view::actions::Shortcut::Y, s.pointer()), None);
+        assert_eq!(shortcut(&s, &frames(&s), PadInput::Y), vec![], "the badges faded: nothing");
     }
 
     #[test]
@@ -604,25 +568,81 @@ mod tests {
         let mut s = state();
         focus(&mut s, Id::LibraryView(LibraryViewId::Launch));
         let g = entry(&s, s.library_view().cursor().index);
-        assert_eq!(back(&s), Some(PointerEvent::Focus(g).into()));
+        assert_eq!(back(&s, &frames(&s)), Some(PointerEvent::Focus(g).into()));
     }
 
     #[test]
     fn y_x_and_start_act_on_library_view_only_while_the_pad_is_there() {
         let mut s = state();
-        let d = drawn(&s);
         let g = entry(&s, 0);
         focus(&mut s, g);
-        assert_eq!(shortcut(&s, &d, PadInput::Y), vec![LibraryViewEvent::ToggleFavourite.into()]);
+        let favourite = Id::LibraryView(LibraryViewId::Favourite);
+        assert_eq!(shortcut(&s, &frames(&s), PadInput::Y), vec![PointerEvent::Activate(favourite).into()]);
         focus(&mut s, Id::Tab(Tab::Sysinfo));
-        assert_eq!(shortcut(&s, &d, PadInput::Y), vec![], "the second screen: not the Library's");
-        assert_eq!(shortcut(&s, &d, PadInput::X), vec![]);
+        assert_eq!(shortcut(&s, &frames(&s), PadInput::Y), vec![], "the second screen: not the Library's");
+        assert_eq!(shortcut(&s, &frames(&s), PadInput::X), vec![]);
         // Typing with the pad: X is Backspace.
         s.apply(PointerEvent::Activate(Id::Tab(Tab::Keyboard)).into(), &mut Vec::new());
-        focus(&mut s, Id::Tab(Tab::Sysinfo));
-        let backspace = keyboard::find(keyboard::Key::Named(keyboard::Named::Backspace)).map(Id::Key);
-        assert_eq!(shortcut(&s, &d, PadInput::X), backspace.map(|b| PointerEvent::Activate(b).into()).into_iter().collect::<Vec<_>>());
+        focus(&mut s, Id::Tab(Tab::Keyboard));
+        let backspace =
+            clamshell_state::bottom::keyboard::find(clamshell_state::bottom::keyboard::Key::Named(clamshell_state::bottom::keyboard::Named::Backspace));
+        let d = frames(&s);
+        assert_eq!(shortcut(&s, &d, PadInput::X), backspace.map(|b| PointerEvent::Activate(Id::Key(b)).into()).into_iter().collect::<Vec<_>>());
         assert_eq!(shortcut(&s, &d, PadInput::Y), vec![]);
+    }
+
+    /// B goes back on the screen the pad is on, as it shows: a keymap's screen left open on the settings
+    /// tab isn't gone back in from another tab.
+    #[test]
+    fn b_goes_back_only_in_what_is_shown() {
+        use clamshell_state::profiles::picker::{Kind, ProfileId};
+        let mut s = state();
+        s.apply(PointerEvent::Activate(Id::Tab(Tab::Settings)).into(), &mut Vec::new());
+        s.apply(PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Keymap))).into(), &mut Vec::new());
+        focus(&mut s, Id::Tab(Tab::Settings));
+        let keymap_back = PointerEvent::Activate(Id::Profile(Kind::Keymap, ProfileId::Back)).into();
+        assert_eq!(back(&s, &frames(&s)), Some(keymap_back), "the keymaps' screen shown");
+        s.apply(PointerEvent::Activate(Id::Tab(Tab::Dock)).into(), &mut Vec::new());
+        focus(&mut s, Id::Tab(Tab::Dock));
+        assert_eq!(back(&s, &frames(&s)), None, "the dock shown: nothing to go back from");
+    }
+
+    /// Picking, B cancels, Left goes out of the open folder and Right opens the selected one.
+    #[test]
+    fn picking_b_cancels_and_left_and_right_go_through_folders() {
+        let mut s = state();
+        let files = s.library_view().library().collections.iter().position(|c| c.name == "Files").unwrap_or(0);
+        s.apply(PointerEvent::Activate(Id::LibraryView(LibraryViewId::Collection(files as u16))).into(), &mut Vec::new());
+        s.apply(PointerEvent::Activate(Id::LibraryView(LibraryViewId::Launch)).into(), &mut Vec::new());
+        assert!(s.library_view().group().is_some(), "in Home");
+        s.apply(
+            Event::Portal(clamshell_state::PortalEvent::Asked(clamshell_state::FileRequest {
+                id: 1,
+                title: String::new(),
+                asks: clamshell_state::Asks::Open { folder: true },
+                patterns: Vec::new(),
+                asker: Vec::new(),
+                folder: Some("/home/thor".into()),
+            })),
+            &mut Vec::new(),
+        );
+        assert!(s.library_view().pick().is_some());
+        let g = entry(&s, s.library_view().cursor().index);
+        focus(&mut s, g);
+        let d = frames(&s);
+        assert_eq!(back(&s, &d), Some(PointerEvent::Activate(Id::LibraryView(LibraryViewId::CancelPick)).into()));
+        let memory = Screens::default();
+        assert_eq!(navigate(&s, &d, &memory, Dir::Left), Some(PointerEvent::Activate(Id::LibraryView(LibraryViewId::Up)).into()));
+    }
+
+    /// The Device view's focus starts on its first row.
+    #[test]
+    fn the_device_views_focus_starts_on_its_first_row() {
+        let account = clamshell_state::setup::account::Account::NoHelper;
+        let mut s = State::new(Init { library: Some(clamshell_library::demo::library()), account, ..Init::default() });
+        s.apply(Event::Entry("builtin:device".into(), clamshell_state::EntryAct::Play), &mut Vec::new());
+        assert_eq!(s.top(), Top::Device);
+        assert_eq!(default_focus(&frames(&s), Screen::Top), Some(Id::Device(clamshell_state::DeviceId::Wifi)));
     }
 
     #[test]
@@ -635,7 +655,8 @@ mod tests {
         s.apply(PointerEvent::Activate(Id::Tab(Tab::Wifi)).into(), &mut Vec::new());
         let row = |i| ListId::Wifi.row(i);
         // Rows 3 and 4 are drawn, with the list's area under them.
-        let d = Fake(Screens { top: vec![], bottom: vec![t(0.0, 0.0, Id::List(ListId::Wifi)), t(0.0, 30.0, row(3)), t(0.0, 40.0, row(4))] });
+        let d =
+            Fake(Screens { top: vec![], bottom: vec![t(0.0, 0.0, Id::List(ListId::Wifi)), t(0.0, 30.0, row(3)), t(0.0, 40.0, row(4))] }, Screens::default());
         let memory = Screens::default();
         focus(&mut s, row(4));
         assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(PointerEvent::Focus(row(5)).into()), "not drawn: the list scrolls to it");
