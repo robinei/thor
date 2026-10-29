@@ -10,14 +10,14 @@
 
 use clamshell_state::session::dock::DOCK_COLUMNS;
 use clamshell_state::session::tray::TrayEntry;
-use clamshell_state::{DockId, Id, ListId};
+use clamshell_state::{DockId, Event, Id, ListId, PadInput, PointerEvent};
 
 use crate::gfx::{Keep, Rect};
 use crate::toolkit::format::{Bytes, Fmt, MaybeShare, Share};
 use crate::toolkit::scroll::Scrolled;
 use crate::toolkit::style::{self, Look, Text, Tone};
 use crate::toolkit::widgets::{self, CAPTION_Y, HeaderRight, TileFace, TileShape};
-use crate::toolkit::{Frame, PadUse};
+use crate::toolkit::{Frame, PadMode, PadUse};
 
 /// The grid always has room for at least this many rows, so that a few entries still get normal-sized
 /// tiles.
@@ -33,6 +33,21 @@ const ART_RADIUS: f32 = 4.0;
 const MARK_TARGET: f32 = 0.3;
 const MARK_W: f32 = 0.11;
 
+/// What the pad does while a tile is being moved: the D-pad moves it, and A or B ends the move. Anything
+/// else does nothing.
+pub(super) fn moving_input(input: PadInput) -> Option<Event> {
+    use clamshell_state::keymap::Dir as Step;
+    let id = match input {
+        PadInput::Up => DockId::Step(Step::Up),
+        PadInput::Down => DockId::Step(Step::Down),
+        PadInput::Left => DockId::Step(Step::Left),
+        PadInput::Right => DockId::Step(Step::Right),
+        PadInput::A(true) | PadInput::B => DockId::Done,
+        _ => return None,
+    };
+    Some(PointerEvent::Activate(Id::Dock(id)).into())
+}
+
 pub(super) fn draw(f: &mut Frame) {
     if let Some(entry) = f.s.dock().menu().cloned() {
         return draw_menu(f, &entry);
@@ -43,6 +58,7 @@ pub(super) fn draw(f: &mut Frame) {
     let mut area = style::content(body);
     area.take_top(pad);
     if s.dock().moving().is_some() {
+        f.mode(PadMode::DockMove);
         let size = f.text(Text::Small);
         let line = area.take_bottom(size * 1.6);
         f.c.text_fit(line.shifted(0.0, size * 0.4).top_line(size), size, Tone::Dim, "The D-pad moves it · A or B: done", Keep::Start);

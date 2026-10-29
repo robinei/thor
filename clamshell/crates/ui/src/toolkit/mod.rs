@@ -87,6 +87,17 @@ pub struct PadOut {
     pub list: Option<Sideways>,
     /// The bar's tabs, left to right, which the shoulders step through.
     pub tabs: [Option<Tab>; Tab::ALL.len()],
+    /// A mode of the view's that takes the pad's buttons before anything else does.
+    pub mode: Option<PadMode>,
+}
+
+/// A mode that takes the pad's buttons while it is drawn (see `views::mode_input`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PadMode {
+    /// A dock tile being moved.
+    DockMove,
+    /// The overview of the program's windows.
+    Overview,
 }
 
 /// What left and right do in the Library's list.
@@ -283,6 +294,11 @@ impl<'f, 'c> Frame<'f, 'c> {
         if let Some(slot) = self.out.pad.tabs.iter_mut().find(|t| t.is_none()) {
             *slot = Some(tab);
         }
+    }
+
+    /// The view is in `mode`, which takes the pad's buttons.
+    pub(crate) fn mode(&mut self, mode: PadMode) {
+        self.out.pad.mode = Some(mode);
     }
 
     /// The focus starts on `id` when nothing better is known.

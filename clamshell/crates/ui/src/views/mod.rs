@@ -44,6 +44,14 @@ use crate::toolkit::Frame;
 /// How much the black layer over the area below the bar hides it while that area is a touchpad.
 const POINTING_FADE: f32 = 0.7;
 
+/// What the pad's `input` does in a view's `mode`, which takes the pad's buttons while drawn.
+pub(crate) fn mode_input(mode: crate::toolkit::PadMode, input: clamshell_state::PadInput) -> Option<clamshell_state::Event> {
+    match mode {
+        crate::toolkit::PadMode::DockMove => dock::moving_input(input),
+        crate::toolkit::PadMode::Overview => overlay::overview_input(input),
+    }
+}
+
 /// The main screen, over all of `screen`: the Library, or the Device view or Setup shown in its place.
 /// The frame starts black (see `render`).
 pub fn top(f: &mut Frame, screen: Rect) {

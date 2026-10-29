@@ -2,14 +2,15 @@
 //! asks, the window arrows while Home is held, and the overview's cells. The frame starts clear, so the
 //! window shows through.
 
-use clamshell_state::Id;
+use clamshell_state::session::overview::OverviewEvent;
 use clamshell_state::settings::Hud;
+use clamshell_state::{Event, Id, PadInput};
 
 use crate::gfx::icons::Icon;
 use crate::gfx::{Rect, Rgb};
-use crate::toolkit::Frame;
 use crate::toolkit::format::Fmt;
 use crate::toolkit::style::{Look, Tone};
+use crate::toolkit::{Frame, PadMode};
 
 /// The HUD's text size, as a fraction of the screen's height.
 const HUD_TEXT: f32 = 0.028;
@@ -23,10 +24,27 @@ const ARROW_ICON: f32 = 48.0;
 
 pub fn draw(f: &mut Frame, screen: Rect) {
     if f.s.session().overview().is_some() {
+        f.mode(PadMode::Overview);
         return overview(f);
     }
     hud(f, screen);
     arrows(f, screen);
+}
+
+/// What the pad does while the overview of the program's windows is open: the D-pad moves its choice, A
+/// brings the chosen window in front and B or Back goes back. Anything else does nothing, rather than
+/// act on what is under the overview.
+pub(super) fn overview_input(input: PadInput) -> Option<Event> {
+    use clamshell_state::keymap::Dir as Step;
+    Some(Event::Overview(match input {
+        PadInput::Up => OverviewEvent::Step(Step::Up),
+        PadInput::Down => OverviewEvent::Step(Step::Down),
+        PadInput::Left => OverviewEvent::Step(Step::Left),
+        PadInput::Right => OverviewEvent::Step(Step::Right),
+        PadInput::A(true) => OverviewEvent::Choose,
+        PadInput::B | PadInput::Back => OverviewEvent::Close,
+        _ => return None,
+    }))
 }
 
 /// The overview of the program's windows (`clamshell_state::session::overview`), which the compositor draws
@@ -89,6 +107,20 @@ fn arrows(f: &mut Frame, screen: Rect) {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
+    use super::{OverviewEvent, PadInput, overview_input};
+    use clamshell_state::keymap::Dir as Step;
+
+    #[test]
+    fn the_overview_takes_the_d_pad_a_b_and_back_and_swallows_the_rest() {
+        let overview = |e| Some(Event::Overview(e));
+        assert_eq!(overview_input(PadInput::Left), overview(OverviewEvent::Step(Step::Left)));
+        assert_eq!(overview_input(PadInput::A(true)), overview(OverviewEvent::Choose));
+        assert_eq!(overview_input(PadInput::B), overview(OverviewEvent::Close));
+        assert_eq!(overview_input(PadInput::Back), overview(OverviewEvent::Close));
+        assert_eq!(overview_input(PadInput::A(false)), None);
+        assert_eq!(overview_input(PadInput::Y), None);
+    }
+
     use clamshell_state::session::windows::WindowFacts;
     use clamshell_state::{Event, Id, Init, State, WindowEvent};
 

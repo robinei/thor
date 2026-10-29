@@ -3,7 +3,7 @@
 
 use clamshell_state::HardwareKey;
 use clamshell_state::session::overview::OverviewEvent;
-use clamshell_state::{Event, Id, LibraryViewEvent, ListEvent, NotificationEvent, PadInput, PointerEvent, State};
+use clamshell_state::{Event, Id, LibraryViewEvent, ListEvent, NotificationEvent, PadInput, State};
 use xkeysym::Keysym;
 
 use crate::Screen;
@@ -117,26 +117,10 @@ impl Core {
     pub(crate) fn pad(&mut self, input: PadInput) {
         self.handle(Event::PadActive);
         self.fresh();
-        // While a dock entry is being moved, the D-pad moves it and A or B ends the move.
-        if self.state.dock().moving().is_some() && self.state.bottom().tab() == clamshell_state::Tab::Dock {
-            let step = |dir| Some(clamshell_state::DockId::Step(dir));
-            use clamshell_state::keymap::Dir as Step;
-            let id = match input {
-                PadInput::Up => step(Step::Up),
-                PadInput::Down => step(Step::Down),
-                PadInput::Left => step(Step::Left),
-                PadInput::Right => step(Step::Right),
-                PadInput::A(true) | PadInput::B => Some(clamshell_state::DockId::Done),
-                _ => None,
-            };
-            if let Some(id) = id {
-                self.handle(PointerEvent::Activate(Id::Dock(id)).into());
-            }
-            return;
-        }
-        if self.state.session().overview().is_some() {
-            if let Some(event) = overview_event(input) {
-                self.handle(Event::Overview(event));
+        // A mode drawn takes the pad's buttons first: a dock tile being moved, or the overview.
+        if let Some(mode) = self.screens.bottom.pad.mode.or(self.overlays.top.pad.mode) {
+            if let Some(event) = crate::views::mode_input(mode, input) {
+                self.handle(event);
             }
             return;
         }
@@ -200,37 +184,5 @@ impl Core {
             Some(input) if down => self.pad(input),
             _ => {}
         }
-    }
-}
-
-/// What the pad does while the overview of the program's windows is open: the D-pad moves its choice, A
-/// brings the chosen window in front and B or Back goes back. Anything else does nothing, rather than
-/// act on what is under the overview.
-fn overview_event(input: PadInput) -> Option<OverviewEvent> {
-    use clamshell_state::keymap::Dir as Step;
-    Some(match input {
-        PadInput::Up => OverviewEvent::Step(Step::Up),
-        PadInput::Down => OverviewEvent::Step(Step::Down),
-        PadInput::Left => OverviewEvent::Step(Step::Left),
-        PadInput::Right => OverviewEvent::Step(Step::Right),
-        PadInput::A(true) => OverviewEvent::Choose,
-        PadInput::B | PadInput::Back => OverviewEvent::Close,
-        _ => return None,
-    })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use clamshell_state::keymap::Dir as Step;
-
-    #[test]
-    fn the_overview_takes_the_d_pad_a_b_and_back_and_swallows_the_rest() {
-        assert_eq!(overview_event(PadInput::Left), Some(OverviewEvent::Step(Step::Left)));
-        assert_eq!(overview_event(PadInput::A(true)), Some(OverviewEvent::Choose));
-        assert_eq!(overview_event(PadInput::B), Some(OverviewEvent::Close));
-        assert_eq!(overview_event(PadInput::Back), Some(OverviewEvent::Close));
-        assert_eq!(overview_event(PadInput::A(false)), None);
-        assert_eq!(overview_event(PadInput::Y), None);
     }
 }
