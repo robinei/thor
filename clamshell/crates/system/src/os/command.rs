@@ -40,24 +40,33 @@ pub(crate) fn run<S: AsRef<OsStr>>(program: &str, args: &[S], input: Option<&[u8
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("{program}: {e}"))?;
-    if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
-        stdin.write_all(input).map_err(|e| format!("{program}: {e}"))?;
-    }
-    // Read the outputs as they come, each on a thread of its own, since a full pipe would stall the program.
+    // Read the outputs as they come, each on a thread of its own, since a full pipe would stall the program;
+    // and write the input on one too, so that a program writing out before it has read all of it can't
+    // stall it either.
     let stdout = drain(program, child.stdout.take());
     let stderr = drain(program, child.stderr.take());
+    if let (Some(input), Some(stdin)) = (input, child.stdin.take()) {
+        feed(program, stdin, input.to_vec());
+    }
     let deadline = Instant::now() + limit;
+    // However it ends, it is waited for, so none is left a zombie.
+    let stop = |child: &mut std::process::Child| {
+        if let Err(e) = child.kill().and_then(|()| child.wait().map(drop)) {
+            log::debug!("{program}: stopping it: {e}");
+        }
+    };
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
             Ok(None) => {
-                if let Err(e) = child.kill().and_then(|()| child.wait().map(drop)) {
-                    log::debug!("{program}: stopping it: {e}");
-                }
+                stop(&mut child);
                 return Err(format!("{program} {}: no answer in {} s, stopped", shown(args), limit.as_secs()));
             }
-            Err(e) => return Err(format!("{program}: {e}")),
+            Err(e) => {
+                stop(&mut child);
+                return Err(format!("{program}: {e}"));
+            }
         }
     };
     let ended = Instant::now() + DRAIN;
@@ -70,6 +79,20 @@ pub(crate) fn run<S: AsRef<OsStr>>(program: &str, args: &[S], input: Option<&[u8
 /// Arguments as a log line shows them.
 fn shown<S: AsRef<OsStr>>(args: &[S]) -> String {
     args.iter().map(|a| a.as_ref().to_string_lossy()).collect::<Vec<_>>().join(" ")
+}
+
+/// Writes `input` to a program's standard input on a thread of its own, then closes it. A program that
+/// ends before reading it all is no error of ours: what it says is in its status and output.
+fn feed(program: &str, mut stdin: std::process::ChildStdin, input: Vec<u8>) {
+    let name = program.to_owned();
+    let fed = super::worker::detached("command input", move || {
+        if let Err(e) = stdin.write_all(&input) {
+            log::debug!("{name}: its input: {e}");
+        }
+    });
+    if let Err(e) = fed {
+        log::warn!("{program}: its input: {e}");
+    }
 }
 
 /// Reads a pipe to its end on a thread of its own and sends what it held through the channel.
@@ -126,6 +149,16 @@ mod tests {
         let ran = run("sh", &["-c", "cat; echo '  oops  ' >&2; exit 3"], Some(b"in"), LIMIT).ok();
         assert_eq!(ran.as_ref().map(|r| r.stdout.as_slice()), Some(&b"in"[..]));
         assert_eq!(ran.as_ref().map(|r| (r.status.code(), r.said())), Some((Some(3), "oops".to_owned())));
+    }
+
+    /// A big input to a program that writes as it reads, and one that ends without reading it.
+    #[test]
+    fn a_big_input_doesnt_stall_and_one_not_read_isnt_an_error() {
+        let big = vec![b'a'; 1 << 20];
+        let ran = run("cat", &[] as &[&str], Some(&big), LIMIT);
+        assert_eq!(ran.map(|r| r.stdout.len()), Ok(big.len()));
+        let ran = run("true", &[] as &[&str], Some(&big), LIMIT);
+        assert!(ran.is_ok_and(|r| r.status.success()));
     }
 
     #[test]
