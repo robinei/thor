@@ -36,7 +36,7 @@ pub enum ListId {
     Layers,
     /// The time tab's regions, or a region's zones.
     Time,
-    /// The dock's rows of tiles, [`crate::session::dock::DOCK_COLUMNS`] to a row.
+    /// The dock's rows of tiles, [`crate::dock::DOCK_COLUMNS`] to a row.
     Dock,
     /// A settings tile's menu: its values, then Reset when there is something to reset.
     Values,
@@ -160,7 +160,7 @@ impl<'a> Lists<'a> {
             ListId::Curves => RowsOf::Count(self.panel().curve_rows_len()),
             ListId::Layers => RowsOf::Count(self.keymapping.layer_rows()),
             ListId::Time => RowsOf::Count(self.sys.time_rows()),
-            ListId::Dock => RowsOf::Count(self.dock.items().len().div_ceil(crate::session::dock::DOCK_COLUMNS)),
+            ListId::Dock => RowsOf::Count(self.dock.items().len().div_ceil(crate::dock::DOCK_COLUMNS)),
             ListId::Values => RowsOf::Count(self.menu_rows),
             ListId::Settings => RowsOf::Count(self.panel().grid().count().div_ceil(crate::GRID_COLUMNS)),
             ListId::LibraryEdit => RowsOf::Count(self.library_view.edit_rows()),
@@ -173,7 +173,7 @@ impl<'a> Lists<'a> {
         match id {
             Id::Row { list, i, .. } => Some((*list, usize::from(*i))),
             Id::LibraryView(LibraryViewId::Edit(crate::library_view::edit::EditId::Row(i))) => Some((ListId::LibraryEdit, usize::from(*i))),
-            Id::Dock(DockId::Entry(i)) => Some((ListId::Dock, usize::from(*i) / crate::session::dock::DOCK_COLUMNS)),
+            Id::Dock(DockId::Entry(i)) => Some((ListId::Dock, usize::from(*i) / crate::dock::DOCK_COLUMNS)),
             Id::Settings(tile) => self.panel().grid().position(|t| t == *tile).map(|i| (ListId::Settings, i / crate::GRID_COLUMNS)),
             _ => None,
         }
@@ -187,7 +187,7 @@ impl<'a> Lists<'a> {
         match id {
             Id::Row { list, part, .. } => Some(Id::Row { list: *list, i: u16::try_from(i).ok()?, part: *part }),
             Id::Dock(DockId::Entry(at)) => {
-                let tile: Option<usize> = tile(usize::from(*at), crate::session::dock::DOCK_COLUMNS, self.dock.items().len());
+                let tile: Option<usize> = tile(usize::from(*at), crate::dock::DOCK_COLUMNS, self.dock.items().len());
                 Some(Id::Dock(DockId::Entry(u16::try_from(tile?).ok()?)))
             }
             Id::Settings(at) => {
@@ -309,7 +309,7 @@ mod tests {
         let mut s = state();
         let ids: Vec<std::sync::Arc<str>> =
             // Three rows with the Library's tile, which is always there.
-            s.library_view().library().entries.iter().take(3 * crate::session::dock::DOCK_COLUMNS - 1).map(|g| g.id.clone()).collect();
+            s.library_view().library().entries.iter().take(3 * crate::dock::DOCK_COLUMNS - 1).map(|g| g.id.clone()).collect();
         for id in &ids {
             s.applied(Event::Entry(id.clone(), EntryAct::TogglePin));
         }

@@ -58,6 +58,7 @@ mod clock;
 pub mod colour;
 pub mod curve;
 pub mod device_view;
+pub mod dock;
 mod effect;
 mod event;
 mod id;
@@ -116,6 +117,7 @@ pub use session::windows::{WindowEvent, WindowPlace};
 
 pub use bottom::editor::Editor;
 pub use bottom::{Bottom, Tab};
+pub use dock::{Dock, DockItem};
 pub use kit::list::{ItemKey, Scroll};
 pub use levels::slider::{Control, Slider};
 pub use levels::{Brightness, Level, Levels, Sound};
@@ -127,7 +129,6 @@ pub use notifications::{CloseReason, Notification, NotificationEvent, Notificati
 pub use portal::{Asks, FileRequest, PortalEvent};
 pub use radios::{RadioStatus, Radios};
 pub use session::Session;
-pub use session::dock::{Dock, DockItem};
 pub use session::launch_unit::LaunchUnit;
 pub use session::running::{Launching, Origin, Running};
 pub use settings::panel::{GRID_COLUMNS, Panel, Prefs, Program, SettingsLevel, Source, TileOrigin};

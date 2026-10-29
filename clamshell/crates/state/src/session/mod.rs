@@ -4,7 +4,6 @@
 pub mod autostart;
 pub mod background;
 pub mod below;
-pub mod dock;
 pub mod enqueue;
 pub(crate) mod found;
 mod front;
@@ -763,5 +762,14 @@ impl Session {
 
     pub(crate) fn cancel_front_launch(&mut self) {
         self.front_launch = None;
+    }
+
+    /// An entry's window in view, for the dock menu's Close window. It is the one in front on the top
+    /// screen, or else, with nothing of the entry on top, the one on the bottom screen.
+    pub fn entry_window(&self, id: &str) -> Option<i64> {
+        let mine = || self.windows_of(id);
+        let on_top = mine().find(|w| self.top_window().is_some_and(|top| top.id == w.id));
+        let shown = on_top.or_else(|| mine().all(|w| self.below(w.id)).then(|| mine().next()).flatten());
+        shown.map(|w| w.id)
     }
 }

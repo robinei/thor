@@ -317,17 +317,6 @@ fn tap(entry: Arc<str>, session: &Session, out: &mut Out) {
     out.events.push(Event::Entry(entry, act));
 }
 
-impl Session {
-    /// An entry's window in view, for the menu's Close window. It is the one in front on the top screen,
-    /// or else, with nothing of the entry on top, the one on the bottom screen.
-    pub fn entry_window(&self, id: &str) -> Option<i64> {
-        let mine = || self.windows_of(id);
-        let on_top = mine().find(|w| self.top_window().is_some_and(|top| top.id == w.id));
-        let shown = on_top.or_else(|| mine().all(|w| self.below(w.id)).then(|| mine().next()).flatten());
-        shown.map(|w| w.id)
-    }
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -402,7 +391,7 @@ mod tests {
     fn pins_of_entries_gone_are_dropped_but_not_those_away() {
         let mut library = clamshell_library::demo::library();
         library.away = vec!["sd:".into()];
-        let dock = crate::session::dock::Dock::pinned(vec!["ff6".into(), "gone:x".into(), "sd:Zelda.sfc".into()]);
+        let dock = crate::dock::Dock::pinned(vec!["ff6".into(), "gone:x".into(), "sd:Zelda.sfc".into()]);
         let mut s = State::new(Init { library: Some(library), dock, ..init() });
         assert!(s.dock().pinned_ids().map(|i| &**i).eq(["ff6", "sd:Zelda.sfc"]), "the gone one dropped; the away one kept");
         let fx = s.applied(Event::Start);
@@ -419,7 +408,7 @@ mod tests {
     /// checked as the library comes.
     #[test]
     fn pins_wait_for_the_library_before_any_is_dropped() {
-        let dock = crate::session::dock::Dock::pinned(vec!["ff6".into(), "gone:x".into()]);
+        let dock = crate::dock::Dock::pinned(vec!["ff6".into(), "gone:x".into()]);
         let mut s = State::new(Init { library: None, dock, ..init() });
         assert!(s.dock().pinned_ids().map(|i| &**i).eq(["ff6", "gone:x"]));
         assert!(!s.applied(Event::Start).iter().any(|e| matches!(e, Effect::Save(Save::Dock(_)))));
@@ -432,7 +421,7 @@ mod tests {
     /// it was moved after a restart. It can't be unpinned, and its Quit does nothing.
     #[test]
     fn the_librarys_tile_is_always_there() {
-        let mut s = State::new(Init { dock: crate::session::dock::Dock::pinned(vec!["ff6".into(), "builtin:library".into()]), ..init() });
+        let mut s = State::new(Init { dock: crate::dock::Dock::pinned(vec!["ff6".into(), "builtin:library".into()]), ..init() });
         s.applied(Event::tick(1));
         let ids = |s: &State| s.dock().items().iter().map(|i| i.id.to_string()).collect::<Vec<_>>();
         assert_eq!(ids(&s), ["ff6", "builtin:library"], "pinned where it was moved");
@@ -448,7 +437,7 @@ mod tests {
 
     #[test]
     fn move_mode_reorders_by_the_dpad_and_saves_the_pins() {
-        let mut s = State::new(Init { dock: crate::session::dock::Dock::pinned(vec!["zelda-lttp".into(), "ff6".into()]), ..init() });
+        let mut s = State::new(Init { dock: crate::dock::Dock::pinned(vec!["zelda-lttp".into(), "ff6".into()]), ..init() });
         s.applied(Event::tick(1));
         assert_eq!((entry(&s, 0), entry(&s, 1)), (Some("zelda-lttp"), Some("ff6")));
         long(&mut s, dock(0));
@@ -464,7 +453,7 @@ mod tests {
     #[test]
     fn move_mode_steps_left_and_by_rows() {
         let ids = ["zelda-lttp", "metroid-zm", "mk-ds", "ff6", "dark-souls", "hades"];
-        let mut s = State::new(Init { dock: crate::session::dock::Dock::pinned(ids.iter().map(|&i| i.into()).collect()), ..init() });
+        let mut s = State::new(Init { dock: crate::dock::Dock::pinned(ids.iter().map(|&i| i.into()).collect()), ..init() });
         s.applied(Event::tick(1));
         long(&mut s, dock(5));
         tap(&mut s, Id::Dock(DockId::Move));
@@ -570,7 +559,7 @@ mod tests {
         assert_eq!(entry(&s, 0), None);
         assert_eq!(s.dock().menu(), None, "its entry left the dock");
         // A rescan without the entry being moved drops it, and ends the move.
-        let mut s = State::new(Init { dock: crate::session::dock::Dock::pinned(vec!["zelda-lttp".into(), "ff6".into()]), ..init() });
+        let mut s = State::new(Init { dock: crate::dock::Dock::pinned(vec!["zelda-lttp".into(), "ff6".into()]), ..init() });
         tap(&mut s, Id::Tab(crate::Tab::Dock));
         long(&mut s, dock(1));
         tap(&mut s, Id::Dock(DockId::Move));
@@ -585,7 +574,7 @@ mod tests {
     /// A long press while an entry is being moved ends the move and opens the menu.
     #[test]
     fn a_long_press_while_moving_ends_the_move() {
-        let mut s = State::new(Init { dock: crate::session::dock::Dock::pinned(vec!["zelda-lttp".into(), "ff6".into()]), ..init() });
+        let mut s = State::new(Init { dock: crate::dock::Dock::pinned(vec!["zelda-lttp".into(), "ff6".into()]), ..init() });
         tap(&mut s, Id::Tab(crate::Tab::Dock));
         long(&mut s, dock(0));
         tap(&mut s, Id::Dock(DockId::Move));

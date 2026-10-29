@@ -8,7 +8,7 @@
 //! tile with a tray icon (see clamshell-state's `tray`) has a mark of three bars in its top left corner.
 //! Tapping the mark opens the program's tray menu in the same place, as Menu in the long-press menu does.
 
-use clamshell_state::session::dock::DOCK_COLUMNS;
+use clamshell_state::dock::DOCK_COLUMNS;
 use clamshell_state::session::tray::TrayEntry;
 use clamshell_state::{DockId, Event, Id, ListId, PadInput, PointerEvent};
 

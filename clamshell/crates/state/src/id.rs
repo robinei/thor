@@ -119,7 +119,7 @@ pub enum LibraryViewId {
 pub enum DockId {
     /// An entry on the dock, by position.
     Entry(u16),
-    /// The menu a long press opens (see [`crate::session::dock`]). Its items: open another, close the
+    /// The menu a long press opens (see [`crate::dock`]). Its items: open another, close the
     /// window in view, pin or unpin, move, quit, force kill, and back to the dock.
     OpenAnother,
     CloseWindow,
