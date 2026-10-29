@@ -25,6 +25,8 @@ pub struct Pick {
     on_the_way: Option<(std::sync::Arc<str>, Vec<String>)>,
     /// The tab shown before, to go back to.
     back: usize,
+    /// The Files tab's place before, to leave it in again.
+    files_place: Vec<super::KeptLevel>,
 }
 
 /// What Save here would do (see [`LibraryView::save_here`]).
@@ -144,7 +146,12 @@ impl LibraryView {
     /// Files tab, nothing is picked.
     pub(crate) fn start_pick(&mut self, takes: Takes, purpose: PickFor) -> bool {
         let Some(files) = self.files_tab() else { return false };
-        self.pick = Some(Pick { takes, purpose, confirm: None, on_the_way: None, back: self.current });
+        // A pick of ClamShell's own waits while an app's goes on (see `crate::portal`).
+        if matches!(purpose, PickFor::App { .. }) && self.pick.as_ref().is_some_and(|p| !matches!(p.purpose, PickFor::App { .. })) {
+            self.own_aside = self.pick.take();
+        }
+        let files_place = self.kept_place(files);
+        self.pick = Some(Pick { takes, purpose, confirm: None, on_the_way: None, back: self.current, files_place });
         self.set_collection(files);
         true
     }
@@ -286,10 +293,15 @@ impl LibraryView {
         }
     }
 
-    /// Leaves the pick without answering, back on the tab shown before it, and says what it was for.
+    /// Leaves the pick without answering, back on the tab shown before it with the Files tab where it was,
+    /// and says what it was for. A pick of ClamShell's own that waited for it goes on.
     pub(crate) fn end_pick(&mut self) -> Option<PickFor> {
         let pick = self.pick.take()?;
+        if let Some(files) = self.files_tab() {
+            self.reset_place(files, &pick.files_place);
+        }
         self.set_collection(pick.back);
+        self.pick = self.own_aside.take();
         Some(pick.purpose)
     }
 
@@ -378,7 +390,7 @@ mod tests {
     /// A command's program is a file that may be run; another file isn't taken, nor a folder.
     #[test]
     fn a_program_is_a_file_that_may_be_run() {
-        let pick = Pick { takes: Takes::Program, purpose: PickFor::Field(Field::Launch), confirm: None, on_the_way: None, back: 0 };
+        let pick = Pick { takes: Takes::Program, purpose: PickFor::Field(Field::Launch), confirm: None, on_the_way: None, back: 0, files_place: Vec::new() };
         let file = |executable: bool, folder: bool| clamshell_library::Entry {
             browsed: Some(Browsed { executable, folder, ..Browsed::default() }),
             ..clamshell_library::Entry::new("browse:Files/Home/x", "x")

@@ -49,7 +49,8 @@ impl State {
     /// Runs after every event. An app's pick answered is sent back and its program comes back in front;
     /// one left for something else (another program, or a view other than the Library) is set aside, or
     /// answered with nothing if it is no program's. Then a request whose program is in front is picked,
-    /// the Library over it, once no other pick goes on. Without a Files tab to pick in, a request is
+    /// the Library over it, once no other pick shows: a pick of ClamShell's own left behind a window waits
+    /// for it (see [`crate::library_view::LibraryView::end_pick`]). Without a Files tab to pick in, a request is
     /// answered at once with nothing.
     pub(crate) fn follow_portal(&mut self, out: &mut Out) {
         // Order: set aside before the answers are taken, since one that is no program's is answered so.
@@ -65,7 +66,7 @@ impl State {
         // A program with no window left (closed to its tray, say) can't come in front: its request is
         // picked over whatever is.
         let windowless = |program: &crate::session::windows::Group| !self.session.windows().iter().any(|w| w.group.as_ref() == Some(program));
-        while self.library_view.pick().is_none()
+        while self.pick_free()
             && let Some(i) = self.portal.asked.iter().position(|w| w.program.as_ref().is_none_or(|p| Some(p) == front.as_ref() || windowless(p)))
         {
             let Some(request) = self.portal.asked.get(i).map(|w| w.request.clone()) else { break };
@@ -111,6 +112,15 @@ impl State {
         if self.picking_for_app().is_some() {
             self.library_view.end_pick();
             self.portal_back();
+        }
+    }
+
+    /// Whether an app's pick may start: no pick goes on, or one of ClamShell's own that isn't shown.
+    fn pick_free(&self) -> bool {
+        match self.library_view.pick().map(|p| &p.purpose) {
+            None => true,
+            Some(PickFor::App { .. }) => false,
+            Some(_) => !matches!(self.top(), crate::Top::Library(_)),
         }
     }
 

@@ -481,7 +481,7 @@ State: `panel` (Places, Sources, Runners), `tab`, `open` (folder ids), `cursor`,
 
 State: `pick` (`takes`: Folder, Files(patterns), Program, Save{name, patterns}, SaveFiles(names);
 `purpose`: a form's Field, a PlacePicture, or an App request; `confirm`; `on_the_way`; `back`), and
-`answered` until the state takes it.
+`answered` until the state takes it; `files_place`, the Files tab's place before; on the Library, `own_aside`.
 
 | Transition | Test |
 |---|---|
@@ -490,6 +490,8 @@ State: `pick` (`takes`: Folder, Files(patterns), Program, Save{name, patterns}, 
 | `go_to(folder)`: the deepest Files folder (at the tab's top or in its groups) having it revealed, the rest opened as each is listed, only from the folder reached; a level missing is logged | `a_pick_starts_in_the_folder_asked_for`, `the_way_to_the_folder_asked_for_ends_where_the_person_goes`, `a_folder_on_removable_storage_is_gone_to` |
 | saving: `save_here()` from the open folder, its listing, hidden files' showing and the names: Off (no writable folder open, not listed, a name not one file's), Saves, or Replaces the names that are or may be there, asked again first; Choose on a file saves over it, asked again | `a_file_is_saved_in_the_open_folder_or_over_one`, `a_save_waits_for_the_folder_to_be_listed` |
 | Choose → answered (a field filled, a picture written, an app's paths); Cancel, B → nothing chosen; Home → see the portal below | same tests |
+| end (chosen, cancelled, set aside) → the Files tab back at its place from before the pick | `a_pick_leaves_the_files_tab_as_it_was` |
+| a pick of ClamShell's own (a field's, a picture's) is kept when a window comes in front and by Home, as the rest of the Library is; an app's pick over it sets it aside (`own_aside`), and it goes on when that ends | `an_own_pick_left_behind_a_window_waits_while_an_apps_goes_on` |
 
 ## Apps' file choosers (portal.rs, apply/picking.rs; system session/portal.rs)
 

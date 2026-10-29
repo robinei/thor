@@ -79,6 +79,8 @@ pub struct LibraryView {
     edit: Option<edit::Edit>,
     /// The pick going on (see [`pick`]).
     pick: Option<pick::Pick>,
+    /// A pick of ClamShell's own, waiting while an app's goes on.
+    own_aside: Option<pick::Pick>,
     /// library.json as last written by the edit mode, and how many of its writes haven't been read back:
     /// while any hasn't, it is what the edit mode shows and changes (see [`LibraryView::config_shown`]).
     written: Option<(Arc<clamshell_library::config::Config>, u32)>,
@@ -625,25 +627,39 @@ impl LibraryView {
         self.selected() != before.as_ref()
     }
 
-    /// Appends each collection's place to `places`, to be kept across a library read: its name, and for
-    /// its list and each open group's, the entry selected in it and what is typed in it.
+    /// Appends each collection's place to `places`, to be kept across a library read: its name, and its
+    /// levels ([`LibraryView::kept_place`]).
     fn kept_places(&self, places: &mut Vec<(String, Vec<KeptLevel>)>) {
         for (c, coll) in self.library.collections.iter().enumerate() {
-            let Some(nav) = self.navs.get(c) else {
-                continue;
-            };
-            let id = |i: Option<&usize>| i.and_then(|&i| self.library.entries.get(i)).map(|g| g.id.clone());
-            let levels = nav
-                .places
-                .iter()
-                .enumerate()
-                .map(|(k, p)| {
-                    let at = nav.open.get(k).or_else(|| self.list_of(c).get(p.index));
-                    (id(at), p.filter.clone())
-                })
-                .collect();
-            places.push((coll.name.clone(), levels));
+            places.push((coll.name.clone(), self.kept_place(c)));
         }
+    }
+
+    /// Collection `c`'s place: for its list and each open group's, the entry selected in it and what is
+    /// typed in it.
+    fn kept_place(&self, c: usize) -> Vec<KeptLevel> {
+        let Some(nav) = self.navs.get(c) else {
+            return Vec::new();
+        };
+        let id = |i: Option<&usize>| i.and_then(|&i| self.library.entries.get(i)).map(|g| g.id.clone());
+        nav.places
+            .iter()
+            .enumerate()
+            .map(|(k, p)| {
+                let at = nav.open.get(k).or_else(|| self.list_of(c).get(p.index));
+                (id(at), p.filter.clone())
+            })
+            .collect()
+    }
+
+    /// Takes collection `c` back to the place `levels` kept ([`LibraryView::kept_place`]), from its top.
+    fn reset_place(&mut self, c: usize, levels: &[KeptLevel]) {
+        let Some(name) = self.library.collections.get(c).map(|coll| coll.name.clone()) else { return };
+        if let Some(nav) = self.navs.get_mut(c) {
+            *nav = Nav::default();
+        }
+        self.restore_place(&name, levels);
+        self.sync();
     }
 
     /// In the collection named `name`, types what each level had typed, selects its entry and opens it,

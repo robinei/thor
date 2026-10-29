@@ -121,6 +121,53 @@ mod tests {
         assert!(s.library_view().pick().is_none());
     }
 
+    /// A pick of ClamShell's own left behind a window is kept, as the rest of the Library is. An app's
+    /// request is picked over it; when that ends, the own pick goes on with the Files tab as it left it.
+    #[test]
+    fn an_own_pick_left_behind_a_window_waits_while_an_apps_goes_on() {
+        use crate::library_view::pick::{PickFor, Takes};
+        use crate::{LibraryMode, Top};
+        let mut s = state();
+        assert!(s.library_view.start_pick(Takes::Folder, PickFor::PlacePicture("p".into())));
+        tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
+        let open = |s: &crate::State| s.library_view().group().map(|g| g.id.clone());
+        let home = open(&s);
+        assert!(home.is_some());
+        s.observed(vec![win(7, "app")]);
+        s.applied(WindowEvent::Activate(7).into());
+        assert_eq!(s.top(), Top::Window { program: false });
+        assert!(s.library_view().pick().is_some(), "kept behind the window");
+        ask(&mut s, 1, false);
+        assert_eq!(s.top(), Top::Library(LibraryMode::Pick));
+        assert_eq!(s.library_view().pick().map(|p| p.asks()), Some("Choose a file"));
+        tap(&mut s, Id::LibraryView(LibraryViewId::Up));
+        let fx = tap(&mut s, Id::LibraryView(LibraryViewId::CancelPick));
+        assert_eq!(chosen(&fx), Some((1, vec![])));
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(7), "the app back in front");
+        assert_eq!(s.library_view().pick().map(|p| p.asks()), Some("Choose the folder's picture"), "the own pick again");
+        s.applied(Event::Home);
+        assert_eq!(s.top(), Top::Library(LibraryMode::Pick), "Home leaves it as it was");
+        assert_eq!(open(&s), home, "the Files tab as the own pick left it");
+    }
+
+    /// A pick leaves the Files tab as it was before it.
+    #[test]
+    fn a_pick_leaves_the_files_tab_as_it_was() {
+        let mut s = state();
+        let files = s.library_view().library().collections.iter().position(|c| c.name == "Files").unwrap();
+        tap(&mut s, Id::LibraryView(LibraryViewId::Collection(files as u16)));
+        assert!(s.library_view().group().is_none());
+        s.observed(vec![win(7, "app")]);
+        s.applied(WindowEvent::Activate(7).into());
+        ask(&mut s, 1, false);
+        tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
+        assert!(s.library_view().group().is_some(), "Home opened in the pick");
+        tap(&mut s, Id::LibraryView(LibraryViewId::CancelPick));
+        s.applied(Event::Home);
+        assert_eq!(s.library_view().collection().map(|c| c.name.as_str()), Some("Files"));
+        assert!(s.library_view().group().is_none(), "as it was");
+    }
+
     /// Requests wait their turn. Cancelled, one is answered with nothing; one the app gave up isn't
     /// answered; one left with Home is set aside, the Library staying, until its program is in front.
     #[test]
@@ -197,8 +244,10 @@ mod tests {
         assert!(s.take_log().any(|(_, line)| line.contains("in none of the Files tab's folders")));
     }
 
+    /// An app asks to save, starting in Home.
     fn save(s: &mut crate::State, id: u32, asks: Asks) {
-        s.applied(Event::Portal(PortalEvent::Asked(FileRequest { id, asks, patterns: vec!["*.txt".into()], ..request() })));
+        let folder = Some("/home/thor".into());
+        s.applied(Event::Portal(PortalEvent::Asked(FileRequest { id, asks, folder, patterns: vec!["*.txt".into()], ..request() })));
     }
 
     /// Saving: Save here saves in the open folder under the name typed; over a file that is there, or one
@@ -207,7 +256,8 @@ mod tests {
     fn a_file_is_saved_in_the_open_folder_or_over_one() {
         let mut s = state();
         let here = Id::LibraryView(LibraryViewId::SaveHere);
-        save(&mut s, 1, Asks::Save { name: "notes.txt".into() });
+        let asks = Asks::Save { name: "notes.txt".into() };
+        s.applied(Event::Portal(PortalEvent::Asked(FileRequest { id: 1, asks, patterns: vec!["*.txt".into()], ..request() })));
         assert!(s.library_view().save_here() == SaveHere::Off && chosen(&tap(&mut s, here.clone())).is_none(), "no folder open");
         tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
         assert_eq!(s.library_view().save_here(), SaveHere::Replaces { first: "notes.txt", more: 0, asked: false });
@@ -220,7 +270,7 @@ mod tests {
         assert_eq!(chosen(&tap(&mut s, here.clone())), Some((1, vec!["/home/thor/new.txt".into()])));
         // Over a file chosen, once asked again; one the filter doesn't take isn't.
         save(&mut s, 2, Asks::Save { name: "x.txt".into() });
-        assert_eq!(s.library_view().group().map(|g| g.title.as_str()), Some("Home"), "the Files tab where it was left");
+        assert_eq!(s.library_view().group().map(|g| g.title.as_str()), Some("Home"));
         let choose = Id::LibraryView(LibraryViewId::Choose);
         s.library_view.select("browse:Files/Home/snes.png");
         assert!(chosen(&tap(&mut s, choose.clone())).is_none() && chosen(&tap(&mut s, choose.clone())).is_none(), "not a *.txt");

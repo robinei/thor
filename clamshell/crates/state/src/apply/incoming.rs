@@ -114,12 +114,11 @@ impl State {
             self.keymapping.back(&mut self.keyboard);
             return;
         }
-        // A pick going on is left as it was; an app's is set aside until its program is in front again
-        // (see `crate::portal`), and Home stays on the Library.
+        // A pick of ClamShell's own is left as it was, as the rest of the Library is; an app's is set aside
+        // until its program is in front again (see `crate::portal`), and Home stays on the Library.
         if self.picking_for_app().is_some() {
             self.set_pick_aside();
         }
-        self.library_view.cancel_pick();
         let from_device = self.session.shown_builtin() == Some(clamshell_library::Builtin::Device);
         self.session.home();
         if from_device {
