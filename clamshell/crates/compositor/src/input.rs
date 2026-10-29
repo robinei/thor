@@ -268,12 +268,13 @@ impl Server {
         self.ui_at(self.pointer.location)
     }
 
+    /// ClamShell's view at `point`, and where on its screen, unless a window is drawn over it there: what
+    /// is touched is what the scene shows (see [`crate::scene`]).
     pub(crate) fn ui_at(&self, point: Point<f64, Logical>) -> Option<(Screen, (f64, f64))> {
         let (screen, position) = self.screen_position(point);
-        let session = self.core.state().session();
         match screen {
-            Screen::Top if session.top_window().is_some() => None,
-            Screen::Bottom if self.core.state().bottom().shows_windows(session) && point.y >= self.area(true).loc.y as f64 => None,
+            Screen::Top if self.scene.covers_top() => None,
+            Screen::Bottom if self.scene.windows().any(|placed| placed.below) && point.y >= self.area(true).loc.y as f64 => None,
             _ => Some((screen, position)),
         }
     }

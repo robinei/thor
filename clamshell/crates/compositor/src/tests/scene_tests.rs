@@ -149,3 +149,18 @@ fn a_window_alone_on_its_screen_is_the_lone_window_until_a_dialog_shows_over_it(
         assert_eq!(server.lone_window(false, area, planed), None);
     });
 }
+
+/// What is touched on the main screen is what is drawn there: ClamShell's view while the window in front has
+/// nothing to show yet, the window once it does.
+#[test]
+fn the_main_screens_view_takes_touches_until_a_window_is_drawn_over_it() {
+    with_windows(&WITH_DIALOGS[..1], |server| {
+        let point = (100.0, 100.0).into();
+        assert!(server.scene.covers_top() && server.ui_at(point).is_none(), "the window drawn");
+        server.windows[0].mapped = false;
+        server.place();
+        assert!(server.core.state().session().top_window().is_some(), "still in front");
+        assert!(!server.scene.covers_top());
+        assert_eq!(server.ui_at(point).map(|(screen, _)| screen), Some(clamshell_ui::Screen::Top), "the view drawn and touched");
+    });
+}

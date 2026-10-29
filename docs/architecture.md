@@ -160,6 +160,9 @@ and fixed once. Seven rules:
   keyboard binds X to Backspace). So a button does what the screen shows, and a new screen gets its
   pad meaning by using the shared widgets. Whether the pad may use the top screen stays the state's
   (`Pad::on_top`): under a window, the top screen's last frame is old.
+  A touch reaches ClamShell's view where the compositor's scene draws it, and no window over it
+  (`Server::ui_at`, `Scene::covers_top`), so a window in front with nothing to show yet leaves the view
+  both seen and touched.
 - **Text** comes from a built-in font with fallbacks found through fontconfig; glyphs are rasterised once
   and cached.
 
