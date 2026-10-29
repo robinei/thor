@@ -774,28 +774,30 @@ impl Session {
     pub(crate) fn force_kill(&mut self, entry: &Arc<str>, now: u64, library: &Library, out: &mut Out) {
         self.quitting.retain(|q| q.entry != *entry);
         self.thaw(entry, out);
-        if self.running(entry).is_some() {
+        if self.end(entry, true, library, out) {
             self.quitting.push(crate::session::Quitting { entry: entry.clone(), ended: true, stop: None, asked: now });
         }
-        self.end(entry, true, library, out);
     }
 
     /// Ends a running entry. Its slice is stopped, or killed with `force`; this also covers a Steam game,
     /// which was moved into its launch's scope. Its runner's `stop` command is run, with `{id}` as its app
-    /// id.
-    fn end(&self, entry: &str, force: bool, library: &Library, out: &mut Out) {
+    /// id. Whether it was asked to end: not if it doesn't run, or runs in another program's process.
+    fn end(&self, entry: &str, force: bool, library: &Library, out: &mut Out) -> bool {
         let Some(r) = self.running(entry) else {
-            return;
+            return false;
         };
         // Found and not moved into a scope of ours, it is ended by its process, if that is its own.
         if r.found() {
-            if let Some(pid) = r.pid() {
-                out.effects.push(Effect::EndProcesses { pids: vec![pid], force });
-            }
-            return;
+            let Some(pid) = r.pid() else {
+                out.log(crate::LogLevel::Info, format!("{entry} isn't ended: it runs in another program's process"));
+                return false;
+            };
+            out.effects.push(Effect::EndProcesses { pids: vec![pid], force });
+            return true;
         }
         out.effects.push(Effect::EndRun { key: r.key.clone(), force });
         out.effects.extend(self.stop_of(entry, library));
+        true
     }
 
     /// The runner's `stop` command for a running entry known by its mark, a handed-over app's app id, with
@@ -823,12 +825,14 @@ impl Session {
             }
             runs
         });
-        for q in &mut quitting {
-            if !q.ended && self.windows_of(&q.entry).next().is_none() {
-                q.ended = true;
-                self.end(&q.entry, false, library, out);
+        // One that can't be ended once its windows are gone runs on, as one whose windows refused does.
+        quitting.retain_mut(|q| {
+            if q.ended || self.windows_of(&q.entry).next().is_some() {
+                return true;
             }
-        }
+            q.ended = self.end(&q.entry, false, library, out);
+            q.ended
+        });
         self.quitting = quitting;
     }
 }

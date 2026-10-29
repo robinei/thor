@@ -295,6 +295,8 @@ mod tests {
         assert_eq!(quit(&mut s, &id), vec![Effect::Compositor(Compositor::Close(vec![6]))]);
         let fx = s.observed(vec![in_waydroid(5, "firefox")]);
         assert!(!fx.iter().any(|e| matches!(e, Effect::EndProcesses { .. })), "{fx:?}");
+        // It runs on by its icon, no longer quitting: there is nothing of its own to end.
+        assert!(s.session().running("desktop:foot").is_some() && !s.session().is_quitting("desktop:foot", s.clock().mono()));
     }
 
     #[test]
