@@ -11,6 +11,7 @@ use clamshell_state::library_view::files::{Browse, BrowseCommand, FilesEvent};
 use clamshell_state::{Browsed, Entry, Event};
 use rustix::fs::inotify;
 
+use super::archives::NotMounted;
 use super::mounts::media_mounts;
 use crate::Sink;
 use crate::library::content;
@@ -68,11 +69,16 @@ pub(crate) fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Wo
             }
             sink.send(Event::Files(FilesEvent::Listed { folder: b.folder.clone(), entries }))
         };
+        // A command taken while an archive was being mounted, which ended the mount.
+        let mut pending: Option<BrowseCommand> = None;
         loop {
             // Sleep until a command comes, or the folder or the mounts change.
-            let (folder_changed, mounts_changed) = wait(bell, notify.as_ref(), mount_table.as_ref());
+            let (folder_changed, mounts_changed) = match pending {
+                Some(_) => (false, false),
+                None => wait(bell, notify.as_ref(), mount_table.as_ref()),
+            };
             // A command and a change may come together, so the change is looked at too.
-            match commands.try_recv() {
+            match pending.take().map_or_else(|| commands.try_recv(), Ok) {
                 Ok(BrowseCommand::InUse(files)) => {
                     in_use = files;
                     let open_dir = open.as_ref().map(|(b, ..)| b.dir.as_path());
@@ -91,11 +97,27 @@ pub(crate) fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Wo
                     let Some(b) = browse else { continue };
                     // An archive is mounted and its mount listed. If it can't be mounted, the listing is
                     // empty and the user is told why.
+                    // Another folder asked for meanwhile ends the mount; who is using what is noted.
+                    let mut interrupted = || loop {
+                        match commands.try_recv() {
+                            Ok(BrowseCommand::InUse(files)) => in_use = files,
+                            Ok(other) => {
+                                pending = Some(other);
+                                return true;
+                            }
+                            Err(TryRecvError::Empty) => return false,
+                            Err(TryRecvError::Disconnected) => return true,
+                        }
+                    };
                     let dir = match b.dir.is_file() {
-                        true => archives.mount(&b.dir).unwrap_or_else(|e| {
-                            let _ = sink.send(Event::Files(FilesEvent::Failed(e)));
-                            PathBuf::new()
-                        }),
+                        true => match archives.mount(&b.dir, &mut interrupted) {
+                            Ok(dir) => dir,
+                            Err(NotMounted::Interrupted) => continue,
+                            Err(NotMounted::Failed(e)) => {
+                                let _ = sink.send(Event::Files(FilesEvent::Failed(e)));
+                                PathBuf::new()
+                            }
+                        },
                         false => b.dir.clone(),
                     };
                     let wd = notify

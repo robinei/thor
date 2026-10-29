@@ -25,6 +25,15 @@ pub(crate) fn is_archive(name: &str) -> bool {
     ENDINGS.iter().any(|e| lower.ends_with(e) && lower.len() > e.len())
 }
 
+/// Why an archive isn't mounted.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum NotMounted {
+    /// It can't be, for the reason given, as said to the user.
+    Failed(String),
+    /// Something else was asked for while it was being mounted, so the mount was given up.
+    Interrupted,
+}
+
 /// The mounted archives, and where they are mounted.
 pub(crate) struct Mounts {
     /// Where they are mounted, each in a dir of its own, and where their indexes are kept.
@@ -62,15 +71,17 @@ impl Mounts {
         Mounts { root, index: cache.map(|c| c.join("archive-index")), mounted: Vec::new() }
     }
 
-    /// Where `archive` is mounted, mounting it now if it isn't. Errs with what went wrong if it can't be.
-    pub(crate) fn mount(&mut self, archive: &Path) -> Result<PathBuf, String> {
+    /// Where `archive` is mounted, mounting it now if it isn't. Errs with what went wrong if it can't be,
+    /// or once `interrupted` says something else was asked for meanwhile: mounting a big archive reads it
+    /// through first, which can take a while.
+    pub(crate) fn mount(&mut self, archive: &Path, interrupted: &mut dyn FnMut() -> bool) -> Result<PathBuf, NotMounted> {
         if let Some((_, dir)) = self.mounted.iter().find(|(a, _)| a == archive) {
             return Ok(dir.clone());
         }
         let name = archive.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-        let root = self.root.as_ref().ok_or("no runtime dir")?;
+        let root = self.root.as_ref().ok_or_else(|| NotMounted::Failed("no runtime dir".into()))?;
         let dir = root.join(format!("{:016x}", hash(archive)));
-        fs::create_dir_all(&dir).map_err(|e| format!("Opening {name}: {e}"))?;
+        fs::create_dir_all(&dir).map_err(|e| NotMounted::Failed(format!("Opening {name}: {e}")))?;
         let unit = unit_of(archive);
         let mut argv: Vec<OsString> = ["ratarmount", "--foreground"].map(OsString::from).into();
         if let Some(index) = &self.index {
@@ -103,14 +114,15 @@ impl Mounts {
         }
         let started = match job::start(&job) {
             Ok(()) => true,
-            Err(job::Error::Io(e)) => return Err(format!("Opening {name}: {e}")),
+            Err(job::Error::Io(e)) => return Err(NotMounted::Failed(format!("Opening {name}: {e}"))),
             Err(e) => {
                 log::warn!("archives: {}: {e}", archive.display());
                 false
             }
         };
         // It is mounted once its dir is a mount, and has failed once the service isn't running. There is
-        // no time limit, since a big compressed tar is read through for its index first.
+        // no time limit, since a big compressed tar is read through for its index first; but it is given
+        // up when something else is asked for.
         let mounted = started
             && loop {
                 if mounted_under(root).contains(&dir) {
@@ -119,6 +131,16 @@ impl Mounts {
                 if !active(&unit) {
                     break false;
                 }
+                if interrupted() {
+                    log::info!("archives: {}: no longer wanted while mounting: stopped", archive.display());
+                    if let Err(e) = crate::launch::units::end(&unit, false) {
+                        log::warn!("archives: {}: {e}", archive.display());
+                    }
+                    if let Err(e) = fs::remove_dir(&dir) {
+                        log::debug!("archives: removing {}: {e}", dir.display());
+                    }
+                    return Err(NotMounted::Interrupted);
+                }
                 std::thread::sleep(std::time::Duration::from_millis(100));
             };
         if !mounted {
@@ -126,7 +148,7 @@ impl Mounts {
                 log::warn!("archives: removing {}: {e}", dir.display());
             }
             log::warn!("archives: {}: not mounted (journalctl --user -u {unit})", archive.display());
-            return Err(format!("{name} can't be opened (damaged, or it has a password)"));
+            return Err(NotMounted::Failed(format!("{name} can't be opened (damaged, or it has a password)")));
         }
         log::info!("archives: {} mounted at {}", archive.display(), dir.display());
         self.mounted.push((archive.to_path_buf(), dir.clone()));
@@ -210,7 +232,8 @@ mod tests {
         let zip = dir.join("a.zip");
         assert!(std::process::Command::new("bsdtar").arg("-C").arg(dir).args(["-a", "-cf"]).arg(&zip).arg("inside.txt").status().unwrap().success());
         let mut mounts = Mounts::new(Some(dir), None);
-        let at = mounts.mount(&zip).unwrap();
+        assert_eq!(mounts.mount(&zip, &mut || true), Err(NotMounted::Interrupted), "something else asked for at once");
+        let at = mounts.mount(&zip, &mut || false).unwrap();
         assert_eq!(fs::read_to_string(at.join("inside.txt")).unwrap(), "hello");
         mounts.keep(&[]);
         let unit = unit_of(&zip);
