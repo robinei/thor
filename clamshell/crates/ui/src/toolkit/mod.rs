@@ -11,7 +11,7 @@ pub(crate) mod scroll;
 pub(crate) mod style;
 pub(crate) mod widgets;
 
-use clamshell_state::{Event, Id, ItemKey, ListId, PointerEvent, State};
+use clamshell_state::{Event, Id, ItemKey, ListId, PointerEvent, State, Tab};
 
 use crate::gfx::images::Images;
 use crate::gfx::{Canvas, Rect};
@@ -82,6 +82,20 @@ pub struct PadOut {
     pub start: Option<Id>,
     /// What Y, X and Start press, as their badges show.
     pub keys: [Option<Id>; 3],
+    /// The Library's list, drawn: up and down step through it, the shoulders page and the triggers go to
+    /// its ends, and left and right go as this says.
+    pub list: Option<Sideways>,
+    /// The bar's tabs, left to right, which the shoulders step through.
+    pub tabs: [Option<Tab>; Tab::ALL.len()],
+}
+
+/// What left and right do in the Library's list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sideways {
+    /// Step through the collections.
+    Collections,
+    /// Go out of the open folder, or into the selected one: picking, the Files tab is the only one.
+    Folders,
 }
 
 /// A button of the pad that a badge stands for (see [`widgets::key_action`]).
@@ -257,6 +271,18 @@ impl<'f, 'c> Frame<'f, 'c> {
     /// B goes back by pressing `id`, over the whole screen (an editor's Cancel).
     pub(crate) fn back_over(&mut self, id: Id) {
         self.out.pad.back = Some((PointerEvent::Activate(id).into(), true));
+    }
+
+    /// The Library's list is drawn, with left and right going as `sideways` says.
+    pub(crate) fn list(&mut self, sideways: Sideways) {
+        self.out.pad.list = Some(sideways);
+    }
+
+    /// The bar's tab `tab` is drawn, after those left of it.
+    pub(crate) fn bar_tab(&mut self, tab: Tab) {
+        if let Some(slot) = self.out.pad.tabs.iter_mut().find(|t| t.is_none()) {
+            *slot = Some(tab);
+        }
     }
 
     /// The focus starts on `id` when nothing better is known.

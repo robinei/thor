@@ -7,13 +7,13 @@
 //! second screen.
 
 use clamshell_state::levels::Level;
-use clamshell_state::{Event, Id, LevelEvent, LibraryMode, LibraryViewEvent, LibraryViewId, PadInput, PointerEvent, RowPart, State, Tab, Top};
+use clamshell_state::{Event, Id, LevelEvent, LibraryViewEvent, LibraryViewId, PadInput, PointerEvent, RowPart, State, Tab};
 use xkeysym::Keysym;
 
 use crate::gfx::Rect;
 use crate::input::nav::{self, Dir, NavTarget};
 use crate::screens::{Screen, Screens};
-use crate::toolkit::{PadOut, PadUse, Target};
+use crate::toolkit::{PadOut, PadUse, Sideways, Target};
 
 /// What the last frames drew on each screen, and the screens' sizes in surface pixels.
 pub(crate) trait Drawn {
@@ -43,8 +43,9 @@ fn on_actions(s: &State, d: &impl Drawn) -> bool {
     s.pad().on_top() && d.targets(Screen::Top).iter().any(|t| t.pad == PadUse::Held && s.pointer().focused(&t.id))
 }
 
-pub(crate) fn scope(s: &State) -> PadScope {
-    let in_list = matches!(s.pointer().focus(), Some(Id::LibraryView(LibraryViewId::Entry(_) | LibraryViewId::Collection(_))));
+pub(crate) fn scope(s: &State, d: &impl Drawn) -> PadScope {
+    let in_list =
+        d.pad(Screen::Top).list.is_some() && matches!(s.pointer().focus(), Some(Id::LibraryView(LibraryViewId::Entry(_) | LibraryViewId::Collection(_))));
     match (s.pad().on_top(), in_list) {
         (true, true) => PadScope::LibraryViewList,
         (true, false) => PadScope::BothScreens,
@@ -116,7 +117,7 @@ fn focused_entry(s: &State) -> Option<usize> {
 pub(crate) fn candidates<'d>(s: &State, d: &'d impl Drawn) -> Vec<(Screen, &'d Target)> {
     let (screens, pad): (&[Screen], PadUse) = if on_actions(s, d) {
         (&[Screen::Top], PadUse::Held)
-    } else if scope(s) == PadScope::BottomOnly {
+    } else if scope(s, d) == PadScope::BottomOnly {
         (&[Screen::Bottom], PadUse::Moves)
     } else {
         (&Screen::BOTH, PadUse::Moves)
@@ -146,7 +147,7 @@ pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, 
             Dir::Left | Dir::Right => None,
         };
     }
-    let scope = scope(s);
+    let scope = scope(s, d);
     // In the Library's list, up and down move through the games, scrolling it, and left and right switch
     // collections. Down past the last game goes on to the second screen. The steps count from the
     // focused game, which isn't the selected one when the focus came up from the second screen.
@@ -155,16 +156,17 @@ pub(crate) fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, 
         let cursor = s.library_view().cursor().index;
         let from = focused_entry(s).unwrap_or(cursor);
         let at_end = from + 1 >= len;
+        let sideways = d.pad(Screen::Top).list;
         let to = |n: usize| LibraryViewEvent::ListStep(i32::try_from(n).unwrap_or(i32::MAX).saturating_sub(i32::try_from(cursor).unwrap_or(i32::MAX)));
         let step = match dir {
             Dir::Up => Some(to(from.saturating_sub(1))),
             Dir::Down if !at_end => Some(to(from + 1)),
             // Picking, the Files tab is the only one: left goes out of the open folder, right opens the
             // selected one.
-            Dir::Left if s.library_view().pick().is_some() => {
+            Dir::Left if sideways == Some(Sideways::Folders) => {
                 return s.library_view().group().map(|_| PointerEvent::Activate(Id::LibraryView(LibraryViewId::Up)).into());
             }
-            Dir::Right if s.library_view().pick().is_some() => {
+            Dir::Right if sideways == Some(Sideways::Folders) => {
                 // Pressing the selected entry opens it.
                 let folder = s.library_view().entry_at(from).filter(|e| e.is_group());
                 return folder.map(|e| PointerEvent::Activate(Id::LibraryView(LibraryViewId::Entry(e.id.clone()))).into());
@@ -222,7 +224,7 @@ pub(crate) enum PadPress {
 }
 
 pub(crate) fn press(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>) -> Option<PadPress> {
-    let screen = (scope(s) == PadScope::BottomOnly).then_some(Screen::Bottom);
+    let screen = (scope(s, d) == PadScope::BottomOnly).then_some(Screen::Bottom);
     match s.pointer().focus() {
         Some(id) if drawn_on(d, screen, id) => Some(PadPress::Press(id.clone())),
         _ if s.pad().on_top() => default_focus(d, Screen::Top).map(|id| PadPress::Focus(PointerEvent::Focus(id).into())),
@@ -242,10 +244,15 @@ pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
         let page = i32::try_from(s.library_view().rows()).unwrap_or(1).max(1);
         return vec![LibraryViewEvent::ListStep(step * page).into()];
     }
-    let tabs: Vec<Tab> = Tab::ALL.to_vec();
-    let at = tabs.iter().position(|t| *t == s.bottom().tab()).unwrap_or(0) as i32;
-    let next = (at + step).rem_euclid(tabs.len() as i32) as usize;
-    match tabs.get(next) {
+    // The bar's tabs, as it draws them.
+    let tabs = &d.pad(Screen::Bottom).tabs;
+    let n = tabs.iter().flatten().count() as i32;
+    if n == 0 {
+        return vec![];
+    }
+    let at = tabs.iter().flatten().position(|t| *t == s.bottom().tab()).unwrap_or(0) as i32;
+    let next = (at + step).rem_euclid(n) as usize;
+    match tabs.iter().flatten().nth(next) {
         // Focus the tab's icon. For volume and brightness, the icon's target is their control.
         Some(&tab) => vec![PointerEvent::Activate(Id::Tab(tab)).into(), PointerEvent::Focus(crate::views::bar::tab_target(tab)).into()],
         None => vec![],
@@ -254,7 +261,7 @@ pub(crate) fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
 
 /// Whether the pad is on the Library, rather than on a view shown in its place.
 fn on_library_view(s: &State, d: &impl Drawn) -> bool {
-    s.pad().on_top() && focus_screen(s, d) == Screen::Top && matches!(s.top(), Top::Library(LibraryMode::Browse | LibraryMode::Pick))
+    s.pad().on_top() && focus_screen(s, d) == Screen::Top && d.pad(Screen::Top).list.is_some()
 }
 
 /// L2 and R2 go to the Library's first or last entry.
@@ -373,7 +380,10 @@ mod tests {
                     t(0.0, 50.0, Id::Settings(SettingsId::Tile(Setting::Power))),
                 ],
             },
-            Screens { top: start(entry(s, s.library_view().cursor().index)), bottom: start(Id::Tab(s.bottom().tab())) },
+            Screens {
+                top: PadOut { list: Some(Sideways::Collections), ..start(entry(s, s.library_view().cursor().index)) },
+                bottom: PadOut { tabs: Tab::ALL.map(Some), ..start(Id::Tab(s.bottom().tab())) },
+            },
         )
     }
 
@@ -398,7 +408,7 @@ mod tests {
         assert_eq!(to_bottom, Some(PointerEvent::Focus(Id::Tab(s.bottom().tab())).into()));
         let tile = Id::Settings(SettingsId::Tile(Setting::Power));
         focus(&mut s, tile.clone());
-        assert_eq!(scope(&s), PadScope::BothScreens);
+        assert_eq!(scope(&s, &d), PadScope::BothScreens);
         // Back up, to the game it was on.
         assert_eq!(switch_screen(&s, &d, &mut memory), Some(PointerEvent::Focus(entry(&s, 1)).into()));
         let g = entry(&s, 0);
@@ -433,7 +443,7 @@ mod tests {
         let memory = Screens::default();
         let g = entry(&s, 0);
         focus(&mut s, g);
-        assert_eq!(scope(&s), PadScope::LibraryViewList);
+        assert_eq!(scope(&s, &d), PadScope::LibraryViewList);
         assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(LibraryViewEvent::ListStep(1).into()));
         assert_eq!(navigate(&s, &d, &memory, Dir::Right), Some(LibraryViewEvent::CollectionStep(1).into()));
         let len = s.library_view().collection().map_or(0, |c| c.entries.len());
@@ -643,7 +653,7 @@ mod tests {
         let account = clamshell_state::setup::account::Account::NoHelper;
         let mut s = State::new(Init { library: Some(clamshell_library::demo::library()), account, ..Init::default() });
         s.apply(Event::Entry("builtin:device".into(), clamshell_state::EntryAct::Play), &mut Vec::new());
-        assert_eq!(s.top(), Top::Device);
+        assert_eq!(s.top(), clamshell_state::Top::Device);
         assert_eq!(default_focus(&frames(&s), Screen::Top), Some(Id::Device(clamshell_state::DeviceId::Wifi)));
     }
 

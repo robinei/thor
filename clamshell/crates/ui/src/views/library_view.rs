@@ -13,7 +13,7 @@ use crate::gfx::{Column, Keep, Rect, Span, WRAP_LINE};
 use crate::toolkit::format::{Bytes, DaysAgo, Fmt, PlayTime};
 use crate::toolkit::scroll::Scrolled;
 use crate::toolkit::style::{self, Look, RADIUS_L, SURFACE_HI, Tone};
-use crate::toolkit::{Frame, PadUse, widgets};
+use crate::toolkit::{Frame, PadUse, Sideways, widgets};
 
 /// The tab bar's height and text size, as fractions of the screen's height.
 pub(super) const TABS_H: f32 = 0.08;
@@ -160,6 +160,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     }
     let rows = ((list.h / (h * ROW_H)).floor() as usize).max(1);
     list_rows(f, list, rows, s.library_view().list().len(), pad);
+    f.list(if picking { Sideways::Folders } else { Sideways::Collections });
     // When there is nothing but ClamShell's own tools, say where games and apps come from, in the middle
     // of the screen. Not while the library is still being read at start, when the Library is empty for a moment.
     if s.library_view().read() && s.library_view().library().entries.iter().all(|g| matches!(g.launch, Launch::Tool(_) | Launch::Builtin(_))) {

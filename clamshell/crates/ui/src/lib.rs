@@ -230,7 +230,7 @@ impl PadView {
 
     /// Whether the pad may go to both screens in `state`, rather than to the second screen alone.
     pub fn both_screens(state: &State) -> bool {
-        input::focus::scope(state) != input::focus::PadScope::BottomOnly
+        state.pad().on_top()
     }
 
     /// What the pad's B does in `state`.
