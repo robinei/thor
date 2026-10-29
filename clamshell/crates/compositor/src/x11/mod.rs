@@ -64,11 +64,6 @@ impl Server {
             let title_changed = old.title != facts.title;
             let changed =
                 old.app_id != facts.app_id || old.parent != facts.parent || old.limits != facts.limits || old.role != facts.role || old.colour != facts.colour;
-            if changed {
-                // Scope adoption can arrive while the properties wait for this frame.
-                facts.unit.clone_from(&old.unit);
-                facts.pids.clone_from(&old.pids);
-            }
             let title = title_changed.then(|| WindowEvent::Title { window: facts.id, title: std::mem::take(&mut facts.title) });
             match (changed, title) {
                 (true, Some(title)) => self.core.handle(clamshell_state::Event::WindowBatch(vec![WindowEvent::Changed(facts), title])),

@@ -33,8 +33,9 @@ program's app id, which a claim stands against. Its group follows: the owner's, 
 library mark's or launch unit's entry, else its own (`Session::home_of`). It is worked out as the window
 opens and again at every settle (`Session::place_windows`), so it is never left behind by a change. On
 `Opened` the state also decides whether the window comes in front (`Session::opening_focus`, below),
-before returning. A known parent's bottom placement is inherited. `Changed` updates only identity (app id, unit, process ancestry and parent);
-it cannot undo placement or change title. `Title` is independent. The compositor sends each change as it
+before returning. A known parent's bottom placement is inherited. `Changed` updates what the client
+reports (app id, parent, limits, role, colour); it keeps the title, `x11` and the process (unit, process
+ancestry and launcher's game) as `Opened` gave them, and cannot undo placement. `Title` is independent. The compositor sends each change as it
 happens (Opened, Closed, Changed, Title, KeyboardFocus, and Activate once a token is checked); a later
 fact cannot overwrite a newer state decision.
 
@@ -49,7 +50,7 @@ Device view) in front, deselecting the top windows.
 | absent | Opened | present, home assigned synchronously, in front if its opening focus says so | Move before exact Focus when needed | windows `lifecycle_open_and_close_follow_launch_ownership`, `a_window_opens_in_front_as_its_opening_focus_says`, `a_launchs_window_and_its_rule_are_placed_before_its_unit_is_listed` |
 | present | duplicate Opened | unchanged | — | windows `lifecycle_messages_keep_one_window_and_ignore_late_messages` |
 | present | Title | updated title | matching bottom rule sends Down once | windows `lifecycle_title_applies_a_bottom_rule_once` |
-| present | Changed | updated identity, same place and selection; `x11` kept from Opened | ownership rules may assign its home | windows `stale_identity_facts_cannot_undo_a_placement`, `changed_facts_keep_a_window_x11` |
+| present | Changed | updated facts, same place and selection; title, `x11` and process kept from Opened | ownership rules may assign its home | windows `stale_identity_facts_cannot_undo_a_placement`, `changed_facts_keep_a_windows_x11_and_process` |
 | present | Closed | absent, out of the bottom slot; a dialog in front brings back its parent, another window its group's; else what was in front before: the most recent top group still shown, or the Library if the Library was put in front since (the program was launched from it), the Library last | exact Focus or Show(Library) when a group empties | windows `lifecycle_close_falls_back_once_and_retains_the_other_windows`, `a_dialogs_close_brings_back_its_parent`, `closing_the_window_below_empties_its_slot`; front tests, `a_closed_window_goes_back_to_library_view_if_library_view_was_in_front_before_it` |
 | absent | late Closed, Title, Changed, Activate or keyboard focus | unchanged | — | windows `lifecycle_messages_keep_one_window_and_ignore_late_messages`, `backend_changes_keep_the_placement`, `keyboard_focus_is_independent_of_both_screens_selected_content` |
 | present on top | validated Activate | selected now | thaw/resume owner before exact Focus or Show(Library) | windows `activation_selects_the_window_on_its_screen`, `activation_thaws_a_suspended_owner_before_selecting_its_window` |
@@ -723,7 +724,7 @@ the X11 adapter.
     unopened (after an unmap) --commit--> opened [Opened(facts), the same id]
     any --toplevel destroyed--> none [Closed(id)]
 
-Changed keeps placement, selection, keyboard focus, title and `x11`.
+Changed keeps placement, selection, keyboard focus, title, `x11` and the process.
 
 Tests: `an_xdg_window_is_placed_and_configured_before_its_first_buffer` (opened before the first buffer,
 configured at 960×540, its unit identified), `an_unmapped_window_leaves_the_state_and_comes_back_on_top`
@@ -731,7 +732,7 @@ configured at 960×540, its unit identified), `an_unmapped_window_leaves_the_sta
 (a fixed-size child with its parent), `a_destroyed_window_leaves_the_state_and_the_server` (close);
 `a_toplevel_marked_a_dialog_has_the_dialog_role`; in the state
 `presentation_facts_and_colour_do_not_change_placement_or_selection`, `backend_changes_keep_the_placement`,
-`stale_identity_facts_cannot_undo_a_placement`, `changed_facts_keep_a_window_x11`,
+`stale_identity_facts_cannot_undo_a_placement`, `changed_facts_keep_a_windows_x11_and_process`,
 `lifecycle_messages_keep_one_window_and_ignore_late_messages`.
 
 ### Opening focus (session/mod.rs)

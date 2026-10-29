@@ -92,7 +92,8 @@ fn backend_changes_keep_the_placement() {
     let two = win_of(8, "two", &other);
     s.observed(vec![one.clone(), two.clone()]);
     s.applied(WindowEvent::Activate(8).into());
-    let changed = WindowFacts { title: "new title".into(), pids: vec![100], ..two };
+    let limits = crate::presentation::WindowLimits { min: (400, 300), max: (400, 300) };
+    let changed = WindowFacts { title: "new title".into(), limits, ..two };
     let windows = vec![one, changed];
     assert!(s.observed(windows.clone()).is_empty());
     assert_eq!(facts(&s), windows);
@@ -256,12 +257,12 @@ fn stale_identity_facts_cannot_undo_a_placement() {
     let before = win_of(7, "game", &unit);
     s.applied(WindowEvent::Opened(before.clone()).into());
     s.applied(Event::HardwareKey(HardwareKey::WindowDown));
-    let identity = WindowFacts { pids: vec![100, 50], ..before.clone() };
+    let identity = WindowFacts { app_id: "renamed".into(), ..before.clone() };
     assert!(s.applied(WindowEvent::Changed(identity).into()).is_empty());
     let window = s.session().window(7);
     assert_eq!(s.session().place(7), Some(WindowPlace::Bottom));
     assert_eq!(window.and_then(|w| w.group.clone()), Some(group_of(&unit)));
-    assert_eq!(window.map(|w| w.pids.as_slice()), Some(&[100, 50][..]));
+    assert_eq!(window.map(|w| w.app_id.as_str()), Some("renamed"));
     assert_eq!(s.session().bottom_window().map(|w| w.id), Some(7));
 }
 
@@ -619,15 +620,17 @@ fn a_window_displaced_from_below_gives_up_the_keyboard() {
     assert_eq!(s.session().keyboard_focus(), None);
 }
 
-/// Whether a window is X11 is known when it opens; a later `Changed` doesn't carry it, so it is kept.
+/// Whether a window is X11, and its process (unit, ancestry and launcher's game), are known when it
+/// opens; a later `Changed` doesn't carry them, so they are kept, and the rest is taken.
 #[test]
-fn changed_facts_keep_a_window_x11() {
+fn changed_facts_keep_a_windows_x11_and_process() {
     let mut s = state();
-    let window = WindowFacts { x11: true, ..win_of(7, "one", &launch_of("one")) };
+    let window = WindowFacts { x11: true, pids: vec![100, 50], game: Some("zelda".into()), ..win_of(7, "one", &launch_of("one")) };
     s.applied(WindowEvent::Opened(window.clone()).into());
-    s.applied(WindowEvent::Changed(WindowFacts { x11: false, pids: vec![100], ..window }).into());
-    let kept = s.session().window(7);
-    assert_eq!(kept.map(|w| (w.x11, w.pids.clone())), Some((true, vec![100])));
+    let changed = WindowFacts { x11: false, unit: None, pids: Vec::new(), game: None, app_id: "two".into(), ..window.clone() };
+    s.applied(WindowEvent::Changed(changed).into());
+    let kept = s.session().window(7).map(|w| (w.x11, w.unit.clone(), w.pids.clone(), w.game.clone(), w.app_id.clone()));
+    assert_eq!(kept, Some((true, window.unit, vec![100, 50], Some("zelda".into()), "two".into())));
 }
 
 /// The window below closing empties the bottom screen's slot: a new window that reuses its id isn't

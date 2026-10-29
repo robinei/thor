@@ -11,7 +11,6 @@ use smithay::{
     },
 };
 
-use crate::clients::Process;
 use crate::server::Server;
 
 pub(crate) struct ClientWindow {
@@ -88,16 +87,8 @@ impl Server {
                 })
                 .unwrap_or_default()
         });
-        let process = self
-            .core
-            .state()
-            .session()
-            .window(id)
-            .map(|window| Process { unit: window.unit.clone(), pids: window.pids.clone(), game: window.game.clone() })
-            .unwrap_or_else(|| {
-                // Its client's, identified before it was admitted.
-                surface.wl_surface().client().and_then(|c| c.get_data::<crate::clients::ClientState>()?.process.clone()).unwrap_or_default()
-            });
+        // Its client's, identified before it was admitted; the state keeps what it opened with.
+        let process = surface.wl_surface().client().and_then(|c| c.get_data::<crate::clients::ClientState>()?.process.clone()).unwrap_or_default();
         let limits = Self::size_limits(surface);
         WindowFacts {
             id,

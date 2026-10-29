@@ -126,14 +126,7 @@ impl Wm {
 impl Window {
     pub(super) fn sync_facts(&mut self, parent: Option<i64>, server: &mut Server) {
         if !self.opened || self.dirty || self.sent.as_ref().is_some_and(|old| old.parent != parent) {
-            let process = server
-                .core
-                .state()
-                .session()
-                .window(self.id)
-                .map(|v| Process { unit: v.unit.clone(), pids: v.pids.clone(), game: v.game.clone() })
-                .unwrap_or_else(|| self.process.clone());
-            let facts = self.properties.facts(self.id, parent, process);
+            let facts = self.properties.facts(self.id, parent, self.process.clone());
             if !self.opened {
                 server.core.handle(WindowEvent::Opened(facts.clone()).into());
                 let focused = server.core.state().session().top_window().is_some_and(|w| w.id == self.id);

@@ -294,10 +294,13 @@ impl crate::Session {
         }
     }
 
-    /// A window's facts changed. Its title has an event of its own.
+    /// A window's facts changed. Its title has an event of its own. Its process (unit, ancestry and
+    /// launcher's game) is what it was opened with: a backend reports what the client changed, and can't
+    /// undo what the state learnt of the process.
     fn change(&mut self, facts: WindowFacts) {
         if let Some(w) = self.windows.iter_mut().find(|w| w.id == facts.id) {
-            w.facts = WindowFacts { title: std::mem::take(&mut w.facts.title), x11: w.facts.x11, ..facts };
+            let old = std::mem::take(&mut w.facts);
+            w.facts = WindowFacts { title: old.title, x11: old.x11, unit: old.unit, pids: old.pids, game: old.game, ..facts };
         }
     }
 

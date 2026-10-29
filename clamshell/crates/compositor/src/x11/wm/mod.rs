@@ -656,22 +656,16 @@ mod tests {
     }
 
     #[test]
-    fn x11_facts_deferred_to_the_frame_keep_an_adopted_unit_and_settle_with_their_title() {
+    fn x11_facts_deferred_to_the_frame_settle_with_their_title() {
         let Placed { mut server, mut wm, mut wire, id, .. } = placed();
         wm.windows[0].properties.name = "dialog title".into();
         wm.windows[0].properties.role = clamshell_state::presentation::WindowRole::Dialog;
         wm.windows[0].dirty = true;
         wm.settle(&mut wire, &mut server).unwrap();
-        let mut adopted = server.core.state().session().window(id).unwrap().facts.clone();
-        adopted.unit = Some("adopted.scope".into());
-        adopted.pids = vec![456];
-        server.core.handle(WindowEvent::Changed(adopted).into());
         server.frame();
         let window = server.core.state().session().window(id).unwrap();
         assert_eq!(window.title, "dialog title");
         assert_eq!(window.role, clamshell_state::presentation::WindowRole::Dialog);
-        assert_eq!(window.unit.as_deref(), Some("adopted.scope"));
-        assert_eq!(window.pids, vec![456], "deferred metadata cannot undo scope adoption");
         let recording = server.trace.borrow().snapshot(server.core.state());
         // Identity and title settle atomically: the UI must never record half of this update.
         assert!(
