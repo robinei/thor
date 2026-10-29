@@ -53,10 +53,16 @@ pub(crate) struct SensorHub {
     service: Option<(u32, u32)>,
     /// The gyro that is streaming.
     gyro: Option<Suid>,
+    /// The requests refused since the hub came: past [`REFUSALS`], the gyro is given up until it comes
+    /// again.
+    refused: u8,
     txn: u16,
     /// The buffer for a datagram.
     buf: Vec<u8>,
 }
+
+/// How many refused requests the gyro is looked up again after, until the hub comes again.
+const REFUSALS: u8 = 3;
 
 impl SensorHub {
     /// Uses the profile's hub after normal evdev motion discovery found none. Service availability
@@ -66,7 +72,7 @@ impl SensorHub {
         let hub = (|| {
             let (socket, node) = qrtr::socket()?;
             qrtr::lookup(&socket, node, facts.service)?;
-            Ok::<_, io::Error>(SensorHub { socket, facts, service: None, gyro: None, txn: 0, buf: vec![0; 65536] })
+            Ok::<_, io::Error>(SensorHub { socket, facts, service: None, gyro: None, refused: 0, txn: 0, buf: vec![0; 65536] })
         })();
         hub.map_err(|e| log::warn!("pad: the sensor hub: {e}")).ok().inspect(|_| log::info!("pad: gyro from the sensor hub, once it is up"))
     }
@@ -86,6 +92,15 @@ impl SensorHub {
         true
     }
 
+    /// Asks the hub for the gyro's SUID, which comes in a report.
+    fn look_up(&mut self) {
+        let mut lookup = Vec::new();
+        pb_bytes(&mut lookup, 1, b"gyro");
+        pb_varint_field(&mut lookup, 2, 1); // register_updates
+        pb_varint_field(&mut lookup, 3, 1); // default_only
+        self.request(SUID_LOOKUP, MSG_SUID_REQUEST, &lookup);
+    }
+
     /// Handles one datagram from the name service, saying the hub came, so the gyro is looked up, or went.
     fn control(&mut self, pkt: &[u8]) {
         match qrtr::control(pkt) {
@@ -93,11 +108,8 @@ impl SensorHub {
                 log::info!("pad: the sensor hub is up");
                 self.service = Some((node, port));
                 self.gyro = None;
-                let mut lookup = Vec::new();
-                pb_bytes(&mut lookup, 1, b"gyro");
-                pb_varint_field(&mut lookup, 2, 1); // register_updates
-                pb_varint_field(&mut lookup, 3, 1); // default_only
-                self.request(SUID_LOOKUP, MSG_SUID_REQUEST, &lookup);
+                self.refused = 0;
+                self.look_up();
             }
             Some((qrtr::DEL_SERVER, service, node, port)) if service == self.facts.service && self.service == Some((node, port)) => {
                 log::info!("pad: the sensor hub is gone (until it is back)");
@@ -112,10 +124,17 @@ impl SensorHub {
     /// after that the reports carry its samples.
     fn message(&mut self, msg: &[u8], out: &mut Vec<Sample>) {
         match qmi_message(msg) {
+            // The config was refused, so start again from the lookup, which is asked for again rather than
+            // waited for (a report may not come again); a few times, not for good.
             Some(Qmi::Refused(error)) => {
-                // The config was refused, so start again from the lookup's next report.
-                log::warn!("pad: the sensor hub refused a request (error {error})");
                 self.gyro = None;
+                self.refused = self.refused.saturating_add(1);
+                if self.refused <= REFUSALS {
+                    log::warn!("pad: the sensor hub refused a request (error {error}): looking the gyro up again");
+                    self.look_up();
+                } else if self.refused == REFUSALS + 1 {
+                    log::warn!("pad: the sensor hub refused a request (error {error}): no gyro until the hub is back");
+                }
             }
             Some(Qmi::Report(report)) => match self.gyro {
                 None => {
