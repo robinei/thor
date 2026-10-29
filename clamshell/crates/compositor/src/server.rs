@@ -69,6 +69,9 @@ pub(crate) struct Server {
     on_effect: Box<dyn FnMut(&Effect)>,
     /// The clients' processes, identified off this thread (see `clients`).
     pub identities: crate::clients::Identities,
+    /// Windows' facts as they changed since the last frame, X11's as the window manager read them,
+    /// told to the state at the frame (see [`Server::flush_facts`]).
+    pub changed_facts: Vec<clamshell_state::session::windows::WindowFacts>,
     /// The id the next window gets, Wayland's and X11's alike.
     pub next_id: i64,
     pub x11: crate::x11::Bridge,
@@ -129,6 +132,7 @@ impl Server {
             socket: String::new(),
             on_effect: Box::new(on_effect),
             identities,
+            changed_facts: Vec::new(),
             next_id: 1,
             x11: Default::default(),
         };
@@ -176,10 +180,10 @@ impl Server {
         }
     }
 
-    /// Flush client titles once for the frame, after all requests in the dispatch batch.
+    /// The frame's work: the windows' facts changed by the dispatch's requests told to the state, once,
+    /// then the turn.
     pub fn frame(&mut self) {
-        self.flush_x11_changes();
-        self.flush_titles();
+        self.flush_facts();
         self.turn();
     }
 

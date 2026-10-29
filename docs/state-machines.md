@@ -35,9 +35,10 @@ opens and again at every settle (`Session::place_windows`), so it is never left 
 `Opened` the state also decides whether the window comes in front (`Session::opening_focus`, below),
 before returning. A known parent's bottom placement is inherited. `Changed` updates what the client
 reports (app id, parent, limits, role, colour); it keeps the title, `x11` and the process (unit, process
-ancestry and launcher's game) as `Opened` gave them, and cannot undo placement. `Title` is independent. The compositor sends each change as it
-happens (Opened, Closed, Changed, Title, KeyboardFocus, and Activate once a token is checked); a later
-fact cannot overwrite a newer state decision.
+ancestry and launcher's game) as `Opened` gave them, and cannot undo placement. `Title` is independent. The compositor sends Opened, Closed,
+KeyboardFocus, and Activate once a token is checked, as each happens, and a window's Changed and Title at
+the frame, once however many requests came, in one batch when both; a later fact cannot overwrite a newer
+state decision.
 
 Placing is the session's own: the steps in the Effects columns here and below (Focus, Show(Library), Move,
 Down, Up, Return) are its window commands (`WindowCommand`), applied to the state during
@@ -718,9 +719,9 @@ the X11 adapter.
     none --a second toplevel on the same wl_surface--> none [client ended, reason logged]
     unopened --commit--> opened [Opened(facts); the first configure after the state has placed it]
     opened --commit with a buffer--> mapped
-    opened --app id, parent or dialog hint changed--> opened [Changed(facts)]
-    opened --commit with changed limits or colour--> opened [Changed(facts)]
-    mapped --commit with a null buffer--> unopened [Closed(id); a pending title dropped]
+    opened --title, app id, parent or dialog hint changed--> opened [at the frame: Changed(facts), Title, or both in one batch, where they differ from the state's]
+    opened --commit with changed limits or colour--> opened [at the frame: Changed(facts)]
+    mapped --commit with a null buffer--> unopened [Closed(id); a pending change dropped]
     unopened (after an unmap) --commit--> opened [Opened(facts), the same id]
     any --toplevel destroyed--> none [Closed(id)]
 
@@ -729,7 +730,10 @@ Changed keeps placement, selection, keyboard focus, title, `x11` and the process
 Tests: `an_xdg_window_is_placed_and_configured_before_its_first_buffer` (opened before the first buffer,
 configured at 960×540, its unit identified), `an_unmapped_window_leaves_the_state_and_comes_back_on_top`
 (unmapped and remapped under the same id), `a_dialog_of_a_window_below_shows_over_it_there_at_its_fixed_size`
-(a fixed-size child with its parent), `a_destroyed_window_leaves_the_state_and_the_server` (close);
+(a fixed-size child with its parent), `a_destroyed_window_leaves_the_state_and_the_server` (close),
+`a_burst_of_titles_reaches_the_state_once_per_frame`,
+`a_wayland_app_id_and_title_change_reach_the_state_in_one_batch_at_the_frame`,
+`a_wayland_limits_change_is_reported_once_per_frame`;
 `a_toplevel_marked_a_dialog_has_the_dialog_role`; in the state
 `presentation_facts_and_colour_do_not_change_placement_or_selection`, `backend_changes_keep_the_placement`,
 `stale_identity_facts_cannot_undo_a_placement`, `changed_facts_keep_a_windows_x11_and_process`,
@@ -847,7 +851,7 @@ and optionally the mastering primaries and luminance, MaxCLL and MaxFALL. The DR
 screen by the device profile's panel colour, with unknown luminance left unset; the nested host by its
 host's preferred description, as PQ when the host takes HDR. The picture's pipeline is in `picture.md`.
 
-    window --a commit with a new description--> the same placement, selection and focus [Changed(facts)]
+    window --a commit with a new description--> the same placement, selection and focus [Changed(facts) at the frame]
     window --Changed with the same facts--> unchanged
 
 Tests: in the state `presentation_facts_and_colour_do_not_change_placement_or_selection` (repeated facts

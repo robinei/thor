@@ -405,6 +405,88 @@ fn a_burst_of_titles_reaches_the_state_once_per_frame() {
     assert_eq!(checked, 3);
 }
 
+/// The window events the state was told, as the trace has them, each batch as one.
+fn window_inputs(server: &Server) -> Vec<crate::trace::Input> {
+    server.trace.borrow().snapshot(server.core.state()).records.into_iter().map(|record| record.input).collect()
+}
+
+/// A Wayland window's facts changed by its requests reach the state at the frame, not as each comes: an app
+/// id and a title changed together come as one batch, so that the UI never records half of the change.
+#[test]
+fn a_wayland_app_id_and_title_change_reach_the_state_in_one_batch_at_the_frame() {
+    let (mut display, mut server) = ServerBuilder::new().started();
+    let client = spawn_client(&mut display, launched(), |globals, mut queue, steps| {
+        let mut client = Client::default();
+        let window = open_toplevel(&globals, &mut queue, &mut client, "test", None);
+        steps.step(false);
+        window.top.set_app_id("renamed".into());
+        window.top.set_title("renamed's title".into());
+        queue.roundtrip(&mut client).unwrap();
+        steps.step(true);
+    });
+    let checked = client.serve(
+        &mut display,
+        &mut server,
+        |_| {},
+        |_, server, renamed| {
+            if !renamed {
+                return server.frame();
+            }
+            let id = server.windows[0].id;
+            let before = window_inputs(server).len();
+            assert_eq!(server.core.state().session().window(id).unwrap().app_id, "test", "held to the frame");
+            server.frame();
+            let window = server.core.state().session().window(id).unwrap();
+            assert_eq!((window.app_id.as_str(), window.title.as_str()), ("renamed", "renamed's title"));
+            let inputs = window_inputs(server);
+            let batch = inputs.iter().skip(before).find(|input| matches!(input, crate::trace::Input::Batch(_)));
+            assert!(
+                matches!(batch, Some(crate::trace::Input::Batch(events)) if matches!(events.as_slice(), [clamshell_state::WindowEvent::Changed(facts), clamshell_state::WindowEvent::Title { window, .. }] if facts.id == id && *window == id))
+            );
+        },
+    );
+    assert_eq!(checked, 2);
+}
+
+/// A burst of commits changing a Wayland window's size limits is reported to the state once, at the
+/// frame, with the last.
+#[test]
+fn a_wayland_limits_change_is_reported_once_per_frame() {
+    let (mut display, mut server) = ServerBuilder::new().started();
+    let client = spawn_client(&mut display, launched(), |globals, mut queue, steps| {
+        let mut client = Client::default();
+        let window = open_toplevel(&globals, &mut queue, &mut client, "test", None);
+        steps.step(false);
+        for size in [300, 310, 320] {
+            window.top.set_min_size(size, 240);
+            window.top.set_max_size(size, 240);
+            window.surface.commit();
+        }
+        queue.roundtrip(&mut client).unwrap();
+        steps.step(true);
+    });
+    let checked = client.serve(
+        &mut display,
+        &mut server,
+        |_| {},
+        |_, server, limited| {
+            if !limited {
+                return server.frame();
+            }
+            let id = server.windows[0].id;
+            let changed = |server: &Server| {
+                window_inputs(server).iter().filter(|input| matches!(input, crate::trace::Input::Window(clamshell_state::WindowEvent::Changed(_)))).count()
+            };
+            assert_eq!(changed(server), 0, "held to the frame");
+            server.frame();
+            server.frame();
+            assert_eq!(changed(server), 1);
+            assert_eq!(server.core.state().session().window(id).unwrap().limits.fixed_size(), Some((320, 240)));
+        },
+    );
+    assert_eq!(checked, 2);
+}
+
 /// What the client of [`an_unmapped_window_leaves_the_state_and_comes_back_on_top`] did.
 #[derive(Debug)]
 enum Mapping {

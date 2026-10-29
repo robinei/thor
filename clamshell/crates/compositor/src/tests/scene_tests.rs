@@ -60,7 +60,7 @@ fn with_windows(windows: &[Opened], check: impl FnOnce(&mut Server)) {
                 window: Surface::new_x11(surface),
                 mapped: true,
                 opened: true,
-                title_dirty: false,
+                facts_dirty: false,
                 shown: crate::windows::Shown::of(server.core.state(), window.id),
                 frames: Default::default(),
             });

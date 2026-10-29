@@ -125,18 +125,14 @@ impl Wm {
 
 impl Window {
     /// Opens the window with its facts, or queues them for the frame when a property or its parent changed
-    /// (see `Server::flush_x11_changes`, which compares them with the state's).
+    /// (see [`Server::flush_facts`], which compares them with the state's).
     pub(super) fn sync_facts(&mut self, parent: Option<i64>, server: &mut Server) {
         if self.opened && !self.dirty && self.parent == parent {
             return;
         }
         let facts = self.properties.facts(self.id, parent, self.process.clone());
         if self.opened {
-            if let Some(pending) = server.x11.changes.iter_mut().find(|old| old.id == facts.id) {
-                *pending = facts;
-            } else {
-                server.x11.changes.push(facts);
-            }
+            server.queue_facts(facts);
         } else {
             let (id, app_id, title, limits) = (self.id, facts.app_id.clone(), facts.title.clone(), facts.limits);
             server.core.handle(WindowEvent::Opened(facts).into());
@@ -158,7 +154,7 @@ impl Window {
                 window: Surface::new_x11(surface),
                 opened: true,
                 mapped,
-                title_dirty: false,
+                facts_dirty: false,
                 shown: crate::windows::Shown::of(server.core.state(), self.id),
                 frames: Default::default(),
             });

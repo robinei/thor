@@ -15,7 +15,6 @@ mod wm;
 
 use crate::clients::ClientState;
 use crate::server::Server;
-use clamshell_state::{WindowEvent, session::windows::WindowFacts};
 use command_fds::CommandFdExt;
 use smithay::reexports::{
     calloop::{Interest, LoopHandle, Mode, PostAction, RegistrationToken, generic::Generic},
@@ -48,34 +47,10 @@ pub(crate) struct Bridge {
     pub close: Vec<i64>,
     /// X11 popups to dismiss, for the adapter to unmap.
     pub popup_dismiss: Vec<i64>,
-    /// X11 windows' changed facts, coalesced until the frame (see [`Server::flush_x11_changes`]).
-    pub changes: Vec<WindowFacts>,
     /// Xwayland's surfaces by the serial it gave them, until their window is paired (see `x11::shell`).
     pub serials: Vec<(u64, smithay::reexports::wayland_server::protocol::wl_surface::WlSurface)>,
     /// X11 windows' processes as identified, for the adapter (see [`crate::clients::Identities`]).
     pub identified: Vec<(i64, crate::clients::Process)>,
-}
-
-impl Server {
-    /// Tells the state the X11 windows' changes since the last frame, where they differ from what it has
-    /// (see [`crate::windows::differ`]), with the colour of the surface each is bound to.
-    pub(crate) fn flush_x11_changes(&mut self) {
-        let mut changes = std::mem::take(&mut self.x11.changes);
-        for mut facts in changes.drain(..) {
-            facts.colour = self.windows.iter().find(|w| w.id == facts.id).and_then(|w| self.window_colour(&w.window));
-            let Some(old) = self.core.state().session().window(facts.id) else { continue };
-            let (changed, title_changed) = crate::windows::differ(old, &facts);
-            let title = title_changed.then(|| WindowEvent::Title { window: facts.id, title: std::mem::take(&mut facts.title) });
-            match (changed, title) {
-                (true, Some(title)) => self.core.handle(clamshell_state::Event::WindowBatch(vec![WindowEvent::Changed(facts), title])),
-                (true, None) => self.core.handle(WindowEvent::Changed(facts).into()),
-                (false, Some(title)) => self.core.handle(title.into()),
-                (false, None) => {}
-            }
-        }
-        // (Kept, with what it holds, for the next frame's.)
-        self.x11.changes = changes;
-    }
 }
 
 pub(crate) struct Supervisor {

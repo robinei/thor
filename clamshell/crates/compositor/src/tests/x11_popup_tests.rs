@@ -69,7 +69,7 @@ fn x11_popups_share_parent_scaling_keep_tooltips_passive_and_cancel_dismissed_co
             window: Surface::new_x11(root.clone()),
             mapped: true,
             opened: true,
-            title_dirty: false,
+            facts_dirty: false,
             shown: crate::windows::Shown::of(server.core.state(), 1),
             frames: Default::default(),
         });

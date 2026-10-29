@@ -18,7 +18,8 @@ pub(crate) struct ClientWindow {
     pub window: crate::surface::Surface,
     pub opened: bool,
     pub mapped: bool,
-    pub title_dirty: bool,
+    /// Whether its facts may have changed since the last frame (see [`Server::flush_facts`]).
+    pub facts_dirty: bool,
     /// What the state says of how it is shown, read once per state revision (see [`Shown`]).
     pub shown: Shown,
     pub frames: crate::frames::Frames,
@@ -68,7 +69,7 @@ impl Server {
             window: crate::surface::Surface::Wayland(SurfaceWindow::new_wayland_window(surface)),
             opened: false,
             mapped: false,
-            title_dirty: false,
+            facts_dirty: false,
             shown: Shown::of(self.core.state(), self.next_id),
             frames: Default::default(),
         });
@@ -141,17 +142,12 @@ impl Server {
                 client.opened = true;
             }
         } else {
+            // What a commit may change, compared without building the facts.
             let limits = Self::size_limits(&toplevel);
             let colour = self.windows.get(index).and_then(|client| self.window_colour(&client.window));
-            let old = self.core.state().session().window(id).map(|old| (old.limits, old.colour.clone()));
-            if let Some((_, old_colour)) = &old
-                && *old_colour != colour
-            {
-                let shown = colour.as_ref().map(|c| format!("{:?} {:?}", c.primaries, c.transfer));
-                log::info!("compositor: window {id}'s colour is now {}", shown.as_deref().unwrap_or("unspecified"));
-            }
-            if old.is_some_and(|(old_limits, old_colour)| old_limits != limits || old_colour != colour) {
-                self.core.handle(WindowEvent::Changed(self.facts(&toplevel, id)).into());
+            let changed = self.core.state().session().window(id).is_some_and(|old| old.limits != limits || old.colour != colour);
+            if changed && let Some(client) = self.windows.get_mut(index) {
+                client.facts_dirty = true;
             }
         }
         self.sync_windows();
@@ -223,24 +219,50 @@ impl Server {
         }
     }
 
-    /// Tells the state the titles Wayland windows changed since the last frame.
-    pub(crate) fn flush_titles(&mut self) {
+    /// Queues a window's facts as they are now for the frame, replacing any queued for it.
+    pub(crate) fn queue_facts(&mut self, facts: WindowFacts) {
+        if let Some(queued) = self.changed_facts.iter_mut().find(|queued| queued.id == facts.id) {
+            *queued = facts;
+        } else {
+            self.changed_facts.push(facts);
+        }
+    }
+
+    /// Tells the state the windows' facts changed since the last frame: the Wayland windows' whose
+    /// requests or commits may have changed them, built once here however many came, and the X11 windows'
+    /// queued. Each is compared with the state's (see [`differ`]), with the colour of its surface, and sent
+    /// as `Changed`, `Title`, or both in one batch, so that the UI never records half of the change.
+    pub(crate) fn flush_facts(&mut self) {
         for index in 0..self.windows.len() {
-            let pending = self.windows.get_mut(index).and_then(|client| {
-                std::mem::take(&mut client.title_dirty).then(|| client.window.toplevel().cloned().map(|surface| (client.id, surface))).flatten()
-            });
-            if let Some((id, surface)) = pending {
-                let title = with_states(surface.wl_surface(), |states| {
-                    states.data_map.get::<XdgToplevelSurfaceData>().and_then(|data| data.lock().ok()).and_then(|data| {
-                        let title = data.title.as_deref().unwrap_or_default();
-                        self.core.state().session().window(id).filter(|old| old.title != title).map(|_| title.to_owned())
-                    })
-                });
-                if let Some(title) = title {
-                    self.core.handle(WindowEvent::Title { window: id, title }.into());
-                }
+            let Some(client) = self.windows.get_mut(index) else { continue };
+            if !std::mem::take(&mut client.facts_dirty) {
+                continue;
+            }
+            let id = client.id;
+            if let Some(toplevel) = client.window.toplevel().cloned() {
+                let facts = self.facts(&toplevel, id);
+                self.queue_facts(facts);
             }
         }
+        let mut queued = std::mem::take(&mut self.changed_facts);
+        for mut facts in queued.drain(..) {
+            facts.colour = self.windows.iter().find(|w| w.id == facts.id).and_then(|w| self.window_colour(&w.window));
+            let Some(old) = self.core.state().session().window(facts.id) else { continue };
+            let (changed, title_changed) = differ(old, &facts);
+            if old.colour != facts.colour {
+                let shown = facts.colour.as_ref().map(|c| format!("{:?} {:?}", c.primaries, c.transfer));
+                log::info!("compositor: window {}'s colour is now {}", facts.id, shown.as_deref().unwrap_or("unspecified"));
+            }
+            let title = title_changed.then(|| WindowEvent::Title { window: facts.id, title: std::mem::take(&mut facts.title) });
+            match (changed, title) {
+                (true, Some(title)) => self.core.handle(clamshell_state::Event::WindowBatch(vec![WindowEvent::Changed(facts), title])),
+                (true, None) => self.core.handle(WindowEvent::Changed(facts).into()),
+                (false, Some(title)) => self.core.handle(title.into()),
+                (false, None) => {}
+            }
+        }
+        // (Kept, with what it holds, for the next frame's.)
+        self.changed_facts = queued;
     }
 }
 

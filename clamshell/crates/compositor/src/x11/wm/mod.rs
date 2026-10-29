@@ -693,11 +693,11 @@ mod tests {
         wm.windows[0].properties.name = "last title".into();
         wm.windows[0].dirty = true;
         wm.settle(&mut wire, &mut server).unwrap();
-        assert_eq!(server.x11.changes.len(), 1, "X11 title changes coalesce before recording a frame");
+        assert_eq!(server.changed_facts.len(), 1, "X11 title changes coalesce before recording a frame");
         assert_eq!(server.core.state().session().window(id).unwrap().title, "");
         server.frame();
         assert_eq!(server.core.state().session().window(id).unwrap().title, "last title");
-        assert!(server.x11.changes.is_empty());
+        assert!(server.changed_facts.is_empty());
     }
 
     #[test]

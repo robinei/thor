@@ -134,7 +134,7 @@ impl CompositorHandler for Server {
                 if client.mapped && !mapped && client.window.toplevel().is_some() {
                     client.mapped = false;
                     client.opened = false;
-                    client.title_dirty = false;
+                    client.facts_dirty = false;
                     log::info!("compositor: window {} unmaps", client.id);
                     self.core.handle(WindowEvent::Closed(client.id).into());
                     self.sync_windows();
@@ -208,17 +208,13 @@ impl XdgShellHandler for Server {
         }
     }
     fn title_changed(&mut self, surface: ToplevelSurface) {
-        if let Some(client) =
-            self.windows.iter_mut().find(|client| client.opened && client.window.toplevel().is_some_and(|top| top.wl_surface() == surface.wl_surface()))
-        {
-            client.title_dirty = true;
-        }
+        self.facts_changed(&surface);
     }
     fn app_id_changed(&mut self, surface: ToplevelSurface) {
-        self.identity_changed(surface);
+        self.facts_changed(&surface);
     }
     fn parent_changed(&mut self, surface: ToplevelSurface) {
-        self.identity_changed(surface);
+        self.facts_changed(&surface);
     }
     fn new_popup(&mut self, surface: PopupSurface, _: PositionerState) {
         let wl_surface = surface.wl_surface().clone();
@@ -239,16 +235,18 @@ impl XdgShellHandler for Server {
 }
 impl smithay::wayland::shell::xdg::dialog::XdgDialogHandler for Server {
     fn dialog_hint_changed(&mut self, toplevel: ToplevelSurface, _: smithay::wayland::shell::xdg::dialog::ToplevelDialogHint) {
-        self.identity_changed(toplevel);
+        self.facts_changed(&toplevel);
     }
 }
 
 impl Server {
-    fn identity_changed(&mut self, surface: ToplevelSurface) {
-        let Some(id) = self.surface_id(surface.wl_surface()) else { return };
-        let facts = self.facts(&surface, id);
-        if self.core.state().session().window(id).is_some_and(|old| crate::windows::differ(old, &facts).0) {
-            self.core.handle(WindowEvent::Changed(facts).into());
+    /// A request changed a fact of `surface`'s window: told to the state at the frame (see
+    /// [`Server::flush_facts`]), once however many come before it.
+    fn facts_changed(&mut self, surface: &ToplevelSurface) {
+        if let Some(client) =
+            self.windows.iter_mut().find(|client| client.opened && client.window.toplevel().is_some_and(|top| top.wl_surface() == surface.wl_surface()))
+        {
+            client.facts_dirty = true;
         }
     }
 }
