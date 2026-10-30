@@ -16,9 +16,14 @@ for step in "$@"; do
     case $step in
         packages)
             for t in llvm-ar:llvm llvm-objcopy:llvm make:make flex:flex bison:bison perl:perl python3:python bc:bc \
-                     xz:xz depmod:kmod patch:patch cpio:cpio meson:meson ninja:ninja; do need "${t%%:*}" "${t#*:}"; done
+                     xz:xz depmod:kmod patch:patch cpio:cpio meson:meson ninja:ninja glslangValidator:glslang; do need "${t%%:*}" "${t#*:}"; done
             for t in makepkg:pacman fakeroot:fakeroot git:git rustup:rustup clang:clang ld.lld:lld pkg-config:pkgconf \
                      repo-add:pacman gpg:gnupg unsquashfs:squashfs-tools bsdtar:libarchive curl:curl; do need "${t%%:*}" "${t#*:}"; done
+            for module in mako packaging yaml; do
+                python3 -c "import $module" 2>/dev/null || {
+                    case $module in yaml) missing+=(python-yaml);; *) missing+=("python-$module");; esac
+                }
+            done
             # In clamshell/, so that rustup answers for the toolchain it pins (which it installs on first use,
             # with the target).
             command -v rustup > /dev/null && ! (cd "$(dirname "$0")/../clamshell" && rustup target list --installed 2>/dev/null) \

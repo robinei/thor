@@ -253,7 +253,7 @@ From a checkout, on an Arch Linux PC, everything is built here and nothing needs
     tools/image/upgrade-test.sh                # a kernel update tried on a copy of the Thor's image
 
 The steps on their own: `tools/repo/build.sh [PACKAGE...]` (the packages, from the last commit: ClamShell
-cross-compiled against `tools/repo/sysroot.sh`'s sysroot of Arch Linux ARM's packages, linux-thor built
+cross-compiled against `tools/repo/sysroot.sh`'s sysroot of Arch Linux ARM's packages, Turnip built as an Adreno-only Vulkan driver without LLVM, linux-thor built
 from Armada's pinned commit), `tools/repo/follow-armada.sh [COMMIT]` (linux-thor moved to another of
 Armada's commits), `tools/repo/repo.sh publish` (the
 repository uploaded with `gh`: only with the signing key, `~/.config/thor-repo/gnupg`, which isn't in the

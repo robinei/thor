@@ -4,6 +4,7 @@
 # (makepkg writes pkgver back), out of a clone of this checkout's last commit (THOR_REPO): uncommitted
 # changes aren't built. ClamShell is cross-compiled
 # (aarch64-unknown-linux-gnu: rustup's target, clang and lld, against tools/repo/sysroot.sh's sysroot);
+# Turnip is Mesa's Adreno-only Vulkan driver, built without LLVM for the MSM kernel driver.
 # linux-thor builds Armada's kernel, thor-sensors hexagonrpc (cross-compiled too; their source packages
 # also: the GPL's corresponding source, published beside them); thor-firmware unpacks ROCKNIX's release
 # (kept in ~/.cache/thor-vm/rocknix: downloaded there if missing) and goes to the repository's local/,
@@ -24,9 +25,9 @@ PACKAGES=("$@")
 "$HERE/../host-check.sh" packages || exit 1
 if [ "$ARCH" = aarch64 ]; then
     export THOR_REPO_DIR=$CACHE/repo
-    [ ${#PACKAGES[@]} -gt 0 ] || PACKAGES=(thor-keyring thor-ucm linux-thor thor-sensors clamshell thor-system thor-session thor thor-firmware)
+    [ ${#PACKAGES[@]} -gt 0 ] || PACKAGES=(thor-keyring thor-ucm linux-thor thor-sensors turnip-devel clamshell thor-system thor-session thor thor-firmware)
     # (Made again when it predates what it holds now: C's headers.)
-    [ -e "$SYSROOT/usr/lib/libseat.so" ] || "$HERE/sysroot.sh"
+    [ -e "$SYSROOT/usr/lib/pkgconfig/wayland-client.pc" ] || "$HERE/sysroot.sh"
 else
     export THOR_REPO_DIR=$CACHE/repo-$ARCH
     [ ${#PACKAGES[@]} -gt 0 ] || PACKAGES=(thor-keyring clamshell thor-system thor-session)
@@ -76,10 +77,15 @@ cat > "$work/aarch64-cc" <<EOF
 #!/bin/sh
 exec clang --target=aarch64-unknown-linux-gnu --sysroot="$SYSROOT" -fuse-ld=lld "\$@"
 EOF
+cat > "$work/aarch64-c++" <<EOF
+#!/bin/sh
+exec clang++ --target=aarch64-unknown-linux-gnu --sysroot="$SYSROOT" -fuse-ld=lld "\$@"
+EOF
+chmod 755 "$work/aarch64-c++"
 chmod 755 "$work/aarch64-cc"
 export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=$work/aarch64-cc
 # (C packages built with meson, cross: thor-sensors writes its cross file from these.)
-[ "$ARCH" != aarch64 ] || export THOR_CROSS_CC=$work/aarch64-cc
+[ "$ARCH" != aarch64 ] || export THOR_CROSS_CC=$work/aarch64-cc THOR_CROSS_CXX=$work/aarch64-c++ THOR_CROSS_SYSROOT=$SYSROOT THOR_CROSS_STRIP=llvm-strip
 export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C strip=symbols"
 export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C strip=symbols"
 [ "$ARCH" != aarch64 ] || export PKG_CONFIG_ALLOW_CROSS=1 PKG_CONFIG_SYSROOT_DIR=$SYSROOT PKG_CONFIG_LIBDIR=$SYSROOT/usr/lib/pkgconfig

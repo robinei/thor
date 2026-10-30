@@ -1,0 +1,59 @@
+# A second, Adreno-only Vulkan driver. Its manifest stays outside the loader's search path; ClamShell
+# selects it per game. No LLVM, Gallium/OpenGL, other GPU drivers, Vulkan layers or developer tools.
+pkgname=turnip-devel
+pkgver=27.0.0_devel.20261030.gbebbaf4
+pkgrel=1
+_commit=bebbaf4961a99a51a6567db06d6141a1cc6ec621
+pkgdesc='Adreno Turnip Vulkan driver from pinned Mesa main, without LLVM'
+arch=(aarch64)
+url=https://www.mesa3d.org/
+license=(MIT)
+options=(!lto)
+depends=(glibc libgcc libstdc++ libdrm systemd-libs wayland libx11 libxcb libxshmfence xcb-util-keysyms expat zstd vulkan-icd-loader)
+makedepends=(meson ninja python-mako python-packaging python-yaml glslang wayland-protocols xorgproto)
+source=("https://gitlab.freedesktop.org/mesa/mesa/-/archive/$_commit/mesa-$_commit.tar.gz")
+sha256sums=(979166a19f059146aa3f516362102baabbe831f7935eb2c665fd161c97eeec69)
+
+build() {
+    local cross=()
+    if [ -n "${THOR_CROSS_CC:-}" ]; then
+        printf '%s\n' '[binaries]' "c = '$THOR_CROSS_CC'" "cpp = '$THOR_CROSS_CXX'" \
+            "ar = 'llvm-ar'" "strip = 'llvm-strip'" "pkg-config = 'pkg-config'" \
+            '[properties]' "sys_root = '$THOR_CROSS_SYSROOT'" \
+            "pkg_config_libdir = ['$THOR_CROSS_SYSROOT/usr/lib/pkgconfig', '$THOR_CROSS_SYSROOT/usr/share/pkgconfig']" \
+            'needs_exe_wrapper = true' '[host_machine]' "system = 'linux'" "cpu_family = 'aarch64'" \
+            "cpu = 'aarch64'" "endian = 'little'" > cross.ini
+        cross=(--cross-file cross.ini)
+        # Native generators use the host's Python and Wayland tools, not the target's pkg-config files.
+        unset PKG_CONFIG_SYSROOT_DIR PKG_CONFIG_LIBDIR PKG_CONFIG_ALLOW_CROSS
+    fi
+    export MESA_GIT_SHA1_OVERRIDE=$_commit
+    meson setup "mesa-$_commit" build "${cross[@]}" --prefix=/usr --buildtype=release \
+        --wrap-mode=nodownload --auto-features=disabled \
+        --libdir=lib/turnip-devel --datadir=lib/turnip-devel/share \
+        -Db_ndebug=true -Dvulkan-drivers=freedreno -Dfreedreno-kmds=msm -Dgallium-drivers= \
+        -Dplatforms=x11,wayland -Dopengl=false -Dgles1=disabled -Dgles2=disabled \
+        -Degl=disabled -Dglx=disabled -Dgbm=disabled -Dllvm=disabled -Dvulkan-layers= -Dtools= \
+        -Dvideo-codecs= -Dxmlconfig=enabled -Dexpat=enabled -Dshader-cache=enabled -Dzstd=enabled \
+        -Dzlib=disabled -Dspirv-tools=disabled -Dvalgrind=disabled -Dlibunwind=disabled \
+        -Dlmsensors=disabled -Ddisplay-info=disabled -Dxlib-lease=disabled -Dbuild-tests=false
+    meson compile -C build -j "${THOR_BUILD_JOBS:-4}"
+}
+
+check() {
+    # Check the built object, not just the options: an LLVM runtime must never reach the device.
+    local driver=build/src/freedreno/vulkan/libvulkan_freedreno.so
+    readelf -h "$driver" | grep -q 'Machine:.*AArch64'
+    if readelf -d "$driver" | grep -Ei 'NEEDED.*(LLVM|clang|gallium)' ; then
+        echo 'Turnip unexpectedly links LLVM, Clang or Gallium' >&2
+        return 1
+    fi
+}
+
+package() {
+    meson install -C build --destdir "$pkgdir" --no-rebuild
+    # There is no Gallium or Zink driver here to read their defaults.
+    rm -f "$pkgdir"/usr/lib/turnip-devel/share/drirc.d/00-{mesa,zink}-defaults.conf
+    "${THOR_CROSS_STRIP:-strip}" --strip-unneeded "$pkgdir/usr/lib/turnip-devel/libvulkan_freedreno.so"
+    install -Dm644 "mesa-$_commit/docs/license.rst" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
