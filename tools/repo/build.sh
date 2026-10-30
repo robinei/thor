@@ -26,8 +26,8 @@ PACKAGES=("$@")
 if [ "$ARCH" = aarch64 ]; then
     export THOR_REPO_DIR=$CACHE/repo
     [ ${#PACKAGES[@]} -gt 0 ] || PACKAGES=(thor-keyring thor-ucm linux-thor thor-sensors turnip-devel clamshell thor-system thor-session thor thor-firmware)
-    # (Made again when it predates what it holds now: C's headers.)
-    [ -e "$SYSROOT/usr/lib/pkgconfig/zlib.pc" ] || "$HERE/sysroot.sh"
+    # Regenerate a sysroot that predates Turnip's WSI dependencies.
+    [ -e "$SYSROOT/usr/lib/pkgconfig/libffi.pc" ] || "$HERE/sysroot.sh"
 else
     export THOR_REPO_DIR=$CACHE/repo-$ARCH
     [ ${#PACKAGES[@]} -gt 0 ] || PACKAGES=(thor-keyring clamshell thor-system thor-session)
@@ -72,14 +72,15 @@ COMPRESSZST=(zstd -c -T0 -)
 PKGEXT='.pkg.tar.zst'
 SRCEXT='.src.tar.gz'
 EOF
-# The cross linker: clang for aarch64 against the sysroot, with lld.
+# Clang for aarch64 against the sysroot, with lld. Suppress the linker flag warning only, so
+# compile-only Meson feature checks with -Werror do not mistake it for a missing C declaration.
 cat > "$work/aarch64-cc" <<EOF
 #!/bin/sh
-exec clang --target=aarch64-unknown-linux-gnu --sysroot="$SYSROOT" -fuse-ld=lld "\$@"
+exec clang --target=aarch64-unknown-linux-gnu --sysroot="$SYSROOT" --start-no-unused-arguments -fuse-ld=lld --end-no-unused-arguments "\$@"
 EOF
 cat > "$work/aarch64-c++" <<EOF
 #!/bin/sh
-exec clang++ --target=aarch64-unknown-linux-gnu --sysroot="$SYSROOT" -fuse-ld=lld "\$@"
+exec clang++ --target=aarch64-unknown-linux-gnu --sysroot="$SYSROOT" --start-no-unused-arguments -fuse-ld=lld --end-no-unused-arguments "\$@"
 EOF
 chmod 755 "$work/aarch64-c++"
 chmod 755 "$work/aarch64-cc"
