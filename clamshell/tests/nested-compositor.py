@@ -311,7 +311,9 @@ time.sleep(300)
                 records = json.loads(x11_trace.read_text())["records"]
             except (FileNotFoundError, json.JSONDecodeError):
                 return False
-            facts = [r["input"].get("Window", {}) for r in records if isinstance(r["input"], dict)]
+            # A title that changes in the same frame as the window's other facts comes in a batch with them.
+            facts = [fact for r in records if isinstance(r["input"], dict)
+                     for fact in ([r["input"]["Window"]] if "Window" in r["input"] else r["input"].get("Batch", []))]
             assert not any(r.get("Opened", {}).get("app_id") == "X11PopupFixture" for r in facts), "menus never enter the window model"
             opened = [r["Opened"] for r in facts if r.get("Opened", {}).get("app_id") == "NestedX11"]
             if not opened:
