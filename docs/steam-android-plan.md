@@ -6,7 +6,7 @@ This plan covers the three gaps the 2026-10-30 survey found: Steam integration, 
 
 | Area | Recommendation | Rejected |
 |---|---|---|
-| Steam | Steam stays a program (Big Picture, `-gamepadui`). ClamShell sets it up from the Device view, without a terminal. A launch hook hands every Steam game ClamShell's per-game settings. The settings tab on the second screen is our Quick Access menu. Later, games installing in Steam show in the Library. | Handing the screens to gamescope's Game Mode; Game Mode nested in a window; ClamShell speaking gamescope's Steam protocol; Decky; Steam Input as ClamShell's own feature |
+| Steam | Steam stays a program (Big Picture, `-gamepadui`). The first boot installs it once the device is online, and the Device view shows that and updates it, without a terminal. A launch hook hands every Steam game ClamShell's per-game settings. The settings tab on the second screen is our Quick Access menu. Later, games installing in Steam show in the Library. | Handing the screens to gamescope's Game Mode; Game Mode nested in a window; ClamShell speaking gamescope's Steam protocol; Decky; Steam Input as ClamShell's own feature |
 | PC tuning | Three new settings, with the same All / runner / game levels as every other setting: x86 emulation (FEX presets), Vulkan driver (system Turnip or our newer build), Frame generation (2x, a Vulkan layer). All three go to the game through the environment, which reaches Steam games through the hook. Packages: `turnip-devel`, a frame generation layer, Proton-CachyOS ARM64. | A Proton tile in ClamShell (Steam's own Compatibility page does that job); individual FEX options; a game database; Auto TDP |
 | Android | Stay with Waydroid. It is set up from the Device view in one of two ways: plain Android with F-Droid included, or Android with Google Play from Waydroid's own GAPPS image, which the device downloads, plus Google's registration step. The players' pads go into the container. | Lepton (Valve's Android layer): needs Steam, podman and an Android build of Mesa, has no Google apps, and runs Android 11. Patching Google's apps into the image or faking a certified device identity: not shippable. |
 
@@ -124,6 +124,8 @@ Today's gap, found while reading the code: **ClamShell's per-game environment ne
 - So the Frame rate cap's FIFO variables, `SDL_GAMECONTROLLER_IGNORE_DEVICES` and the Env tile do nothing for Steam games. Nothing is dimmed and nothing is logged. Phase S2 fixes this.
 
 ### 1.2 Recommendation
+
+(Decided 2026-10-30, after the plan: Steam is installed at the first boot rather than by a button; ClamShell's own compatibility tool is dropped; Steam stays a visible program, opened from the Library and the dock, with Big Picture for what is Steam's. See 1.9.)
 
 G:
 - Steam is set up from the Device view.
@@ -458,10 +460,18 @@ The other way, considered: write `<hook> %command%` into each game's `LaunchOpti
 
 ### 1.8 Phases
 
-- **S1. Setup in the Device view.** No terminal. Anyone can set Steam up and keep it current from the UI. The Library's Steam folder says what is missing.
+- **S1. Installed at the first boot, shown and updated in the Device view.** No terminal. The Library's Steam folder says what is missing while it isn't done (offline at the first boot, or failed); the Device view's row retries it.
 - **S2. The launch hook.** Steam games get every ClamShell setting that acts at launch, and the Env tile. Today's silent gap closes. On its own it already makes the settings tab the Steam games' panel. Area 2's Steam side depends on it.
 - **S3. Games installing in Steam shown in the Library.** Optional: worth it if the device shows that people start downloads in Steam and come back to the Library.
 - **S4. Device checks 3, 4 and 6.** Their results go into `docs/runners.md` (Steam Input and the overlay), with no code expected.
+
+### 1.9 Decided after the plan (2026-10-30)
+
+- **Steam at the first boot, not in the image.** Distributions ship only Steam's bootstrapper; the client and its runtime come from Valve on the user's machine, and nothing found allows us to redistribute them in a published image (only Valve preinstalls the whole client, on SteamOS). A baked copy would also be replaced by the client's own update within minutes. So `thor-firstboot` (or a unit after it, once online) runs `steam-setup` as the user; the Device view shows its progress, failure and retry, and updates it later (M2 to M4 become status and retry rather than a first "Set up" button). Valve's install agreement is still shown at Steam's first start, for the user to accept.
+- **ClamShell's own compatibility tool, dropped.** Considered: a "ClamShell" tool in Steam's documented `compatibilitytools.d` interface running the Proton chosen in ClamShell, which would bring the Proton choice into ClamShell's settings. It needs each game set to it in Steam once, and its manifest's runtime has to match the chosen Proton's, unproven on the ARM client. The launch hook (1.4) stays, and the Proton choice stays in Steam's Properties.
+- **Steam stays visible.** It is a program opened from the Library and the dock; Big Picture keeps the store, downloads, friends, Steam Input and the Proton choice. ClamShell adds the setup, the per-game settings reaching the game, and the Library's entries.
+- **S2 is tested before the device.** The desktop's x86 Steam runs games through `steam-launch-wrapper` and Valve's runtime container as the ARM client does, so nested ClamShell checks that Steam calls the hook with the app id for every launch, that `clamshell --launch-env` resolves a Steam game's settings, and that the variables reach the game inside the container. Left for the device: the ARM path (`steamrtarm64/`), FEX inside ARM64 Proton reading the preset, and `VK_DRIVER_FILES` reaching Turnip.
+- **x86 emulation is applied by `FEX_APP_CONFIG`** (Armada's way, its wrapper: "the only knob every compat tool's FEX reads"), not by individual `FEX_*` variables: the two presets ship as fixed JSON files and are copied to `~/.cache/clamshell/fex/`, since Valve's runtime container replaces `/usr` and wouldn't show them from `/usr/share`. Proton's own sets nothing. The tile is dimmed for entries that don't run x86 code.
 
 ---
 
