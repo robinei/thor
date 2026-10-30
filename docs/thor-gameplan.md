@@ -802,6 +802,22 @@ From the review of 2026-10-21 (what Armada, ROCKNIX, Thorch and Kettle do, taken
       off; ROCKNIX also does it from userspace before sleep, saying lit ones keep it awake).
 - [ ] Steam: a Proton game starts (no exit 127: `steam-launch-wrapper`'s link), after Steam has
       updated itself too.
+- [ ] Steam's launch hook (docs/runners.md; checked on the desktop's x86 client, not the ARM path):
+      `ls -l ~/.local/share/Steam/steamrtarm64/steam-launch-wrapper` points at
+      `/usr/lib/clamshell/steam-launch-wrapper`, and Steam calls it for every launch: a Proton ARM64
+      game, a native arm64 game, a game started from Steam's own window (an Env tile variable for the
+      game, `CLAMSHELL_HOOK_TEST=1`, in the game process's `/proc/<pid>/environ`, inside the container:
+      `container=pressure-vessel` beside it). If Steam doesn't call it for some, the `localconfig.vdf`
+      fallback (steam-android-plan.md 1.4).
+- [ ] FEX reads the x86 emulation preset: `FEX_APP_CONFIG` in the game's environment and
+      `~/.cache/clamshell/fex/*.json` seen inside the container (`ls` from `steam-runtime-launch-client`
+      or the game's `/proc/<pid>/root`); then a TSO-sensitive game (crashes or glitches at Fast, fine at
+      Safe), or FEX's own log (`FEX_OUTPUTLOG=stderr FEX_SILENTLOG=0`, its config dump) showing
+      `TSOEnabled` as set. If FEX inside Proton ignores it, the presets as `FEX_*` variables instead
+      (Kettle's way).
+- [ ] The cap's FIFO and the Env tile reach a Steam game (`MESA_VK_WSI_PRESENT_MODE=fifo` in its
+      environment with a cap set); a broken library.json gives the "started without its settings"
+      notice and the game still runs.
 - [ ] GPU hangs (the GMU): if any, ROCKNIX's and Thorch's workaround, `cpu0/cpuidle/state1/disable`
       (Pocknix turns it back on around sleep).
 - [ ] The bottom touchscreen after sleep: still working, no contact left behind (#757); else the

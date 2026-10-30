@@ -461,7 +461,7 @@ The other way, considered: write `<hook> %command%` into each game's `LaunchOpti
 ### 1.8 Phases
 
 - **S1. Installed at the first boot, shown and updated in the Device view.** No terminal. The Library's Steam folder says what is missing while it isn't done (offline at the first boot, or failed); the Device view's row retries it.
-- **S2. The launch hook.** Steam games get every ClamShell setting that acts at launch, and the Env tile. Today's silent gap closes. On its own it already makes the settings tab the Steam games' panel. Area 2's Steam side depends on it.
+- **S2. The launch hook.** Steam games get every ClamShell setting that acts at launch, and the Env tile. Today's silent gap closes. On its own it already makes the settings tab the Steam games' panel. Area 2's Steam side depends on it. *Done 2026-10-30* (docs/runners.md, "Steam's games: the launch hook"). Two findings: the user's Steam launch options are set before the hook (Steam puts `VAR=x` in front of `steam-launch-wrapper`), so ClamShell's variables replace launch options of the same name, not the other way round as 1.4 assumed; and Steam's own `SDL_GAMECONTROLLER_IGNORE_DEVICES` is joined with the grabbed controllers, not replaced. Proven on the desktop's x86 client; left for the device: the ARM path (`steamrtarm64/`), every kind of launch calling it (1.7, 1).
 - **S3. Games installing in Steam shown in the Library.** Optional: worth it if the device shows that people start downloads in Steam and come back to the Library.
 - **S4. Device checks 3, 4 and 6.** Their results go into `docs/runners.md` (Steam Input and the overlay), with no code expected.
 
@@ -761,7 +761,7 @@ x86 emulation is not dimmed for native programs. ClamShell can't know whether an
 
 ### 2.7 Phases
 
-- **P1. `launch_env` and x86 emulation.** No package. Delivers FEX presets for Steam games (after S2) and for everything ClamShell launches.
+- **P1. `launch_env` and x86 emulation.** No package. Delivers FEX presets for Steam games (after S2) and for everything ClamShell launches. *Done 2026-10-30*, by `FEX_APP_CONFIG` (1.9). The tile is lit everywhere but where the launch hands its app over (Android): no reliable signal says which entries run x86 code (2.3's last paragraph). Left for the device: FEX inside Proton ARM64 reading the preset (2.6, 1).
 - **P2. Vulkan driver and `turnip-devel`.** Per-game newer Turnip, for emulators at once and for Steam games after S2.
 - **P3. `proton-cachyos-arm64`.** A second Proton in Steam's picker. It enables picture.md's OptiScaler test.
 - **P4. Frame generation.** Try kettle-framegen against lsfg-vk on the device, package one, add the tile.
