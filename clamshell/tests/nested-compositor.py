@@ -325,9 +325,10 @@ time.sleep(300)
         assert x11.wait(timeout=5) == 0, "X11 client receives WM_DELETE_WINDOW"
         processes.remove(x11)
         wait(lambda: pixels((128, 80, 32)) == (False, False), "the Library back after X11 closes")
-        # The Wayland client, the one entry running, brought back by its dock entry.
+        # The Wayland client, the one entry running, brought back by its dock entry, after the Library's,
+        # which is always first.
         control("tab", "dock")
-        control("tap", "dock", "0")
+        control("tap", "dock", "1")
         wait(lambda: pixels() == (True, False), "the Wayland client back from the dock")
         crash_copy = copy_x11("CLIPBOARD", b"kept across Xwayland death")
         wait(lambda: clipboard(nested) == "kept across Xwayland death", "X11 clipboard is cached before Xwayland crashes")
