@@ -79,7 +79,8 @@ pub(crate) enum Host {
 
 /// Runs the session: the state from what was saved, the compositor with the UI, and the system threads.
 pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Result<(), String> {
-    // First, before any thread starts (see `quit_signals`).
+    let _instance = crate::instance::Lock::acquire(paths.runtime.as_deref())?;
+    // Before any thread starts (see `quit_signals`).
     let quit = clamshell_compositor::quit_signals().map_err(|e| format!("quit signals: {e}"))?;
     raise_open_files();
     let device_session = host == Host::Drm;

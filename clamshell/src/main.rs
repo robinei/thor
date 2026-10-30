@@ -9,6 +9,7 @@ mod config;
 mod control;
 #[cfg(any(test, feature = "dev"))]
 mod dev;
+mod instance;
 mod logging;
 mod profile;
 mod session;

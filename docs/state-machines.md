@@ -1907,3 +1907,20 @@ event's number, its effects and the 20 events before it. 3000 seeds × 5000 even
 of S50 and S51 (history notes), and again with launcher marks, launcher dialogs and the focus and stack
 invariants, after fixing the keyboard left on a window displaced from below, a found program's Move
 taking another program's dialog, and a reader's restart losing the off of a tab left in the same event.
+
+### Session ownership
+
+Before loading saved state, changing the control pipe or starting threads, the session acquires an
+exclusive non-blocking file lock at `$XDG_RUNTIME_DIR/clamshell/session.lock`. The descriptor lives
+until the session exits and is closed on exec. One-shot commands, including `ctl` and `--launch-env`,
+do not take it.
+
+- `unowned --session starts--> owned [load state and start the compositor]`.
+- `owned --second nested or DRM session starts--> owned [second process logs a clear error and exits]`.
+- `owned --owner exits or crashes--> unowned [kernel releases the lock]`.
+- `unowned --missing or unusable runtime--> unowned [log error and exit; no alternate directory]`.
+
+The file is never unlinked: a persistent inode prevents two processes from locking different files at
+the same path. Unit tests cover contention, release, independent runtime directories and failures.
+The nested real-client test rejects both kinds of duplicate session while the first remains usable;
+its private runtime and the VM's runtime still permit independent sessions.

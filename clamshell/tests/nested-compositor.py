@@ -27,6 +27,10 @@ def main():
         directory, runtime, private_home, env, host, nested = n.directory, n.runtime, n.home, n.env, n.host, n.nested
         nested_socket, processes, expected_exits = n.nested_socket, n.processes, n.expected_exits
         spawn, wait, image, shot, control = n.spawn, n.wait, n.image, n.shot, n.control
+        for backend in ["--nested", "--drm"]:
+            second = subprocess.run([str(BIN), backend], env=host, capture_output=True, text=True, timeout=5)
+            assert second.returncode != 0 and "another ClamShell session already uses" in second.stderr, second.stderr
+        assert n.compositor.poll() is None, "a refused second session leaves the first running"
         subprocess.run([str(BIN), "--clipboard", "set"], input="nested clipboard", text=True,
                        env=nested, check=True, timeout=10)
         def clipboard(environment):
