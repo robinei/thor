@@ -172,7 +172,8 @@ rules and launch context.
 ## Checking
 
 - `tools/check.sh`: formatting, clippy with warnings as errors (the `dev` and release builds too), the
-  tests (the snapshots among them), and the documentation; about a minute. Every commit passes it:
+  tests (the snapshots among them), the documentation, and real clients in the nested compositor
+  (`clamshell/tests/nested-compositor.py`); about two minutes. Every commit passes it:
   `git config core.hooksPath tools/hooks` makes it the pre-commit hook. A plain `cargo test` in
   `clamshell/` runs only the binary's tests.
 - Snapshots: the tests walk a scenario through every screen (`clamshell/src/dev/snapshot.rs`) and

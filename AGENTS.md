@@ -130,7 +130,7 @@ commits of this repository still build after a rebase.
 ## Checking
 
 - `tools/check.sh` (fmt, clippy for debug, dev and release builds, all tests including the snapshots,
-  rustdoc) runs as the pre-commit hook; every commit passes it. A plain `cargo test` in `clamshell/`
+  rustdoc, and `clamshell/tests/nested-compositor.py` on the build) runs as the pre-commit hook; every commit passes it. A plain `cargo test` in `clamshell/`
   runs only the binary's tests: use `--workspace` or the script.
 - The snapshot test keeps three references in `clamshell/tests/`: the screens' pixel hashes
   (`snapshots.txt`), where the pad's focus goes on each (`focus.txt`), and the scenario's effects
