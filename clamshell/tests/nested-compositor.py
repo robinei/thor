@@ -4,7 +4,7 @@
 Build first (in clamshell/): cargo build
     cargo build -p clamshell-compositor --examples
 Run with --gpu to require native dmabuf on a machine with an accessible render node.
-Needs sway, Xwayland, foot, grim, dbus-daemon and gdbus; --gpu also needs vkcube with Wayland WSI support and a Vulkan driver. Runs on a session bus of its own, so that ClamShell serves the notifications there rather than meet the desktop's server. Leaves screenshots and logs in the printed temporary directory.
+Needs sway, Xwayland, foot, grim, dbus-daemon and gdbus; --gpu also needs vkcube with Wayland WSI support and a Vulkan driver. Runs on a session bus of its own, so that ClamShell serves the notifications there rather than meet the desktop's server. Screenshots and logs stay in a temporary directory, printed and kept when the run fails.
 """
 import os
 import argparse

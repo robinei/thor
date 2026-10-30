@@ -7,12 +7,14 @@ server), and helpers to start clients, wait, look at the screens and drive ClamS
         n.spawn(["foot"], "client", n.nested)
         n.wait(lambda: ..., "what is waited for")
 
-Screenshots and logs stay in the printed directory.
+Screenshots and logs stay in a temporary directory, printed and kept when the run fails, removed when it
+passes.
 """
 import os
 from pathlib import Path
 import json
 import re
+import shutil
 import signal
 import subprocess
 import tempfile
@@ -25,7 +27,6 @@ BIN = ROOT / "clamshell/target/debug/clamshell"
 class Nested:
     def __init__(self, gpu=False, library='{"places":[{"id":"apps","name":"Apps","icon":"apps"}]}', prefix="clamshell-compositor-"):
         self.directory = directory = Path(tempfile.mkdtemp(prefix=prefix))
-        print(f"nested compositor artifacts: {directory}", flush=True)
         self.runtime = directory / "runtime"
         self.runtime.mkdir(mode=0o700)
         data = directory / "data/clamshell"
@@ -62,8 +63,12 @@ class Nested:
             raise
         return self
 
-    def __exit__(self, *_):
+    def __exit__(self, failure, *_):
         self.stop()
+        if failure is None:
+            shutil.rmtree(self.directory, ignore_errors=True)
+        else:
+            print(f"nested compositor artifacts: {self.directory}", flush=True)
 
     def start(self):
         """The bus, sway, and ClamShell nested in it, up to its control pipe."""
