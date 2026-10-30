@@ -9,7 +9,7 @@ arch=(aarch64)
 url=https://www.mesa3d.org/
 license=(MIT)
 options=(!lto)
-depends=(glibc libgcc libstdc++ libdrm systemd-libs wayland libx11 libxcb libxshmfence xcb-util-keysyms expat zstd vulkan-icd-loader)
+depends=(glibc libgcc libstdc++ libdrm systemd-libs wayland libx11 libxcb libxshmfence xcb-util-keysyms expat zstd zlib vulkan-icd-loader)
 makedepends=(meson ninja python-mako python-packaging python-yaml glslang wayland-protocols xorgproto)
 source=("https://gitlab.freedesktop.org/mesa/mesa/-/archive/$_commit/mesa-$_commit.tar.gz")
 sha256sums=(979166a19f059146aa3f516362102baabbe831f7935eb2c665fd161c97eeec69)
@@ -35,7 +35,7 @@ build() {
         -Dplatforms=x11,wayland -Dopengl=false -Dgles1=disabled -Dgles2=disabled \
         -Degl=disabled -Dglx=disabled -Dgbm=disabled -Dllvm=disabled -Dvulkan-layers= -Dtools= \
         -Dvideo-codecs= -Dxmlconfig=enabled -Dexpat=enabled -Dshader-cache=enabled -Dzstd=enabled \
-        -Dzlib=disabled -Dspirv-tools=disabled -Dvalgrind=disabled -Dlibunwind=disabled \
+        -Dzlib=enabled -Dspirv-tools=disabled -Dvalgrind=disabled -Dlibunwind=disabled \
         -Dlmsensors=disabled -Ddisplay-info=disabled -Dxlib-lease=disabled -Dbuild-tests=false
     meson compile -C build -j "${THOR_BUILD_JOBS:-4}"
 }

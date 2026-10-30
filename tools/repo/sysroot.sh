@@ -13,7 +13,7 @@ set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/thor-vm
 OUT=${1:-$CACHE/sysroot}
-PACKAGES=(glibc libgcc gcc libxkbcommon dbus systemd-libs linux-api-headers json-c seatd libinput mesa libstdc++ libdrm wayland libx11 libxcb libxshmfence xcb-util-keysyms libxau libxdmcp expat zstd xorgproto xcb-proto)
+PACKAGES=(glibc libgcc gcc libxkbcommon dbus systemd-libs linux-api-headers json-c seatd libinput mesa libstdc++ libdrm wayland libx11 libxcb libxshmfence xcb-util-keysyms libxau libxdmcp expat zstd zlib xorgproto xcb-proto)
 # What linking needs from /usr/lib (links kept as links), besides the libraries' own .so names.
 LIBS="crt1.o crti.o crtn.o Scrt1.o ld-linux-aarch64.so.1 libc.so libc.so.6 libc_nonshared.a libm.so libm.so.6
       libmvec.so libmvec.so.1 libdl.so.2 libpthread.so.0 librt.so.1 libutil.so.1 libgcc_s.so libgcc_s.so.1
@@ -45,10 +45,10 @@ cp -a "$lib/pkgconfig/dbus-1.pc" "$lib/pkgconfig/xkbcommon.pc" "$lib/pkgconfig/l
     "$lib/pkgconfig/libseat.pc" "$lib/pkgconfig/libinput.pc" "$lib/pkgconfig/libudev.pc" "$lib/pkgconfig/gbm.pc" \
     "$OUT/usr/lib/pkgconfig/"
 # Turnip's native C++ runtime and Wayland/X11 WSI dependencies. Nothing from a host LLVM installation.
-for name in libstdc++ libdrm libwayland-client libwayland-server libX11 libX11-xcb libxcb libxcb-dri3     libxcb-present libxcb-randr libxcb-shm libxcb-sync libxcb-xfixes libxcb-keysyms libxshmfence libXau libXdmcp libexpat libzstd; do
+for name in libstdc++ libdrm libwayland-client libwayland-server libX11 libX11-xcb libxcb libxcb-dri3     libxcb-present libxcb-randr libxcb-shm libxcb-sync libxcb-xfixes libxcb-keysyms libxshmfence libXau libXdmcp libexpat libzstd libz; do
     cp -a "$lib"/"$name".so* "$OUT/usr/lib/"
 done
-for name in libdrm wayland-client wayland-server x11 x11-xcb xcb xcb-dri3 xcb-present xcb-randr     xcb-shm xcb-sync xcb-xfixes xcb-keysyms xshmfence xau xdmcp expat libzstd; do
+for name in libdrm wayland-client wayland-server x11 x11-xcb xcb xcb-dri3 xcb-present xcb-randr     xcb-shm xcb-sync xcb-xfixes xcb-keysyms xshmfence xau xdmcp expat libzstd zlib; do
     cp -a "$lib/pkgconfig/$name.pc" "$OUT/usr/lib/pkgconfig/"
 done
 # Architecture-independent protocol metadata is needed by the target pkg-config too.
