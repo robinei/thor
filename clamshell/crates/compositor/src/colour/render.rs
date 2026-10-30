@@ -581,7 +581,9 @@ impl Pipeline {
             _ => {
                 if let Some(texture) = &scene.texture {
                     let all = Rectangle::from_size(texture.size()).to_f64();
-                    frame.render_texture_from_to(texture, all, dst, &[dst], &[], Transform::Normal, 1.0, Some(program), &[])?;
+                    // The damage is relative to the destination, which bars put off the origin.
+                    let damage = Rectangle::from_size(dst.size);
+                    frame.render_texture_from_to(texture, all, dst, &[damage], &[], Transform::Normal, 1.0, Some(program), &[])?;
                 }
             }
         }
@@ -1112,6 +1114,31 @@ mod direct_tests {
         let drawn = pixels(&mut renderer, &out);
         for (i, px) in drawn.as_chunks::<4>().0.iter().enumerate() {
             assert!(px[..3].iter().all(|c| *c >= 254), "pixel ({}, {}) is {px:?}, not white", i % 14, i / 14);
+        }
+    }
+
+    /// A scene shown on another screen, fitted with bars, fills its place there whole and nothing else.
+    #[test]
+    fn a_fitted_encoding_fills_its_place() {
+        let mut renderer = renderer();
+        let parts = [Rectangle::new((0, 0).into(), (8, 4).into()), Rectangle::new((8, 0).into(), (6, 4).into())];
+        let mut pipeline = Pipeline::with_parts(&mut renderer, parts).unwrap();
+        pipeline.scenes[0].texture = Some(white(&mut renderer, (8, 4)));
+        // As `drm::external::fit` places an 8x4 picture on a 10x8 screen.
+        let dst = Rectangle::new((0, 1).into(), (10, 5).into());
+        let encoding = pipeline.encoding(&mut renderer, false, ColourDescription::default(), dst).unwrap();
+        let mut out: GlesTexture = renderer.create_buffer(Fourcc::Abgr8888, (10, 8).into()).unwrap();
+        {
+            let mut target = renderer.bind(&mut out).unwrap();
+            let sync = pipeline.present_screen(&mut renderer, &mut target, false, (10, 8).into(), Transform::Normal, Some(&encoding)).unwrap();
+            sync.wait().unwrap();
+        }
+        let drawn = pixels(&mut renderer, &out);
+        for (i, px) in drawn.as_chunks::<4>().0.iter().enumerate() {
+            let (x, y) = (i % 10, i / 10);
+            let inside = dst.contains((x as i32, y as i32));
+            let want = if inside { 255 } else { 0 };
+            assert!(px[..3].iter().all(|c| c.abs_diff(want) <= 1), "pixel ({x}, {y}) is {px:?}, inside {inside}");
         }
     }
 
