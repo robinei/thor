@@ -331,11 +331,7 @@ impl Builder<'_> {
             };
             // The runner is the one the source names, or else the first of its type.
             let kind = if matches!(game.launch, Launch::Steam { .. }) { runners::Kind::Steam } else { runners::Kind::Desktop };
-            let runner = match rule.runner.as_deref() {
-                Some(id) => self.runners.iter().find(|r| r.id == id && r.kind == Some(kind)),
-                None => runners::of_kind(self.runners, kind),
-            };
-            let Some(runner) = runner else {
+            let Some(runner) = source_runner(rule, self.runners, kind) else {
                 let what = if kind == runners::Kind::Steam { "steam" } else { "desktop" };
                 let named = rule.runner.as_deref().map_or_else(String::new, |id| format!(" ({id} isn't one)"));
                 self.problems.push(format!("a {what} source needs a runner of type {what} to open its entries{named}"));
@@ -510,6 +506,15 @@ impl Builder<'_> {
 pub(super) fn builtin_entry(builtin: clamshell_library::BuiltinApp) -> Entry {
     let details = Details { summary: builtin.about().into(), ..Details::default() };
     Entry { launch: Launch::Builtin(builtin), app: true, details, ..Entry::new(builtin.id(), builtin.title()) }
+}
+
+/// The runner that opens a desktop or Steam source's entries: the one it names, or else the first of its
+/// type.
+pub(super) fn source_runner<'r>(rule: &content::Rule, runners: &'r [runners::Runner], kind: runners::Kind) -> Option<&'r runners::Runner> {
+    match rule.runner.as_deref() {
+        Some(id) => runners.iter().find(|r| r.id == id && r.kind == Some(kind)),
+        None => runners::of_kind(runners, kind),
+    }
 }
 
 /// The first of `rules` matching an entry with this id, name and categories.

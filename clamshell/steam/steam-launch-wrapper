@@ -1,0 +1,56 @@
+#!/bin/bash
+# Steam's launch hook: every game Steam starts gets ClamShell's settings for it (docs/runners.md).
+# Steam runs each game as `steamrtarm64/steam-launch-wrapper -- reaper SteamLaunch AppId=<id> -- ...`;
+# steam-setup --links makes that link this script, installed as /usr/lib/clamshell/steam-launch-wrapper.
+# It takes the app id from its arguments (`AppId=<id>`), else from SteamAppId, exports the variables
+# `clamshell --launch-env steam:<id>` prints, and execs Valve's wrapper with its arguments unchanged.
+# Variables already set (the user's launch options, Steam's own) are replaced by ClamShell's of the
+# same name; SDL_GAMECONTROLLER_IGNORE_DEVICES is joined (clamshell --launch-env).
+#
+# On a failure the game runs as it is: the reason goes to the journal (clamshell-steam), and a notice
+# to ClamShell (`clamshell ctl launch-env failed steam:<id>`).
+#
+# Environment: CLAMSHELL_STEAM_WRAPPER, Valve's wrapper to run (default the ARM client's,
+# ~/.local/share/Steam/linuxarm64/steam-launch-wrapper; on an x86 client, ubuntu12_32/ or steamrt64/).
+set -u
+valve=${CLAMSHELL_STEAM_WRAPPER:-$HOME/.local/share/Steam/linuxarm64/steam-launch-wrapper}
+
+# ClamShell's programs run without what Steam sets for its runtime and overlay, which are for the game.
+ours() {
+    env -u LD_LIBRARY_PATH -u LD_PRELOAD "$@"
+}
+
+log() {
+    ours logger -t clamshell-steam -- "$1"
+}
+
+id=
+for arg; do
+    case $arg in
+        AppId=*) id=${arg#AppId=}; break ;;
+    esac
+done
+id=${id:-${SteamAppId:-}}
+
+failed() {  # REASON
+    log "steam:$id: started without ClamShell's settings: $1"
+    ours clamshell ctl launch-env failed "steam:$id" || log "steam:$id: ClamShell wasn't told (its control pipe)"
+}
+
+if [[ ! $id =~ ^[0-9]+$ ]]; then
+    log "no app id among the arguments or in SteamAppId: the game starts without ClamShell's settings: $*"
+elif ! vars=$(ours clamshell --launch-env "steam:$id" 2> >(ours logger -t clamshell-steam)); then
+    failed "clamshell --launch-env failed (its error is in the journal)"
+else
+    while IFS= read -r line; do
+        [ -z "$line" ] || export "${line?}"
+    done <<< "$vars"
+fi
+
+if [ ! -x "$valve" ]; then
+    # (Steam's own update may remove it, as steam-setup notes. Its arguments are `-- COMMAND...`.)
+    log "steam:$id: Valve's $valve is missing: the game is started without it"
+    [ "${1:-}" != -- ] || shift
+    exec "$@"
+fi
+exec "$valve" "$@"

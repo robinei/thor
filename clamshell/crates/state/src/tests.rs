@@ -116,6 +116,20 @@ fn a_launch_that_ends_without_a_window_didnt_start() {
     assert!(!matches!(notice(&s), Some(crate::bottom::notice::NoticeKind::NotStarted(_))), "{:?}", notice(&s));
 }
 
+/// Steam's launch hook couldn't read a game's settings: the game runs as it is, and a notice by its
+/// title says so, with the reason in the journal; the log says which entry.
+#[test]
+fn a_steam_game_started_without_its_settings_says_so() {
+    let mut s = state();
+    s.take_log().count();
+    let fx = s.applied(Event::StartedWithoutSettings("ff6".into()));
+    assert!(fx.is_empty(), "{fx:?}");
+    assert_eq!(notice(&s), Some(crate::bottom::notice::NoticeKind::WithoutSettings("Final Fantasy VI".into())));
+    assert!(s.take_log().any(|(level, line)| level == crate::LogLevel::Warn && line.starts_with("ff6: started by Steam without")));
+    s.applied(Event::StartedWithoutSettings("steam:1".into()));
+    assert_eq!(notice(&s), Some(crate::bottom::notice::NoticeKind::WithoutSettings("steam:1".into())), "not in the library: by its id");
+}
+
 #[test]
 fn a_launch_that_didnt_start_says_so() {
     let mut s = state();

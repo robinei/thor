@@ -144,7 +144,7 @@ pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, gl
         ),
     );
     // The controller is grabbed for good, with a virtual Xbox pad for games.
-    let pad_taken = pad::Taken::default();
+    let pad_taken = pad::Taken::new(paths.grabbed.clone());
     crate::launch::fex::write_presets(paths.fex.as_deref());
     let pad = started("pad", pad::spawn(env.gamepad.clone(), env.profile.controls, env.profile.sensor_hub, pad_taken.clone(), sink.clone()));
     // Send the sticks' calibrations and the controllers' players as saved. The state has them too, from

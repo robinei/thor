@@ -32,6 +32,9 @@ pub struct Paths {
     pub(crate) screenshots: Option<PathBuf>,
     /// Where the x86 emulation presets are copied, ~/.cache/clamshell/fex (see [`crate::launch::fex`]).
     pub fex: Option<PathBuf>,
+    /// The grabbed controllers' ids as `SDL_GAMECONTROLLER_IGNORE_DEVICES` takes them,
+    /// $XDG_RUNTIME_DIR/clamshell/grabbed, for Steam's launch hook (see [`crate::input::pad::Taken`]).
+    pub grabbed: Option<PathBuf>,
 }
 
 /// The environment the paths come from.
@@ -78,6 +81,7 @@ impl Paths {
         let own_runtime = base.runtime.as_ref().map(|r| r.join("clamshell"));
         Paths {
             sockets: own_runtime.clone().unwrap_or_else(|| std::env::temp_dir().join("clamshell")).join("sockets"),
+            grabbed: own_runtime.as_ref().map(|r| r.join("grabbed")),
             own_runtime,
             home: base.home.clone(),
             data_home: data,
@@ -116,6 +120,7 @@ mod tests {
         assert_eq!(paths.state_dir.as_deref(), Some(Path::new("/h/.local/share/clamshell")));
         assert_eq!(paths.art.as_deref(), Some(Path::new("/h/.cache/clamshell/art")));
         assert_eq!(paths.fex.as_deref(), Some(Path::new("/h/.cache/clamshell/fex")));
+        assert_eq!(paths.grabbed.as_deref(), Some(Path::new("/run/u/clamshell/grabbed")));
         assert_eq!(Paths::new(&Base::default()).state_dir, None, "no HOME, no XDG dirs");
     }
 }

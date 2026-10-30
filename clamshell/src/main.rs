@@ -94,6 +94,7 @@ fn carry_out(command: Command) -> Result<(), String> {
             clamshell_system::session::clipboard::set(text).map_err(|e| format!("clipboard: {e}"))
         }
         Command::Tray => commands::print_tray(),
+        Command::LaunchEnv(entry) => commands::print_launch_env(&paths, &sources, &entry),
         Command::ReleaseCharge => {
             clamshell_system::release_charge(env.profile.charge, env.charge_limit.as_deref());
             Ok(())

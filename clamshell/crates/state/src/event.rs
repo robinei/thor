@@ -115,6 +115,10 @@ pub enum Event {
     Screenshot(Result<String, String>),
     /// Dump recent in-process compositor window inputs for diagnosis and replay.
     DumpWindowEvents(std::path::PathBuf),
+    /// Steam's launch hook started the entry, a Steam game (`steam:<id>`), without ClamShell's settings,
+    /// since `clamshell --launch-env` failed (`clamshell ctl launch-env failed ID`). The reason is in the
+    /// journal (`clamshell-steam`).
+    StartedWithoutSettings(Arc<str>),
     /// Calibrates the gyro. A notice says to hold the device still until it ends.
     CalibrateGyro,
     /// A requested gyro calibration ended. True if it worked, meaning the device was held still enough.

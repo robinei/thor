@@ -14,6 +14,9 @@ pub enum Command {
     /// `--follow-steam <id>`: run in a Steam game's launch scope and move Steam's launcher for the game
     /// into it for as long as the launcher runs (see clamshell_system::launch::steam).
     FollowSteam(u32),
+    /// `--launch-env <entry id>`: print the environment a Steam game gets from ClamShell's settings, for
+    /// Steam's launch hook (see [`crate::commands::print_launch_env`]).
+    LaunchEnv(String),
     /// `--library`: print the tabs and entries found (library.json's content dirs, Steam, desktop files).
     Library,
     /// `--tray`: print the tray icons there are, and their menus (see clamshell_system::session::tray).
@@ -48,6 +51,7 @@ pub const USAGE: &str = "usage: clamshell --drm | --nested | ctl COMMAND...
   ctl COMMAND...       drive the running ClamShell (`clamshell ctl help` lists the commands)
 used by ClamShell itself:
   --follow-steam ID    a Steam game's follower, in its launch's scope
+  --launch-env ID      a Steam game's environment from the settings (steam:<app id>; Steam's launch hook)
   --wayland-filter     Waydroid's Wayland filter
   --clipboard get|set  the clipboard's text (Waydroid's clipboard sharing)
   --release-charge     the battery handed back to its own charging (after the session ended)
@@ -64,6 +68,7 @@ pub fn parse(args: &[String]) -> Option<Command> {
         [flag] if flag == "--nested" => Command::Nested,
         [flag] if flag == "--drm" => Command::Drm,
         [flag, appid] if flag == "--follow-steam" => Command::FollowSteam(appid.parse().ok()?),
+        [flag, entry] if flag == "--launch-env" => Command::LaunchEnv(entry.clone()),
         #[cfg(any(test, feature = "dev"))]
         [flag, dir] if flag == "--snapshot" => Command::Snapshot(dir.into()),
         [flag] if flag == "--library" => Command::Library,
@@ -100,6 +105,8 @@ mod tests {
         assert_eq!(parse(&args("--drm")), Some(Command::Drm));
         assert_eq!(parse(&args("--snapshot /tmp/s")), Some(Command::Snapshot("/tmp/s".into())));
         assert_eq!(parse(&args("--follow-steam 620")), Some(Command::FollowSteam(620)));
+        assert_eq!(parse(&args("--launch-env steam:620")), Some(Command::LaunchEnv("steam:620".into())));
+        assert_eq!(parse(&args("--launch-env")), None, "without its entry");
         assert_eq!(parse(&args("--library")), Some(Command::Library));
         assert_eq!(parse(&args("--tray")), Some(Command::Tray));
         assert_eq!(parse(&args("--fetch-metadata")), Some(Command::FetchMetadata));

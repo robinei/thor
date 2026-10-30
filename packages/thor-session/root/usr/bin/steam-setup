@@ -42,11 +42,18 @@ links() {
     link "$ROOT" "$HOME/.steam/root"
     link "$ROOT/steamrtarm64" "$HOME/.steam/sdkarm64"
     link "$ROOT/steamrtarm64" "$HOME/.steam/steamrtarm64"
-    # (Steam's own update removes the launch wrapper's link, after which every Proton launch exits with
-    # 127: Thorch's thorch-repair-steam-arm64. The steamclient.so links for games' Steamworks, from the
-    # first place that has one, as Thorch does.)
-    [ ! -x "$ROOT/linuxarm64/steam-launch-wrapper" ] \
-        || link ../linuxarm64/steam-launch-wrapper "$ROOT/steamrtarm64/steam-launch-wrapper"
+    # (Steam runs every game through steamrtarm64/steam-launch-wrapper, which its own update removes,
+    # after which every Proton launch exits with 127: Thorch's thorch-repair-steam-arm64. The link is
+    # ClamShell's launch hook, which gives the game its settings and runs Valve's linuxarm64 one; without
+    # ClamShell, Valve's. The steamclient.so links for games' Steamworks, from the first place that has
+    # one, as Thorch does.)
+    if [ -x "$ROOT/linuxarm64/steam-launch-wrapper" ]; then
+        if [ -x /usr/lib/clamshell/steam-launch-wrapper ]; then
+            link /usr/lib/clamshell/steam-launch-wrapper "$ROOT/steamrtarm64/steam-launch-wrapper"
+        else
+            link ../linuxarm64/steam-launch-wrapper "$ROOT/steamrtarm64/steam-launch-wrapper"
+        fi
+    fi
     mkdir -p "$HOME/.steam/sdk64" "$HOME/.steam/sdk32"
     first_link "$HOME/.steam/sdk64/steamclient.so" "$ROOT/linux64/steamclient.so" "$ROOT/steamrt64/steamclient.so"
     first_link "$HOME/.steam/sdk32/steamclient.so" "$ROOT/linux32/steamclient.so" "$ROOT/steamrt32/steamclient.so" \

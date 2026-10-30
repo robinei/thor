@@ -153,6 +153,23 @@ keeps a cold start from showing the client's window.
     no client --Launch(Steam game)--> the client started as Steam's own launch [the argv above]; the game's unit runs `clamshell --follow-steam ID`
     client running --Launch(Steam game)--> the request handed to the client; the follower started
 
+Neither way passes the game's environment: the request is handed over, and Steam's own environment
+would reach every game. The game gets its settings from Steam's launch hook instead
+(`clamshell/steam/steam-launch-wrapper`, which Steam runs for every game, however started; see
+docs/runners.md), which runs `clamshell --launch-env steam:ID`:
+
+    hook --app id (AppId=ID among its arguments, else SteamAppId) and --launch-env prints--> the variables exported; Valve's wrapper exec'd
+    hook --no app id--> logged (clamshell-steam); the game runs as it is
+    hook --launch-env fails--> logged; `clamshell ctl launch-env failed steam:ID`; the game runs as it is
+    hook --Valve's wrapper missing--> logged; the command after `--` exec'd
+    state --StartedWithoutSettings(entry)--> WithoutSettings notice (its title, else its id); logged at warn
+
+The hook's cases are `tests/steam_hook.rs` (a fake `clamshell`, `logger` and wrapper), `--launch-env`'s
+runner `a_steam_games_runner_is_found_without_reading_the_library`, the notice
+`a_steam_game_started_without_its_settings_says_so`. That Steam calls the hook with the app id and that
+the variables reach the game in Valve's container was checked on a desktop's x86 client by hand
+(docs/runners.md); the ARM client's path is a device check.
+
 The state's side is pinned by `steams_windows_open_behind_a_steam_games_launch`,
 `a_game_steam_started_is_followed_as_a_launch_beside_the_others`,
 `a_steam_game_library_view_started_ends_by_the_launcher_not_its_windows`,
@@ -265,7 +282,7 @@ capture screen doesn't listen and Home acts on the top screen.
 
 `show(kind, now)` replaces any notice; a tick after 2 s removes it. Tests: `keys_step_the_levels_and_show_
 them_for_a_moment`, `a_screenshot_is_asked_for_…`, `a_window_moved_down_…`; BottomRule(false):
-`a_window_moved_up_says_its_rule_is_forgotten`; Account: device `an_account_change_says_how_it_went`; Controller: `a_new_controller_joins_player_1_with_a_notice_and_is_remembered`. The gyro's "hold still" notice stays until the calibration answers, at most 30 s:
+`a_window_moved_up_says_its_rule_is_forgotten`; WithoutSettings: `a_steam_game_started_without_its_settings_says_so`; Account: device `an_account_change_says_how_it_went`; Controller: `a_new_controller_joins_player_1_with_a_notice_and_is_remembered`. The gyro's "hold still" notice stays until the calibration answers, at most 30 s:
 `the_gyros_hold_still_shows_until_it_answers_at_most_30_s`.
 
 ### View, power and dim (bottom/screen.rs, session/below.rs)
@@ -621,8 +638,8 @@ anchored lists on their item and every list within its ends; Focus scrolls just 
 | Env editor | `the_environment_editor_takes_the_keyboard` |
 | runner keymaps given on Library / Start | `a_runner_gets_its_keymap_once`, `a_runners_keymap_given_while_its_item_runs_is_applied` |
 | a change applies to the program in force (sync's Apply) | tests `a_running_game_takes_changes_at_once`, `a_game_coming_in_front_gets_its_settings_…` |
-| a launch's environment (`settings::launch_env`, called by the system crate's dispatch with the `Launch` effect's values and Env tile variables): the settings acting at launch (`Setting::through_launch`: the cap's `MESA_VK_WSI_PRESENT_MODE=fifo` and `vblank_mode=3`; x86 emulation's `FEX_APP_CONFIG`), then `SDL_GAMECONTROLLER_IGNORE_DEVICES` (the grabbed controllers), then the Env tile's for All, the runner, the entry. Later ones win, so the user's Env tile wins over what ClamShell sets | `the_settings_then_the_controllers_then_the_env_tile` (the order pinned), `the_launch_carries_the_games_settings_and_environment`, `a_capped_game_is_launched_presenting_in_fifo` |
-| x86 emulation (`Setting::X86`, file key `x86`): Proton's own (0, nothing set), Fast (1), Safe (2), at every level; Fast and Safe give `FEX_APP_CONFIG=~/.cache/clamshell/fex/{fast,safe}.json`, written at ClamShell's start where missing or changed | `the_settings_then_…`; system `every_preset_is_written_once_and_kept_while_unchanged` |
+| a launch's environment (`settings::launch_env`, one function for ClamShell's launches, where the system crate's dispatch calls it with the `Launch` effect's values and Env tile variables, and for `clamshell --launch-env`): the settings acting at launch (`Setting::through_launch`: the cap's `MESA_VK_WSI_PRESENT_MODE=fifo` and `vblank_mode=3`; x86 emulation's `FEX_APP_CONFIG`), then `SDL_GAMECONTROLLER_IGNORE_DEVICES` (the grabbed controllers; for Steam, joined to Steam's own list), then the Env tile's for All, the runner, the entry. Later ones win, so the user's Env tile wins over what ClamShell sets | `the_settings_then_the_controllers_then_the_env_tile` (the order pinned), `the_launch_carries_the_games_settings_and_environment`, `a_capped_game_is_launched_presenting_in_fifo` |
+| x86 emulation (`Setting::X86`, file key `x86`): Proton's own (0, nothing set), Fast (1), Safe (2), at every level; Fast and Safe give `FEX_APP_CONFIG=~/.cache/clamshell/fex/{fast,safe}.json`, written at ClamShell's start (and by `--launch-env`) where missing or changed | `the_settings_then_…`; system `every_preset_is_written_once_and_kept_while_unchanged` |
 | dimming: a `through_launch` tile and the Env tile are dimmed "no effect" where the launch hands its app over (`Panel::handed_over`: Android). x86 emulation is otherwise lit everywhere: whether an entry runs x86 code isn't known (a Steam game may be native arm64, a Heroic or Lutris game runs through Wine, a runner's command may be an x86 program), and its variable does nothing where FEX doesn't run | views `face`; status `an_app_handed_over_is_known_by_its_app_id_and_edited_without_what_it_cant_get` |
 
 ## Radios (radios/)

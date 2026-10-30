@@ -123,26 +123,53 @@ lost_on!(io::Error);
 /// ignore them with `SDL_GAMECONTROLLER_IGNORE_DEVICES`, as Steam does, so they take the virtual pads
 /// rather than the controllers, which are grabbed and so silent to them. mpv, for one, opens only the
 /// first controller it finds. Every controller grabbed since the start is kept, since one may come back
-/// while the program runs.
+/// while the program runs. The list is also written to a file ([`crate::paths::Paths::grabbed`]), for
+/// Steam's games, whose launch hook (`clamshell --launch-env`) runs outside ClamShell.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct Taken(Arc<Mutex<Vec<(u16, u16)>>>);
+pub(crate) struct Taken {
+    ids: Arc<Mutex<Vec<(u16, u16)>>>,
+    file: Option<Arc<std::path::Path>>,
+}
 
 impl Taken {
+    /// None grabbed yet, the list written to `file`; one left by an earlier run is removed.
+    pub(crate) fn new(file: Option<std::path::PathBuf>) -> Taken {
+        if let Some(file) = &file
+            && let Err(e) = std::fs::remove_file(file)
+            && e.kind() != io::ErrorKind::NotFound
+        {
+            log::warn!("pad: {}: {e}: Steam's games may be told to ignore controllers no longer grabbed", file.display());
+        }
+        Taken { ids: Arc::default(), file: file.map(Into::into) }
+    }
+
     fn add(&self, ids: (u16, u16)) {
-        let mut taken = crate::os::lock(&self.0);
-        if !taken.contains(&ids) {
+        let ignore = {
+            let mut taken = crate::os::lock(&self.ids);
+            if taken.contains(&ids) {
+                return;
+            }
             taken.push(ids);
+            ignore_of(&taken)
+        };
+        if let (Some(file), Some(ignore)) = (&self.file, ignore)
+            && let Err(e) = crate::os::fs::write_file(file, ignore.as_bytes())
+        {
+            log::warn!("pad: {}: {e}: Steam's games aren't told to ignore the grabbed controllers", file.display());
         }
     }
 
     /// The controllers to ignore, as `SDL_GAMECONTROLLER_IGNORE_DEVICES` takes them, if one was grabbed.
-    /// A controller with the virtual pad's ids is left out, since ignoring those would hide the virtual
-    /// pads too.
     pub(crate) fn ignore(&self) -> Option<String> {
-        let taken = crate::os::lock(&self.0);
-        let ids: Vec<String> = taken.iter().filter(|&&ids| ids != device::VIRTUAL_IDS).map(|(v, p)| format!("0x{v:04x}/0x{p:04x}")).collect();
-        (!ids.is_empty()).then(|| ids.join(","))
+        ignore_of(&crate::os::lock(&self.ids))
     }
+}
+
+/// The ids as `SDL_GAMECONTROLLER_IGNORE_DEVICES` takes them, if any. A controller with the virtual pad's
+/// ids is left out, since ignoring those would hide the virtual pads too.
+fn ignore_of(taken: &[(u16, u16)]) -> Option<String> {
+    let ids: Vec<String> = taken.iter().filter(|&&ids| ids != device::VIRTUAL_IDS).map(|(v, p)| format!("0x{v:04x}/0x{p:04x}")).collect();
+    (!ids.is_empty()).then(|| ids.join(","))
 }
 
 /// Owns the controllers as they come, with their ids in `taken`. `spec` comes from CLAMSHELL_GAMEPAD.
@@ -1182,15 +1209,20 @@ mod tests {
     }
 
     /// Launched programs are told to ignore every controller grabbed, but not ones with the virtual pad's
-    /// ids.
+    /// ids. The list is written for Steam's launch hook, and one left by an earlier run is removed.
     #[test]
     fn launches_ignore_every_controller_grabbed() {
-        let taken = Taken::default();
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("grabbed");
+        std::fs::write(&file, "0x1234/0x5678").unwrap();
+        let taken = Taken::new(Some(file.clone()));
         assert_eq!(taken.ignore(), None);
+        assert!(!file.exists(), "an earlier run's list is gone");
         taken.add((0x045e, 0x0b13));
         taken.add((0x2dc8, 0x6003));
         taken.add((0x045e, 0x0b13));
         taken.add(device::VIRTUAL_IDS);
         assert_eq!(taken.ignore().as_deref(), Some("0x045e/0x0b13,0x2dc8/0x6003"));
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "0x045e/0x0b13,0x2dc8/0x6003");
     }
 }

@@ -38,6 +38,9 @@ pub enum NoticeKind {
     NotStarted(String),
     /// A requested launch is starting. Holds the entry's title.
     Starting(String),
+    /// A Steam game started without ClamShell's settings (see [`crate::Event::StartedWithoutSettings`]).
+    /// Holds its title; the reason is in the journal.
+    WithoutSettings(String),
     /// An account change is done, with what was done, or failed, with the reason (see
     /// [`crate::setup::account`]).
     Account(Result<String, String>),

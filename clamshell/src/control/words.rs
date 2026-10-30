@@ -45,6 +45,9 @@ pub const COMMANDS: &[Form<Vec<Event>>] = &[
     }),
     form("bottom power", "Home+Start: the bottom screen off, or on", |_| hardware_key(HardwareKey::BottomPower)),
     form("window events FILE", "dump the last 256 window inputs and the windows", |a| Ok(vec![Event::DumpWindowEvents(arg(a, 0).into())])),
+    form("launch-env failed ID", "Steam's launch hook started Steam game ID (steam:<app id>) without its settings: a notice says so", |a| {
+        Ok(vec![Event::StartedWithoutSettings(arg(a, 0).into())])
+    }),
     form("calibration rate HZ", "the main screen at HZ while the refresh rate calibration runs (its tool asks)", |a| {
         Ok(vec![Event::CalibrationRate(number(arg(a, 0))?)])
     }),

@@ -508,6 +508,11 @@ impl State {
             Event::Frozen(keys) => self.session.found_frozen(keys),
             Event::Paste => self.bottom.paste(),
             Event::DumpWindowEvents(path) => out.effects.push(Effect::Compositor(Compositor::DumpWindowEvents(path))),
+            Event::StartedWithoutSettings(entry) => {
+                let title = self.library_view.library().entry(&entry).map_or_else(|| entry.to_string(), |g| g.title.clone());
+                out.log(LogLevel::Warn, format!("{entry}: started by Steam without ClamShell's settings (see the journal, clamshell-steam)"));
+                self.bottom.notice_mut().show(NoticeKind::WithoutSettings(title), now);
+            }
             Event::Screenshot(result) => self.bottom.notice_mut().show(NoticeKind::Screenshot(result), now),
             Event::Sticks(event) => self.device_view.sticks_event(event, now, out),
             Event::Controller(event) => self.device_view.controller_event(event, self.bottom.notice_mut(), now, out),

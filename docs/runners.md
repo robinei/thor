@@ -156,6 +156,57 @@ zathura and imv read the keyboard, not the pad. RetroArch and mpv read the pad t
 them, so ClamShell ships no keymap for them. Choosing another keymap for a runner keeps it; resetting the
 runner's settings brings ClamShell's back at the next start.
 
+### Steam's games: the launch hook
+
+A launch's environment is the same however the game starts (`settings::launch_env`): the variables of the
+settings acting at launch (the Frame rate cap's FIFO, x86 emulation's preset), then
+`SDL_GAMECONTROLLER_IGNORE_DEVICES` (the controllers ClamShell grabbed), then the Env tile's for All, the
+runner and the item, a later one replacing an earlier one of the same name.
+
+ClamShell doesn't start a Steam game's process: `steam -applaunch` hands the request to the client. So
+the variables reach the game through Steam's launch hook. Steam runs every game through
+`steam-launch-wrapper` (`steamrtarm64/` on the ARM client), as `steam-launch-wrapper -- reaper SteamLaunch
+AppId=<id> -- <Proton or the game>`, whether it is started from the Library or Steam's own window, its
+install scripts too. `steam-setup --links` (each start of `steam`) points that link at
+`/usr/lib/clamshell/steam-launch-wrapper` (`clamshell/steam/`), which:
+
+- takes the app id from `AppId=<id>` among its arguments, else `SteamAppId`;
+- runs `clamshell --launch-env steam:<id>`, which needs no running ClamShell: it reads the settings'
+  files, finds the game's runner from library.json's Steam sources and runners (the first source taking
+  the game, by id or name, and its runner), joins Steam's own `SDL_GAMECONTROLLER_IGNORE_DEVICES` (the
+  controllers Steam Input maps) with the grabbed ones (`$XDG_RUNTIME_DIR/clamshell/grabbed`, written by
+  the running ClamShell), and prints `KEY=value` lines;
+- exports them and execs Valve's `linuxarm64/steam-launch-wrapper` with its arguments unchanged
+  (`CLAMSHELL_STEAM_WRAPPER` names another: on an x86 client `ubuntu12_32/` or `steamrt64/`).
+
+On a failure the game starts as it is, and nothing is silent: the reason goes to the journal
+(`journalctl -t clamshell-steam`) and a notice says "<game> started without its settings"
+(`clamshell ctl launch-env failed steam:<id>`). ClamShell's programs run without Steam's
+`LD_LIBRARY_PATH` and `LD_PRELOAD`, which are for the game.
+
+Precedence: All, the runner, the game, then the Env tile, then what Steam itself sets. The user's Steam
+launch options (`VAR=x %command%`) are set before the hook runs (Steam puts them in front of
+`steam-launch-wrapper`), so a variable ClamShell also sets is replaced by ClamShell's; the others pass
+unchanged. To set one of ClamShell's variables otherwise for a game, use its Env tile, not Steam's
+launch options.
+
+Checked on a desktop's x86 client (2026-10-30, Proton Experimental in Steam Linux Runtime 4,
+`ubuntu12_32/steam-launch-wrapper` linked to the hook for the test): Steam called the hook with the app
+id for the install script and for the game, and the game's process in the container
+(`container=pressure-vessel`) had the cap's variables, `FEX_APP_CONFIG` and the Env tile's variables.
+The ARM client's path is a device check (thor-gameplan.md).
+
+### x86 emulation
+
+FEX, the x86 emulator inside Proton ARM64 (ARM64EC), is set by a preset file named by `FEX_APP_CONFIG`,
+which every FEX reads (Armada's way): Proton's own (nothing set), Fast (TSO off, half barriers off, x87
+reduced precision, multiblock) or Safe (TSO with vector and memcpy TSO, full x87 precision, no
+multiblock), Armada's two presets. ClamShell writes them to `~/.cache/clamshell/fex/` at its start, since
+Valve's container replaces `/usr` but shares the home. The tile is lit wherever the launch's environment
+reaches the program: whether an entry runs x86 code isn't known (a Steam game may be native arm64, a
+Heroic game runs through Wine), and the variable does nothing where FEX doesn't run. Single FEX options
+(`FEX_SMCCHECKS=full`, ...) go in the Env tile.
+
 ## Actions
 
 The details pane's rows each come from one of three things:

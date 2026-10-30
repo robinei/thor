@@ -10,8 +10,9 @@ use std::path::Path;
 /// The presets, by the file name [`clamshell_state::settings::X86::preset`] gives.
 const PRESETS: [(&str, &str); 2] = [("fast.json", include_str!("fex/fast.json")), ("safe.json", include_str!("fex/safe.json"))];
 
-/// Writes the presets into `dir` where they are missing or differ. Run at ClamShell's start. A failure
-/// is logged: the games chosen to get a preset then run as Proton sets FEX up.
+/// Writes the presets into `dir` where they are missing or differ. Run at ClamShell's start and by
+/// `clamshell --launch-env`. A failure is logged: the games chosen to get a preset then run as Proton sets
+/// FEX up.
 pub fn write_presets(dir: Option<&Path>) {
     let Some(dir) = dir else {
         log::warn!("x86 emulation: no cache folder (no HOME): the presets aren't written, and games run as Proton sets FEX up");

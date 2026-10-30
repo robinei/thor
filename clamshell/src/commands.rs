@@ -1,10 +1,11 @@
 //! The one-shot commands that print and exit: the tray's icons and menus (`--tray`), the library
-//! (`--library`), and metadata fetched for it (`--fetch`).
+//! (`--library`), metadata fetched for it (`--fetch`), and a Steam game's environment (`--launch-env`).
 
 use clamshell_state::Library;
 use clamshell_system::library::meta;
 use clamshell_system::library::{self, Sources};
 use clamshell_system::paths::Paths;
+use clamshell_system::store::Store;
 
 /// `--tray`: prints the tray icons and their menus.
 pub(crate) fn print_tray() -> Result<(), String> {
@@ -84,4 +85,51 @@ fn print_entry(library: &Library, i: usize, depth: usize) {
         let at = g.playback.position.map(|p| format!(" [at {} of {} s]", p, g.playback.duration.map_or("?".to_owned(), |d| d.to_string()))).unwrap_or_default();
         println!("{indent}{}  ({}) [{art}]{at} {:?}", g.title, g.id, g.launch);
     }
+}
+
+/// `--launch-env steam:<id>`: prints the environment Steam game `<id>` gets from ClamShell's settings
+/// ([`clamshell_state::settings::launch_env`], as for ClamShell's own launches), a `KEY=value` line each,
+/// for Steam's launch hook (`clamshell/steam/steam-launch-wrapper`, docs/runners.md). It needs no running
+/// ClamShell: the settings are read from their files, the game's runner from library.json's sources and
+/// runners (see [`clamshell_system::library::steam_runner`]), and the grabbed controllers from the file the running one
+/// keeps, none without it. `SDL_GAMECONTROLLER_IGNORE_DEVICES` set in its own environment, Steam's list of
+/// the controllers it maps with Steam Input, is kept, with the grabbed ones added. Errs if the settings
+/// can't be read, so the hook says so.
+pub(crate) fn print_launch_env(paths: &Paths, sources: &Sources, entry: &str) -> Result<(), String> {
+    let appid: u32 = entry
+        .strip_prefix(clamshell_library::ids::STEAM)
+        .and_then(|id| id.parse().ok())
+        .ok_or_else(|| format!("launch-env: {entry}: not a Steam game's id (steam:<app id>)"))?;
+    let dir = paths.state_dir.as_deref().ok_or("launch-env: no HOME: no settings")?;
+    let settings = Store::open(dir).settings();
+    let runner = library::steam_runner(sources, appid).map_err(|e| format!("launch-env: {e}"))?;
+    let levels: Vec<&str> = runner.as_deref().into_iter().collect();
+    let values = settings.of_in(entry, &levels);
+    let mut tile = Vec::new();
+    settings.env_in(entry, &levels, &mut tile);
+    let grabbed = paths.grabbed.as_deref().and_then(|file| match std::fs::read_to_string(file) {
+        Ok(ids) => Some(ids),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            log::warn!("launch-env: {}: {e}: the grabbed controllers aren't ignored", file.display());
+            None
+        }
+    });
+    let steams = std::env::var("SDL_GAMECONTROLLER_IGNORE_DEVICES").ok();
+    let ignore: Vec<&str> = steams.iter().chain(&grabbed).map(|ids| ids.trim().trim_matches(',')).filter(|ids| !ids.is_empty()).collect();
+    let ignore = ignore.join(",");
+    clamshell_system::launch::fex::write_presets(paths.fex.as_deref());
+    let facts = clamshell_state::settings::LaunchFacts { fex: paths.fex.as_deref(), ignore: Some(ignore.as_str()).filter(|i| !i.is_empty()) };
+    let mut env = Vec::new();
+    clamshell_state::settings::launch_env(&values, facts, &tile, &mut env);
+    for (key, value) in env {
+        // A line each, read by a shell: a name it can export, and a value on one line.
+        let name = key.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_') && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        if !name || value.contains('\n') {
+            log::warn!("launch-env: {entry}: {key:?} isn't a variable a game can be given: skipped");
+            continue;
+        }
+        println!("{key}={value}");
+    }
+    Ok(())
 }

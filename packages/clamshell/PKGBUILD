@@ -53,6 +53,8 @@ package() {
     install -Dm755 -t "$pkgdir/usr/bin" "$target/release/clamshell" "$target/release/clamshell-fan" \
         "$repo/clamshell/android/clamshell-android"
     install -Dm644 -t "$pkgdir/usr/share/clamshell/python" "$repo/clamshell/android/pyclip.py"
+    # Steam's launch hook, which steam-setup links in for Valve's (docs/runners.md).
+    install -Dm755 -t "$pkgdir/usr/lib/clamshell" "$repo/clamshell/steam/steam-launch-wrapper"
     install -Dm644 -t "$pkgdir/usr/lib/systemd/system" "$startdir/clamshell-fan.service"
     install -Dm644 "$startdir/clamshell-fan.tmpfiles" "$pkgdir/usr/lib/tmpfiles.d/clamshell-fan.conf"
     # The power group: what ClamShell's settings set (cpufreq, devfreq, the battery, the fan's mode), given

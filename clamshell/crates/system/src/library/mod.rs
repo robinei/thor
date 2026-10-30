@@ -166,6 +166,36 @@ pub fn load(sources: &Sources) -> Loaded {
     Loaded { library, wanted, keys: config.keys }
 }
 
+/// The key of the runner that opens Steam game `appid` ([`clamshell_library::runner_key`]), as the library
+/// gives it, for `clamshell --launch-env`: read from library.json's sources and runners and the game's
+/// manifest (for a source matching by name), without reading the rest of the library. None if no Steam
+/// source takes the game (or one hides it), or the source's runner isn't declared: it has then no
+/// runner level, as it isn't in the library. An error if library.json doesn't read.
+pub fn steam_runner(sources: &Sources, appid: u32) -> Result<Option<Arc<str>>, String> {
+    let (config, problem) = sources.config.as_deref().map(content::read_config).unwrap_or_default();
+    if let Some(problem) = problem {
+        return Err(problem);
+    }
+    let rules: Vec<&content::Rule> = config
+        .sources
+        .iter()
+        .filter_map(|s| match s {
+            content::Source::Steam(r) => Some(r),
+            _ => None,
+        })
+        .collect();
+    if rules.is_empty() {
+        return Ok(None);
+    }
+    let id = format!("{}{appid}", ids::STEAM);
+    let title = sources.steam.as_deref().map(steam::games).unwrap_or_default().into_iter().find(|g| *g.id == *id).map(|g| g.title).unwrap_or_default();
+    let Some(rule) = first_match(&rules, &appid.to_string(), &title, &[]).filter(|r| r.place.is_some() && !r.hide) else {
+        return Ok(None);
+    };
+    let (runners, _) = runners::in_force(&config.runners);
+    Ok(source_runner(rule, &runners, runners::Kind::Steam).map(|r| clamshell_library::runner_key(&r.id)))
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
@@ -213,6 +243,38 @@ mod tests {
         assert_eq!(titles(&folder("Steam").items), ["Text", "Celeste"], "Arma hidden");
         assert_eq!(titles(&folder("Text").items), ["Zork"]);
         assert_eq!(folder("Zork").runner.as_ref().map(|r| &*r.key), Some("runner:steam"), "Steam's games: Steam's");
+    }
+
+    /// `clamshell --launch-env` finds a Steam game's runner as the library does: by the first source
+    /// matching its id or name, that source's runner, and none for a game hidden or taken by no source.
+    #[test]
+    fn a_steam_games_runner_is_found_without_reading_the_library() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let steam = root.join("steam");
+        std::fs::create_dir_all(steam.join("steamapps")).unwrap();
+        std::fs::write(steam.join("steamapps/libraryfolders.vdf"), format!("\"libraryfolders\" {{ \"0\" {{ \"path\" \"{}\" }} }}", steam.display())).unwrap();
+        for (id, name) in [(10, "Arma"), (20, "Zork"), (30, "Celeste")] {
+            std::fs::write(
+                steam.join(format!("steamapps/appmanifest_{id}.acf")),
+                format!("\"AppState\" {{ \"appid\" \"{id}\" \"name\" \"{name}\" \"StateFlags\" \"4\" }}"),
+            )
+            .unwrap();
+        }
+        let config = r#"{ "places": [{ "id": "games", "name": "Games" }],
+          "runners": [{ "type": "steam", "id": "steam", "name": "Steam" }, { "type": "steam", "id": "steam-text", "name": "Text adventures" }],
+          "sources": [{ "type": "steam", "name": "z*", "place": "games", "runner": "steam-text" }, { "type": "steam", "id": "10", "hide": true },
+                      { "type": "steam", "id": "30", "place": "games" }] }"#;
+        std::fs::write(root.join("library.json"), config).unwrap();
+        let sources = Sources { config: Some(root.join("library.json")), steam: Some(steam.clone()), ..Sources::default() };
+        let lib = load(&sources).library;
+        for appid in [10, 20, 30, 40] {
+            let in_library = lib.entry(&format!("steam:{appid}")).and_then(|g| g.runner.as_ref()).map(|r| r.key.clone());
+            assert_eq!(steam_runner(&sources, appid).unwrap(), in_library, "{appid}");
+        }
+        assert_eq!(steam_runner(&sources, 20).unwrap().as_deref(), Some("runner:steam-text"), "by its name");
+        std::fs::write(root.join("library.json"), "{").unwrap();
+        assert!(steam_runner(&sources, 20).is_err(), "library.json unread");
     }
 
     #[test]

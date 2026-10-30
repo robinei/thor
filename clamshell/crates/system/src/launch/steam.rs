@@ -1,9 +1,11 @@
 //! Steam's games. A game is started with `steam -gamepadui -silent -applaunch <id>`. If Steam is running, the
 //! command is handed to it. Otherwise Steam is started with the command as a launch of Steam's desktop
-//! entry, in a launch of that entry, so Steam is on the dock and outlives ClamShell. That start doesn't get
-//! the game's environment, because it would become Steam's own environment for every game it starts:
-//! only the displays to open (`WAYLAND_DISPLAY`, `DISPLAY`), the session's rather than ClamShell's own
-//! (nested, the desktop's).
+//! entry, in a launch of that entry, so Steam is on the dock and outlives ClamShell. Neither passes the
+//! game's environment: `steam -applaunch` hands the request over and ends, and Steam's own environment
+//! would reach every game it starts. That start gets only the displays to open (`WAYLAND_DISPLAY`,
+//! `DISPLAY`), the session's rather than ClamShell's own (nested, the desktop's). The game gets its
+//! settings from Steam's launch hook instead (`clamshell/steam/steam-launch-wrapper`, which runs
+//! `clamshell --launch-env`), however it is started.
 //!
 //! The launch's own service holds a follower (`clamshell --follow-steam <id>`, [`follow`]). It moves Steam's
 //! launcher for the game (`reaper SteamLaunch AppId=<id>`) and what it started into its service. It does
@@ -102,7 +104,7 @@ pub(super) fn ask_steam(request: &Request, appid: u32) -> Result<(), Error> {
         job::start(&job)?;
     } else {
         let mut steam = Process::new("steam");
-        steam.args(argv.iter().skip(1)).envs(env.iter().map(|(k, v)| (k, v))).stdin(Stdio::null()).process_group(0);
+        steam.args(argv.iter().skip(1)).stdin(Stdio::null()).process_group(0);
         job::reap(steam.spawn()?);
     }
     Ok(())
