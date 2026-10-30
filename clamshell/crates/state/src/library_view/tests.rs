@@ -403,3 +403,22 @@ fn a_reload_keeps_the_listings_of_folders_in_folders_listed_again() {
     s.applied(Event::Library(Box::new(clamshell_library::demo::library())));
     assert!(s.library_view().library().has("browse:Files/Home/Shots/a.png"));
 }
+
+#[test]
+fn tapping_a_collection_from_apps_or_tv_selects_the_same_tab() {
+    for from in ["Apps", "TV"] {
+        let mut s = state();
+        let from = s.library_view().library().collections.iter().position(|collection| collection.name == from).unwrap();
+        tap(&mut s, Id::LibraryView(LibraryViewId::Collection(from as u16)));
+        assert_eq!(s.library_view().current(), from);
+        let wanted = s.library_view().library().collections.get(1).unwrap().name.clone();
+        let effects = tap(&mut s, Id::LibraryView(LibraryViewId::Collection(1)));
+        assert_eq!(s.library_view().current(), 1);
+        assert_eq!(s.library_view().collection().map(|collection| collection.name.as_str()), Some(wanted.as_str()));
+        let selected = s.library_view().selected().cloned().map(LibraryViewId::Entry).map(Id::LibraryView);
+        assert_eq!(s.pointer().focus(), selected.as_ref(), "focus follows the selected entry in the new collection");
+        assert!(effects.is_empty(), "switching collections has no immediate outside effect: {effects:?}");
+        assert!(tap(&mut s, Id::LibraryView(LibraryViewId::Collection(1))).is_empty());
+        assert_eq!(s.library_view().current(), 1, "repeated taps are idempotent");
+    }
+}

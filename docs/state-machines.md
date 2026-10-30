@@ -1924,3 +1924,10 @@ The file is never unlinked: a persistent inode prevents two processes from locki
 the same path. Unit tests cover contention, release, independent runtime directories and failures.
 The nested real-client test rejects both kinds of duplicate session while the first remains usable;
 its private runtime and the VM's runtime still permit independent sessions.
+
+The Library's collection taps use the same transition from Apps, TV and the other collections. The
+state test `tapping_a_collection_from_apps_or_tv_selects_the_same_tab` pins collection 1, focus and
+no immediate effects from both reported starting tabs, including a repeated tap. The control parser
+already pins `tap collection 1` to that target. The reported difference is not reproduced in the
+state; two sessions reading the same control pipe could divide commands between different views.
+Session ownership now prevents that second reader.
