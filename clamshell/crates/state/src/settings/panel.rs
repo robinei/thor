@@ -146,7 +146,7 @@ pub const GRID_COLUMNS: usize = 5;
 /// the grid scrolls. On a program's tab Reset comes before the last, CPU cores, to show with the others.
 /// The keymap's tile stands for one per player, player 1's first (see [`Panel::grid`]). The settings for
 /// the device rather than a program, the charge limit and idle, are on the battery tab.
-const GRID: [crate::id::SettingsId; 22] = {
+const GRID: [crate::id::SettingsId; 23] = {
     use crate::id::SettingsId::{Env, Tile};
     [
         Tile(Setting::Power),
@@ -170,6 +170,7 @@ const GRID: [crate::id::SettingsId; 22] = {
         Tile(Setting::GpuMax),
         Tile(Setting::Rumble),
         Tile(Setting::X86),
+        Tile(Setting::VulkanDriver),
         Tile(Setting::BigCores),
     ]
 };

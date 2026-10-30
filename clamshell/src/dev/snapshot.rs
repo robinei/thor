@@ -382,6 +382,24 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot("status-low.png", Bottom, vec![tap(Id::Editor(EditorId::Save)), Reading::Status(demo::STATUS_LOW).into()]),
             ],
         ),
+        // Driver choices remain usable without the optional package; readings change availability.
+        group(
+            vec![ff6(), tab(Tab::Settings)],
+            vec![
+                shot("settings-vulkan-missing.png", Bottom, vec![PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::VulkanDriver))).into()]),
+                shot(
+                    "settings-vulkan-installed.png",
+                    Bottom,
+                    vec![
+                        Reading::Installed(clamshell_state::status::Installed {
+                            mesa: Some("26.2.6-1".into()),
+                            turnip_devel: Some("27.0.0_devel.20261030.gbebbaf4-1".into()),
+                        })
+                        .into(),
+                    ],
+                ),
+            ],
+        ),
         // Naming a new keymap.
         group(
             vec![ff6(), ff6(), tab(Tab::Settings)],

@@ -23,6 +23,7 @@ pub(crate) enum Command {
     Sleep,
     /// Read the time zone and the ones to choose from.
     ReadTime,
+    ReadInstalled,
     SetTimeZone(String),
     /// Whether the network sets the clock (NTP).
     SetNtp(bool),
@@ -54,6 +55,9 @@ fn awake(argv: &[String]) -> bool {
 /// so a screenshot or sleep asked for meanwhile doesn't wait for it.
 pub(crate) fn spawn(screenshots: Option<PathBuf>, calibration: Option<&'static str>, sink: impl Sink + Clone) -> io::Result<Worker<Command>> {
     Worker::spawn(clamshell_state::Thread::System.name(), move |commands| {
+        if sink.send(Event::Reading(Reading::Installed(crate::components::read(std::path::Path::new("/"))))).is_err() {
+            return;
+        }
         for command in commands {
             if carry_out(command, screenshots.as_ref(), calibration, &sink).is_err() {
                 return;
@@ -96,6 +100,7 @@ fn carry_out(command: Command, screenshots: Option<&PathBuf>, calibration: Optio
             in_background("awake", sink, move || if awake(&argv) { vec![Event::Idle(IdleEvent::KeptAwake)] } else { vec![] }, Vec::new);
             Ok(())
         }
+        Command::ReadInstalled => sink.send(Event::Reading(Reading::Installed(crate::components::read(std::path::Path::new("/"))))),
         Command::ReadTime => sink.send(Event::Reading(Reading::Time(timedated::read_time(None)))),
         Command::SetTimeZone(zone) => {
             let error = timedated::set_time_zone(&zone).err();

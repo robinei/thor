@@ -79,14 +79,13 @@ impl Handles {
                 log::info!("launching {entry}");
                 self.tuning.apply(settings);
                 let ignore = self.pad_taken.ignore();
-                let facts = clamshell_state::settings::LaunchFacts { fex: self.paths.fex.as_deref(), ignore: ignore.as_deref() };
-                let mut game_env = Vec::new();
-                clamshell_state::settings::launch_env(settings, facts, tile_env, &mut game_env);
                 self.launcher.send(launcher::Command::Launch(launcher::Request {
                     entry: entry.clone(),
                     unit: unit.clone(),
                     launch: launch.clone(),
-                    env: game_env,
+                    env: tile_env.clone(),
+                    settings: *settings,
+                    ignore,
                 }));
             }
             Effect::Apply { settings, .. } => self.tuning.apply(settings),
@@ -149,6 +148,7 @@ impl Handles {
             Effect::AskAwake(argv) => self.system.send(crate::errands::Command::AskAwake(argv.clone())),
             Effect::Sleep => self.system.send(crate::errands::Command::Sleep),
             Effect::Account(command) => self.system.send(crate::errands::Command::Account(command.clone())),
+            Effect::ReadInstalled => self.system.send(crate::errands::Command::ReadInstalled),
             Effect::CalibrateRefresh => self.system.send(crate::errands::Command::CalibrateRefresh),
             Effect::CalibrateSticks => self.tuning.pad.send(pad::Command::CalibrateSticks),
             Effect::Players(players) => self.tuning.pad.send(pad::Command::Players(players.clone())),

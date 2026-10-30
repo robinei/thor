@@ -724,12 +724,12 @@ x86 emulation is not dimmed for native programs. ClamShell can't know whether an
 
 - `crates/state/src/settings/mod.rs`:
   - `Setting::X86`, `Setting::VulkanDriver`, `Setting::FrameGen` as `choices!` enums.
-  - `COUNT` 31 → 34, and names in `names!`. No migration: the files just gain keys.
+  - P1/P2 bring `COUNT` to 33; FrameGen adds one later, with its name in `names!`. No migration: the files just gain keys.
   - `through_launch()` adds the three.
   - `launch_env(values, &mut env)` replaces `session/running.rs::cap_env`. The cap's variables come first; the order is pinned by a test, since the user's Env tile must win.
 - `crates/state/src/settings/panel.rs`: `GRID` gains the three tiles.
   - A tile or value whose component is missing is dimmed "not installed".
-  - Facts: `Event::Installed { turnip_devel: Option<version>, framegen: bool, mesa: version }`, read by the system crate at start. `Sys` keeps them.
+  - Facts: `Reading::Installed(Installed { turnip_devel: Option<version>, mesa: Option<version> })`, read by the system crate at start and on driver tile interactions. `Sys` keeps them. FrameGen will add its own availability later.
   - The menu's second lines come from a `Choice` description table beside the labels.
 - `crates/views/src/settings.rs`, `icons.rs`: three line icons.
 - `crates/system/src/library/` or `paths.rs`: the component paths, as constants of the packages that install them.
@@ -741,7 +741,7 @@ x86 emulation is not dimmed for native programs. ClamShell can't know whether an
 
 | Package (our repo) | Built from | Installs | Updated |
 |---|---|---|---|
-| `turnip-devel` | `packages/turnip-devel/PKGBUILD`: Mesa main `bebbaf4961a9` (2026-10-30), cross-built by `tools/repo/build.sh`. Only Turnip for MSM, Wayland/X11 WSI; LLVM, Gallium/OpenGL, other Vulkan drivers, optional layers/tools disabled. Shader caching uses zstd; zlib is retained for Turnip's command-stream dumps, and upstream drirc workarounds are retained. Its check inspects the built AArch64 ELF for LLVM/Clang/Gallium dependencies. | `/usr/lib/turnip-devel/` with its ICD JSON outside the loader's search path, so no program sees two GPUs; about 15 MB | We bump the commit when Mesa main has a Turnip fix worth having; pacman -Syu |
+| `turnip-devel` | `packages/turnip-devel/PKGBUILD`: Mesa main `bebbaf4961a9` (2026-10-30), cross-built by `tools/repo/build.sh`. Only Turnip for MSM, Wayland/X11 WSI; LLVM, Gallium/OpenGL, other Vulkan drivers, optional layers/tools disabled. Shader caching uses zstd; zlib is retained for Turnip's command-stream dumps, and upstream drirc workarounds are retained. Its check inspects the built AArch64 ELF for LLVM/Clang/Gallium dependencies. | `/usr/lib/turnip-devel/` with its ICD JSON outside the loader's search path, so no program sees two GPUs; 13.1 MiB installed, 2.4 MiB compressed (measured AArch64 build) | We bump the commit when Mesa main has a Turnip fix worth having; pacman -Syu |
 | `kettle-framegen` (or `lsfg-vk`) | Upstream at a pinned commit (C, glslang). lsfg-vk: CMake; the DLL is the user's. | The implicit layer's library and manifest under `/usr/share/vulkan/implicit_layer.d`, enabled only by its variable | Bumped by us |
 | `proton-cachyos-arm64` | The CachyOS release asset `proton-cachyos-<ver>-arm64.tar.xz`, checked against its `.sha512sum` (Armada's `packages/proton-cachyos/build.sh`) | `/usr/share/steam/compatibilitytools.d/proton-cachyos-arm64/`, under a fixed internal name so that games set to it survive updates (Armada's `set-tool-name.py`); about 1 GB unpacked | Bumped by us |
 | `optiscaler-arm64ec` | Kettle's recipe (llvm-mingw); picture.md phase 2 | Where Proton-CachyOS looks for OptiScaler | Bumped by us |
@@ -762,7 +762,7 @@ x86 emulation is not dimmed for native programs. ClamShell can't know whether an
 ### 2.7 Phases
 
 - **P1. `launch_env` and x86 emulation.** No package. Delivers FEX presets for Steam games (after S2) and for everything ClamShell launches. *Done 2026-10-30*, by `FEX_APP_CONFIG` (1.9). The tile is lit everywhere but where the launch hands its app over (Android): no reliable signal says which entries run x86 code (2.3's last paragraph). Left for the device: FEX inside Proton ARM64 reading the preset (2.6, 1).
-- **P2. Vulkan driver and `turnip-devel`.** Per-game newer Turnip, for emulators at once and for Steam games after S2.
+- **P2. Vulkan driver and `turnip-devel`.** *Implemented 2026-10-31.* The LLVM-free Adreno-only package is cross-built, its AArch64 ELF and private manifest inspected, and indexed locally (not published). System/Newest is a launch-time setting at every level, with version readings off the compositor thread and Newest dimmed but configurable when unavailable. Native launches and the Steam hook share `launch_env`; each launch rechecks the package, warns and uses loader defaults if removed, with the Env tile still last. State transitions, allocation checks, package-removal and environment-order tests, the real hook under a session lock, and missing/installed menu snapshots cover it. `tools/check.sh` passes, including real nested clients; the VM launch-and-quit check passes (3/3) after moving environment assembly to the launch thread. The full preceding Steam-hook VM run passed 156/156. **Left for the device:** 2.6 items 2 and 5, the path through pressure-vessel and A740 game stability. No desktop run can establish either.
 - **P3. `proton-cachyos-arm64`.** A second Proton in Steam's picker. It enables picture.md's OptiScaler test.
 - **P4. Frame generation.** Try kettle-framegen against lsfg-vk on the device, package one, add the tile.
 - **P5. picture.md phase 2 with `optiscaler-arm64ec`.** Its In game tiles, if it works.

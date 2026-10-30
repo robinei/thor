@@ -173,6 +173,8 @@ pub enum Effect {
     /// Calibrate the top screen's refresh rate with thor-panel-calibration. The end comes back as
     /// [`crate::Event::RefreshCalibrated`].
     CalibrateRefresh,
+    /// Read the installed graphics component versions again.
+    ReadInstalled,
     /// What the compositor carries out itself. The system's dispatcher passes it by.
     Compositor(Compositor),
 }

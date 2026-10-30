@@ -391,3 +391,26 @@ fn an_editor_stays_with_its_tab() {
     tap(&mut s, Id::Tab(Tab::Settings));
     assert_eq!(s.bottom().editor().map(|e| e.text.as_str()), Some("a"), "as left");
 }
+
+#[test]
+fn the_vulkan_choice_is_kept_when_its_package_appears_and_vanishes() {
+    let mut s = state();
+    let effects = long(&mut s, Id::Settings(SettingsId::Tile(Setting::VulkanDriver)));
+    assert_eq!(effects, vec![Effect::ReadInstalled]);
+    assert_eq!(s.prefs().menu(), Some(Setting::VulkanDriver));
+    assert!(s.setting_available(Setting::VulkanDriver, 0));
+    assert!(!s.setting_available(Setting::VulkanDriver, 1));
+    let effects = tap(&mut s, ListId::Values.row(1));
+    assert!(matches!(effects.as_slice(), [Effect::Save(Save::Settings(_))]), "{effects:?}");
+    assert_eq!(s.panel().tile_value(Setting::VulkanDriver), 1);
+    let installed = crate::status::Installed { mesa: Some("26.2.6-1".into()), turnip_devel: Some("27.0-devel-1".into()) };
+    assert!(s.applied(Reading::Installed(installed.clone()).into()).is_empty());
+    assert!(s.setting_available(Setting::VulkanDriver, 1));
+    assert_eq!(s.sys().installed(), &installed);
+    assert!(s.applied(Reading::Installed(installed).into()).is_empty());
+    assert!(s.applied(Reading::Installed(Default::default()).into()).is_empty());
+    assert!(!s.setting_available(Setting::VulkanDriver, 1));
+    assert_eq!(s.panel().tile_value(Setting::VulkanDriver), 1, "package discovery never rewrites the saved choice");
+    taps(&mut s, Setting::VulkanDriver, 1);
+    assert_eq!(s.panel().tile_value(Setting::VulkanDriver), 0);
+}

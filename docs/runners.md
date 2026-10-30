@@ -207,6 +207,20 @@ reaches the program: whether an entry runs x86 code isn't known (a Steam game ma
 Heroic game runs through Wine), and the variable does nothing where FEX doesn't run. Single FEX options
 (`FEX_SMCCHECKS=full`, ...) go in the Env tile.
 
+### Vulkan driver
+
+The Vulkan driver tile selects Mesa system or Mesa newest at the next start, globally, per runner or
+per game. Newest uses the pinned, Adreno-only `turnip-devel` package, built without LLVM. Its manifest
+stays outside the loader's search path, so other programs keep their system driver. ClamShell's
+launches and Steam's hook both set `VK_DRIVER_FILES` for the selected driver before the Env tile's
+variables; an explicit Env value wins.
+
+The menu shows installed versions. Newest is dimmed when the package or either of its driver files is
+missing, but stays configurable. Package readings never change the saved choice. Each launch checks
+again: if Newest has disappeared, it logs the fallback and uses the loader's defaults. Android apps
+handed to Waydroid do not get the launch environment; the tile says "no effect" there. Whether the
+private driver path reaches Proton ARM64 through pressure-vessel remains a device check.
+
 ## Actions
 
 The details pane's rows each come from one of three things:

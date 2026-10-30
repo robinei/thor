@@ -39,6 +39,7 @@ impl State {
                 self.levels.read(status.volume, status.muted, status.sound_seen, status.brightness, self.sent.brightness_touched());
                 self.sys.read_status(status);
             }
+            Reading::Installed(installed) => self.sys.read_installed(installed),
             Reading::Clipboard(text) => self.bottom.read_clipboard(text),
             Reading::Icon { entry, path } => self.session.set_icon(&entry, path),
             Reading::Metrics(metrics) => self.sys.read_metrics(metrics),

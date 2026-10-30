@@ -39,14 +39,17 @@ pub(crate) struct Request {
     /// The launch's unit, from the state.
     pub(crate) unit: LaunchUnit,
     pub(crate) launch: Launch,
-    /// The game's environment: the controller's, the cap's and its own variables. The displays follow.
+    /// The Env tile's variables, expanded on the launch thread with settings and displays.
     pub(crate) env: Vec<(String, String)>,
+    pub(crate) settings: clamshell_state::settings::Values,
+    pub(crate) ignore: Option<String>,
 }
 
 #[derive(Clone)]
 pub(crate) struct Config {
     /// Where mpv keeps the positions of videos.
     pub(crate) watch_later: Vec<PathBuf>,
+    pub(crate) fex: Option<PathBuf>,
     /// Where the launches' control sockets go, which a command gets as `{socket}`.
     pub(crate) sockets: PathBuf,
     /// The compositor's displays (`WAYLAND_DISPLAY`, `DISPLAY`), given to every launch after its own
@@ -103,7 +106,7 @@ pub(crate) fn spawn(config: Config, sink: impl Sink + Clone) -> io::Result<Worke
             let (config, sink) = (config.clone(), sink.clone());
             let started = worker::detached("launch", move || match command {
                 Command::Launch(mut request) => {
-                    request.env.extend(config.displays.iter().cloned());
+                    prepare_environment(&config, &mut request, std::path::Path::new("/"));
                     if let Err(e) = worker::or_on_panic(|| start(&config, &request), || Err(Error::Panicked)) {
                         log::warn!("launcher: {}: {e}", request.entry);
                         let failed = LaunchEvent::LaunchFailed { entry: request.entry.clone(), unit: request.unit.clone() };
@@ -120,6 +123,15 @@ pub(crate) fn spawn(config: Config, sink: impl Sink + Clone) -> io::Result<Worke
             }
         }
     })
+}
+
+/// Resolve package files and build the environment on the launch thread, so the compositor never
+/// walks the package database and an uninstalled alternative cannot leave a stale loader path.
+fn prepare_environment(config: &Config, request: &mut Request, root: &std::path::Path) {
+    let tile = std::mem::take(&mut request.env);
+    let facts = crate::components::launch_facts_at(root, &request.settings, config.fex.as_deref(), request.ignore.as_deref());
+    clamshell_state::settings::launch_env(&request.settings, facts, &tile, &mut request.env);
+    request.env.extend(config.displays.iter().cloned());
 }
 
 /// Starts the game a request is for. It is done once systemd has started the game's service.
@@ -284,7 +296,7 @@ mod tests {
     use std::time::Duration;
 
     fn config() -> Config {
-        Config { watch_later: Vec::new(), sockets: std::env::temp_dir(), displays: Vec::new(), home: None }
+        Config { watch_later: Vec::new(), sockets: std::env::temp_dir(), displays: Vec::new(), home: None, fex: None }
     }
 
     /// Starts a service on this machine's user manager. Run it by hand with `--ignored`.
@@ -302,7 +314,7 @@ mod tests {
         let id: Arc<str> = script.to_string_lossy().into();
         let launch = Launch::Program { argv: vec![script.to_string_lossy().into()], workdir: Some(dir.to_path_buf()) };
         let unit = LaunchUnit { key: "test_1".into(), secs: u64::from(std::process::id()), n: 0 };
-        launcher.send(Command::Launch(Request { entry: id, unit, launch, env: vec![] }));
+        launcher.send(Command::Launch(Request { entry: id, unit, launch, env: vec![], settings: Default::default(), ignore: None }));
         drop(launcher);
 
         // systemd started it, so nothing is sent. Whether it runs and ends is for systemd's list to say.
@@ -321,7 +333,14 @@ mod tests {
         let (tx, events) = mpsc::channel();
         let launcher = spawn(config(), tx).unwrap();
         let unit = LaunchUnit { key: "test_1".into(), secs: u64::from(std::process::id()), n: 1 };
-        launcher.send(Command::Launch(Request { entry: "x".into(), unit: unit.clone(), launch: Launch::program(vec![]), env: vec![] }));
+        launcher.send(Command::Launch(Request {
+            entry: "x".into(),
+            unit: unit.clone(),
+            launch: Launch::program(vec![]),
+            env: vec![],
+            settings: Default::default(),
+            ignore: None,
+        }));
         drop(launcher);
         assert_eq!(events.iter().collect::<Vec<_>>(), vec![Event::Launch(LaunchEvent::LaunchFailed { entry: "x".into(), unit })]);
     }
@@ -382,5 +401,45 @@ mod live {
         thread::sleep(Duration::from_secs(1));
         assert_eq!(group_of(pid), format!("{service}.service"));
         let _ = Process::new("systemctl").args(["--user", "stop", &service]).status();
+    }
+}
+
+#[cfg(test)]
+mod environment_tests {
+    use super::*;
+    #[test]
+    fn the_launch_thread_keeps_setting_then_user_then_display_order() {
+        use clamshell_state::settings::{Setting, Values, X86};
+        let mut values = Values::default();
+        values.set(Setting::X86, X86::Fast as u16);
+        values.set(Setting::FpsCap, 30);
+        let config = Config {
+            fex: Some("/cache/fex".into()),
+            watch_later: Vec::new(),
+            sockets: PathBuf::new(),
+            home: None,
+            displays: vec![("WAYLAND_DISPLAY".into(), "private".into())],
+        };
+        let mut request = Request {
+            entry: "test".into(),
+            unit: LaunchUnit { key: "test".into(), secs: 1, n: 0 },
+            launch: Launch::program(vec!["game".into()]),
+            settings: values,
+            ignore: Some("pad".into()),
+            env: vec![("vblank_mode".into(), "0".into()), ("WAYLAND_DISPLAY".into(), "user".into())],
+        };
+        prepare_environment(&config, &mut request, std::path::Path::new("/unused-for-system-driver"));
+        assert_eq!(
+            request.env,
+            vec![
+                ("MESA_VK_WSI_PRESENT_MODE".into(), "fifo".into()),
+                ("vblank_mode".into(), "3".into()),
+                ("FEX_APP_CONFIG".into(), "/cache/fex/fast.json".into()),
+                ("SDL_GAMECONTROLLER_IGNORE_DEVICES".into(), "pad".into()),
+                ("vblank_mode".into(), "0".into()),
+                ("WAYLAND_DISPLAY".into(), "user".into()),
+                ("WAYLAND_DISPLAY".into(), "private".into())
+            ]
+        );
     }
 }

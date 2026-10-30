@@ -155,6 +155,21 @@ Pointer(Activate(Settings(Tile(FpsCap))))
 Pointer(Activate(Editor(Save)))
   Save Settings
 -- status-low.png
+== group settings-vulkan-missing.png
+Tick 1760000000
+  Keymap 0 "Default"
+  PadRoute Ui
+  Lights(..)
+Start
+  Watch Metrics on
+Pointer(Activate(Tab(Settings)))
+  Watch Metrics off
+Tick 1760000005
+  Save Resume
+Pointer(LongPress(Settings(Tile(VulkanDriver))))
+  ReadInstalled
+-- settings-vulkan-missing.png
+-- settings-vulkan-installed.png
 == group keymap-name.png
 Tick 1760000000
   Keymap 0 "Default"

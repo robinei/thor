@@ -119,7 +119,7 @@ pub(crate) fn print_launch_env(paths: &Paths, sources: &Sources, entry: &str) ->
     let ignore: Vec<&str> = steams.iter().chain(&grabbed).map(|ids| ids.trim().trim_matches(',')).filter(|ids| !ids.is_empty()).collect();
     let ignore = ignore.join(",");
     clamshell_system::launch::fex::write_presets(paths.fex.as_deref());
-    let facts = clamshell_state::settings::LaunchFacts { fex: paths.fex.as_deref(), ignore: Some(ignore.as_str()).filter(|i| !i.is_empty()) };
+    let facts = clamshell_system::components::launch_facts(&values, paths.fex.as_deref(), Some(ignore.as_str()).filter(|i| !i.is_empty()));
     let mut env = Vec::new();
     clamshell_state::settings::launch_env(&values, facts, &tile, &mut env);
     for (key, value) in env {

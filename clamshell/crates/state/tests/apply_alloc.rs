@@ -163,6 +163,10 @@ fn allocations_per_event() {
         let windows = if state == "idle" { Vec::new() } else { windows.clone() };
         let units = if state == "idle" { Vec::new() } else { units.clone() };
         let name = |what: &str| format!("{state}: {what}");
+        run(&name("installed graphics"), s, &|i| {
+            Reading::Installed(clamshell_state::status::Installed { mesa: Some("26.2.6".into()), turnip_devel: (i % 2 == 0).then(|| "27.0-devel".into()) })
+                .into()
+        });
         run(&name("display modes"), s, &|i| {
             let mut modes = clamshell_state::presentation::modes::DisplayModes::default();
             modes.add(60000 + i as i32 * 1000);

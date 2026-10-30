@@ -92,6 +92,8 @@ pub enum Setting {
     Background,
     /// How FEX, the x86 emulator in Proton ARM64, trades speed for exactness (see [`X86`]).
     X86,
+    /// The Vulkan implementation selected at the next launch.
+    VulkanDriver,
 }
 
 /// A setting whose values are named choices. It is an enum, and each variant is stored as its value (see
@@ -357,7 +359,23 @@ impl X86 {
     }
 }
 
-pub const COUNT: usize = 32;
+choices!(
+    /// The system Vulkan driver or our separately packaged Adreno Turnip build.
+    VulkanDriver for VulkanDriver, default System {
+        System = 0, "Mesa system", Stock;
+        Newest = 1, "Mesa newest", Changes;
+    }
+);
+impl VulkanDriver {
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::System => "The Vulkan driver supplied by the system.",
+            Self::Newest => "Newest Turnip fixes; may introduce faults.",
+        }
+    }
+}
+
+pub const COUNT: usize = 33;
 
 /// What a value does, for the tile's colour. It is the stock value and does nothing, or it saves power
 /// or eases the load, costs power, or changes how the game looks or plays.
@@ -404,6 +422,7 @@ names!(Setting {
     Sleep: "sleep";
     Background: "background";
     X86: "x86";
+    VulkanDriver: "vkdriver";
 });
 
 const _: () = assert!(Setting::ALL.len() == COUNT, "every setting in the list");
@@ -460,6 +479,7 @@ impl Setting {
             Setting::Rumble => Some(&RumbleStrength::TABLE),
             Setting::Background => Some(&InBackground::TABLE),
             Setting::X86 => Some(&X86::TABLE),
+            Setting::VulkanDriver => Some(&VulkanDriver::TABLE),
             Setting::FpsCap | Setting::Refresh | Setting::Curve | Setting::Lights | Setting::HdrPeak | Setting::CpuMax | Setting::GpuMax | Setting::Sharpen => {
                 None
             }
@@ -509,10 +529,10 @@ impl Setting {
     }
 
     /// Whether the setting works through the launch's own process, by its environment (see
-    /// [`launch_env`]): the cap (a capped game presents in FIFO) and x86 emulation. An app that the launch
+    /// [`launch_env`]): the cap (a capped game presents in FIFO), x86 emulation and the Vulkan driver. An app that the launch
     /// hands over to another program (see [`crate::Panel::handed_over`]) doesn't get it.
     pub fn through_launch(self) -> bool {
-        matches!(self, Setting::FpsCap | Setting::X86)
+        matches!(self, Setting::FpsCap | Setting::X86 | Setting::VulkanDriver)
     }
 
     /// Whether the setting applies only to all games, not per game.
@@ -555,6 +575,7 @@ impl Setting {
             Setting::Sleep => "Sleep",
             Setting::Background => "In the background",
             Setting::X86 => "x86 emulation",
+            Setting::VulkanDriver => "Vulkan driver",
         }
     }
 
@@ -663,8 +684,14 @@ impl Values {
 }
 
 /// A game's own choices: a value per setting, or none to follow the global value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Overrides([Option<u16>; COUNT]);
+
+impl Default for Overrides {
+    fn default() -> Self {
+        Self([None; COUNT])
+    }
+}
 
 impl Overrides {
     pub fn get(&self, s: Setting) -> Option<u16> {

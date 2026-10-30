@@ -46,6 +46,7 @@ pub(super) fn setting(s: Setting) -> Icon {
         Setting::Sleep => Icon::Moon,
         Setting::Background => Icon::Windows,
         Setting::X86 => Icon::Emulation,
+        Setting::VulkanDriver => Icon::Gpu,
     }
 }
 

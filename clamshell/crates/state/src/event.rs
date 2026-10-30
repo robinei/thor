@@ -190,6 +190,8 @@ pub enum KeymapEvent {
 /// What a system thread read from the system.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Reading {
+    /// Graphics packages read at startup and when their settings are opened.
+    Installed(crate::status::Installed),
     /// Battery, Wi-Fi signal, volume and brightness, when they change.
     Status(Status),
     /// The icon found for an entry that was found by its window (see [`crate::Effect::FindIcon`]).

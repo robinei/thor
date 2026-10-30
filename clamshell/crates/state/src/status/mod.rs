@@ -39,8 +39,16 @@ pub struct Status {
     pub brightness: Option<u8>,
 }
 
+/// Versions read from the package database; the alternative also requires its installed files.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Installed {
+    pub mesa: Option<std::sync::Arc<str>>,
+    pub turnip_devel: Option<std::sync::Arc<str>>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Sys {
+    installed: Installed,
     /// The last status reading, as read. The levels that are shown come from [`crate::levels::Levels`].
     status: Status,
     metrics: Metrics,
@@ -63,8 +71,17 @@ impl Sys {
         Sys { twelve_hour, ..Sys::default() }
     }
 
+    /// The installed graphics components, as last read.
+    pub fn installed(&self) -> &Installed {
+        &self.installed
+    }
+
+    pub(crate) fn read_installed(&mut self, installed: Installed) {
+        self.installed = installed;
+    }
+
     /// The last status reading. Its volume and mute are as read: the levels shown are
-    /// [`crate::levels::Levels`]'.
+    /// [`crate::levels::Levels`]'s.
     pub fn status(&self) -> &Status {
         &self.status
     }

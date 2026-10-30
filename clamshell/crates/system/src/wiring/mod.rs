@@ -136,6 +136,7 @@ pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, gl
         launcher::spawn(
             launcher::Config {
                 watch_later: paths.watch_later.clone(),
+                fex: paths.fex.clone(),
                 sockets: paths.sockets.clone(),
                 displays: env.displays.clone(),
                 home: paths.home.clone(),

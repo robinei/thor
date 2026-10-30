@@ -24,6 +24,7 @@
 //! sleep, the clock, the account, ...) through the modules above.
 
 mod audio;
+pub mod components;
 mod display;
 mod errands;
 mod files;

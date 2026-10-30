@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use super::{Setting, Values, X86};
+use super::{Setting, Values, VulkanDriver, X86};
 
 /// What a launch's environment takes from outside the settings.
 #[derive(Debug, Clone, Copy, Default)]
@@ -15,12 +15,14 @@ pub struct LaunchFacts<'a> {
     /// The controllers SDL programs are to ignore, as `SDL_GAMECONTROLLER_IGNORE_DEVICES` takes them, if
     /// any (the grabbed controllers, `clamshell_system::input::pad::Taken`).
     pub ignore: Option<&'a str>,
+    /// The separately installed driver's manifest, absent when the package is unavailable.
+    pub turnip_devel: Option<&'a Path>,
 }
 
 /// Appends a launch's environment to `env`, later variables overriding earlier ones:
 ///
 /// 1. What the settings acting at launch set ([`Setting::through_launch`]): the cap's FIFO and the x86
-///    emulation preset.
+///    emulation preset and the Vulkan driver.
 /// 2. `SDL_GAMECONTROLLER_IGNORE_DEVICES`, the grabbed controllers.
 /// 3. The Env tile's variables, `tile`: All's, the runner's, the entry's ([`super::Settings::env_in`]).
 ///
@@ -36,6 +38,11 @@ pub fn launch_env(values: &Values, facts: LaunchFacts, tile: &[(String, String)]
     // FEX reads an app config named by `FEX_APP_CONFIG` whichever Proton runs it (Armada's way).
     if let (Some(preset), Some(dir)) = (values.choice::<X86>().preset(), facts.fex) {
         env.push(("FEX_APP_CONFIG".into(), dir.join(preset).to_string_lossy().into_owned()));
+    }
+    if values.choice::<VulkanDriver>() == VulkanDriver::Newest
+        && let Some(manifest) = facts.turnip_devel
+    {
+        env.push(("VK_DRIVER_FILES".into(), manifest.to_string_lossy().into_owned()));
     }
     if let Some(ignore) = facts.ignore {
         env.push(("SDL_GAMECONTROLLER_IGNORE_DEVICES".into(), ignore.into()));
@@ -56,13 +63,18 @@ mod tests {
     #[test]
     fn the_settings_then_the_controllers_then_the_env_tile() {
         let mut values = Values::default();
-        let facts = LaunchFacts { fex: Some(Path::new("/h/.cache/clamshell/fex")), ignore: Some("0x2dc8/0x6003") };
+        let facts = LaunchFacts {
+            fex: Some(Path::new("/h/.cache/clamshell/fex")),
+            ignore: Some("0x2dc8/0x6003"),
+            turnip_devel: Some(Path::new("/drivers/turnip.json")),
+        };
         let tile = vars(&[("vblank_mode", "0"), ("A", "1")]);
         let mut env = Vec::new();
         launch_env(&values, facts, &tile, &mut env);
         assert_eq!(env, vars(&[("SDL_GAMECONTROLLER_IGNORE_DEVICES", "0x2dc8/0x6003"), ("vblank_mode", "0"), ("A", "1")]), "nothing set: no cap, Proton's own");
         values.set(Setting::FpsCap, 40);
         values.set(Setting::X86, X86::Safe as u16);
+        values.set(Setting::VulkanDriver, VulkanDriver::Newest as u16);
         env.clear();
         launch_env(&values, facts, &tile, &mut env);
         assert_eq!(
@@ -71,6 +83,7 @@ mod tests {
                 ("MESA_VK_WSI_PRESENT_MODE", "fifo"),
                 ("vblank_mode", "3"),
                 ("FEX_APP_CONFIG", "/h/.cache/clamshell/fex/safe.json"),
+                ("VK_DRIVER_FILES", "/drivers/turnip.json"),
                 ("SDL_GAMECONTROLLER_IGNORE_DEVICES", "0x2dc8/0x6003"),
                 ("vblank_mode", "0"),
                 ("A", "1"),
@@ -81,7 +94,28 @@ mod tests {
         launch_env(&values, LaunchFacts::default(), &[], &mut env);
         assert_eq!(env, vars(&[("MESA_VK_WSI_PRESENT_MODE", "fifo"), ("vblank_mode", "3")]), "no folder for the presets, no controllers");
         env.clear();
-        launch_env(&values, LaunchFacts { fex: facts.fex, ignore: None }, &[], &mut env);
+        launch_env(&values, LaunchFacts { fex: facts.fex, ignore: None, ..Default::default() }, &[], &mut env);
         assert_eq!(env.last(), Some(&("FEX_APP_CONFIG".to_owned(), "/h/.cache/clamshell/fex/fast.json".to_owned())));
+    }
+}
+
+#[cfg(test)]
+mod driver_tests {
+    use super::*;
+    #[test]
+    fn the_env_tile_can_override_the_selected_driver_and_system_does_not_force_one() {
+        let facts = LaunchFacts { turnip_devel: Some(Path::new("/package/driver.json")), ..Default::default() };
+        let mut values = Values::default();
+        let mut env = Vec::new();
+        launch_env(&values, facts, &[], &mut env);
+        assert!(env.is_empty());
+        values.set(Setting::VulkanDriver, VulkanDriver::Newest as u16);
+        let tile = vec![("VK_DRIVER_FILES".into(), "/user/driver.json".into())];
+        launch_env(&values, facts, &tile, &mut env);
+        assert_eq!(
+            env,
+            vec![("VK_DRIVER_FILES".into(), "/package/driver.json".into()), ("VK_DRIVER_FILES".into(), "/user/driver.json".into())],
+            "the user's variable must follow the setting"
+        );
     }
 }

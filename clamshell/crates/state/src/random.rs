@@ -679,7 +679,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             }
         }
         // Readings.
-        77..=81 => Event::Reading(match rng.below(6) {
+        77..=81 => Event::Reading(match rng.below(7) {
             0 => Reading::Status(Status {
                 battery: Some(rng.below(101) as u8),
                 charging: rng.one_in(2),
@@ -718,7 +718,8 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                     _ => Account::Read { password: !rng.one_in(3), ssh: rng.one_in(2) },
                 }
             }),
-            _ => Reading::Clipboard(rng.one_in(2).then(|| "pasted".into())),
+            5 => Reading::Clipboard(rng.one_in(2).then(|| "pasted".into())),
+            _ => Reading::Installed(crate::status::Installed { mesa: Some("26.2.6".into()), turnip_devel: rng.one_in(2).then(|| "27.0-devel".into()) }),
         }),
         // The device's keys and buttons.
         83..=86 => {

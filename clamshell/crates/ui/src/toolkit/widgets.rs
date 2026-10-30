@@ -405,7 +405,12 @@ const NOTE_W: f32 = 0.36;
 const EDIT_W: f32 = 0.14;
 
 /// A list's row (see [`ListRow`]) over `r`, with `id` as its main target and its text at `size`.
-pub fn list_row(f: &mut Frame, id: Id, mut r: Rect, pad: f32, size: f32, row: ListRow) {
+pub fn list_row(f: &mut Frame, id: Id, r: Rect, pad: f32, size: f32, row: ListRow) {
+    described_list_row(f, id, r, pad, size, row, "");
+}
+
+/// The same row with an optional description below its label and note.
+pub fn described_list_row(f: &mut Frame, id: Id, mut r: Rect, pad: f32, size: f32, row: ListRow, description: &str) {
     let edit = match row.edit {
         EditCell::None => None,
         EditCell::Empty => {
@@ -420,12 +425,17 @@ pub fn list_row(f: &mut Frame, id: Id, mut r: Rect, pad: f32, size: f32, row: Li
             f.c.circle(r.x + pad * 0.5 + dot, r.y + r.h / 2.0, dot, Tone::Normal);
         }
         let x = r.x + pad * 0.5 + dot * 4.0;
+        let label = if description.is_empty() { r } else { Rect::new(r.x, r.y, r.w, r.h * 0.55) };
         let note_w = if row.note.is_empty() { 0.0 } else { r.w * NOTE_W };
-        f.c.text_fit(Rect::new(x, r.y, r.x + r.w - note_w - x - pad * 0.5, r.h), size, row.tone, row.label, Keep::Start);
+        f.c.text_fit(Rect::new(x, label.y, r.x + r.w - note_w - x - pad * 0.5, label.h), size, row.tone, row.label, Keep::Start);
         if !row.note.is_empty() {
-            f.c.text_fit(Rect::new(r.x + r.w - note_w, r.y, note_w - pad * 0.5, r.h), size * 0.8, Tone::Dim, row.note, Keep::Start);
+            f.c.text_fit(Rect::new(r.x + r.w - note_w, label.y, note_w - pad * 0.5, label.h), size * 0.8, Tone::Dim, row.note, Keep::Start);
         }
     });
+    if !description.is_empty() {
+        let x = r.x + pad * 0.5 + r.h * 0.24;
+        f.c.text_fit(Rect::new(x, r.y + r.h * 0.55, r.right() - x - pad * 0.5, r.h * 0.4), size * 0.8, Tone::Dim, description, Keep::Start);
+    }
     if let Some((id, e)) = edit {
         let tone = if f.pressed(&id) { Tone::High } else { Tone::Fn };
         f.button(id, e, Look::ROW, |f| {

@@ -9,7 +9,7 @@
 //! Those tiles carry a dot, and the rest show the default's value dimmed. Changes reach a running game at
 //! once. The environment tile opens an editor over the on-screen keyboard.
 
-use clamshell_state::settings::{Impact, Setting};
+use clamshell_state::settings::{Choice, Impact, Setting, VulkanDriver};
 use clamshell_state::{GRID_COLUMNS, Id, ListId, SettingsId, SettingsLevel, State, TileOrigin};
 
 use clamshell_ui::gfx::icons::Icon;
@@ -166,8 +166,9 @@ fn menu(f: &mut Frame, setting: Setting) {
     let edited = panel.editing().map_or("all", |g| g.title);
     let title = Fmt::<128>::of(format_args!("{} for {edited}", setting.title()));
     let area = widgets::header(f, Some(Id::Settings(SettingsId::Back)), &title, false, widgets::HeaderRight::None);
-    let list = widgets::ListArea::new(f, area, f.body().h * super::profiles::ROW_H);
-    list.hint(f, "Tap to choose");
+    let driver = setting == Setting::VulkanDriver;
+    let list = widgets::ListArea::new(f, area, f.body().h * super::profiles::ROW_H * if driver { 1.6 } else { 1.0 });
+    list.hint(f, if driver { "For Vulkan programs. Applies at the next start." } else { "Tap to choose" });
     let now = panel.tile_value(setting);
     let back_to = value_text(s, setting, panel.inherited_value(setting));
     let reset_note = match panel.below_name() {
@@ -180,13 +181,27 @@ fn menu(f: &mut Frame, setting: Setting) {
             continue;
         };
         let text = row.map(|value| value_text(s, setting, value));
-        let item = match (row, &text) {
-            (Some(value), Some(text)) => {
-                widgets::ListRow { label: text.as_str(), tone: Tone::high_if(value == now), mark: value == now, note: "", edit: widgets::EditCell::None }
+        let version = if driver {
+            match row {
+                Some(0) => s.sys().installed().mesa.as_deref().unwrap_or("version unknown"),
+                Some(_) => s.sys().installed().turnip_devel.as_deref().unwrap_or("not installed"),
+                None => reset_note.as_str(),
             }
+        } else {
+            reset_note.as_str()
+        };
+        let description = if driver { row.map(|value| VulkanDriver::of(value).description()).unwrap_or("") } else { "" };
+        let item = match (row, &text) {
+            (Some(value), Some(text)) => widgets::ListRow {
+                label: text.as_str(),
+                tone: if s.setting_available(setting, value) { Tone::high_if(value == now) } else { Tone::Dim },
+                mark: value == now,
+                note: if driver { version } else { "" },
+                edit: widgets::EditCell::None,
+            },
             _ => widgets::ListRow { label: "Reset", tone: Tone::Fn, mark: false, note: reset_note.as_str(), edit: widgets::EditCell::None },
         };
-        widgets::list_row(f, ListId::Values.row(i as u16), rows.row(i), list.pad, list.size, item);
+        widgets::described_list_row(f, ListId::Values.row(i as u16), rows.row(i), list.pad, list.size, item, description);
     }
     list.end(f, rows);
 }
@@ -208,12 +223,15 @@ fn face(s: &State, tile: Tile) -> Face {
                 value: text,
                 impact: setting.impact(value),
                 origin: p.tile_origin(setting),
-                active: (setting != Setting::Refresh || !s.presentation().display_modes().rates().is_empty())
+                active: s.setting_available(setting, value)
+                    && (setting != Setting::Refresh || !s.presentation().display_modes().rates().is_empty())
                     && (setting != Setting::Fan || s.profile().fan.is_some())
                     && (setting != Setting::Lights || s.profile().lights.is_some())
                     && !(setting.through_launch() && p.handed_over())
                     && !overruled,
-                note: if let Some(player) = player {
+                note: if !s.setting_available(setting, value) {
+                    "not installed"
+                } else if let Some(player) = player {
                     clamshell_state::device_view::controllers::keymap_label(p.players(), player)
                 } else if setting == Setting::Resolution && s.resolution_waits() {
                     "next start"

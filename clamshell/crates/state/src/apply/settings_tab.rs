@@ -9,6 +9,9 @@ use crate::{KeymapEvent, KeymapId, RowPart, SettingsId, State};
 impl State {
     /// A tap or long press in the settings tab.
     pub(crate) fn on_settings(&mut self, id: SettingsId, long: bool, out: &mut Out) {
+        if matches!(id, SettingsId::Tile(Setting::VulkanDriver)) {
+            out.effects.push(crate::Effect::ReadInstalled);
+        }
         match id {
             // A long press opens the tile's menu: a profile tile's picker, or the values.
             // A keymap's tile is a player's: its picker, or its tap, is for that player's keymap.
@@ -44,6 +47,11 @@ impl State {
                 out.effects.push(self.prefs.save_effect());
             }
         }
+    }
+
+    /// Missing components remain visible and configurable, with their unavailable value dimmed.
+    pub fn setting_available(&self, setting: Setting, value: u16) -> bool {
+        setting != Setting::VulkanDriver || value != crate::settings::VulkanDriver::Newest as u16 || self.sys.installed().turnip_devel.is_some()
     }
 
     /// The values a tile steps through and its menu lists, as their number and the one at `i`: the

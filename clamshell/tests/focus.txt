@@ -118,8 +118,8 @@ Tile(PadMouse): ^Tile(Size) vTile(CpuMax) <Tile(Lights) >Tile(BottomScreen)
 Tile(BottomScreen): ^Tile(AntiAliasing) vTile(GpuMax) <Tile(PadMouse) >Tile(Background)
 Tile(Background): ^Tile(Sharpen) vTile(Rumble) <Tile(BottomScreen) >Tab(Windows)
 Env: ^Tile(Keymap) vTile(X86) <Scope(Global) >Tile(Fan)
-Tile(Fan): ^Tile(Lights) vReset <Env >Tile(CpuMax)
-Tile(CpuMax): ^Tile(PadMouse) vTile(BigCores) <Tile(Fan) >Tile(GpuMax)
+Tile(Fan): ^Tile(Lights) vTile(VulkanDriver) <Env >Tile(CpuMax)
+Tile(CpuMax): ^Tile(PadMouse) vReset <Tile(Fan) >Tile(GpuMax)
 Tile(GpuMax): ^Tile(BottomScreen) vTile(BigCores) <Tile(CpuMax) >Tile(Rumble)
 Tile(Rumble): ^Tile(Background) vTile(BigCores) <Tile(GpuMax) >Tab(Windows)
 == settings-global.png (bottom; the pad on both screens)
@@ -130,7 +130,7 @@ Tab(Settings), Tab(Dock): vScope(Global)
 Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth): vScope(Runner)
 Tab(Wifi), Tab(Battery): vTile(Hud)
 -- screen as in settings-running.png except
-Tile(Fan): vTile(BigCores)
+Tile(CpuMax): vTile(BigCores)
 == settings.png (bottom; the pad on both screens)
 start Tile(Resolution); back -
 -- bar as in bottom.png except
@@ -231,6 +231,23 @@ Tab(Windows), PadMouse, Tab(Time): vValues[0]
 Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vBack
 Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vValues[0]
 -- screen as in settings-menu.png
+== settings-vulkan-missing.png (bottom; the pad on both screens)
+start "ff6"; back -
+-- bar as in bottom.png except
+Tab(Windows), PadMouse, Tab(Time): vValues[0]
+Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vBack
+Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vValues[0]
+-- screen
+Back: ^Tab(Settings) vValues[0] <Tab(Settings) >Tab(Dock)
+Values[0]: ^Control(Brightness) vValues[1] <Back >Tab(Windows)
+Values[1]: ^Values[0] v- <Back >Tab(Windows)
+== settings-vulkan-installed.png (bottom; the pad on both screens)
+start "ff6"; back -
+-- bar as in bottom.png except
+Tab(Windows), PadMouse, Tab(Time): vValues[0]
+Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume): vBack
+Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vValues[0]
+-- screen as in settings-vulkan-missing.png
 == keymap-name.png (bottom; the pad on both screens)
 start Key[3,1]; back Activate Editor(Cancel)
 -- bar as in bottom.png except
