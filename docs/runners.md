@@ -9,7 +9,7 @@ Steam. library.json declares three things, and ClamShell shows nothing it doesn'
 - `sources`: where items come from, and which place they go to.
 
 Settings come in three levels: All, the runner, the item. The format in full, with every field:
-`clamshell/crates/system/src/library/content.rs`; a whole library: `packages/thor-session/root/usr/share/thor/home/.config/clamshell/library.json`.
+`clamshell/crates/library/src/config.rs` and `clamshell/crates/system/src/library/content/`; a whole library: `packages/thor-session/root/usr/share/thor/home/.config/clamshell/library.json`.
 
 | Item | Content | Runner |
 |---|---|---|

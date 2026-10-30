@@ -33,14 +33,12 @@ Not aims (decided, so they are not reopened by accident):
   and its image are made for the Thor.
 - Google's apps in Waydroid. Android is set up without them, so apps that need Google Play's services or
   certification don't run.
-- Several users or profiles, for now. There is one user, with one library and one set of settings.
-- Editing the library from the interface, for now. The library is what `library.json` declares, written
-  by hand; ClamShell reads it and doesn't rewrite it.
+- Several users, for now. There is one user, with one library and one set of settings.
 - Reading older ClamShell formats. Nobody else runs it yet, so formats change outright.
 
 How it is built is in `docs/architecture.md`, and how work on it is done in `AGENTS.md`; `docs/README.md`
 lists the other design notes. How each part behaves is in its module's documentation
-(`cargo doc --open --document-private-items` in `clamshell/`) and in its tests.
+(`cargo doc --workspace --no-deps --document-private-items --open` in `clamshell/`) and in its tests.
 
 ## How it is made
 
@@ -48,7 +46,8 @@ Most of the code is written by Claude (Anthropic's model) in Claude Code session
 deciding the design, reviewing the work and setting the rules it follows (`AGENTS.md`). A commit's
 `Claude-Session` line names the session it came from. What holds the code to account is checkable:
 
-- every commit passes `tools/check.sh` (formatting, clippy, the tests, the docs), on CI too;
+- every commit passes `tools/check.sh` (formatting, clippy, the tests, the docs, real clients in the
+  nested compositor), on CI too;
 - the snapshot test pins each screen's pixels, the pad's focus moves and the effects of scripted
   scenarios, and a randomized test checks the state's invariants after every event;
 - `docs/state-machines.md` describes each feature's states and transitions, with the test that pins each
@@ -58,45 +57,71 @@ deciding the design, reviewing the work and setting the rules it follows (`AGENT
 
 ## ClamShell
 
-`clamshell/` is one process with one in-memory state for the Library (the game list on the top screen), the
-second screen (the bar and its tabs), the input path (the controller, the pad mouse, the touchpad, the
-on-screen keyboard), and the games' settings and keymaps. It is also the Wayland compositor the games
-and programs show their windows in. Its crates, the cycle they make and the rules the code follows are in
-`docs/architecture.md`.
+`clamshell/` is one process with one in-memory state, and it is also the Wayland compositor (with
+Xwayland for X11 programs) the games and programs show their windows in. Its crates, the cycle they make
+and the rules the code follows are in `docs/architecture.md`. What it has:
 
-It is made to be dependable, light and quick, to start and while it runs. Measured on a desktop PC
-(the Thor's numbers will come with the device):
+- The top screen shows the program in front, or one of ClamShell's own screens: the Library (the entries
+  `library.json` declares, in tabs and folders; also the file picker apps get through
+  xdg-desktop-portal), the Device view (Wi-Fi, the time zone, the password and remote login, the
+  controllers and their players, calibrating the sticks, the gyro and the refresh rate, editing the
+  library), and Setup at the first start (the password, Wi-Fi, the time zone).
+- The second screen has a bar of tabs: the settings for the program in front, the dock (pinned and
+  running programs), the on-screen keyboard, the touchpad, system information, volume, brightness,
+  Bluetooth, Wi-Fi, the battery, the time, and the windows moved down to it.
+- Settings at three levels (all, a runner, one entry): the power profile, CPU and GPU caps, the big
+  cores, the fan, an FPS cap, the refresh rate, a HUD; the game's picture (its resolution, scaling with
+  FSR among the choices, the size of windows, anti-aliasing, sharpening, a tone curve and HDR content's
+  peak: `docs/picture.md`); the keymap per player, the pad mouse, rumble and the stick lights; what a
+  program does in the background; and for the device as a whole the charge limit (or bypass, the
+  battery left alone on the charger), the second screen's mode, and when the screens go off and the
+  device sleeps.
+- Keymaps, tone curves and stick lights are profiles: named and shared, or a game's own.
+- Every controller is grabbed and belongs to one of 1 to 8 players. A player's controllers are merged
+  into one virtual Xbox pad for games, through that player's keymap; player 1 also drives ClamShell and
+  has the pad mouse.
+- Bluetooth pairing shows the code a keyboard asks to have typed.
+- A monitor on USB-C mirrors the top screen; while one is connected, its refreshes pace the games.
 
-- **Starting:** both screens are drawn about 80 ms after it starts, when it tells systemd it is ready. A
-  watchdog restarts it if its main loop ever stops. As it is the compositor, a restart of it closes the
-  session's apps.
+It is made to be dependable, light and quick, to start and while it runs. The numbers below were
+measured on a desktop PC on 2026-10-23, while ClamShell was still a client of another compositor, and
+haven't been measured again since it became the compositor (the Thor's numbers will come with the
+device):
+
+- **Starting:** both screens are drawn about 80 ms after it starts. It tells systemd it is ready once its
+  loop has turned and its setup is done, and a watchdog restarts it if its main loop ever stops. As it is
+  the compositor, a restart of it ends the programs with windows; what runs without one is found
+  again.
 - **Running:** about 40 MB resident, most of it the two screens' buffers, and about 0.2 % of a CPU over
   hours of use. A frame takes 0.1-0.6 ms to draw; when an event changes nothing visible, checking costs
-  about 0.02 ms and nothing is drawn or sent to the compositor. Handling an event or drawing a frame
-  allocates no memory.
+  about 0.02 ms and nothing is drawn. Handling an event or drawing a frame allocates no memory.
 
-Beside the Cargo workspace are `android/` (the Waydroid session's script and its clipboard bridge, which the
-package installs) and `tests/` (the nested compositor and picture tests with their test programs, the device
-profiles' test, and the snapshots' references). The settings of the programs the session runs (foot, mpv,
-RetroArch) are in `packages/thor-session/root/`.
+In `clamshell/`, beside the crates, are `android/` (the Waydroid session's script and its clipboard bridge,
+which the package installs) and `tests/` (the nested compositor, real apps and picture tests with their
+test programs, the device profiles' test, and the snapshots' references). The settings of the programs
+the session runs (foot, mpv, RetroArch) are in `packages/thor-session/root/`.
 
 ## The library
 
-The Library comes from `~/.config/clamshell/library.json`, and nothing is there but what it declares:
+The Library comes from `~/.config/clamshell/library.json`, and nothing is there but what it declares.
+The file can be written by hand, or edited in the Library's edit mode (from the Device view), which
+writes it back:
 
-- `places`: the tabs (in their order, with their icons; Recent, Favourites and Tools are places of a
-  `type`) and folders in them, each with an id to refer to it by (`"@snes"`), and a folder's icon (its
-  row's) and picture (shown large when it is selected). `"recent": false` keeps what is in a place out of
-  Recent (apps).
+- `places`: the tabs, in their order, and the folders in them, each with an `id` that sources and other
+  places name it by, a `name`, and `in`, the id of the place a folder is in (a place without one is a
+  tab); an icon, and a folder's picture (shown large when it is selected). Recent, Favourites and Tools
+  are places of a `type`. `"recent": false` keeps what is in a place out of Recent (apps).
 - `runners`: how things open, each with an id (its settings are kept by it), a name (shown), the file
-  names it opens and its command (`{path}` the file); a `desktop` and a `steam` runner open desktop files
-  and Steam's games, by their own commands.
-- `sources`: where entries come from, and where they go: `dir` (a dir scanned: what is an entry, its
-  metadata, the runner that opens its entries if not by their names; `on` a removable filesystem, for
-  ROMs on an SD card), `browse` (a dir listed as it is
-  opened: the Files tab), `desktop` and `steam` (the installed apps and games: each taken by the first
-  source of its type that matches it),
-  `removable` (SD cards and USB sticks as they are mounted).
+  names it opens (`match`), its command (`launch`, `{path}` the file) and the BIOS files its emulator
+  needs (`bios`); a runner of `type` `desktop` or `steam` opens desktop files and Steam's games by their
+  own commands.
+- `sources`: where entries come from, and the place they go to: `dir` (a dir scanned: which files are
+  entries, by default those its runner opens, with `also` adding patterns; their metadata; the runner that
+  opens them if not by their names; `on` a removable filesystem, for ROMs on an SD card), `browse` (a dir
+  listed as it is opened, a folder of its own: the Files tab), `desktop` and `steam` (the installed apps
+  and games: each taken by the first source of its type that matches it), `removable` (SD cards and USB
+  sticks as they are mounted, each a folder), `builtin` (ClamShell's own screens: the Device view).
+- `keys`: the keys of the metadata services that need one.
 
 ```json
 { "places": [
@@ -121,24 +146,27 @@ The Library comes from `~/.config/clamshell/library.json`, and nothing is there 
 ] }
 ```
 
-The starter library.json (`packages/thor-session/root/usr/share/thor/home/.config/clamshell/library.json`) declares ClamShell's set: Recent, Favourites,
-Games, Films, TV, Music, Files, Apps, Tools; a runner per system (RetroArch's cores, PPSSPP, ScummVM),
-Video and Music (mpv), Images (imv), PDF (zathura), Text (`less`), last Other files (`xdg-open`); a scan
-per system (`~/Roms/<system>`) and for films, series and music, Steam, the desktop files, Home, the Roms
-folder, Root, the Trash and removable storage. In every list, folders come first.
-A file opened from the Files tab opens by the first runner whose patterns match its name. The design:
-`docs/runners.md`.
-The rules (ids, titles, art, icons): `crates/system/src/library/content.rs`.
+The starter library.json (`packages/thor-session/root/usr/share/thor/home/.config/clamshell/library.json`)
+declares ClamShell's set: Recent, Favourites, Games (a folder per system, and Steam), Films, TV, Music,
+Files, Apps, Tools; the Desktop, Android (Waydroid's apps) and Steam runners, a runner per system
+(RetroArch's cores, PPSSPP, ScummVM), Video and Music (mpv), Images (imv), PDF (zathura), Text (`less` in
+foot), last Other files (`xdg-open`); a scan per system (`~/Roms/<system>`) and for films, series
+(`~/Videos`) and music, Steam, the desktop files, Home, the Roms folder, Root, the Trash, removable
+storage, and the Device view in Tools. In every list, folders come first. A file opened from the Files
+tab opens by the first runner whose patterns match its name. The design: `docs/runners.md`. The format
+as read (`clamshell --library` prints the library it makes): `crates/library/src/config.rs`; the rules
+(ids, titles, art, icons): `crates/system/src/library/content/`.
 
 Covers, screenshots, descriptions, developers and years are fetched in the background after start
 (`clamshell --fetch-metadata` does it without the UI): a scan's `"metadata": "libretro:<system>"`
-(libretro's thumbnails and database, by the file's checksum or by name), `"tmdb:movie"` or `"tmdb:tv"` (needs `"keys": { "tmdb": ... }`); Steam's
-games from the store; the desktop files' games from SteamGridDB (needs `keys.steamgriddb`). Art beside a
-file wins. libretro's lists are kept in `~/.cache/clamshell/libretro` for 30 days. The rules:
+(libretro's thumbnails and database, by the file's checksum or by name), `"tmdb:movie"` or `"tmdb:tv"`
+(needs `"keys": { "tmdb": ... }`); a Steam source's `"steam"` (the store); a desktop source's
+`"steamgriddb"` (needs `keys.steamgriddb`). Art beside a file wins. libretro's lists are kept in `~/.cache/clamshell/libretro` for 30 days. The rules:
 `crates/system/src/library/meta/`.
 
-What ClamShell keeps (play time, favourites, settings, keymaps, window rules, the dock's pins, where the Library
-was, brightness) is in JSON files in `~/.local/share/clamshell`, readable and editable by hand; which
+What ClamShell keeps (play time, favourites, settings, keymaps, tone curves, stick lights, the controllers
+and their players, the sticks' calibrations, window rules, the dock's pins, where the Library was,
+brightness) is in JSON files in `~/.local/share/clamshell`, readable and editable by hand; which
 file holds what: `crates/system/src/store.rs`.
 
 ## Building and running
@@ -158,11 +186,12 @@ without arguments prints its usage.
 In the Library, Y makes the selected entry a favourite (the Favourites tab) or not, and X pins it to the dock
 or unpins it; a pinned folder (a series) opens in the Library from the dock.
 
-On a desktop, keys stand in for the pad while no window has the keyboard: arrows move the focus, Enter or
-Space is A, Backspace B, Tab View, Q and E the shoulders, F is Y, P is X, C Start, Home and End the
-triggers. Whatever has the keyboard, F12 stands for the Home button (a tap shows the Library), F11 moves the window
-in front down to the second screen and F10 brings it back up. A controller's Guide button is Home too. (On the
-device these keys are a keyboard's like any other: Home is the controller's.)
+Keys stand in for the pad while no window has the keyboard: arrows move the focus, Enter or Space is A,
+Backspace B, Tab View, Q and E the shoulders, F is Y, P is X, C Start, Home and End the triggers. In the
+nested session on a desktop, whatever has the keyboard, F12 stands for the Home button (a tap shows the
+Library), F11 moves the window in front down to the second screen and F10 brings it back up; a
+controller's Guide button is Home too. (On the device, F10 to F12 reach the window like other keys, and
+Home is the controller's.)
 
 `clamshell ctl screenshot`, or Home+R1, saves a screenshot of both screens. `clamshell ctl window events
 FILE` writes the windows and the last 256 window events as JSON, which
@@ -171,11 +200,11 @@ rules and launch context.
 
 ## Checking
 
-- `tools/check.sh`: formatting, clippy with warnings as errors (the `dev` and release builds too), the
-  tests (the snapshots among them), the documentation, and real clients in the nested compositor
-  (`clamshell/tests/nested-compositor.py`); about two minutes. Every commit passes it:
+- `tools/check.sh`: formatting, clippy with warnings as errors (the `dev`, device and release builds
+  too), the tests (the snapshots among them), the documentation, and real clients in the nested
+  compositor (`clamshell/tests/nested-compositor.py`); about two minutes. Every commit passes it:
   `git config core.hooksPath tools/hooks` makes it the pre-commit hook. A plain `cargo test` in
-  `clamshell/` runs only the binary's tests.
+  `clamshell/` runs only the binary's and the fan daemon's tests; `--workspace` runs them all.
 - Snapshots: the tests walk a scenario through every screen (`clamshell/src/dev/snapshot.rs`) and
   compare three references in `clamshell/tests/`: the screens' pixel hashes, where the pad's focus goes
   on each, and the scenario's effects. On a difference the failure prints the text diff and the paths of
@@ -184,9 +213,10 @@ rules and launch context.
 - `clamshell/tests/nested-compositor.py` (after `cargo build` and `cargo build -p clamshell-compositor
   --examples`): ClamShell nested in a headless sway, which only hosts its window, with real clients:
   Wayland and X11 windows, Xwayland started on demand and after a crash, menus, the clipboard, the
-  cursor, notifications, screenshots, moves between the screens. `--gpu`, on a desktop with a render
-  node and a Vulkan driver (and Wayland-capable `vkcube`), requires native dmabuf submission. It prints
-  the directory with its screenshots and protocol logs.
+  cursor, relative motion and pointer constraints, notifications, screenshots, moves between the screens.
+  `--gpu`, on a desktop with a render node and a Vulkan driver (and Wayland-capable `vkcube`), requires
+  native dmabuf submission. A failed run keeps its directory with the screenshots and protocol logs, and
+  prints it.
 - `clamshell/tests/real-apps.py` (after `cargo build`): the apps installed on this computer (RetroArch,
   Firefox, Wine's Notepad, Lutris, Heroic; the missing skipped) started in nested ClamShell, each checked
   to open in front, draw, cause no compositor error and end when ClamShell closes its window. `--gpu` as
@@ -200,7 +230,8 @@ rules and launch context.
   simulated Wi-Fi and Bluetooth; `tools/vm/vm.py --help`), and its checks `tools/vm/vm-checks.py`
   (`--list`). Its session is the device's, `clamshell.service` (the VM's build, `CLAMSHELL_DEVICE=vm`)
   started by the repository's thor-session: `vm.py restart` ends it for the autologin to start again, and
-  as the device's session it sleeps when idle (`vm.py wake`).
+  as the device's session it sleeps when idle (`vm.py wake`). Each run's output and the machine's log are
+  kept in `~/.local/state/thor/vm-runs/`.
 
 ## The device's system
 
@@ -237,7 +268,8 @@ Ours: MIT or Apache-2.0, at your choice (`LICENSE-MIT`, `LICENSE-APACHE`). Not o
 - The Rust crates ClamShell's programs are built with: their licenses (all permissive: MIT, Apache-2.0,
   BSD, Zlib, Unicode-3.0 and the like), carried by the clamshell package in
   `/usr/share/licenses/clamshell/THIRD-PARTY` (`tools/repo/third-party-licenses.py`).
-- Kernel patches of ours (`packages/linux-thor`): GPL-2.0, as Linux. The linux-thor package (Armada's
+- The kernel patches in `packages/linux-thor` (ours, and those taken from PB-OS, ROCKNIX and Linux's
+  stable releases, each named by its prefix): GPL-2.0, as Linux. The linux-thor package (Armada's
   kernel: Linux, GPL-2.0) carries the kernel's license files and is published with its corresponding
   source beside it: its source package, `linux-thor-VERSION.src.tar.gz` (`makepkg --allsource`: the
   PKGBUILD, kernel.org's tarball, Armada's repository at the commit, our patches and config).
@@ -246,5 +278,5 @@ Ours: MIT or Apache-2.0, at your choice (`LICENSE-MIT`, `LICENSE-APACHE`). Not o
   where it is installed, never published).
 - Arch Linux ARM's public keys (`tools/image/keyrings`): theirs.
 
-Configuration values and facts taken from ROCKNIX, Armada, Thorch and Kettle Linux (named where used) are
+Configuration values and facts taken from ROCKNIX, Armada, PB-OS, Thorch and Kettle Linux (named where used) are
 written here in our own words and files.

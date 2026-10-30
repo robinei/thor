@@ -32,6 +32,9 @@ Read `architecture.md` first, then `../AGENTS.md` for how work is done here.
   plan.
 - `state-facts-plan.md`: State as facts and the rest derived: the review, the bugs it found, the steps.
 - `window-management-ideas.md`: candidate improvements to window management, not yet decided.
+- `top-screens-plan.md`: the Library, Device and Setup as built-in screens, the library's format and
+  editors, the file picker and what the image ships. Built, but for packaging the emulators the repos
+  lack.
 
 ## History
 
