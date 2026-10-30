@@ -23,7 +23,7 @@ BIN = ROOT / "clamshell/target/debug/clamshell"
 
 
 class Nested:
-    def __init__(self, gpu=False, library='{"places":[{"id":"apps","path":"Apps"}]}', prefix="clamshell-compositor-"):
+    def __init__(self, gpu=False, library='{"places":[{"id":"apps","name":"Apps","icon":"apps"}]}', prefix="clamshell-compositor-"):
         self.directory = directory = Path(tempfile.mkdtemp(prefix=prefix))
         print(f"nested compositor artifacts: {directory}", flush=True)
         self.runtime = directory / "runtime"
