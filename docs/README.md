@@ -35,6 +35,8 @@ Read `architecture.md` first, then `../AGENTS.md` for how work is done here.
 - `top-screens-plan.md`: the Library, Device and Setup as built-in screens, the library's format and
   editors, the file picker and what the image ships. Built, but for packaging the emulators the repos
   lack.
+- `steam-android-plan.md`: Steam, per-game PC-gaming settings (FEX, Turnip, frame generation) and
+  Android, after the 2026-10-30 survey of the other Thor systems. Not started.
 
 ## History
 
