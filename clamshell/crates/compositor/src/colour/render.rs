@@ -266,9 +266,13 @@ impl Pipeline {
 
     /// The scenes of the screens laid out as `server` has them.
     pub(crate) fn new(renderer: &mut GlesRenderer, server: &Server) -> Result<Self, Error> {
+        Self::with_parts(renderer, parts(server))
+    }
+
+    /// The scenes of screens at `parts` in the layout of both (see [`parts`]).
+    fn with_parts(renderer: &mut GlesRenderer, [top, bottom]: [Rectangle<i32, Physical>; 2]) -> Result<Self, Error> {
         let output = ColourDescription::default();
         let program = encode_shader(renderer, output.primaries, output)?;
-        let [top, bottom] = parts(server);
         Ok(Self {
             scenes: [Scene::new(top, (output, program.clone())), Scene::new(bottom, (output, program))],
             shaders: Vec::new(),
@@ -532,7 +536,9 @@ impl Pipeline {
         for (scene, program) in self.scenes.iter().zip(programs) {
             let Some(texture) = &scene.texture else { continue };
             let whole = Rectangle::from_size(texture.size()).to_f64();
-            frame.render_texture_from_to(texture, whole, scene.part, &[scene.part], &[], Transform::Normal, 1.0, Some(program), &[])?;
+            // The damage is relative to the destination: the second scene's part is off the origin.
+            let all = Rectangle::from_size(scene.part.size);
+            frame.render_texture_from_to(texture, whole, scene.part, &[all], &[], Transform::Normal, 1.0, Some(program), &[])?;
         }
         drop(frame.finish()?);
         Ok(())
@@ -1079,6 +1085,34 @@ mod direct_tests {
     fn pixels(renderer: &mut GlesRenderer, texture: &GlesTexture) -> Vec<u8> {
         let mapping = renderer.copy_texture(texture, Rectangle::from_size(texture.size()), Fourcc::Abgr8888).unwrap();
         renderer.map_texture(&mapping).unwrap().to_vec()
+    }
+
+    /// A texture of `size` all white.
+    fn white(renderer: &mut GlesRenderer, (w, h): (i32, i32)) -> GlesTexture {
+        let picture = vec![255u8; usize::try_from(w * h * 4).unwrap()];
+        renderer.import_memory(&picture, Fourcc::Abgr8888, (w, h).into(), false).unwrap()
+    }
+
+    /// Both scenes are drawn where they go side by side, the second's off the origin too (as the nested
+    /// window and screenshots show them): each screen white, every pixel of the layout is.
+    #[test]
+    fn both_scenes_are_presented_side_by_side() {
+        let mut renderer = renderer();
+        let parts = [Rectangle::new((0, 0).into(), (8, 4).into()), Rectangle::new((8, 0).into(), (6, 4).into())];
+        let mut pipeline = Pipeline::with_parts(&mut renderer, parts).unwrap();
+        for (scene, part) in pipeline.scenes.iter_mut().zip(parts) {
+            scene.texture = Some(white(&mut renderer, (part.size.w, part.size.h)));
+        }
+        let mut out: GlesTexture = renderer.create_buffer(Fourcc::Abgr8888, (14, 4).into()).unwrap();
+        {
+            let mut target = renderer.bind(&mut out).unwrap();
+            let [top, bottom] = &pipeline.scenes;
+            pipeline.present_with(&mut renderer, &mut target, (14, 4), [&top.output.1, &bottom.output.1]).unwrap();
+        }
+        let drawn = pixels(&mut renderer, &out);
+        for (i, px) in drawn.as_chunks::<4>().0.iter().enumerate() {
+            assert!(px[..3].iter().all(|c| *c >= 254), "pixel ({}, {}) is {px:?}, not white", i % 14, i / 14);
+        }
     }
 
     /// A surface drawn straight onto a screen, or through its scene, shows as the final pass would, as
