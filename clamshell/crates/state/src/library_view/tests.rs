@@ -349,7 +349,7 @@ fn selecting_then_activating_again_launches() {
     let fx = tap(&mut s, entry("ff6"));
     assert!(
         fx.iter().any(
-            |e| matches!(e, Effect::Launch { entry, settings, env, launch: Launch::None, .. } if &**entry == "ff6" && *settings == Values::default() && env.is_empty())
+            |e| matches!(e, Effect::Launch { entry, settings, tile_env, launch: Launch::None, .. } if &**entry == "ff6" && *settings == Values::default() && tile_env.is_empty())
         ),
         "{fx:?}"
     );

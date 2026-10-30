@@ -5,6 +5,7 @@
 
 pub mod env;
 pub mod fan;
+pub mod launch;
 pub(crate) mod panel;
 
 use std::collections::HashMap;
@@ -14,6 +15,7 @@ use std::sync::Arc;
 use crate::device_view::controllers::Player;
 use crate::kit::names::names;
 use env::parse_env;
+pub use launch::{LaunchFacts, launch_env};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Setting {
@@ -88,6 +90,8 @@ pub enum Setting {
     Sleep,
     /// What a program does while none of its windows is shown (see [`InBackground`]).
     Background,
+    /// How FEX, the x86 emulator in Proton ARM64, trades speed for exactness (see [`X86`]).
+    X86,
 }
 
 /// A setting whose values are named choices. It is an enum, and each variant is stored as its value (see
@@ -329,7 +333,31 @@ choices!(
     }
 );
 
-pub const COUNT: usize = 31;
+choices!(
+    /// [`Setting::X86`]: a preset FEX reads at the game's start, by `FEX_APP_CONFIG` (see [`launch_env`]).
+    /// The presets are Armada's two (`clamshell_system::launch::fex`).
+    X86 for X86, default Proton {
+        /// FEX as Proton sets it up: nothing set.
+        Proton = 0, "x86 Proton", Stock;
+        /// x86 memory ordering (TSO) off, x87 at reduced precision: faster, and many games crash or hang.
+        Fast = 1, "x86 fast", Changes;
+        /// Strict memory ordering, full x87 precision, no multiblock: slower, for crashes and glitches.
+        Safe = 2, "x86 safe", Costs;
+    }
+);
+
+impl X86 {
+    /// The preset's file in the presets' folder, none for Proton's own.
+    pub fn preset(self) -> Option<&'static str> {
+        match self {
+            X86::Proton => None,
+            X86::Fast => Some("fast.json"),
+            X86::Safe => Some("safe.json"),
+        }
+    }
+}
+
+pub const COUNT: usize = 32;
 
 /// What a value does, for the tile's colour. It is the stock value and does nothing, or it saves power
 /// or eases the load, costs power, or changes how the game looks or plays.
@@ -375,6 +403,7 @@ names!(Setting {
     ScreenOff: "screenoff";
     Sleep: "sleep";
     Background: "background";
+    X86: "x86";
 });
 
 const _: () = assert!(Setting::ALL.len() == COUNT, "every setting in the list");
@@ -430,6 +459,7 @@ impl Setting {
             Setting::PadMouse => Some(&MouseAtLaunch::TABLE),
             Setting::Rumble => Some(&RumbleStrength::TABLE),
             Setting::Background => Some(&InBackground::TABLE),
+            Setting::X86 => Some(&X86::TABLE),
             Setting::FpsCap | Setting::Refresh | Setting::Curve | Setting::Lights | Setting::HdrPeak | Setting::CpuMax | Setting::GpuMax | Setting::Sharpen => {
                 None
             }
@@ -478,11 +508,11 @@ impl Setting {
         }
     }
 
-    /// Whether the setting works through the launch's own process, as the cap does (a capped game
-    /// presents in FIFO, told at its launch). An app that the launch hands over to another program (see
-    /// [`crate::Panel::handed_over`]) doesn't get it.
+    /// Whether the setting works through the launch's own process, by its environment (see
+    /// [`launch_env`]): the cap (a capped game presents in FIFO) and x86 emulation. An app that the launch
+    /// hands over to another program (see [`crate::Panel::handed_over`]) doesn't get it.
     pub fn through_launch(self) -> bool {
-        matches!(self, Setting::FpsCap)
+        matches!(self, Setting::FpsCap | Setting::X86)
     }
 
     /// Whether the setting applies only to all games, not per game.
@@ -524,6 +554,7 @@ impl Setting {
             Setting::ScreenOff => "Screens off",
             Setting::Sleep => "Sleep",
             Setting::Background => "In the background",
+            Setting::X86 => "x86 emulation",
         }
     }
 
@@ -726,7 +757,7 @@ impl Settings {
 
     /// Appends the environment a game below `levels` gets to `vars`: the global variables, then each
     /// level's, then its own. Later ones win.
-    pub(crate) fn env_in(&self, entry: &str, levels: &[&str], vars: &mut Vec<(String, String)>) {
+    pub fn env_in(&self, entry: &str, levels: &[&str], vars: &mut Vec<(String, String)>) {
         parse_env(&self.global_env, vars);
         for f in levels {
             parse_env(self.env_text(Some(f)), vars);

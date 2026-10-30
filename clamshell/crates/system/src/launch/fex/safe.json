@@ -1,0 +1,10 @@
+{
+  "Config": {
+    "TSOEnabled": "1",
+    "VectorTSOEnabled": "1",
+    "MemcpySetTSOEnabled": "1",
+    "HalfBarrierTSOEnabled": "1",
+    "X87ReducedPrecision": "0",
+    "Multiblock": "0"
+  }
+}

@@ -821,7 +821,16 @@ fn the_settings_follow_the_front() {
 
 #[test]
 fn a_capped_game_is_launched_presenting_in_fifo() {
-    let env_of = |fx: &[Effect]| fx.iter().find_map(|e| if let Effect::Launch { env, .. } = e { Some(env.clone()) } else { None });
+    let env_of = |fx: &[Effect]| {
+        fx.iter().find_map(|e| match e {
+            Effect::Launch { settings, tile_env, .. } => {
+                let mut env = Vec::new();
+                crate::settings::launch_env(settings, crate::settings::LaunchFacts::default(), tile_env, &mut env);
+                Some(env)
+            }
+            _ => None,
+        })
+    };
     let mut s = state();
     assert_eq!(env_of(&launch_now(&mut s, "zelda-lttp")), Some(Vec::new()), "no cap");
     let mut s = state();

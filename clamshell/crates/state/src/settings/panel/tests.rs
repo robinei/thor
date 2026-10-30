@@ -67,7 +67,11 @@ fn an_entry_takes_its_runners_settings_not_its_folders() {
     let episode: std::sync::Arc<str> = "tv:Cosmos/Season 1/2. One Voice in the Cosmic Fugue.mkv".into();
     let fx = launch_now(&mut s, &episode);
     let launch = fx.iter().find_map(|e| match e {
-        Effect::Launch { settings, env, .. } => Some((settings.get(Setting::FpsCap), settings.get(Setting::Power), env.clone())),
+        Effect::Launch { settings, tile_env, .. } => {
+            let mut env = Vec::new();
+            settings::launch_env(settings, settings::LaunchFacts::default(), tile_env, &mut env);
+            Some((settings.get(Setting::FpsCap), settings.get(Setting::Power), env))
+        }
         _ => None,
     });
     let env = [("MESA_VK_WSI_PRESENT_MODE", "fifo"), ("vblank_mode", "3"), ("MPV", "1")].map(|(k, v)| (k.to_owned(), v.to_owned())).to_vec();
@@ -239,8 +243,10 @@ fn the_launch_carries_the_games_settings_and_environment() {
     let mut s = state_with(&settings);
     taps(&mut s, Setting::FpsCap, 2);
     let fx = tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
-    let Some(Effect::Launch { settings, env, .. }) = fx.iter().find(|e| matches!(e, Effect::Launch { .. })) else { panic!("{fx:?}") };
+    let Some(Effect::Launch { settings, tile_env, .. }) = fx.iter().find(|e| matches!(e, Effect::Launch { .. })) else { panic!("{fx:?}") };
     assert_eq!(settings.get(Setting::FpsCap), 40);
+    let mut env = Vec::new();
+    settings::launch_env(settings, settings::LaunchFacts::default(), tile_env, &mut env);
     let pairs: Vec<(&str, &str)> = env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     let cap = [("MESA_VK_WSI_PRESENT_MODE", "fifo"), ("vblank_mode", "3")];
     assert_eq!(pairs, [cap[0], cap[1], ("A", "1"), ("B", "2"), ("B", "3"), ("C", "x y")], "the cap's first, the game's last, so they win");

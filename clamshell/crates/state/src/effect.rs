@@ -14,13 +14,14 @@ use crate::settings::Values;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
-    /// Start this entry, by its launch command or Steam id and its file, with these settings and extra
-    /// environment. It runs in its own unit and in its own group.
+    /// Start this entry, by its launch command or Steam id and its file, with these settings. Its
+    /// environment is [`crate::settings::launch_env`] of the settings and `tile_env`, the Env tile's
+    /// variables for it. It runs in its own unit and in its own group.
     Launch {
         entry: Arc<str>,
         unit: LaunchUnit,
         settings: Values,
-        env: Vec<(String, String)>,
+        tile_env: Vec<(String, String)>,
         launch: Launch,
     },
     /// The settings in force changed. They are the running entry's (`entry`), or the global ones while

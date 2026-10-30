@@ -135,12 +135,13 @@ impl Taken {
         }
     }
 
-    /// The variable for a launch, if a controller was grabbed. A controller with the virtual pad's ids is
-    /// left out, since ignoring those would hide the virtual pads too.
-    pub(crate) fn env(&self) -> Option<(String, String)> {
+    /// The controllers to ignore, as `SDL_GAMECONTROLLER_IGNORE_DEVICES` takes them, if one was grabbed.
+    /// A controller with the virtual pad's ids is left out, since ignoring those would hide the virtual
+    /// pads too.
+    pub(crate) fn ignore(&self) -> Option<String> {
         let taken = crate::os::lock(&self.0);
         let ids: Vec<String> = taken.iter().filter(|&&ids| ids != device::VIRTUAL_IDS).map(|(v, p)| format!("0x{v:04x}/0x{p:04x}")).collect();
-        (!ids.is_empty()).then(|| ("SDL_GAMECONTROLLER_IGNORE_DEVICES".to_owned(), ids.join(",")))
+        (!ids.is_empty()).then(|| ids.join(","))
     }
 }
 
@@ -1185,11 +1186,11 @@ mod tests {
     #[test]
     fn launches_ignore_every_controller_grabbed() {
         let taken = Taken::default();
-        assert_eq!(taken.env(), None);
+        assert_eq!(taken.ignore(), None);
         taken.add((0x045e, 0x0b13));
         taken.add((0x2dc8, 0x6003));
         taken.add((0x045e, 0x0b13));
         taken.add(device::VIRTUAL_IDS);
-        assert_eq!(taken.env().map(|(_, v)| v), Some("0x045e/0x0b13,0x2dc8/0x6003".to_owned()));
+        assert_eq!(taken.ignore().as_deref(), Some("0x045e/0x0b13,0x2dc8/0x6003"));
     }
 }

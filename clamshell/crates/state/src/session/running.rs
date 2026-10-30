@@ -693,15 +693,13 @@ impl Session {
         let (launch, key) = (command.unwrap_or_else(|| g.launch.clone()), g.key.clone());
         let runner = g.runner.as_ref().map(|r| &*r.key);
         let values = settings.of_in(&entry, runner.as_slice());
-        // The cap's variables first, so the entry's own may override them.
-        let mut env = Vec::new();
-        cap_env(&values, &mut env);
-        settings.env_in(&entry, runner.as_slice(), &mut env);
+        let mut tile_env = Vec::new();
+        settings.env_in(&entry, runner.as_slice(), &mut tile_env);
         // If its runner, and so its container, is paused, it is resumed first.
         self.resume_runner_of(&entry, library, out);
         let unit = self.begin_launch(entry.clone(), key, mark, clock, start);
         self.refresh_launch = Some((entry.clone(), clock.mono()));
-        out.effects.push(Effect::Launch { entry, unit, settings: values, env, launch });
+        out.effects.push(Effect::Launch { entry, unit, settings: values, tile_env, launch });
         Launched::Yes
     }
 
@@ -723,9 +721,8 @@ impl Session {
     ) {
         let runner = launcher.runner.as_ref().map(|r| &*r.key);
         let values = settings.of_in(&launcher.id, runner.as_slice());
-        let mut env = Vec::new();
-        cap_env(&values, &mut env);
-        settings.env_in(&launcher.id, runner.as_slice(), &mut env);
+        let mut tile_env = Vec::new();
+        settings.env_in(&launcher.id, runner.as_slice(), &mut tile_env);
         let unit = self.begin_launch(launcher.id.clone(), launcher.key.clone(), None, clock, Start::Background);
         let now = clock.mono();
         self.running.push(Running { mark: library.mark_of(g), ..Running::of(g, Origin::Windows { since: now, until: now + LAUNCHER_WAIT }, now) });
@@ -734,7 +731,7 @@ impl Session {
         }
         self.refresh_launch = Some((g.id.clone(), now));
         let launch = Launch::Program { argv, workdir: None };
-        out.effects.push(Effect::Launch { entry: launcher.id.clone(), unit, settings: values, env, launch });
+        out.effects.push(Effect::Launch { entry: launcher.id.clone(), unit, settings: values, tile_env, launch });
     }
 
     /// Quit, at `now`: asks the entry's windows to close. Once none is left, it is ended if it still runs,
@@ -818,16 +815,6 @@ impl Session {
             q.ended
         });
         self.quitting = quitting;
-    }
-}
-
-/// A capped game presents in FIFO, so that it waits for the frame callbacks the compositor paces to the
-/// cap: in mailbox or immediate it wouldn't. Mesa's Vulkan WSI, and GL's swap interval kept at 1 or more
-/// (`vblank_mode` 3). Set at launch, so a cap set while the game runs reaches only games presenting in
-/// FIFO already.
-fn cap_env(values: &crate::settings::Values, env: &mut Vec<(String, String)>) {
-    if values.get(crate::settings::Setting::FpsCap) != 0 {
-        env.extend([("MESA_VK_WSI_PRESENT_MODE".into(), "fifo".into()), ("vblank_mode".into(), "3".into())]);
     }
 }
 

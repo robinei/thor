@@ -45,6 +45,7 @@ pub(super) fn setting(s: Setting) -> Icon {
         Setting::ScreenOff => Icon::ScreenOff,
         Setting::Sleep => Icon::Moon,
         Setting::Background => Icon::Windows,
+        Setting::X86 => Icon::Emulation,
     }
 }
 

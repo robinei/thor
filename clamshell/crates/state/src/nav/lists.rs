@@ -375,8 +375,8 @@ mod tests {
         assert_eq!(below, Some(Id::Settings(crate::id::SettingsId::Tile(crate::settings::Setting::Resolution))));
         // The last row short: its last tile.
         let last = s.lists().len(ListId::Settings) - 1;
-        let fan = Id::Settings(crate::id::SettingsId::Tile(crate::settings::Setting::Fan));
-        assert_eq!(s.lists().sibling(&fan, last), Some(Id::Settings(crate::id::SettingsId::Tile(crate::settings::Setting::BigCores))));
+        let gpu = Id::Settings(crate::id::SettingsId::Tile(crate::settings::Setting::GpuMax));
+        assert_eq!(s.lists().sibling(&gpu, last), Some(Id::Settings(crate::id::SettingsId::Tile(crate::settings::Setting::BigCores))));
         s.applied(ListEvent::Visible(ListId::Settings, 4.0).into());
         assert_eq!(s.lists().scroll(ListId::Settings).offset(), 0.0);
     }

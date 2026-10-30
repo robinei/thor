@@ -30,6 +30,8 @@ pub struct Paths {
     pub control: Option<PathBuf>,
     /// Where screenshots go (~/Pictures/Screenshots).
     pub(crate) screenshots: Option<PathBuf>,
+    /// Where the x86 emulation presets are copied, ~/.cache/clamshell/fex (see [`crate::launch::fex`]).
+    pub fex: Option<PathBuf>,
 }
 
 /// The environment the paths come from.
@@ -69,7 +71,8 @@ impl Paths {
         let config = base.xdg(base.config_home.as_ref(), ".config");
         let data = base.xdg(base.data_home.as_ref(), ".local/share");
         let state_dir = data.as_ref().map(|d| d.join("clamshell"));
-        let art = base.xdg(base.cache_home.as_ref(), ".cache").map(|c| c.join("clamshell/art"));
+        let cache = base.xdg(base.cache_home.as_ref(), ".cache");
+        let art = cache.as_ref().map(|c| c.join("clamshell/art"));
         let state_home = base.xdg(base.state_home.as_ref(), ".local/state");
         let watch_later = crate::launch::mpv::watch_later_dirs(config.as_deref(), state_home.as_deref(), base.home.as_deref());
         let own_runtime = base.runtime.as_ref().map(|r| r.join("clamshell"));
@@ -84,6 +87,7 @@ impl Paths {
             library: config.map(|c| c.join("clamshell/library.json")),
             state_dir,
             art,
+            fex: cache.map(|c| c.join("clamshell/fex")),
             watch_later,
         }
     }
@@ -111,6 +115,7 @@ mod tests {
         assert_eq!(paths.library.as_deref(), Some(Path::new("/h/.config/clamshell/library.json")));
         assert_eq!(paths.state_dir.as_deref(), Some(Path::new("/h/.local/share/clamshell")));
         assert_eq!(paths.art.as_deref(), Some(Path::new("/h/.cache/clamshell/art")));
+        assert_eq!(paths.fex.as_deref(), Some(Path::new("/h/.cache/clamshell/fex")));
         assert_eq!(Paths::new(&Base::default()).state_dir, None, "no HOME, no XDG dirs");
     }
 }

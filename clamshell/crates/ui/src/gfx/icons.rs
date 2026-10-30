@@ -39,6 +39,8 @@ pub enum Icon {
     Rumble,
     Cpu,
     Gpu,
+    /// x86 emulation: one chip's code carried over to another.
+    Emulation,
     Env,
     Reset,
     Gamepad,
@@ -298,6 +300,7 @@ pub fn draw(c: &mut Painter, icon: Icon, r: Rect, color: Color) {
         Icon::Rumble => rumble(p),
         Icon::Cpu => cpu(p),
         Icon::Gpu => gpu(p),
+        Icon::Emulation => emulation(p),
         Icon::Env => {
             p.frame((2.0, 4.0, 20.0, 16.0), 2.0, LINE);
             p.line(&[(6.0, 9.0), (9.5, 12.0), (6.0, 15.0)], LINE);
@@ -514,6 +517,18 @@ fn gpu(p: &mut Pen) {
     p.line(&[(6.0, 18.0), (6.0, 21.0), (13.0, 21.0), (13.0, 18.0)], 1.4);
 }
 
+fn emulation(p: &mut Pen) {
+    for x in [2.0, 15.0] {
+        p.frame((x, 8.5, 7.0, 7.0), 1.0, 1.5);
+        for t in [x + 2.0, x + 5.0] {
+            p.line(&[(t, 5.5), (t, 8.5)], 1.2);
+            p.line(&[(t, 15.5), (t, 18.5)], 1.2);
+        }
+    }
+    p.line(&[(10.0, 12.0), (13.5, 12.0)], 1.5);
+    p.line(&[(11.8, 10.2), (13.6, 12.0), (11.8, 13.8)], 1.5);
+}
+
 fn reset(p: &mut Pen) {
     p.arc((12.0, 13.0), 8.0, (60.0, 195.0), LINE);
     p.arc((12.0, 13.0), 8.0, (195.0, 330.0), LINE);
@@ -632,6 +647,7 @@ mod tests {
             Icon::Rumble,
             Icon::Cpu,
             Icon::Gpu,
+            Icon::Emulation,
             Icon::Env,
             Icon::Reset,
             Icon::Gamepad,
@@ -684,7 +700,7 @@ mod tests {
         for icon in &all {
             seen.insert(variant(*icon));
         }
-        assert_eq!(seen.len(), 62, "a variant is missing from the list");
+        assert_eq!(seen.len(), 63, "a variant is missing from the list");
         all
     }
 
@@ -753,6 +769,7 @@ mod tests {
             Icon::ChevronBack => 66,
             Icon::Close => 67,
             Icon::Lights => 68,
+            Icon::Emulation => 69,
         }
     }
 

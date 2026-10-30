@@ -75,11 +75,13 @@ impl Handles {
             Effect::PadActivity(watch) => self.pad.send(pad::Command::WatchActivity(*watch)),
             Effect::Touchpad(contacts) => self.touchpad.send(touchpad::Command::Contacts(contacts.clone())),
             Effect::SizeTouchpad(layout) => self.touchpad.send(touchpad::Command::Layout(*layout)),
-            Effect::Launch { entry, unit, launch, settings, env } => {
+            Effect::Launch { entry, unit, launch, settings, tile_env } => {
                 log::info!("launching {entry}");
                 self.tuning.apply(settings);
-                // The variables for the grabbed controller go first, so a game's own may override them.
-                let game_env = self.pad_taken.env().into_iter().chain(env.iter().cloned()).collect();
+                let ignore = self.pad_taken.ignore();
+                let facts = clamshell_state::settings::LaunchFacts { fex: self.paths.fex.as_deref(), ignore: ignore.as_deref() };
+                let mut game_env = Vec::new();
+                clamshell_state::settings::launch_env(settings, facts, tile_env, &mut game_env);
                 self.launcher.send(launcher::Command::Launch(launcher::Request {
                     entry: entry.clone(),
                     unit: unit.clone(),
