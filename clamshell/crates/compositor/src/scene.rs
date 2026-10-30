@@ -17,6 +17,7 @@
 
 use clamshell_ui::{Bounds, Layer, Screen};
 use smithay::input::pointer::CursorImageStatus;
+use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Point, Rectangle};
 
 use crate::geometry::Geometry;
@@ -222,9 +223,10 @@ impl Server {
     }
 
     /// Where `client`'s window is shown in `area` by its presentation, once it has a buffer and a size. A
-    /// window keeps the size it was configured to.
+    /// window keeps the size it was configured to. One whose surface is gone (its client ended before the
+    /// window was closed) isn't shown: what the surface held may outlast it for the rest of the turn.
     fn geometry_in(client: &ClientWindow, area: Rectangle<i32, Logical>) -> Option<Geometry> {
-        if !client.mapped {
+        if !client.mapped || client.window.root().is_some_and(|root| !root.is_alive()) {
             return None;
         }
         let (size, place) = client.window.picture().unzip();
