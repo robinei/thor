@@ -17,6 +17,35 @@ use super::images::Image;
 use super::paint::RoundedRect;
 use super::record::{Bounds, Cmd, Op, Px, Recording};
 
+/// Both screens use far fewer than this at a time. Keep recent exact sizes, dropping historical
+/// rasters rather than rounding sizes and changing the pixels or metrics.
+const RASTER_SIZES: usize = 64;
+
+struct Sizes {
+    recent: Vec<u32>,
+}
+
+impl Sizes {
+    fn new() -> Self {
+        Self { recent: Vec::with_capacity(RASTER_SIZES) }
+    }
+
+    /// Marks a size used, returning the least recently used size when it must be evicted.
+    fn touch(&mut self, size: u32) -> Option<u32> {
+        if self.recent.last() == Some(&size) {
+            return None;
+        }
+        if let Some(at) = self.recent.iter().position(|&known| known == size) {
+            self.recent.remove(at);
+            self.recent.push(size);
+            return None;
+        }
+        let evicted = (self.recent.len() == RASTER_SIZES).then(|| self.recent.remove(0));
+        self.recent.push(size);
+        evicted
+    }
+}
+
 /// What drawing keeps between frames: the font, the fonts found for characters it lacks, the rasterized
 /// glyphs by character and pixel size, and a path builder whose memory is reused for every shape.
 pub struct DrawCache {
@@ -30,8 +59,10 @@ pub struct DrawCache {
     /// `None` finds the font at once, which snapshots and tests use.
     pub(super) finder: Option<Sender<char>>,
     pub(super) glyphs: HashMap<(char, u32), Glyph>,
+    glyph_sizes: Sizes,
     /// Icon coverage masks, by icon and side in pixels.
     pub(super) icons: HashMap<(Icon, u32), Vec<u8>>,
+    icon_sizes: Sizes,
     pub(super) path: Option<PathBuilder>,
     /// Counts the fonts found for characters. A text recorded before a font arrived for one of its
     /// characters is drawn differently after, so recordings keep it.
@@ -47,7 +78,9 @@ impl DrawCache {
             fallback_for: HashMap::new(),
             finder: None,
             glyphs: HashMap::new(),
+            glyph_sizes: Sizes::new(),
             icons: HashMap::new(),
+            icon_sizes: Sizes::new(),
             path: None,
             generation: 0,
         }
@@ -61,7 +94,11 @@ impl DrawCache {
     }
 
     pub(super) fn glyph(&mut self, ch: char, px: f32) -> Option<&Glyph> {
-        let key = (ch, px.to_bits());
+        let size = px.to_bits();
+        if let Some(evicted) = self.glyph_sizes.touch(size) {
+            self.glyphs.retain(|(_, size), _| *size != evicted);
+        }
+        let key = (ch, size);
         if !self.glyphs.contains_key(&key) {
             let font = match self.face(ch) {
                 Face::Fallback(i) => self.fallbacks.get(i).map(|(_, f)| f),
@@ -72,6 +109,12 @@ impl DrawCache {
             self.glyphs.insert(key, glyph);
         }
         self.glyphs.get(&key)
+    }
+
+    pub(super) fn keep_icon_size(&mut self, side: u32) {
+        if let Some(evicted) = self.icon_sizes.touch(side) {
+            self.icons.retain(|(_, size), _| *size != evicted);
+        }
     }
 
     /// The room kept for `ch` while it waits for a font (see [`DrawCache::glyph`]): the built-in font's
@@ -312,5 +355,66 @@ impl<'a> Canvas<'a> {
         let (x0, y0) = (self.px(x).round() as i32, self.py(y).round() as i32);
         let (w, h) = (i32::try_from(image.width()).unwrap_or(0), i32::try_from(image.height()).unwrap_or(0));
         self.record(Op::Image { image, x: Px::new(x), y: Px::new(y), grey }, Bounds::new(x0, y0, x0 + w, y0 + h));
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod cache_tests {
+    use super::*;
+    use crate::gfx::paint::Painter;
+
+    #[test]
+    fn historical_resize_sizes_are_bounded_without_changing_rasters() {
+        let mut cache = DrawCache::load();
+        let original = cache.glyph('A', 20.0).unwrap().clone();
+        let alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        let mut recording = Recording::default();
+        for step in 0..600 {
+            cache.glyph('A', 20.0);
+            let px = 12.0 + step as f32 * 0.1;
+            Canvas::new(&mut recording, (1920, 1080), 1.0, &mut cache).text_width(px, alphabet);
+            assert!(cache.glyphs.len() <= RASTER_SIZES * alphabet.len());
+            assert!(cache.glyph_sizes.recent.len() <= RASTER_SIZES);
+        }
+        assert!(cache.glyphs.contains_key(&('A', 20.0f32.to_bits())), "a frequently used size stays warm");
+        assert!(!cache.glyphs.contains_key(&('A', 12.0f32.to_bits())), "inactive historical sizes are gone");
+        // Evict the hot size too, then rasterise it again: eviction never changes its pixels or advance.
+        for step in 0..RASTER_SIZES {
+            cache.glyph('A', 100.0 + step as f32);
+        }
+        assert!(!cache.glyphs.contains_key(&('A', 20.0f32.to_bits())));
+        let restored = cache.glyph('A', 20.0).unwrap();
+        assert_eq!(restored.0.advance_width, original.0.advance_width);
+        assert_eq!(restored.1, original.1);
+        let count = cache.glyphs.len();
+        for _ in 0..100 {
+            cache.glyph('A', 20.0);
+        }
+        assert_eq!(cache.glyphs.len(), count, "the steady working size reuses its raster");
+    }
+
+    #[test]
+    fn historical_icon_sizes_are_bounded_and_evicted_masks_reproduce_exactly() {
+        let mut cache = DrawCache::load();
+        let mut pixels = tiny_skia::Pixmap::new(200, 200).unwrap();
+        let draw = |cache: &mut DrawCache, pixels: &mut tiny_skia::Pixmap, side: u32| {
+            Painter::new(pixels.into(), 1.0, (0, 0), cache).icon(Icon::Apps, Rect::new(0.0, 0.0, side as f32, side as f32), Color::WHITE);
+        };
+        draw(&mut cache, &mut pixels, 20);
+        let original = cache.icons.get(&(Icon::Apps, 20)).unwrap().clone();
+        for side in 8..200 {
+            draw(&mut cache, &mut pixels, side);
+            assert!(cache.icons.len() <= RASTER_SIZES);
+            assert!(cache.icon_sizes.recent.len() <= RASTER_SIZES);
+        }
+        assert!(!cache.icons.contains_key(&(Icon::Apps, 20)));
+        draw(&mut cache, &mut pixels, 20);
+        assert_eq!(cache.icons.get(&(Icon::Apps, 20)), Some(&original));
+        let count = cache.icons.len();
+        for _ in 0..100 {
+            draw(&mut cache, &mut pixels, 20);
+        }
+        assert_eq!(cache.icons.len(), count);
     }
 }

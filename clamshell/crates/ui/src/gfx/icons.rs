@@ -148,6 +148,7 @@ impl Painter<'_> {
     /// Draws `icon` centred in `r`, as large as fits. It is rendered once per size, then blended as a mask.
     pub fn icon(&mut self, icon: Icon, r: Rect, color: impl Into<Color>) {
         let side = (r.w.min(r.h) * self.scale).round().max(1.0) as u32;
+        self.cache.keep_icon_size(side);
         let key = (icon, side);
         if !self.cache.icons.contains_key(&key) {
             let Some(mut mask) = Pixmap::new(side, side) else {

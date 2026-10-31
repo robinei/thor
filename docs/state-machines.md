@@ -2056,3 +2056,9 @@ to tear down. Nested waits cannot extend their parent's deadline; a predicate re
 the deadline is rejected. Outside waits, probes have a ten-second limit. `nested_env_test.py` stalls
 the image, screenshot and control probes, checks subprocess cleanup and late success, and runs in the
 normal check script. CI's 15-minute job timeout is a final backstop.
+
+The drawing cache keeps 64 recent exact glyph pixel sizes and, independently, 64 icon sides. Using a
+size refreshes its recency without allocating; adding a 65th size drops all rasters at the oldest size.
+Eviction changes no metrics, recordings or pixels: a later request rasterises the same font or icon
+again. Resize-workload tests bound retained entries, preserve a frequently used glyph size and compare
+recreated rasters byte for byte. Existing snapshots and warm-allocation tests check the actual views.
