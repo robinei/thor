@@ -27,14 +27,15 @@ udevadm wait --timeout=60 /dev/fastrpc-adsp || { log "no /dev/fastrpc-adsp"; exi
 udevadm wait --timeout=30 /sys/class/sound/card0 || log "no sound card yet, going on"
 
 reg=$STATE/registry
-mkdir -p "$reg"
+mkdir -p "$STATE"
 if [ ! -s "$reg/$MARKER" ]; then
-    if [ -n "$(ls -A "$reg")" ]; then
+    if [ -e "$reg" ] && [ -n "$(ls -A "$reg")" ]; then
         log "the registry in $reg is incomplete; not replacing it (it may hold this unit's calibration)"
         exit 1
     fi
     soc=$(tr -d '\0\r\n ' < /sys/devices/soc0/soc_id 2> /dev/null || true)
     tmp=$(mktemp -d "$STATE/registry.new.XXXX")
+    trap 'rm -rf "$tmp"' EXIT
     # (The stock Thor's registry is the Kailua HDK profile.)
     if ! /usr/lib/thor/sensors/sscregistrygen -p HDK -s "${soc:-603}" "$SHARE/config" "$tmp" >&2 \
         || [ ! -s "$tmp/$MARKER" ]; then
@@ -42,8 +43,12 @@ if [ ! -s "$reg/$MARKER" ]; then
         log "could not make the sensor registry"
         exit 1
     fi
-    mv "$tmp"/* "$reg"/
-    rmdir "$tmp"
+    # Publish one complete initial registry, never a prefix of its files. An existing calibrated
+    # registry stays untouched; only a previously created empty directory may be replaced.
+    sync -f "$tmp"
+    [ ! -d "$reg" ] || rmdir "$reg"
+    mv -T "$tmp" "$reg"
+    sync "$STATE"
     log "made the sensor registry in $reg"
 fi
 

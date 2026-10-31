@@ -214,5 +214,73 @@ touch {m.root}/active''')
         self.assertTrue((low.root / 'var/lib/thor-firstboot').exists())
 
 
+class RegistryRecovery(unittest.TestCase):
+    def machine(self):
+        m = Machine()
+        self.addCleanup(m.close)
+        m.file('usr/share/thor/sensors/config/fixture.json', '{}')
+        m.file('usr/share/thor/sensors/sns_reg.conf', 'version=1\n')
+        m.file('usr/share/thor/sensors/dsp/adsp/sns_tppe.so', 'fixture')
+        m.file('sys/devices/soc0/soc_id', '603')
+        m.command('udevadm')
+        m.command('sync')
+        generator = m.file('usr/lib/thor/sensors/sscregistrygen', f'''#!/bin/sh
+for last; do :; done
+printf generated >> {m.root}/generation-calls
+printf config > "$last/aaa.config"
+[ "${{FAIL_GENERATION:-0}}" != 1 ] || exit 73
+printf marker > "$last/sh5001_0_platform.config"
+printf tail > "$last/zzz.config"
+''')
+        generator.chmod(0o755)
+        m.command('mv', '[ "${FAIL_PUBLISH:-0}" != 1 ] || exit 74\nexec /usr/bin/mv "$@"')
+        return m
+
+    def run_registry(self, m, **env):
+        source = (REPO / 'packages/thor-sensors/thor-sensors').read_text()
+        return m.run(source, ['/usr/share/thor/sensors', '/var/lib/thor-sensors', '/usr/lib/thor/sensors', '/sys/devices/soc0/'], **env)
+
+    def complete(self, m):
+        reg = m.root / 'var/lib/thor-sensors/registry'
+        self.assertEqual(sorted(path.name for path in reg.iterdir()), ['aaa.config', 'sh5001_0_platform.config', 'zzz.config'])
+        self.assertEqual((reg / 'zzz.config').read_text(), 'tail')
+
+    def test_generation_and_publication_failures_leave_no_partial_registry(self):
+        for failure in ['FAIL_GENERATION', 'FAIL_PUBLISH']:
+            with self.subTest(failure=failure):
+                m = self.machine()
+                result = self.run_registry(m, **{failure: '1'})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse((m.root / 'var/lib/thor-sensors/registry').exists())
+                self.assertEqual(list((m.root / 'var/lib/thor-sensors').glob('registry.new.*')), [])
+                result = self.run_registry(m)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.complete(m)
+
+    def test_existing_calibration_is_preserved_without_regeneration(self):
+        m = self.machine()
+        result = self.run_registry(m)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        m.file('var/lib/thor-sensors/registry/aaa.config', 'learned calibration')
+        before = (m.root / 'generation-calls').read_text()
+        result = self.run_registry(m)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((m.root / 'generation-calls').read_text(), before)
+        self.assertEqual((m.root / 'var/lib/thor-sensors/registry/aaa.config').read_text(), 'learned calibration')
+
+    def test_empty_registry_can_be_replaced_but_unknown_partial_data_is_preserved(self):
+        m = self.machine()
+        (m.root / 'var/lib/thor-sensors/registry').mkdir(parents=True)
+        result = self.run_registry(m)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.complete(m)
+        partial = self.machine()
+        file = partial.file('var/lib/thor-sensors/registry/aaa.config', 'possibly learned calibration')
+        result = self.run_registry(partial)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(file.read_text(), 'possibly learned calibration')
+        self.assertFalse((partial.root / 'generation-calls').exists())
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -1966,3 +1966,8 @@ atomically reconcile fstab --not active--> activate --valid resume offset--> con
 complete. An activation/offset/boot-publication failure leaves the completion marker absent; retries
 repeat the unfinished work. Already active swap is not activated twice. Insufficient space intentionally
 completes without disk swap. `SwapRecovery` in the package fixtures covers these paths and repetition.
+
+Sensor registry: missing/empty --generate and validate in a temporary directory--> complete staged
+registry --sync and atomic rename--> published. Generation/publication failure leaves no partial
+published registry and can retry. A complete existing registry keeps learned data without regeneration;
+nonempty unknown data is refused and preserved. `RegistryRecovery` package fixtures pin these outcomes.
