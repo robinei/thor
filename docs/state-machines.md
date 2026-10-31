@@ -1983,3 +1983,9 @@ submission records the captured counter as answered. An unsuccessful submission 
 and leaves the screen dirty for retry. `draw_fence` tests check native/failed exports, independent fences,
 readiness and cancellation with no wait calls. DRM VM `ui_scanout`, `screen_changes`, `external_display`
 and `pad_windows` check the real presenter and input (27/27); a real stalled GPU remains a device check.
+
+Cursor preparation: before a backend starts, read every supported named shape and retain its nearest
+requested size; missing images become the built-in fallback. Drawing consumes prepared images, then
+reuses uploaded textures; it never performs theme lookup. Even an unexpected missing prepared shape
+uses a logged in-memory fallback. Cursor tests cover uncommon shapes, size selection and missing images;
+the nested compositor checks cursor rendering, damage and hiding.

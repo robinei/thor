@@ -98,59 +98,103 @@ enum ShapeImage {
 }
 
 pub(crate) struct Cursor {
-    theme: CursorTheme,
-    size: u32,
     cached: Vec<(CursorIcon, Vec<Frame>)>,
-    /// The theme's images of the cursors read at start (see [`PRELOADED`]), until each is first shown.
     read: Vec<(CursorIcon, Vec<Image>)>,
 }
 
-/// The cursors whose images are read as ClamShell starts, so that showing them reads no file on the
-/// compositor's thread: those programs ask for all the time. Another is read the first time it shows.
-const PRELOADED: [CursorIcon; 17] = [
+/// Cursor images prepared before the compositor starts. Drawing never owns a theme or a file loader.
+pub struct CursorImages {
+    read: Vec<(CursorIcon, Vec<Image>)>,
+}
+
+/// Every named shape the cursor protocol offers, including its version-two extensions.
+const PRELOADED: [CursorIcon; 36] = [
     CursorIcon::Default,
+    CursorIcon::ContextMenu,
+    CursorIcon::Help,
     CursorIcon::Pointer,
+    CursorIcon::Progress,
+    CursorIcon::Wait,
+    CursorIcon::Cell,
+    CursorIcon::Crosshair,
     CursorIcon::Text,
+    CursorIcon::VerticalText,
+    CursorIcon::Alias,
+    CursorIcon::Copy,
+    CursorIcon::Move,
+    CursorIcon::NoDrop,
+    CursorIcon::NotAllowed,
     CursorIcon::Grab,
     CursorIcon::Grabbing,
-    CursorIcon::Move,
-    CursorIcon::Wait,
-    CursorIcon::Progress,
-    CursorIcon::Crosshair,
-    CursorIcon::NotAllowed,
+    CursorIcon::EResize,
+    CursorIcon::NResize,
+    CursorIcon::NeResize,
+    CursorIcon::NwResize,
+    CursorIcon::SResize,
+    CursorIcon::SeResize,
+    CursorIcon::SwResize,
+    CursorIcon::WResize,
     CursorIcon::EwResize,
     CursorIcon::NsResize,
     CursorIcon::NeswResize,
     CursorIcon::NwseResize,
     CursorIcon::ColResize,
     CursorIcon::RowResize,
-    CursorIcon::Help,
+    CursorIcon::AllScroll,
+    CursorIcon::ZoomIn,
+    CursorIcon::ZoomOut,
+    CursorIcon::DndAsk,
+    CursorIcon::AllResize,
 ];
 
-impl Cursor {
-    pub fn new() -> Self {
-        let mut cursor = Self {
-            theme: CursorTheme::load(&std::env::var("XCURSOR_THEME").unwrap_or_else(|_| "default".into())),
-            size: std::env::var("XCURSOR_SIZE").ok().and_then(|size| size.parse().ok()).unwrap_or(24).clamp(1, 256),
-            cached: Vec::new(),
-            read: Vec::new(),
-        };
-        let read: Vec<_> = PRELOADED.iter().map(|icon| (*icon, cursor.images(*icon))).collect();
-        if read.iter().any(|(_, images)| images.is_none()) {
-            log::warn!("compositor: the cursor theme lacks some cursors (and its default): the built-in pointer stands for them");
-        }
-        cursor.read = read.into_iter().map(|(icon, images)| (icon, images.unwrap_or_else(|| vec![fallback()]))).collect();
-        cursor
+impl CursorImages {
+    /// Read the theme's images before entering either backend's event loop.
+    pub fn load() -> Self {
+        let theme = CursorTheme::load(&std::env::var("XCURSOR_THEME").unwrap_or_else(|_| "default".into()));
+        let size = std::env::var("XCURSOR_SIZE").ok().and_then(|size| size.parse().ok()).unwrap_or(24).clamp(1, 256);
+        Self::load_with(size, |icon| {
+            theme
+                .load_icon(icon.name())
+                .or_else(|| theme.load_icon("default"))
+                .and_then(|path| std::fs::read(path).ok())
+                .and_then(|bytes| parse_xcursor(&bytes))
+        })
     }
 
-    /// The theme's images of `icon`, else of its default cursor, if it has either.
-    fn images(&self, icon: CursorIcon) -> Option<Vec<Image>> {
-        self.theme
-            .load_icon(icon.name())
-            .or_else(|| self.theme.load_icon("default"))
-            .and_then(|path| std::fs::read(path).ok())
-            .and_then(|bytes| parse_xcursor(&bytes))
-            .filter(|images| !images.is_empty())
+    fn load_with(size: u32, mut load: impl FnMut(CursorIcon) -> Option<Vec<Image>>) -> Self {
+        let mut missing = false;
+        let read = PRELOADED
+            .iter()
+            .map(|icon| {
+                let images = load(*icon).filter(|images| !images.is_empty()).unwrap_or_else(|| {
+                    missing = true;
+                    vec![fallback()]
+                });
+                // Other theme sizes cannot be used during this session; do not retain their pixels.
+                let nearest = images.iter().min_by_key(|image| image.size.abs_diff(size)).map(|image| image.size);
+                (*icon, images.into_iter().filter(|image| Some(image.size) == nearest).collect())
+            })
+            .collect();
+        if missing {
+            log::warn!("compositor: the cursor theme lacks some cursors (and its default): the built-in pointer stands for them");
+        }
+        Self { read }
+    }
+}
+
+impl Cursor {
+    pub fn new(images: CursorImages) -> Self {
+        Self { cached: Vec::new(), read: images.read }
+    }
+
+    fn take_images(&mut self, icon: CursorIcon) -> Vec<Image> {
+        match self.read.iter().position(|(read, _)| *read == icon) {
+            Some(i) => self.read.swap_remove(i).1,
+            None => {
+                log::warn!("compositor: no prepared cursor image for {}, using the built-in pointer", icon.name());
+                vec![fallback()]
+            }
+        }
     }
 
     /// The cursor's elements, with its hotspot `at` (where the scene places it, see `scene`), added to
@@ -333,16 +377,9 @@ impl Cursor {
         let index = if let Some(index) = self.cached.iter().position(|(cached, _)| *cached == icon) {
             index
         } else {
-            let images = match self.read.iter().position(|(read, _)| *read == icon) {
-                Some(i) => self.read.swap_remove(i).1,
-                None => self.images(icon).unwrap_or_else(|| {
-                    log::warn!("compositor: no usable cursor theme image for {}, using the built-in pointer", icon.name());
-                    vec![fallback()]
-                }),
-            };
-            let nearest = images.iter().min_by_key(|image| image.size.abs_diff(self.size)).map(|image| image.size);
+            let images = self.take_images(icon);
             let mut frames = Vec::new();
-            for image in images.into_iter().filter(|image| Some(image.size) == nearest) {
+            for image in images {
                 let size = (i32::try_from(image.width)?, i32::try_from(image.height)?).into();
                 let texture = renderer.import_memory(&image.pixels_rgba, Fourcc::Abgr8888, size, false)?;
                 let hotspot = (image.xhot as f64, image.yhot as f64);
@@ -405,6 +442,34 @@ impl Server {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    #[test]
+    fn uncommon_shapes_are_prepared_before_drawing_and_keep_only_the_requested_size() {
+        let mut loads = Vec::new();
+        let images = CursorImages::load_with(30, |icon| {
+            loads.push(icon);
+            Some([16, 24, 32].into_iter().map(|size| Image { size, ..fallback() }).collect())
+        });
+        assert_eq!(loads.len(), 36);
+        let unique: std::collections::HashSet<_> = loads.iter().collect();
+        assert_eq!(unique.len(), loads.len());
+        let mut cursor = Cursor::new(images);
+        for icon in [CursorIcon::ContextMenu, CursorIcon::ZoomOut, CursorIcon::DndAsk, CursorIcon::AllResize] {
+            let frames = cursor.take_images(icon);
+            assert_eq!(frames.len(), 1);
+            assert_eq!(frames.first().map(|frame| frame.size), Some(32));
+        }
+        assert_eq!(loads.len(), 36, "drawing has no loader to call");
+    }
+
+    #[test]
+    fn missing_prepared_images_have_a_builtin_fallback_without_any_file_lookup() {
+        let mut cursor = Cursor::new(CursorImages::load_with(24, |_| None));
+        let images = cursor.take_images(CursorIcon::ContextMenu);
+        assert_eq!(images.first().map(|image| &image.pixels_rgba), Some(&fallback().pixels_rgba));
+        // Even a shape already consumed cannot trigger a late theme lookup.
+        assert_eq!(cursor.take_images(CursorIcon::ContextMenu).len(), 1);
+    }
+
     #[test]
     fn motion_shows_the_cursor_and_touch_or_three_seconds_without_motion_hides_it() {
         let start = Instant::now();

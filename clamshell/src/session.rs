@@ -97,6 +97,7 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
     // Nested, the screens are the device's own sizes, as pixels of the host's window; on the screens,
     // they are taken from the outputs.
     let preview = if host == Host::Nested { env.profile.preview } else { env.profile.preview.half() };
+    let cursors = clamshell_compositor::CursorImages::load();
     let config = Config { top_size: preview.top, bottom_size: preview.bottom, views: clamshell_views::VIEWS };
     let global = state.prefs().settings().global;
     // The threads send to the compositor's event loop, so they start once it exists. Effects are
@@ -140,9 +141,9 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
         *started.borrow_mut() = Some(start(&system_config, &paths, sources, &global, sender));
     };
     let result = match host {
-        Host::Drm => clamshell_compositor::run_drm(state, config, start, on_effect, identify, on_capture, quit, env.scanout),
+        Host::Drm => clamshell_compositor::run_drm(state, config, cursors, start, on_effect, identify, on_capture, quit, env.scanout),
         #[cfg(feature = "nested")]
-        Host::Nested => clamshell_compositor::run_nested(state, config, start, on_effect, identify, on_capture, quit),
+        Host::Nested => clamshell_compositor::run_nested(state, config, cursors, start, on_effect, identify, on_capture, quit),
         #[cfg(not(feature = "nested"))]
         Host::Nested => Err("this build has no nested session (built without the `nested` feature)".into()),
     };

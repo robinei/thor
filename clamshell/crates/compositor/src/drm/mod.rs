@@ -277,6 +277,7 @@ struct Chosen {
 pub fn run(
     state: State,
     mut config: Config,
+    cursors: crate::CursorImages,
     start: impl FnOnce(EventSender, crate::Displays),
     on_effect: impl FnMut(&Effect) + 'static,
     identify: impl Fn(u32) -> Process + Send + Sync + 'static,
@@ -440,7 +441,7 @@ pub fn run(
         pipeline,
         screens,
         frames: std::array::from_fn(|_| UiFrame::new()),
-        cursor: crate::cursor::Cursor::new(),
+        cursor: crate::cursor::Cursor::new(cursors),
         elements: Vec::new(),
         states: [RenderElementStates::default(), RenderElementStates::default()],
         away: false,

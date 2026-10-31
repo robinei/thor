@@ -47,6 +47,7 @@ mod x11;
 use smithay::reexports::calloop::channel;
 
 pub use clients::Process;
+pub use cursor::CursorImages;
 pub use drm::run as run_drm;
 #[cfg(feature = "nested")]
 pub use nested::run as run_nested;

@@ -28,9 +28,11 @@ use crate::{
 /// Runs the compositor in a window on the desktop until ClamShell quits. The programs it launches are
 /// given its own socket and display ([`crate::Displays`]); ClamShell's environment and the desktop's
 /// compositor are left alone.
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     state: State,
     config: Config,
+    cursors: crate::CursorImages,
     start: impl FnOnce(EventSender, crate::Displays),
     on_effect: impl FnMut(&Effect) + 'static,
     identify: impl Fn(u32) -> Process + Send + Sync + 'static,
@@ -59,7 +61,7 @@ pub fn run(
         log::info!("nested compositor: the host's colour management can't be reached (not a Wayland window), so the window is sRGB");
     }
     backend.window().set_cursor_visible(false);
-    let mut cursor = crate::cursor::Cursor::new();
+    let mut cursor = crate::cursor::Cursor::new(cursors);
     log::info!("nested output format: {:?}", backend.renderer().egl_context().pixel_format());
     let mut frames: [UiFrame; 4] = std::array::from_fn(|_| UiFrame::new());
     let mut elements = Vec::new();
