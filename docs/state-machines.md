@@ -1999,3 +1999,10 @@ this boundary; later input changes and worker restarts follow the existing event
 A window consumes at most one cap interval per callback turn, shared by its root and children.
 `callbacks_anywhere_in_the_window_share_its_cap` checks child-only, root-only, combined and absent
 callbacks: held callbacks remain pending, and one due turn releases all waiting surfaces.
+
+Metadata worker reservations: queued --reserve--> starting; starting --spawn failure--> queued
+[release only that reservation, leave all jobs waiting; Fetching(false) if no workers remain]. A later
+fetch request reserves the missing workers again. With another worker running, it may take the failed
+starter's share without clearing busy early. `failed_worker_starts_leave_jobs_available_for_retry` and
+`a_failed_start_does_not_take_work_from_a_running_worker` check job order, exactly-once completion,
+reservation counts and the final idle state without starting network requests.

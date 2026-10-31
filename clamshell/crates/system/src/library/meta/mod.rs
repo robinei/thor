@@ -191,6 +191,14 @@ impl Queue {
         }
     }
 
+    /// Releases a worker reservation whose thread could not start, leaving every job waiting.
+    /// Returns whether no worker remains to fetch them.
+    fn cancel_start(&self) -> bool {
+        let mut q = crate::os::lock(&self.inner);
+        q.threads = q.threads.saturating_sub(1);
+        q.threads == 0
+    }
+
     /// Whether no thread fetches.
     fn idle(&self) -> bool {
         crate::os::lock(&self.inner).threads == 0
@@ -255,8 +263,7 @@ pub fn spawn(fetch: Fetch, queue: &Queue, sink: impl Sink + Clone) {
         if let Err(e) = started {
             log::warn!("meta: a fetching thread: {e}");
             // Not counted. If no other runs, the fetch is over: what waits is fetched with the next.
-            let _ = waiting.next(None);
-            if waiting.idle() {
+            if waiting.cancel_start() {
                 let _ = told.send(Event::Fetching(false));
             }
         }
@@ -356,6 +363,58 @@ mod tests {
         assert_eq!(queue.add(vec![wanted("c")]).0, 3, "not while being fetched");
         let order: Vec<String> = std::iter::from_fn(|| queue.next(Some(&c.id))).map(|w| w.id.to_string()).collect();
         assert_eq!(order, ["b", "a", "d"]);
+    }
+
+    #[test]
+    fn failed_worker_starts_leave_jobs_available_for_retry() {
+        let wanted = |id: &str| Wanted { id: id.into(), key: id.into(), title: id.into(), file: None, how: How::SteamGridDb, art: false };
+        for failed in [1, THREADS] {
+            let queue = Queue::default();
+            assert_eq!(queue.add(["a", "b", "c", "d"].map(wanted).to_vec()), (4, THREADS));
+            for failure in 1..=failed {
+                assert_eq!(queue.cancel_start(), failure == THREADS, "busy clears only after the last reservation fails");
+            }
+            {
+                let q = crate::os::lock(&queue.inner);
+                assert_eq!(q.threads, THREADS - failed);
+                assert!(q.fetching.is_empty(), "a failed start takes no job");
+                assert_eq!(q.waiting.iter().map(|w| &*w.id).collect::<Vec<_>>(), ["a", "b", "c", "d"]);
+            }
+            assert_eq!(queue.idle(), failed == THREADS);
+            // A later request retries the reservations, retaining the original jobs and order.
+            assert_eq!(queue.add(vec![wanted("a")]), (4, failed));
+            let mut fetched = Vec::new();
+            let mut done = 0;
+            for _ in 0..THREADS {
+                fetch_all(
+                    &queue,
+                    |w| {
+                        fetched.push(w.id.to_string());
+                        Ok(())
+                    },
+                    || done += 1,
+                );
+            }
+            assert_eq!(fetched, ["a", "b", "c", "d"], "every job is fetched once");
+            assert_eq!(done, 1, "the last worker clears busy");
+            assert!(queue.idle());
+            let q = crate::os::lock(&queue.inner);
+            assert!(q.waiting.is_empty() && q.fetching.is_empty());
+        }
+    }
+
+    #[test]
+    fn a_failed_start_does_not_take_work_from_a_running_worker() {
+        let wanted = |id: &str| Wanted { id: id.into(), key: id.into(), title: id.into(), file: None, how: How::SteamGridDb, art: false };
+        let queue = Queue::default();
+        assert_eq!(queue.add(["a", "b"].map(wanted).to_vec()), (2, 2));
+        let active = queue.next(None).unwrap();
+        assert!(!queue.cancel_start(), "the active worker still holds busy");
+        assert_eq!(&*active.id, "a");
+        let next = queue.next(Some(&active.id)).unwrap();
+        assert_eq!(&*next.id, "b", "the running worker takes the failed starter's share");
+        assert!(queue.next(Some(&next.id)).is_none());
+        assert!(queue.idle());
     }
 
     /// A panic fetching one entry costs that entry: the rest are fetched, and the last thread still says
