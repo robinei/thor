@@ -80,7 +80,7 @@ fi
 address() { dev=$(waydroid status | sed -n 's/^IP address:[[:space:]]*//p'):5555; }
 address
 export ANDROID_ADB_SERVER_PORT=5039
-systemd-run --user --quiet --collect --unit=clamshell-adb -E ANDROID_ADB_SERVER_PORT adb -a nodaemon server 2> /dev/null
+systemd-run --user --quiet --collect --unit=clamshell-adb -E ANDROID_ADB_SERVER_PORT adb -L tcp:localhost:5039 nodaemon server 2> /dev/null
 i=0
 while ! ss -ltn 2> /dev/null | grep -q ":$ANDROID_ADB_SERVER_PORT " && [ $i -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
 android() { adb -s "$dev" shell "$@" 2> /dev/null | tr -d '\r'; }

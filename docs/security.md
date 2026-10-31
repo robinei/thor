@@ -47,6 +47,12 @@ as the user, in a service of its own, read-only; its index is kept in `~/.cache/
 (see files-tab.md). A damaged or hostile archive can make ratarmount fail or hang: it fails the folder's
 listing with a notice, or leaves a service to stop; it can't change the archive or anything else.
 
+## Android's ADB server
+
+ClamShell starts its own ADB server on `tcp:localhost:5039`. Only local clients can use its authorised
+Waydroid transport; the server must never listen on all network interfaces. The Android launch test
+pins that binding without starting a real server.
+
 ## Waydroid's Wayland filter
 
 `clamshell --wayland-filter` sits between Waydroid and the compositor and reads the Wayland messages
