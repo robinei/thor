@@ -954,6 +954,7 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     let app_pick = s.library_view().pick().is_some_and(|p| matches!(p.purpose, crate::library_view::pick::PickFor::App { .. }));
     let home = matches!(s.top(), Top::App { app, .. } if app == crate::builtin_apps::home());
     ensure!(!app_pick || home, "an app's pick not shown: {:?}", s.top());
+    ensure!(s.session().down_history_valid(), "bottom placement history has a closed or duplicate window");
     ensure!(s.session().selections_valid(), "a selected window is not in its top group, or a screen's window is not open or on both screens");
     ensure!(s.session().overview_valid(), "the overview is open for a group not in front, or with fewer than two windows, or a choice not in it");
     // Every window has a group once the event is settled, except one of a program still starting, whose

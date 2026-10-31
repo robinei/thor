@@ -36,6 +36,14 @@ impl WindowRule {
     }
 }
 
+/// A live window already considered for automatic placement, with the rule that actually moved it.
+/// Siblings skipped when a rule is created have no applied rule.
+#[derive(Debug, Clone)]
+pub(super) struct SentDown {
+    window: i64,
+    rule: Option<WindowRule>,
+}
+
 /// The rules for which programs' windows go to the bottom screen.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct WindowRules {
@@ -61,15 +69,15 @@ impl WindowRules {
         true
     }
 
-    /// Forgets the rules that match a window of `owner`. Returns whether there were any.
-    fn forget(&mut self, owner: &str, w: &WindowFacts) -> bool {
+    /// Forgets the exact applied rule, independent of a live window's changing facts.
+    fn forget(&mut self, rule: &WindowRule) -> bool {
         let before = self.list.len();
-        self.list.retain(|r| !r.matches(owner, w));
+        self.list.retain(|r| r != rule);
         self.list.len() != before
     }
 
-    fn wants(&self, owner: &str, w: &WindowFacts) -> bool {
-        self.list.iter().any(|r| r.matches(owner, w))
+    fn matching(&self, owner: &str, w: &WindowFacts) -> Option<&WindowRule> {
+        self.list.iter().find(|r| r.matches(owner, w))
     }
 }
 
@@ -85,26 +93,28 @@ impl Session {
             return false;
         };
         self.command(WindowCommand::Down(w.id));
-        // Sent down already, so the rule added below doesn't send it again.
-        if !self.sent_down.contains(&w.id) {
-            self.sent_down.push(w.id);
+        // A displaced window keeps the rule that moved it, even if its facts have changed.
+        if self.sent_down.iter().any(|sent| sent.window == w.id && sent.rule.as_ref().is_some_and(|rule| self.window_rules.list.contains(rule))) {
+            return true;
         }
         // The title is only used to tell it apart from another window of its program with the same
         // app id.
         let others = self.windows.iter().any(|o| o.id != w.id && o.app_id == w.app_id && o.unit == w.unit);
         let title = others.then(|| w.title.clone());
-        if let Some(owner) = self.owner_of(&w)
-            && self.window_rules.add(WindowRule { owner: owner.clone(), app_id: w.app_id.clone(), title })
-        {
-            // A remembered rule applies to subsequent windows. Creating it must not move an already
-            // placed sibling with the same app id, including another launch of this program.
-            let siblings: Vec<i64> = self.windows_of(&owner).filter(|other| other.app_id == w.app_id).map(|other| other.id).collect();
-            for id in siblings {
-                if !self.sent_down.contains(&id) {
-                    self.sent_down.push(id);
+        let rule = self.owner_of(&w).map(|owner| WindowRule { owner, app_id: w.app_id.clone(), title });
+        self.note_down(w.id, rule.clone());
+        if let Some(rule) = rule {
+            let owner = rule.owner.clone();
+            if self.window_rules.add(rule) {
+                // A remembered rule applies to subsequent windows, preserving already placed siblings.
+                let siblings: Vec<i64> = self.windows_of(&owner).filter(|other| other.app_id == w.app_id).map(|other| other.id).collect();
+                for id in siblings {
+                    if !self.sent_down.iter().any(|sent| sent.window == id) {
+                        self.note_down(id, None);
+                    }
                 }
+                self.window_rules_changed(true, notice, now, out);
             }
-            self.window_rules_changed(true, notice, now, out);
         }
         true
     }
@@ -116,8 +126,8 @@ impl Session {
             return;
         };
         self.command(WindowCommand::Up(w.id));
-        if let Some(owner) = self.owner_of(&w)
-            && self.window_rules.forget(&owner, &w)
+        if let Some(rule) = self.sent_down.iter_mut().find(|sent| sent.window == w.id).and_then(|sent| sent.rule.take())
+            && self.window_rules.forget(&rule)
         {
             self.window_rules_changed(false, notice, now, out);
         }
@@ -140,28 +150,42 @@ impl Session {
     pub(crate) fn follow_window_rules(&mut self, library: &crate::Library) -> bool {
         let mut sent = false;
         // (Each window is sent once, so this ends.)
-        while let Some(id) = self.wanted_down(library) {
+        while let Some((id, rule)) = self.wanted_down(library) {
             sent = true;
-            self.sent_down.push(id);
+            self.note_down(id, Some(rule));
             self.command(WindowCommand::Down(id));
         }
         let windows = &self.windows;
-        self.sent_down.retain(|id| windows.iter().any(|w| w.id == *id));
+        self.sent_down.retain(|sent| windows.iter().any(|w| w.id == sent.window));
         sent
     }
 
-    /// The first main window on the top screen, not sent down before, whose program's rule wants it below.
-    fn wanted_down(&self, library: &crate::Library) -> Option<i64> {
-        self.windows
+    fn note_down(&mut self, window: i64, rule: Option<WindowRule>) {
+        if let Some(sent) = self.sent_down.iter_mut().find(|sent| sent.window == window) {
+            sent.rule = rule;
+        } else {
+            self.sent_down.push(SentDown { window, rule });
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn down_history_valid(&self) -> bool {
+        self.sent_down
             .iter()
-            .filter(|w| !self.below(w.id) && !self.sent_down.contains(&w.id) && self.root_of(w.id) == w.id)
-            .find(|w| {
+            .enumerate()
+            .all(|(i, sent)| self.window(sent.window).is_some() && !self.sent_down.iter().take(i).any(|other| other.window == sent.window))
+    }
+
+    /// The first main window on the top screen, not sent down before, whose program's rule wants it below.
+    fn wanted_down(&self, library: &crate::Library) -> Option<(i64, WindowRule)> {
+        self.windows.iter().filter(|w| !self.below(w.id) && !self.sent_down.iter().any(|sent| sent.window == w.id) && self.root_of(w.id) == w.id).find_map(
+            |w| {
                 let owner = self.owner_of(w).or_else(|| {
                     let key = w.group.as_ref()?.key()?;
                     library.entry_by_key(key).map(|g| g.id.clone())
-                });
-                owner.is_some_and(|o| self.window_rules.wants(&o, w))
-            })
-            .map(|w| w.id)
+                })?;
+                self.window_rules.matching(&owner, w).map(|rule| (w.id, rule.clone()))
+            },
+        )
     }
 }

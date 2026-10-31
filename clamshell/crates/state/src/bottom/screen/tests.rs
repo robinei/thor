@@ -421,3 +421,64 @@ fn used_before_the_first_tick_counts_from_it() {
     s.applied(Event::tick(10_000));
     assert!(!s.bottom_dimmed());
 }
+
+#[test]
+fn returning_a_retitled_window_forgets_its_original_rule_and_keeps_its_siblings_rule() {
+    let mut s = emulator();
+    key(&mut s, HardwareKey::WindowDown);
+    let bottom_rule = WindowRule { owner: "melonds".into(), app_id: "emu".into(), title: Some("Bottom".into()) };
+    assert_eq!(s.session().window_rules().list(), &[bottom_rule]);
+    // Moving the other window down displaces this one without changing either rule's provenance.
+    key(&mut s, HardwareKey::WindowDown);
+    let top_rule = WindowRule { owner: "melonds".into(), app_id: "emu".into(), title: Some("Top".into()) };
+    assert_eq!(s.session().bottom_window().map(|w| w.id), Some(1));
+    s.applied(crate::WindowEvent::Title { window: 2, title: "Game now playing".into() }.into());
+    key(&mut s, HardwareKey::WindowDown);
+    assert_eq!(s.session().bottom_window().map(|w| w.id), Some(2));
+    let fx = key(&mut s, HardwareKey::WindowUp);
+    assert_eq!(s.session().window_rules().list(), std::slice::from_ref(&top_rule));
+    let saved: Vec<_> = fx.into_iter().filter(|e| matches!(e, Effect::Save(Save::WindowRules(_)))).collect();
+    assert_eq!(saved, vec![Effect::Save(Save::WindowRules(crate::session::below::WindowRules::from_list(vec![top_rule])))]);
+    assert_eq!(s.session().place(2), Some(WindowPlace::Top(Some(&group_of(&emu())))));
+    assert_eq!(s.session().bottom_window(), None);
+    // Repeated Up does not rewrite rules; a new matching title no longer sends this window down.
+    assert!(key(&mut s, HardwareKey::WindowUp).is_empty());
+    s.applied(crate::WindowEvent::Title { window: 2, title: "Bottom".into() }.into());
+    assert_eq!(s.session().bottom_window(), None);
+}
+
+#[test]
+fn returning_an_automatically_placed_window_forgets_the_rule_after_identity_changes() {
+    let rule = WindowRule { owner: "melonds".into(), app_id: "emu".into(), title: Some("Bottom".into()) };
+    let mut s = crate::testkit::started(crate::Init { window_rules: crate::session::below::WindowRules::from_list(vec![rule]), ..crate::testkit::init() });
+    s.add_run(running("melonds", "melonds_1"), emu());
+    s.observed(vec![win(1, GAME, "Top"), win(2, GAME, "Bottom")]);
+    assert_eq!(s.session().bottom_window().map(|w| w.id), Some(2));
+    let changed = WindowFacts { app_id: "changed".into(), ..win(2, GAME, "New title") };
+    s.applied(crate::WindowEvent::Changed(changed).into());
+    let fx = key(&mut s, HardwareKey::WindowUp);
+    assert!(s.session().window_rules().list().is_empty());
+    let saved: Vec<_> = fx.into_iter().filter(|e| matches!(e, Effect::Save(Save::WindowRules(_)))).collect();
+    assert_eq!(saved, vec![Effect::Save(Save::WindowRules(crate::session::below::WindowRules::default()))]);
+    assert_eq!(s.session().bottom_window(), None);
+}
+
+#[test]
+fn moving_a_displaced_window_down_remembers_again_if_its_shared_rule_was_forgotten() {
+    let mut s = state();
+    s.add_run(running("melonds", "melonds_1"), emu());
+    s.observed(vec![win(1, GAME, "Top")]);
+    s.applied(crate::WindowEvent::Activate(1).into());
+    key(&mut s, HardwareKey::WindowDown);
+    s.applied(crate::WindowEvent::Opened(win(2, GAME, "Bottom")).into());
+    assert_eq!(s.session().bottom_window().map(|w| w.id), Some(2));
+    key(&mut s, HardwareKey::WindowUp);
+    assert!(s.session().window_rules().list().is_empty());
+    s.applied(crate::WindowEvent::Activate(1).into());
+    let fx = key(&mut s, HardwareKey::WindowDown);
+    let rule = WindowRule { owner: "melonds".into(), app_id: "emu".into(), title: Some("Top".into()) };
+    assert_eq!(s.session().window_rules().list(), std::slice::from_ref(&rule));
+    let saved: Vec<_> = fx.into_iter().filter(|e| matches!(e, Effect::Save(Save::WindowRules(_)))).collect();
+    assert_eq!(saved, vec![Effect::Save(Save::WindowRules(crate::session::below::WindowRules::from_list(vec![rule])))]);
+    assert_eq!(s.session().bottom_window().map(|w| w.id), Some(1));
+}

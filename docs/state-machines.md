@@ -2026,3 +2026,12 @@ A glyph awaiting fallback discovery reserves the same built-in advance for fitti
 drawing. `fitting_keeps_waiting_characters_within_the_available_width` checks Keep::Start and Keep::End
 at two scales before discovery answers and after an answer without a font. The selected substring and
 recorded width agree and stay within the available width; existing finder tests cover a font arriving.
+
+Bottom placement history retains the exact rule that moved each live window, alongside the existing
+record that automatic placement has considered it. A sibling skipped at rule creation has no applied
+rule. Title/app-ID changes and displacement retain this history; moving a displaced window down again
+uses that same rule while it remains saved. If another window has forgotten a shared rule, a new
+manual move remembers the current facts again. WindowUp removes its recorded rule and saves the remaining list, leaving sibling
+rules intact; a repeated return does nothing. Closing a window drops its history. Manual/automatic
+return tests in bottom/screen cover identity changes and saved rule lists. Random event sequences
+include title and identity changes and require distinct live window IDs throughout placement history.

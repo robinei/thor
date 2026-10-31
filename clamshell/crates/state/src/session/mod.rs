@@ -110,7 +110,7 @@ pub struct Session {
     /// Which programs' windows go to the bottom screen (see [`crate::session::below`]).
     window_rules: below::WindowRules,
     /// Windows a rule sent to the bottom screen. Each is sent once and dropped from here when it closes.
-    sent_down: Vec<i64>,
+    sent_down: Vec<below::SentDown>,
     /// Where the keyboard is; the window with it is computed ([`Session::keyboard_focus`]).
     keys: Keys,
     home_held: bool,
