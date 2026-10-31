@@ -2070,3 +2070,11 @@ scope even without an entry, and a freezer worker restart replays that scope's c
 A later matching identity can recover the scope normally. Scope recovery
 checks all candidate windows/icons and computes candidate keys without allocating on ordinary events.
 The identity/recovery regression, the unresolved-scope allocation test and random seed 39 cover this.
+
+Metrics GPU load uses the kernel's direct busy reading whenever available, without walking process
+fdinfo. Only a missing busy reading samples per-client DRM times. The first fallback interval is seeded
+at startup on machines that need it; losing a direct source, missing counters, zero elapsed time or
+clients exiting reports no fallback load until a valid interval exists. A direct reading clears the
+fallback baseline, so later comparisons never span a source change. Metrics tests assert direct reads
+never invoke the scan and cover source loss, missing/reset/repeated counters and bounded loads. Polling
+cadences stay one second when shown and five seconds when hidden, retaining graph history.

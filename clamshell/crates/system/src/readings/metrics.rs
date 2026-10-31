@@ -39,7 +39,9 @@ pub(crate) fn spawn(sink: impl Sink) -> io::Result<Worker<Shown>> {
 /// gone.
 fn follow(sink: &impl Sink, commands: &Receiver<Shown>) -> Result<(), Closed> {
     let mut previous = read_cpu_times();
-    let mut gpu_previous = drm::total_ns().map(|t| (t, Instant::now()));
+    let mut gpu = GpuTimes::default();
+    // Seed the first interval only when this machine needs the per-client fallback.
+    gpu.load(read_gpu().0, gpu_time);
     let mut shown = false;
     loop {
         match worker::next(commands, Some(if shown { SHOWN_EVERY } else { HIDDEN_EVERY })) {
@@ -49,21 +51,34 @@ fn follow(sink: &impl Sink, commands: &Receiver<Shown>) -> Result<(), Closed> {
         }
         let now = read_cpu_times();
         let mut m = read(&previous, &now);
-        // Without a busy file, use the GPU time of all clients over the time elapsed.
-        let gpu_now = drm::total_ns().map(|t| (t, Instant::now()));
-        if m.gpu.is_none()
-            && let (Some((t0, i0)), Some((t1, i1))) = (gpu_previous, gpu_now)
-        {
-            let wall = i1.duration_since(i0).as_nanos() as f64;
-            // Clients that exited take their time with them, so there is no reading then.
-            if t1 >= t0 && wall > 0.0 {
-                m.gpu = Some(((t1 - t0) as f64 / wall).clamp(0.0, 1.0) as f32);
-            }
-        }
-        gpu_previous = gpu_now;
+        m.gpu = gpu.load(m.gpu, gpu_time);
         sink.send(Event::Reading(Reading::Metrics(m)))?;
         previous = now;
     }
+}
+
+/// The per-client fallback's last sample. A direct busy reading discards that baseline so a source
+/// disappearing starts a fresh interval rather than comparing counters across the gap.
+#[derive(Default)]
+struct GpuTimes(Option<(u64, Instant)>);
+
+impl GpuTimes {
+    fn load(&mut self, busy: Option<f32>, scan: impl FnOnce() -> Option<(u64, Instant)>) -> Option<f32> {
+        if busy.is_some() {
+            self.0 = None;
+            return busy;
+        }
+        let next = scan();
+        let previous = std::mem::replace(&mut self.0, next);
+        let ((t0, i0), (t1, i1)) = (previous?, next?);
+        let wall = i1.checked_duration_since(i0)?.as_nanos() as f64;
+        // Exiting clients can lower the total. Keep the new baseline but report no load then.
+        (t1 >= t0 && wall > 0.0).then(|| ((t1 - t0) as f64 / wall).clamp(0.0, 1.0) as f32)
+    }
+}
+
+fn gpu_time() -> Option<(u64, Instant)> {
+    drm::total_ns().map(|t| (t, Instant::now()))
 }
 
 /// (busy, total) jiffies for the whole CPU, then for each core.
@@ -122,22 +137,7 @@ fn read(previous: &CpuTimes, now: &CpuTimes) -> Metrics {
     m.cpu_mhz =
         (0..256).map_while(|i| sys::read::<f64>(format!("/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_cur_freq"))).map(|khz| (khz / 1000.0) as u32).max();
 
-    // GPU: amdgpu on a desktop, or else a devfreq device named like a GPU (Adreno's is 3d00000.gpu).
-    for card in sys::entries("/sys/class/drm") {
-        let device = card.join("device");
-        if let Some(busy) = sys::read::<f64>(device.join("gpu_busy_percent")) {
-            m.gpu = Some((busy / 100.0) as f32);
-            m.gpu_mhz = sys::text(device.join("pp_dpm_sclk")).as_deref().and_then(parse_dpm_clock);
-            break;
-        }
-    }
-    if m.gpu_mhz.is_none() {
-        m.gpu_mhz = sys::entries("/sys/class/devfreq")
-            .into_iter()
-            .find(|d| d.file_name().is_some_and(|n| n.to_string_lossy().contains("gpu")))
-            .and_then(|d| sys::read::<f64>(d.join("cur_freq")))
-            .map(|hz| (hz / 1e6) as u32);
-    }
+    (m.gpu, m.gpu_mhz) = read_gpu();
 
     // Temperatures: hwmon chips by name and thermal zones by type, taking the hottest of each kind.
     let hottest = |slot: &mut Option<f32>, millideg: f64| {
@@ -196,10 +196,68 @@ fn read(previous: &CpuTimes, now: &CpuTimes) -> Metrics {
     m
 }
 
+/// The direct GPU load and clock, where the kernel exposes them.
+fn read_gpu() -> (Option<f32>, Option<u32>) {
+    let mut m = Metrics::default();
+    // GPU: amdgpu on a desktop, or else a devfreq device named like a GPU (Adreno's is 3d00000.gpu).
+    for card in sys::entries("/sys/class/drm") {
+        let device = card.join("device");
+        if let Some(busy) = sys::read::<f64>(device.join("gpu_busy_percent")) {
+            m.gpu = Some((busy / 100.0) as f32);
+            m.gpu_mhz = sys::text(device.join("pp_dpm_sclk")).as_deref().and_then(parse_dpm_clock);
+            break;
+        }
+    }
+    if m.gpu_mhz.is_none() {
+        m.gpu_mhz = sys::entries("/sys/class/devfreq")
+            .into_iter()
+            .find(|d| d.file_name().is_some_and(|n| n.to_string_lossy().contains("gpu")))
+            .and_then(|d| sys::read::<f64>(d.join("cur_freq")))
+            .map(|hz| (hz / 1e6) as u32);
+    }
+
+    (m.gpu, m.gpu_mhz)
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_direct_gpu_reading_never_scans_processes_and_clears_the_fallback() {
+        let mut gpu = GpuTimes::default();
+        let at = Instant::now();
+        assert_eq!(gpu.load(None, || Some((100, at))), None);
+        let scanned = std::cell::Cell::new(false);
+        for busy in [0.0, 0.5, 1.0] {
+            assert_eq!(
+                gpu.load(Some(busy), || {
+                    scanned.set(true);
+                    Some((200, at))
+                }),
+                Some(busy)
+            );
+        }
+        assert!(!scanned.get());
+        assert_eq!(gpu.load(None, || Some((900, at + Duration::from_secs(10)))), None, "a lost direct source seeds a new baseline");
+        assert_eq!(gpu.load(None, || Some((500_000_900, at + Duration::from_secs(11)))), Some(0.5));
+    }
+
+    #[test]
+    fn gpu_fallback_handles_missing_reset_and_repeated_samples() {
+        let mut gpu = GpuTimes::default();
+        let at = Instant::now();
+        assert_eq!(gpu.load(None, || None), None);
+        assert_eq!(gpu.load(None, || Some((100, at))), None);
+        assert_eq!(gpu.load(None, || Some((100, at))), None, "no elapsed time");
+        assert_eq!(gpu.load(None, || Some((250_000_100, at + Duration::from_secs(1)))), Some(0.25));
+        assert_eq!(gpu.load(None, || Some((5, at + Duration::from_secs(2)))), None, "a client exited");
+        assert_eq!(gpu.load(None, || Some((500_000_005, at + Duration::from_secs(3)))), Some(0.5));
+        assert_eq!(gpu.load(None, || None), None);
+        assert_eq!(gpu.load(None, || Some((900, at + Duration::from_secs(4)))), None, "missing counters reset the interval");
+        assert_eq!(gpu.load(None, || Some((2_000_000_900, at + Duration::from_secs(5)))), Some(1.0), "load is clamped");
+    }
 
     #[test]
     fn cpu_load_from_two_readings() {
