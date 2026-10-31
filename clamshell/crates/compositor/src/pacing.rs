@@ -37,7 +37,7 @@ pub(crate) struct Pacing {
 pub(crate) struct Feedback {
     /// Each callback, whether its surface is shown from its own buffer, and whether on the second screen.
     callbacks: Vec<(PresentationFeedbackCallback, bool, bool)>,
-    /// The windows whose root surface it shows, for their frame rates.
+    /// The windows whose picture it shows, for their frame rates.
     windows: Vec<i64>,
 }
 
@@ -137,7 +137,7 @@ impl Server {
             if screen.is_some_and(|screen| screen != down) {
                 continue;
             }
-            if client.window.root().is_some_and(|root| rendered.element_was_presented(&root)) {
+            if client.window.picture_surface().is_some_and(|picture| rendered.element_was_presented(&picture)) {
                 feedback.windows.push(client.id);
             }
             client.window.with_surfaces(|surface, states| {

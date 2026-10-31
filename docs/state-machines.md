@@ -1278,7 +1278,7 @@ protocol tests (`tests.rs`, `tests/*.rs`) run real clients over a socket pair ag
 
 ### Frame pacing (pacing.rs, frames.rs, drm/)
 
-Each window has its `Frames`: `fresh` (a new buffer committed to its root surface and not yet shown), a
+Each window has its `Frames`: `fresh` (a new buffer committed to its root or desynchronised child and not yet shown), a
 ring of the times of its last 256 frames shown, and, under a frame rate cap, when its next frame callback
 is due. Each surface notes the commit drawn into the frame queued for its screen and the commit last
 shown; the nested host notes both right after a submission, the DRM host the first when it queues and the
@@ -1291,8 +1291,8 @@ the compositor paces (`a_windows_fps_cap_is_the_one_set_for_its_program`,
 
 | From | Event / condition | To | Effects | Test |
 |---|---|---|---|---|
-| shown | a new buffer committed to the window's root surface | fresh | | `only_new_buffers_count_once_shown` |
-| fresh | a screen shows the window (DRM: its flip; nested: the submission) | shown | its time into the ring | same |
+| shown | a new buffer committed to the window's root or desynchronised child | fresh | | `only_new_buffers_count_once_shown` |
+| fresh | a screen shows the window's picture (DRM: its flip; nested: the submission) | shown | its time into the ring, once even when root and picture both show | `a_pictures_subsurface_new_buffers_are_its_frame_rate` (opaque child, direct scanout and root alongside child); root-picture presentation tests |
 | shown | shown again with nothing new | shown | no frame counted | same |
 | uncapped, mapped and visible | frame callbacks for its screen (DRM: after a flip, an idle answer, or held callbacks due; nested: each redraw) | | callbacks sent | the protocol tests; `tests/nested-compositor.py` |
 | capped, any surface waiting for a callback or on a FIFO barrier | due within a quarter refresh | | sent; next due a cap's interval later, or from now if more than one behind | `a_cap_paces_frame_callbacks_on_the_screens_refreshes` (40 fps at 60 Hz: two refreshes, then one) |

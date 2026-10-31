@@ -269,6 +269,12 @@ fn the_top_windows_new_buffers_shown_are_its_frame_rate() {
 /// has that subsurface's new buffers as its frame rate: its window's root stays as it was.
 #[test]
 fn a_pictures_subsurface_new_buffers_are_its_frame_rate() {
+    for (root_visible, scanout) in [(false, false), (false, true), (true, false)] {
+        picture_frames(root_visible, scanout);
+    }
+}
+
+fn picture_frames(root_visible: bool, scanout: bool) {
     let (mut display, mut server) = ServerBuilder::new().started();
     const STEPS: u32 = 10;
     let client = spawn_client(&mut display, ClientState::default(), move |globals, mut queue, steps| {
@@ -305,10 +311,16 @@ fn a_pictures_subsurface_new_buffers_are_its_frame_rate() {
     let mut measured = None;
     client.serve(&mut display, &mut server, Server::frame, |_, server, step| {
         let mut rendered = RenderElementStates::default();
-        let root = server.windows[0].window.root().unwrap();
-        let state =
-            RenderElementState { visible_area: 1, presentation_state: RenderElementPresentationState::Rendering { reason: None }, needs_capture: false };
-        rendered.states.insert((&root).into(), state);
+        let window = &server.windows[0].window;
+        let root = window.root().unwrap();
+        let picture = window.picture_surface().unwrap();
+        assert_ne!(root, picture, "the child holds the picture");
+        let presentation_state = if scanout { RenderElementPresentationState::ZeroCopy } else { RenderElementPresentationState::Rendering { reason: None } };
+        let state = RenderElementState { visible_area: 1, presentation_state, needs_capture: false };
+        if root_visible {
+            rendered.states.insert((&root).into(), state);
+        }
+        rendered.states.insert((&picture).into(), state);
         server.present_submission(&rendered, (start + Duration::from_millis(20) * step).into());
         if step == STEPS - 1 {
             server.pacing.frames_due = None;
@@ -316,5 +328,5 @@ fn a_pictures_subsurface_new_buffers_are_its_frame_rate() {
             measured = server.core.state().sys().metrics().fps;
         }
     });
-    assert!(measured.is_some_and(|fps| fps >= 9.0), "{measured:?}");
+    assert_eq!(measured, Some(STEPS as f32), "one frame per new picture, with or without the root");
 }
