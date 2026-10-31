@@ -2042,3 +2042,10 @@ environment output. Steam's hook then reports LaunchEnvFailed and logs the failu
 game with its original environment. Session startup still logs and skips individual unreadable files.
 `launch_env_reports_broken_existing_settings_but_accepts_missing_settings` runs the actual command;
 `broken_settings_in_the_real_command_reach_the_hooks_notice_branch` checks the full hook failure path.
+
+The Android Wayland relay distinguishes incomplete messages from invalid headers. A declared size
+below eight bytes or not divisible by four ends that relay, logs a warning, closes both socket ends
+and releases received file descriptors; the reverse relay ends with the closed socket. Pending input
+is bounded to one maximum legal message (65,532 bytes). Wire parser tests cover fragmented headers and
+bodies and malformed sizes after a valid prefix. Socket-pair tests check closure and descriptor cleanup
+and pass a maximum-sized valid message through the bounded buffer.

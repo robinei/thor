@@ -205,7 +205,7 @@ mod tests {
         buf.extend(message(10, 0, &words(&[5])));
         let whole = buf.len();
         buf.extend(&message(3, 1, &words(&[1, 2]))[..6]);
-        let (found, used) = messages(&buf);
+        let (found, used) = messages(&buf).unwrap();
         assert_eq!(used, whole, "the cut-off one left");
         assert_eq!(found.iter().map(|(o, op, r)| (*o, *op, r.len())).collect::<Vec<_>>(), [(11, 0, 12), (10, 0, 4)]);
     }
