@@ -8,10 +8,7 @@ use smithay::{
     backend::renderer::element::RenderElementStates,
     reexports::{wayland_protocols::wp::presentation_time::server::wp_presentation_feedback::Kind, wayland_server::Resource},
     utils::{Monotonic, Time},
-    wayland::{
-        compositor::with_states,
-        presentation::{PresentationFeedbackCachedState, PresentationFeedbackCallback, Refresh},
-    },
+    wayland::presentation::{PresentationFeedbackCachedState, PresentationFeedbackCallback, Refresh},
 };
 
 use crate::server::Server;
@@ -188,14 +185,11 @@ impl Server {
             // A capped window uses its turn only while it waits for a callback or on a FIFO barrier, so
             // that one drawing slower than its cap isn't held back further.
             let cap = client.shown.fps_cap;
-            let waiting = client.window.root().is_some_and(|root| {
-                with_states(&root, |states| !states.cached_state.get::<smithay::wayland::compositor::SurfaceAttributes>().current().frame_callbacks.is_empty())
-            });
-            let mut barrier = false;
+            let mut waiting = false;
             client.window.with_surfaces(|_, states| {
-                barrier |= states.cached_state.get::<smithay::wayland::fifo::FifoBarrierCachedState>().current().barrier.is_some();
+                waiting |= !states.cached_state.get::<smithay::wayland::compositor::SurfaceAttributes>().current().frame_callbacks.is_empty()
+                    || states.cached_state.get::<smithay::wayland::fifo::FifoBarrierCachedState>().current().barrier.is_some();
             });
-            let waiting = waiting || barrier;
             let paced = if cap.is_some() && !waiting { Ok(()) } else { client.frames.pace(cap, refresh, now) };
             match paced {
                 Ok(()) => {

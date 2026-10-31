@@ -172,3 +172,66 @@ fn a_capped_windows_timed_commit_goes_ahead_at_once() {
     });
     assert_eq!(checked, 2);
 }
+
+use wayland_client::protocol::{wl_callback, wl_subcompositor};
+delegate_noop!(Client: ignore wl_callback::WlCallback);
+
+/// Root and child callbacks share one window pacing turn, including when only the child waits.
+#[test]
+fn callbacks_anywhere_in_the_window_share_its_cap() {
+    let mut settings = clamshell_state::settings::Settings::default();
+    settings.set(None, clamshell_state::settings::Setting::FpsCap, Some(30));
+    let state = State::new(Init { settings, device_session: true, ..Init::default() });
+    let (mut display, mut server) = ServerBuilder::new().state(state).started();
+    let process = Process { unit: Some("app-game.scope".into()), pids: vec![100], game: None };
+    let client = spawn_client(&mut display, ClientState { process: Some(process), ..ClientState::default() }, move |globals, mut queue, steps| {
+        let qh = queue.handle();
+        let mut client = Client::default();
+        let top = open_toplevel(&globals, &mut queue, &mut client, "game", Some((960, 540)));
+        let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
+        let subs: wl_subcompositor::WlSubcompositor = globals.bind(&qh, 1..=1, ()).unwrap();
+        let child = compositor.create_surface(&qh, ());
+        let sub = subs.get_subsurface(&child, &top.surface, &qh, ());
+        sub.set_desync();
+        child.attach(Some(&top.buffer), 0, 0);
+        child.commit();
+        top.surface.commit();
+        for (root, picture) in [(false, true), (true, false), (true, true), (false, false)] {
+            if root {
+                top.surface.frame(&qh, ());
+            }
+            if picture {
+                child.frame(&qh, ());
+            }
+            child.commit();
+            top.surface.commit();
+            queue.roundtrip(&mut client).unwrap();
+            steps.step((root, picture));
+        }
+    });
+    let checked = client.serve(&mut display, &mut server, Server::frame, |_, server, (root, child)| {
+        let now = Instant::now();
+        let refresh = Duration::from_millis(16);
+        let window = &mut server.windows[0];
+        assert_eq!(window.shown.fps_cap, Some(30));
+        window.frames = crate::frames::Frames::default();
+        window.frames.pace(Some(30), refresh, now).unwrap();
+        let count = |server: &Server| {
+            let mut count = 0;
+            server.windows[0].window.with_surfaces(|_, states| {
+                count += states.cached_state.get::<smithay::wayland::compositor::SurfaceAttributes>().current().frame_callbacks.len();
+            });
+            count
+        };
+        assert_eq!(count(server), usize::from(root) + usize::from(child));
+        let held = server.frame_callbacks(None, refresh, now);
+        assert_eq!(held.is_some(), root || child);
+        assert_eq!(count(server), usize::from(root) + usize::from(child), "held callbacks remain pending");
+        if let Some(due) = held {
+            assert_eq!(server.frame_callbacks(None, refresh, due), None);
+            assert_eq!(count(server), 0, "one turn releases both surfaces");
+            assert!(server.windows[0].frames.pace(Some(30), refresh, due).is_err(), "only one pacing turn was consumed");
+        }
+    });
+    assert_eq!(checked, 4);
+}

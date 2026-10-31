@@ -1295,7 +1295,7 @@ the compositor paces (`a_windows_fps_cap_is_the_one_set_for_its_program`,
 | fresh | a screen shows the window (DRM: its flip; nested: the submission) | shown | its time into the ring | same |
 | shown | shown again with nothing new | shown | no frame counted | same |
 | uncapped, mapped and visible | frame callbacks for its screen (DRM: after a flip, an idle answer, or held callbacks due; nested: each redraw) | | callbacks sent | the protocol tests; `tests/nested-compositor.py` |
-| capped, waiting for a callback or on a FIFO barrier | due within a quarter refresh | | sent; next due a cap's interval later, or from now if more than one behind | `a_cap_paces_frame_callbacks_on_the_screens_refreshes` (40 fps at 60 Hz: two refreshes, then one) |
+| capped, any surface waiting for a callback or on a FIFO barrier | due within a quarter refresh | | sent; next due a cap's interval later, or from now if more than one behind | `a_cap_paces_frame_callbacks_on_the_screens_refreshes` (40 fps at 60 Hz: two refreshes, then one) |
 | capped, waiting | not due yet | held | the loop woken when due | same; `held_callbacks_go_once_due_and_wake_the_loop_until_then` |
 | FIFO barrier set | callbacks sent, the surface's commit queued but not shown | set | | `a_barrier_goes_once_its_frame_is_shown_and_a_timed_commit_at_its_time` |
 | FIFO barrier set | callbacks sent, its commit shown or never drawn | released | barrier signalled; the client's held commits apply; DRM composes again at once | same; `commits_let_through_after_composing_are_composed_at_once` |
@@ -1995,3 +1995,7 @@ the pad worker receive that same snapshot; missing storage supplies defaults to 
 written before entering either backend. The backend startup callback only sends prepared input data,
 with no persisted-input reads or preset writes. Workspace tests and the nested startup check cover
 this boundary; later input changes and worker restarts follow the existing event/effect routes.
+
+A window consumes at most one cap interval per callback turn, shared by its root and children.
+`callbacks_anywhere_in_the_window_share_its_cap` checks child-only, root-only, combined and absent
+callbacks: held callbacks remain pending, and one due turn releases all waiting surfaces.
