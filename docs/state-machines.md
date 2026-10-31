@@ -2006,3 +2006,11 @@ fetch request reserves the missing workers again. With another worker running, i
 starter's share without clearing busy early. `failed_worker_starts_leave_jobs_available_for_retry` and
 `a_failed_start_does_not_take_work_from_a_running_worker` check job order, exactly-once completion,
 reservation counts and the final idle state without starting network requests.
+
+The free pointer's absolute position is clipped to the rectangular scene occupied by both outputs,
+including on resize. The outputs are adjacent, with no gap at their seam. Relative motion is sent to
+the client before clipping the cursor, so games still receive the complete accelerated and raw deltas.
+Pointer lock retains its position and confinement continues to restrict it to the permitted region.
+`the_free_cursor_stays_in_the_scene_and_crosses_between_both_screens` checks edges, seam and resize;
+`clipping_the_cursor_does_not_clip_relative_motion_sent_to_a_client` checks protocol deltas, alongside
+the existing lock/confinement protocol fixtures.

@@ -8,7 +8,7 @@ use clamshell_ui::{Config, Screen};
 use smithay::{
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::wayland_server::{DisplayHandle, Weak, protocol::wl_output::WlOutput},
-    utils::{Logical, Rectangle, Transform},
+    utils::{Logical, Point, Rectangle, Transform},
 };
 
 use crate::{clients::ClientState, server::Server};
@@ -40,6 +40,11 @@ pub(crate) struct Screens {
 }
 
 impl Screens {
+    /// The screens fill one rectangular scene, side by side with no gap. Keep the cursor inside it.
+    pub(crate) fn clamp_point(&self, point: Point<f64, Logical>) -> Point<f64, Logical> {
+        (point.x.clamp(0.0, f64::from(self.size.0.saturating_sub(1).max(0))), point.y.clamp(0.0, f64::from(self.size.1.saturating_sub(1).max(0)))).into()
+    }
+
     /// Whether a point `x` across the scene is on the second screen, which lies right of the top one.
     pub(crate) fn below(&self, x: f64) -> bool {
         x >= f64::from(self.top_width)
@@ -83,6 +88,7 @@ impl Server {
     pub fn resize(&mut self, (width, height): (i32, i32)) {
         self.touch_cancel();
         self.screens.size = (width.max(4), height.max(4));
+        self.pointer.location = self.screens.clamp_point(self.pointer.location);
         let (top, bottom) = self.screens.preview_widths;
         self.screens.top_width =
             ((u64::from(self.screens.size.0 as u32) * u64::from(top) / (u64::from(top) + u64::from(bottom)).max(1)) as i32).clamp(2, self.screens.size.0 - 2);

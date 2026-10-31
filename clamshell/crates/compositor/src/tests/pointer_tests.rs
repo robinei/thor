@@ -456,3 +456,41 @@ fn a_host_that_cannot_release_capture_ends_the_unusable_session() {
     assert!(server.exit, "the user must not remain trapped in an unusable host window");
     assert!(server.pointer.capture.is_none());
 }
+
+#[test]
+fn the_free_cursor_stays_in_the_scene_and_crosses_between_both_screens() {
+    let (_, mut server) = ServerBuilder::new().relative_motion().started();
+    let time = InputTime::now();
+    server.pointer_absolute((-5000.0, -5000.0).into(), time);
+    assert_eq!(server.pointer.location, (0.0, 0.0).into());
+    server.pointer_relative((5000.0, 5000.0).into(), (5000.0, 5000.0).into(), time);
+    assert_eq!(server.pointer.location, (1579.0, 539.0).into());
+    server.pointer_relative((-1.0, -1.0).into(), (-1.0, -1.0).into(), time);
+    assert_eq!(server.pointer.location, (1578.0, 538.0).into(), "no off-screen distance to travel back");
+    server.pointer_absolute((959.5, 200.0).into(), time);
+    server.pointer_relative((1.0, 0.0).into(), (1.0, 0.0).into(), time);
+    assert_eq!(server.screen_position(server.pointer.location), (clamshell_ui::Screen::Bottom, (0.5, 200.0)));
+    server.pointer_relative((-1.0, 0.0).into(), (-1.0, 0.0).into(), time);
+    assert_eq!(server.screen_position(server.pointer.location), (clamshell_ui::Screen::Top, (959.5, 200.0)));
+    server.pointer_absolute((5000.0, 5000.0).into(), time);
+    assert_eq!(server.pointer.location, (1579.0, 539.0).into());
+    server.resize((790, 270));
+    assert_eq!(server.pointer.location, (789.0, 269.0).into(), "resizing also keeps the cursor visible");
+}
+
+#[test]
+fn clipping_the_cursor_does_not_clip_relative_motion_sent_to_a_client() {
+    let (mut display, mut server) = ServerBuilder::new().relative_motion().started();
+    let client = spawn_client(&mut display, ClientState::default(), move |globals, mut queue, steps| {
+        let mut pointer = PointerClient::new(globals, &mut queue, &steps);
+        pointer.roundtrips(&mut queue).unwrap();
+        assert_eq!(pointer.client.relative.last(), Some(&(-4000.0, -4000.0, -2000.0, -2000.0)));
+    });
+    let host = std::cell::RefCell::new(Host::default());
+    let checked = client.serve(&mut display, &mut server, turn(&host), |_, server, step| {
+        shown(server, &step);
+        server.pointer_relative((-3000.0, -3000.0).into(), (-1500.0, -1500.0).into(), InputTime::now());
+        assert_eq!(server.pointer.location, (0.0, 0.0).into());
+    });
+    assert_eq!(checked, 1);
+}

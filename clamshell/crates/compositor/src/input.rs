@@ -262,7 +262,7 @@ impl Server {
         if self.pointer_locked() {
             return;
         }
-        self.pointer.location = self.constrain_pointer(position);
+        self.pointer.location = self.constrain_pointer(self.screens.clamp_point(position));
         let (_, position) = self.ui_position();
         self.core.moved(Source::Mouse, position, time.millis());
         self.move_pointer(time);
