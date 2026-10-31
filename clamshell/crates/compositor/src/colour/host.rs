@@ -3,6 +3,11 @@
 //! own event queue on winit's connection and dispatches only what winit has already read, so winit stays
 //! the one reader of the host's socket and nothing here waits on it.
 
+use std::{
+    sync::Arc,
+    task::{Context, Poll, Wake, Waker},
+};
+
 use clamshell_state::colour::{ColourDescription, ColourLuminance, ColourPrimaries, ColourTarget, TransferFunction};
 use smithay::reexports::{
     wayland_protocols::wp::color_management::v1::client::{
@@ -17,16 +22,18 @@ use smithay::reexports::{
 };
 use wayland_client::{
     Connection, Dispatch, EventQueue, Proxy, QueueHandle, delegate_noop,
-    protocol::{wl_registry, wl_surface::WlSurface},
+    protocol::{wl_callback, wl_registry, wl_surface::WlSurface},
 };
 
 pub(crate) struct Host {
     connection: Connection,
     queue: EventQueue<Data>,
     data: Data,
+    wake: Waker,
 }
 struct Data {
     surface: WlSurface,
+    frame_pending: bool,
     manager: Option<WpColorManagerV1>,
     control: Option<WpColorManagementSurfaceV1>,
     feedback: Option<WpColorManagementSurfaceFeedbackV1>,
@@ -54,8 +61,18 @@ enum Image {
 }
 #[derive(Clone, Copy)]
 struct Generation(u64);
+struct QueueWake(smithay::reexports::calloop::ping::Ping);
+impl Wake for QueueWake {
+    fn wake(self: Arc<Self>) {
+        self.0.ping();
+    }
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.0.ping();
+    }
+}
+
 impl Host {
-    pub(crate) fn new(window: &dyn Window) -> Option<Self> {
+    pub(crate) fn new(window: &dyn Window, wake: smithay::reexports::calloop::ping::Ping) -> Option<Self> {
         let window = window.cast_ref::<winit_wayland::Window>()?;
         let surface = window.surface().clone();
         let connection = Connection::from_backend(surface.backend().upgrade()?);
@@ -64,8 +81,10 @@ impl Host {
         Some(Self {
             connection,
             queue,
+            wake: Waker::from(Arc::new(QueueWake(wake))),
             data: Data {
                 surface,
+                frame_pending: false,
                 manager: None,
                 control: None,
                 feedback: None,
@@ -88,13 +107,26 @@ impl Host {
             },
         })
     }
+    pub(crate) fn ready(&self) -> bool {
+        !self.data.frame_pending
+    }
+
+    /// The host may withhold this callback while obscured. Do not fill EGL's buffer queue then.
+    pub(crate) fn queued(&mut self) -> Result<(), String> {
+        self.data.surface.frame(&self.queue.handle(), ());
+        self.data.frame_pending = true;
+        self.flush()
+    }
+
     pub fn encoding(&self) -> Option<ColourDescription> {
         self.data.active
     }
 
     /// Dispatches only events winit has already read. It never performs a socket read or round trip.
     pub(crate) fn turn(&mut self) -> Result<Option<ColourDescription>, String> {
-        self.queue.dispatch_pending(&mut self.data).map_err(|error| error.to_string())?;
+        if let Poll::Ready(Err(error)) = self.queue.poll_dispatch_pending(&mut Context::from_waker(&self.wake), &mut self.data) {
+            return Err(error.to_string());
+        }
         self.flush()?;
         Ok(std::mem::take(&mut self.data.changed).then_some(self.data.preferred).flatten())
     }
@@ -377,3 +409,9 @@ impl Dispatch<WpImageDescriptionInfoV1, Generation> for Data {
 }
 delegate_noop!(Data: ignore WpColorManagementSurfaceV1);
 delegate_noop!(Data: ignore WpImageDescriptionCreatorParamsV1);
+
+impl Dispatch<wl_callback::WlCallback, ()> for Data {
+    fn event(data: &mut Self, _: &wl_callback::WlCallback, _: wl_callback::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+        data.frame_pending = false;
+    }
+}

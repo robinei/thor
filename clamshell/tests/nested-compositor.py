@@ -53,6 +53,22 @@ def main():
         saved = runtime / "clamshell/compositor" / nested_socket / "clipboard"
         wait(lambda: saved.exists() and saved.read_text() == "nested clipboard", "nested clipboard persisted separately")
         assert clipboard(host) == "", "nested clipboard must not change the parent compositor's clipboard"
+        # An obscured Wayland host withholds frame callbacks. Changes must stay pending without
+        # filling EGL's buffer queue; clipboard round trips prove the event loop keeps responding.
+        sway_socket = next(runtime.glob("sway-ipc.*.sock"))
+        def workspace(number):
+            subprocess.run(["swaymsg", "-s", str(sway_socket), "workspace", str(number)],
+                           env=host, check=True, capture_output=True, timeout=5)
+        workspace(2)
+        time.sleep(0.3)
+        hidden_frames = n.log().count("nested frame submitted")
+        control("tab", "settings")
+        control("tab", "sysinfo")
+        wait(lambda: clipboard(nested) == "nested clipboard", "obscured host still serves clients")
+        time.sleep(1.2)
+        assert n.log().count("nested frame submitted") <= hidden_frames + 1, "obscured host keeps submitting"
+        workspace(1)
+        wait(lambda: n.log().count("nested frame submitted") > hidden_frames + 1, "host exposure resumes drawing")
         client_program = directory / "client.py"
         client_program.write_text(r'''import base64, os, pathlib, select, sys, time, tty
 root = pathlib.Path(sys.argv[1])

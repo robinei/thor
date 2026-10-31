@@ -2093,3 +2093,12 @@ a different hotspot. No policy or placement is recomputed outside the existing s
 The nested real-client test checks idle submission counts, waking on UI input and client commits,
 then the existing client, colour, pointer and clipboard cases. The redraw demand test checks repeated
 changes and returning to idle; cursor tests pin animation boundaries and timer-free static shapes.
+
+Nested host pacing: ready --submit--> awaiting the host's surface frame callback;
+awaiting --more damage or exposure--> awaiting with damage retained, no EGL submission;
+awaiting --callback--> ready, pending damage drawn at the next allowed refresh. An obscured
+host can withhold callbacks indefinitely without stopping client requests, timers or the watchdog.
+Its separate event queue registers a waker that pings the outer loop when winit reads its events.
+The nested real-client test switches host workspaces, checks clipboard round trips while hidden,
+checks that submissions stop, then checks that exposure resumes drawing. The desktop KWin host
+is also checked for longer than its 30-second watchdog after starting and while obscured.

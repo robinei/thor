@@ -54,7 +54,9 @@ pub fn run(
     let pipeline = crate::colour::render::Pipeline::new(backend.renderer(), server)
         .map_err(|error| format!("nested compositor: the colour pipeline can't start, and nested draws only through it: {error}"))?;
     crate::colour::protocol::install(&server.dh);
-    let host_colour = crate::colour::host::Host::new(backend.window());
+    let (wake, source) = smithay::reexports::calloop::ping::make_ping()?;
+    base.event_loop.handle().insert_source(source, |_, _, _| {}).map_err(|error| error.error)?;
+    let host_colour = crate::colour::host::Host::new(backend.window(), wake);
     if host_colour.is_none() {
         log::info!("nested compositor: the host's colour management can't be reached (not a Wayland window), so the window is sRGB");
     }
@@ -203,7 +205,8 @@ impl Drawing {
         if self.visuals.observe(server) || server.screenshot_requested {
             self.redraw.changed();
         }
-        if now >= self.next_frame && self.redraw.pending() {
+        let ready = self.host_colour.as_ref().is_none_or(|host| host.ready());
+        if ready && now >= self.next_frame && self.redraw.pending() {
             self.draw(server)?;
         }
         // Keep displayed resources without drawing again. Temporary readbacks/passes retain their
@@ -220,20 +223,25 @@ impl Drawing {
         Ok(timed
             .into_iter()
             .chain(trims.finish())
-            .chain(self.cursor_due)
+            .chain(self.cursor_due.filter(|_| ready))
             .chain(self.pipeline.histogram_due(server, now))
             .chain(self.held)
             .chain(reported.then_some(now))
-            .chain(self.redraw.pending().then_some(self.next_frame))
+            .chain((ready && self.redraw.pending()).then_some(self.next_frame))
             .min())
     }
 
     fn draw(&mut self, server: &mut Server) -> Result<(), Error> {
+        self.colour(server)?;
+        if self.host_colour.as_ref().is_some_and(|host| !host.ready()) {
+            self.redraw.changed();
+            return Ok(());
+        }
         self.redraw.submitted();
         self.next_frame = Instant::now() + Duration::from_secs_f64(1000.0 / f64::from(server.screens.refresh.max(1000)));
         server.frame();
         self.colour(server)?;
-        let Self { backend, pipeline, frames, cursor, elements, states, on_capture, .. } = self;
+        let Self { backend, pipeline, frames, cursor, elements, states, on_capture, host_colour, .. } = self;
         sync_capture(server, backend.window());
         let capturing = std::mem::take(&mut server.screenshot_requested);
         for (down, states) in [false, true].into_iter().zip(states.iter_mut()) {
@@ -260,6 +268,9 @@ impl Drawing {
                 drop(renderer.render(&mut framebuffer, server.screens.size.into(), Transform::Flipped180)?.finish()?);
                 on_capture(captured);
             }
+        }
+        if let Some(host) = host_colour {
+            host.queued()?;
         }
         backend.submit(Some(&[Rectangle::from_size(backend.window_size())]))?;
         for (down, states) in [false, true].into_iter().zip(states.iter()) {
