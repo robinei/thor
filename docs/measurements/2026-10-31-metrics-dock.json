@@ -1,0 +1,1361 @@
+{
+  "date": "2026-10-31T17:51:00.783327+00:00",
+  "commit": "febbfa1c2af8ff3172e552dfb6b3871a35c70329",
+  "binary": "clamshell/target/fast/clamshell",
+  "kernel": "7.2.9-2-cachyos",
+  "cpu": "AMD Ryzen 9 5900X 12-Core Processor",
+  "renderer": [
+    "[2026-10-31T17:50:50Z INFO  smithay::backend::renderer::gles] GL Renderer: \"AMD Radeon RX 9070 XT (radeonsi, gfx1201, ACO, DRM 3.64, 7.2.9-2-cachyos)\""
+  ],
+  "bottom_tab": "dock",
+  "fixture": "1000 local ROM entries; no metadata requests or client apps; 3160x1080 at 60 Hz, hardware GPU, generic device profile",
+  "startup": [
+    {
+      "fresh_saved_defaults": true,
+      "top_composed_ms": 84.364146,
+      "library_read_ms": 84.390876,
+      "library_entries": 1002,
+      "bottom_composed_ms": 158.253823,
+      "ready_ms": 159.84194
+    },
+    {
+      "fresh_saved_defaults": false,
+      "top_composed_ms": 74.645871,
+      "library_read_ms": 76.773531,
+      "library_entries": 1002,
+      "bottom_composed_ms": 85.248039,
+      "ready_ms": 88.427444
+    },
+    {
+      "fresh_saved_defaults": false,
+      "top_composed_ms": 71.955928,
+      "library_read_ms": 78.336267,
+      "library_entries": 1002,
+      "bottom_composed_ms": 84.713967,
+      "ready_ms": 86.847256
+    },
+    {
+      "fresh_saved_defaults": false,
+      "top_composed_ms": 72.375061,
+      "library_read_ms": 78.74548,
+      "library_entries": 1002,
+      "bottom_composed_ms": 85.109749,
+      "ready_ms": 88.243713
+    },
+    {
+      "fresh_saved_defaults": false,
+      "top_composed_ms": 70.465883,
+      "library_read_ms": 78.972952,
+      "library_entries": 1002,
+      "bottom_composed_ms": 83.199671,
+      "ready_ms": 84.965059
+    },
+    {
+      "fresh_saved_defaults": false,
+      "top_composed_ms": 71.705858,
+      "library_read_ms": 80.189146,
+      "library_entries": 1002,
+      "bottom_composed_ms": 82.292286,
+      "ready_ms": 85.034828
+    },
+    {
+      "fresh_saved_defaults": false,
+      "top_composed_ms": 75.828218,
+      "library_read_ms": 80.093077,
+      "library_entries": 1002,
+      "bottom_composed_ms": 88.568616,
+      "ready_ms": 90.866967
+    },
+    {
+      "fresh_saved_defaults": false,
+      "top_composed_ms": 69.106936,
+      "library_read_ms": 77.644875,
+      "library_entries": 1002,
+      "bottom_composed_ms": 79.756155,
+      "ready_ms": 83.19509
+    },
+    {
+      "fresh_saved_defaults": false,
+      "top_composed_ms": 71.273146,
+      "library_read_ms": 77.661865,
+      "library_entries": 1002,
+      "bottom_composed_ms": 81.896594,
+      "ready_ms": 84.247405
+    },
+    {
+      "fresh_saved_defaults": false,
+      "top_composed_ms": 69.106796,
+      "library_read_ms": 77.706365,
+      "library_entries": 1002,
+      "bottom_composed_ms": 81.944254,
+      "ready_ms": 84.045744
+    }
+  ],
+  "startup_observation": "monotonic time before Popen; READY=1 datagram and composition log observation (2 ms polling), not physical presentation",
+  "wakeups": "voluntary context switches are a proxy, not scheduler wakeups; kernel.sched_schedstats=0",
+  "samples": [
+    {
+      "seconds": 30.00391338998452,
+      "cpu_percent_one_core": 1.3891622322144526,
+      "voluntary_switches_per_second": 588.1232814746871,
+      "threads": [
+        {
+          "tid": 365177,
+          "name": "main",
+          "cpu_ms": 291.533258,
+          "cpu_percent_one_core": 0.971650778385847,
+          "voluntary_switches": 7905,
+          "involuntary_switches": 138
+        },
+        {
+          "tid": 365224,
+          "name": "pump_events mon",
+          "cpu_ms": 52.057415,
+          "cpu_percent_one_core": 0.17350208395607844,
+          "voluntary_switches": 5861,
+          "involuntary_switches": 30
+        },
+        {
+          "tid": 365180,
+          "name": "clamshell:cs0",
+          "cpu_ms": 48.785251,
+          "cpu_percent_one_core": 0.1625962932431501,
+          "voluntary_switches": 1881,
+          "involuntary_switches": 16
+        },
+        {
+          "tid": 365190,
+          "name": "metrics",
+          "cpu_ms": 10.642014,
+          "cpu_percent_one_core": 0.03546875323121138,
+          "voluntary_switches": 18,
+          "involuntary_switches": 3
+        },
+        {
+          "tid": 365185,
+          "name": "clamshel:gdrv0",
+          "cpu_ms": 10.496274,
+          "cpu_percent_one_core": 0.03498301659377445,
+          "voluntary_switches": 1873,
+          "involuntary_switches": 9
+        },
+        {
+          "tid": 365195,
+          "name": "units",
+          "cpu_ms": 1.085401,
+          "cpu_percent_one_core": 0.003617531439623183,
+          "voluntary_switches": 36,
+          "involuntary_switches": 1
+        },
+        {
+          "tid": 365189,
+          "name": "status",
+          "cpu_ms": 1.02016,
+          "cpu_percent_one_core": 0.0034000898040871404,
+          "voluntary_switches": 18,
+          "involuntary_switches": 1
+        },
+        {
+          "tid": 365204,
+          "name": "bluetooth",
+          "cpu_ms": 0.64582,
+          "cpu_percent_one_core": 0.002152452553791128,
+          "voluntary_switches": 12,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365205,
+          "name": "tray",
+          "cpu_ms": 0.29852,
+          "cpu_percent_one_core": 0.0009949368807991817,
+          "voluntary_switches": 12,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365188,
+          "name": "clock",
+          "cpu_ms": 0.23892,
+          "cpu_percent_one_core": 0.0007962961260905148,
+          "voluntary_switches": 30,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365178,
+          "name": "fonts",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365179,
+          "name": "images",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365181,
+          "name": "clamshe:disk$0",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365182,
+          "name": "clamshell:sh0",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365183,
+          "name": "clamsh:sh_opt0",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365184,
+          "name": "clamsh:traceq0",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365186,
+          "name": "clamshell:gl0",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365187,
+          "name": "control",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365191,
+          "name": "rescan",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365192,
+          "name": "touchpad",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365193,
+          "name": "input watch",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365196,
+          "name": "launcher",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365197,
+          "name": "pad",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365198,
+          "name": "pad devices",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365199,
+          "name": "sleep",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365200,
+          "name": "battery",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365202,
+          "name": "mixer",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365206,
+          "name": "notifications",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365207,
+          "name": "portal",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365208,
+          "name": "clipboard",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365209,
+          "name": "icons",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365210,
+          "name": "system",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365211,
+          "name": "browse",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365212,
+          "name": "files",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365213,
+          "name": "wifi",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365214,
+          "name": "tuning",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365215,
+          "name": "store",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365216,
+          "name": "freezer",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365217,
+          "name": "sound",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365218,
+          "name": "brightness",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365219,
+          "name": "lights",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365222,
+          "name": "bluetooth conne",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365232,
+          "name": "clamsh:traceq0",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        }
+      ],
+      "memory_kib": {
+        "Rss": 135276,
+        "Pss": 103465,
+        "Pss_Dirty": 60800,
+        "Pss_Anon": 60704,
+        "Pss_File": 42665,
+        "Pss_Shmem": 96,
+        "Shared_Clean": 59308,
+        "Shared_Dirty": 0,
+        "Private_Clean": 15168,
+        "Private_Dirty": 60800,
+        "Referenced": 135276,
+        "Anonymous": 60704,
+        "KSM": 0,
+        "LazyFree": 0,
+        "AnonHugePages": 20480,
+        "ShmemPmdMapped": 0,
+        "FilePmdMapped": 0,
+        "Shared_Hugetlb": 0,
+        "Private_Hugetlb": 0,
+        "Swap": 0,
+        "SwapPss": 0,
+        "Locked": 0
+      },
+      "drm_clients": [
+        {
+          "drm-driver": "amdgpu",
+          "drm-client-id": "9854",
+          "drm-pdev": "0000:0d:00.0",
+          "drm-total-cpu": "0",
+          "drm-shared-cpu": "0",
+          "drm-resident-cpu": "0",
+          "drm-purgeable-cpu": "0",
+          "drm-total-gtt": "22352 KiB",
+          "drm-shared-gtt": "0",
+          "drm-resident-gtt": "22352 KiB",
+          "drm-purgeable-gtt": "0",
+          "drm-total-vram": "128788 KiB",
+          "drm-shared-vram": "28800 KiB",
+          "drm-resident-vram": "128788 KiB",
+          "drm-purgeable-vram": "10752 KiB",
+          "drm-total-gds": "0",
+          "drm-shared-gds": "0",
+          "drm-resident-gds": "0",
+          "drm-purgeable-gds": "0",
+          "drm-total-gws": "0",
+          "drm-shared-gws": "0",
+          "drm-resident-gws": "0",
+          "drm-purgeable-gws": "0",
+          "drm-total-oa": "0",
+          "drm-shared-oa": "0",
+          "drm-resident-oa": "0",
+          "drm-purgeable-oa": "0",
+          "drm-total-doorbell": "0",
+          "drm-shared-doorbell": "0",
+          "drm-resident-doorbell": "0",
+          "drm-purgeable-doorbell": "0",
+          "drm-total-mmioremap": "0",
+          "drm-shared-mmioremap": "0",
+          "drm-resident-mmioremap": "0",
+          "drm-purgeable-mmioremap": "0",
+          "drm-memory-vram": "128788 KiB",
+          "drm-memory-gtt": "22352 KiB",
+          "drm-memory-cpu": "0 KiB",
+          "drm-engine-gfx": "1489045326 ns"
+        }
+      ],
+      "gpu_engine_percent": {
+        "drm-engine-gfx": 3.7009750380451054
+      }
+    },
+    {
+      "seconds": 30.003756457939744,
+      "cpu_percent_one_core": 1.3559386324519442,
+      "voluntary_switches_per_second": 555.9970473492336,
+      "threads": [
+        {
+          "tid": 365177,
+          "name": "main",
+          "cpu_ms": 293.92228,
+          "cpu_percent_one_core": 0.9796182701723699,
+          "voluntary_switches": 7292,
+          "involuntary_switches": 82
+        },
+        {
+          "tid": 365224,
+          "name": "pump_events mon",
+          "cpu_ms": 47.53749,
+          "cpu_percent_one_core": 0.15843846108616308,
+          "voluntary_switches": 5502,
+          "involuntary_switches": 31
+        },
+        {
+          "tid": 365180,
+          "name": "clamshell:cs0",
+          "cpu_ms": 43.677721,
+          "cpu_percent_one_core": 0.14557417522445523,
+          "voluntary_switches": 1881,
+          "involuntary_switches": 7
+        },
+        {
+          "tid": 365190,
+          "name": "metrics",
+          "cpu_ms": 9.736042,
+          "cpu_percent_one_core": 0.032449410171850664,
+          "voluntary_switches": 18,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365185,
+          "name": "clamshel:gdrv0",
+          "cpu_ms": 8.030172,
+          "cpu_percent_one_core": 0.026763888752586562,
+          "voluntary_switches": 1880,
+          "involuntary_switches": 7
+        },
+        {
+          "tid": 365189,
+          "name": "status",
+          "cpu_ms": 1.10684,
+          "cpu_percent_one_core": 0.003689004746960951,
+          "voluntary_switches": 17,
+          "involuntary_switches": 2
+        },
+        {
+          "tid": 365195,
+          "name": "units",
+          "cpu_ms": 1.07712,
+          "cpu_percent_one_core": 0.0035899504834001118,
+          "voluntary_switches": 36,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365204,
+          "name": "bluetooth",
+          "cpu_ms": 0.70013,
+          "cpu_percent_one_core": 0.0023334744800420754,
+          "voluntary_switches": 12,
+          "involuntary_switches": 1
+        },
+        {
+          "tid": 365182,
+          "name": "clamshell:sh0",
+          "cpu_ms": 0.46955,
+          "cpu_percent_one_core": 0.0015649707084452265,
+          "voluntary_switches": 1,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365205,
+          "name": "tray",
+          "cpu_ms": 0.27685,
+          "cpu_percent_one_core": 0.0009227177949804301,
+          "voluntary_switches": 12,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365188,
+          "name": "clock",
+          "cpu_ms": 0.21746,
+          "cpu_percent_one_core": 0.00072477591365882,
+          "voluntary_switches": 30,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365181,
+          "name": "clamshe:disk$0",
+          "cpu_ms": 0.08087,
+          "cpu_percent_one_core": 0.00026953291703112655,
+          "voluntary_switches": 1,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365178,
+          "name": "fonts",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365179,
+          "name": "images",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365183,
+          "name": "clamsh:sh_opt0",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365184,
+          "name": "clamsh:traceq0",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365186,
+          "name": "clamshell:gl0",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365187,
+          "name": "control",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365191,
+          "name": "rescan",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365192,
+          "name": "touchpad",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365193,
+          "name": "input watch",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365196,
+          "name": "launcher",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365197,
+          "name": "pad",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365198,
+          "name": "pad devices",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365199,
+          "name": "sleep",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365200,
+          "name": "battery",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365202,
+          "name": "mixer",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365206,
+          "name": "notifications",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365207,
+          "name": "portal",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365208,
+          "name": "clipboard",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365209,
+          "name": "icons",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365210,
+          "name": "system",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365211,
+          "name": "browse",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365212,
+          "name": "files",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365213,
+          "name": "wifi",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365214,
+          "name": "tuning",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365215,
+          "name": "store",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365216,
+          "name": "freezer",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365217,
+          "name": "sound",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365218,
+          "name": "brightness",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365219,
+          "name": "lights",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365222,
+          "name": "bluetooth conne",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365232,
+          "name": "clamsh:traceq0",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        }
+      ],
+      "memory_kib": {
+        "Rss": 135396,
+        "Pss": 103585,
+        "Pss_Dirty": 60856,
+        "Pss_Anon": 60760,
+        "Pss_File": 42729,
+        "Pss_Shmem": 96,
+        "Shared_Clean": 59308,
+        "Shared_Dirty": 0,
+        "Private_Clean": 15232,
+        "Private_Dirty": 60856,
+        "Referenced": 135396,
+        "Anonymous": 60760,
+        "KSM": 0,
+        "LazyFree": 0,
+        "AnonHugePages": 20480,
+        "ShmemPmdMapped": 0,
+        "FilePmdMapped": 0,
+        "Shared_Hugetlb": 0,
+        "Private_Hugetlb": 0,
+        "Swap": 0,
+        "SwapPss": 0,
+        "Locked": 0
+      },
+      "drm_clients": [
+        {
+          "drm-driver": "amdgpu",
+          "drm-client-id": "9854",
+          "drm-pdev": "0000:0d:00.0",
+          "drm-total-cpu": "0",
+          "drm-shared-cpu": "0",
+          "drm-resident-cpu": "0",
+          "drm-purgeable-cpu": "0",
+          "drm-total-gtt": "8200 KiB",
+          "drm-shared-gtt": "0",
+          "drm-resident-gtt": "8200 KiB",
+          "drm-purgeable-gtt": "0",
+          "drm-total-vram": "128792 KiB",
+          "drm-shared-vram": "28800 KiB",
+          "drm-resident-vram": "128792 KiB",
+          "drm-purgeable-vram": "10752 KiB",
+          "drm-total-gds": "0",
+          "drm-shared-gds": "0",
+          "drm-resident-gds": "0",
+          "drm-purgeable-gds": "0",
+          "drm-total-gws": "0",
+          "drm-shared-gws": "0",
+          "drm-resident-gws": "0",
+          "drm-purgeable-gws": "0",
+          "drm-total-oa": "0",
+          "drm-shared-oa": "0",
+          "drm-resident-oa": "0",
+          "drm-purgeable-oa": "0",
+          "drm-total-doorbell": "0",
+          "drm-shared-doorbell": "0",
+          "drm-resident-doorbell": "0",
+          "drm-purgeable-doorbell": "0",
+          "drm-total-mmioremap": "0",
+          "drm-shared-mmioremap": "0",
+          "drm-resident-mmioremap": "0",
+          "drm-purgeable-mmioremap": "0",
+          "drm-memory-vram": "128792 KiB",
+          "drm-memory-gtt": "8200 KiB",
+          "drm-memory-cpu": "0 KiB",
+          "drm-engine-gfx": "2593164971 ns"
+        }
+      ],
+      "gpu_engine_percent": {
+        "drm-engine-gfx": 3.679938032252033
+      }
+    },
+    {
+      "seconds": 30.003790342947468,
+      "cpu_percent_one_core": 1.4813771057578218,
+      "voluntary_switches_per_second": 603.623735301066,
+      "threads": [
+        {
+          "tid": 365177,
+          "name": "main",
+          "cpu_ms": 309.626224,
+          "cpu_percent_one_core": 1.0319570309648531,
+          "voluntary_switches": 8001,
+          "involuntary_switches": 129
+        },
+        {
+          "tid": 365224,
+          "name": "pump_events mon",
+          "cpu_ms": 57.145979,
+          "cpu_percent_one_core": 0.19046253272274458,
+          "voluntary_switches": 6238,
+          "involuntary_switches": 43
+        },
+        {
+          "tid": 365180,
+          "name": "clamshell:cs0",
+          "cpu_ms": 52.16064,
+          "cpu_percent_one_core": 0.1738468353624548,
+          "voluntary_switches": 1876,
+          "involuntary_switches": 20
+        },
+        {
+          "tid": 365185,
+          "name": "clamshel:gdrv0",
+          "cpu_ms": 11.676041,
+          "cpu_percent_one_core": 0.038915219932352675,
+          "voluntary_switches": 1872,
+          "involuntary_switches": 16
+        },
+        {
+          "tid": 365190,
+          "name": "metrics",
+          "cpu_ms": 10.591683,
+          "cpu_percent_one_core": 0.03530114988451659,
+          "voluntary_switches": 18,
+          "involuntary_switches": 4
+        },
+        {
+          "tid": 365195,
+          "name": "units",
+          "cpu_ms": 1.132762,
+          "cpu_percent_one_core": 0.003775396331771333,
+          "voluntary_switches": 36,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365189,
+          "name": "status",
+          "cpu_ms": 0.90731,
+          "cpu_percent_one_core": 0.003023984602043013,
+          "voluntary_switches": 16,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365204,
+          "name": "bluetooth",
+          "cpu_ms": 0.6816,
+          "cpu_percent_one_core": 0.0022717129809574654,
+          "voluntary_switches": 12,
+          "involuntary_switches": 1
+        },
+        {
+          "tid": 365205,
+          "name": "tray",
+          "cpu_ms": 0.282182,
+          "cpu_percent_one_core": 0.0009404878409514957,
+          "voluntary_switches": 12,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365188,
+          "name": "clock",
+          "cpu_ms": 0.26486,
+          "cpu_percent_one_core": 0.0008827551351766348,
+          "voluntary_switches": 30,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365178,
+          "name": "fonts",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365179,
+          "name": "images",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365181,
+          "name": "clamshe:disk$0",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365182,
+          "name": "clamshell:sh0",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365183,
+          "name": "clamsh:sh_opt0",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365184,
+          "name": "clamsh:traceq0",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365186,
+          "name": "clamshell:gl0",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365187,
+          "name": "control",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365191,
+          "name": "rescan",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365192,
+          "name": "touchpad",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365193,
+          "name": "input watch",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365196,
+          "name": "launcher",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365197,
+          "name": "pad",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365198,
+          "name": "pad devices",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365199,
+          "name": "sleep",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365200,
+          "name": "battery",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365202,
+          "name": "mixer",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365206,
+          "name": "notifications",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365207,
+          "name": "portal",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365208,
+          "name": "clipboard",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365209,
+          "name": "icons",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365210,
+          "name": "system",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365211,
+          "name": "browse",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365212,
+          "name": "files",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365213,
+          "name": "wifi",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365214,
+          "name": "tuning",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365215,
+          "name": "store",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365216,
+          "name": "freezer",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365217,
+          "name": "sound",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365218,
+          "name": "brightness",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365219,
+          "name": "lights",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365222,
+          "name": "bluetooth conne",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        },
+        {
+          "tid": 365232,
+          "name": "clamsh:traceq0",
+          "cpu_ms": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "voluntary_switches": 0,
+          "involuntary_switches": 0
+        }
+      ],
+      "memory_kib": {
+        "Rss": 135404,
+        "Pss": 103594,
+        "Pss_Dirty": 60864,
+        "Pss_Anon": 60768,
+        "Pss_File": 42730,
+        "Pss_Shmem": 96,
+        "Shared_Clean": 59308,
+        "Shared_Dirty": 0,
+        "Private_Clean": 15232,
+        "Private_Dirty": 60864,
+        "Referenced": 135404,
+        "Anonymous": 60768,
+        "KSM": 0,
+        "LazyFree": 0,
+        "AnonHugePages": 20480,
+        "ShmemPmdMapped": 0,
+        "FilePmdMapped": 0,
+        "Shared_Hugetlb": 0,
+        "Private_Hugetlb": 0,
+        "Swap": 0,
+        "SwapPss": 0,
+        "Locked": 0
+      },
+      "drm_clients": [
+        {
+          "drm-driver": "amdgpu",
+          "drm-client-id": "9854",
+          "drm-pdev": "0000:0d:00.0",
+          "drm-total-cpu": "0",
+          "drm-shared-cpu": "0",
+          "drm-resident-cpu": "0",
+          "drm-purgeable-cpu": "0",
+          "drm-total-gtt": "8200 KiB",
+          "drm-shared-gtt": "0",
+          "drm-resident-gtt": "8200 KiB",
+          "drm-purgeable-gtt": "0",
+          "drm-total-vram": "128792 KiB",
+          "drm-shared-vram": "28800 KiB",
+          "drm-resident-vram": "128792 KiB",
+          "drm-purgeable-vram": "10752 KiB",
+          "drm-total-gds": "0",
+          "drm-shared-gds": "0",
+          "drm-resident-gds": "0",
+          "drm-purgeable-gds": "0",
+          "drm-total-gws": "0",
+          "drm-shared-gws": "0",
+          "drm-resident-gws": "0",
+          "drm-purgeable-gws": "0",
+          "drm-total-oa": "0",
+          "drm-shared-oa": "0",
+          "drm-resident-oa": "0",
+          "drm-purgeable-oa": "0",
+          "drm-total-doorbell": "0",
+          "drm-shared-doorbell": "0",
+          "drm-resident-doorbell": "0",
+          "drm-purgeable-doorbell": "0",
+          "drm-total-mmioremap": "0",
+          "drm-shared-mmioremap": "0",
+          "drm-resident-mmioremap": "0",
+          "drm-purgeable-mmioremap": "0",
+          "drm-memory-vram": "128792 KiB",
+          "drm-memory-gtt": "8200 KiB",
+          "drm-memory-cpu": "0 KiB",
+          "drm-engine-gfx": "3714599502 ns"
+        }
+      ],
+      "gpu_engine_percent": {
+        "drm-engine-gfx": 3.735675480292975
+      }
+    }
+  ]
+}

@@ -85,16 +85,16 @@ and the rules the code follows are in `docs/architecture.md`. What it has:
 
 It is made to be dependable, light and quick. Measured on 2026-10-31 on a Ryzen 9 5900X and
 Radeon RX 9070 XT, nested in GPU-backed headless sway at 60 Hz, with both screens at their native
-sizes and 1,000 local Library entries ([method and results](docs/measurements/2026-10-31-session.md)):
+sizes and 1,000 local Library entries ([method and results](docs/measurements/2026-10-31-idle.md)):
 
 - **Starting:** a warm launch reaches systemd readiness in a median 87 ms; both screens are composed
-  in about 84 ms. The loop's watchdog lets systemd restart a stalled session. A compositor restart ends
+  in about 85 ms. The loop's watchdog lets systemd restart a stalled session. A compositor restart ends
   programs with windows; programs still running without one are found again.
-- **Memory:** about 132 MiB RSS (83 MiB PSS), with GPU allocations accounted separately: about 126 MiB
-  resident VRAM and 10–22 MiB GTT on this desktop driver. Shared mappings can overlap these accounts.
-- **Idle:** about 1.6% of one CPU core with Dock below the Library, or 2.7% with the live System page.
-  About 600 voluntary context switches per second are a wakeup proxy; exact wakeup counters were
-  unavailable. The nested backend continues presenting at the host's refresh rate.
+- **Memory:** about 118–132 MiB RSS (87–102 MiB PSS), with GPU allocations accounted separately: about 126–143 MiB
+  resident VRAM and 8–28 MiB GTT on this desktop driver. Shared mappings can overlap these accounts.
+- **Idle:** about 0.10% of one CPU core with Dock below the Library, or 0.67% with the live System page.
+  About 6 and 22 voluntary context switches per second respectively are a wakeup proxy; exact wakeup
+  counters were unavailable. The nested backend presents only when something changes.
 - **Drawing:** a whole screen costs 0.12–0.43 ms of CPU time; recording and finding it unchanged costs
   0.004–0.028 ms. Warmed steady-state events and frame drawing allocate no memory.
 
