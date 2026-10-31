@@ -1944,3 +1944,9 @@ peer entry. `keys_use_the_complete_id_and_remain_bounded` and
 `conflicting_persistent_keys_are_rejected_before_any_lookup` cover key derivation and rejection;
 `entries_with_the_old_hash_collision_have_independent_control_slices` pins launch/ForceKill isolation,
 and system `settings_with_the_old_entry_key_collision_survive_independently` pins persistence.
+
+Shared profiles persist under `named-` filenames, independently of the entry/runner filename namespaces.
+A save with duplicate output filenames fails before changing any saved data. The system Store tests
+`named_entry_and_runner_profiles_survive_save_and_rename_for_every_kind` and
+`duplicate_profile_files_fail_before_replacing_saved_data` cover keymaps, curves and lights, including
+renames and invalid duplicate input.

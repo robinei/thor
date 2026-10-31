@@ -8,10 +8,10 @@
 //!     `all.json`, `runner-<key>.json` for a runner's level and `entry-<key>.json` for an entry. The key
 //!     is the one the entry's units and art are named by (see `clamshell_library::key_of`), and the
 //!     screen's id is inside the file. A screen with nothing set has no file.
-//!   - `keymaps/<name>.json` holds one keymap, named after it. A keymap owned by an entry or a runner level
+//!   - `keymaps/named-<name>.json` holds one shared keymap. A keymap owned by an entry or a runner level
 //!     is named like that owner's settings file. With no folder, the initial keymaps are used.
-//!   - `curves/<name>.json` holds one HDR curve, named the same way as keymaps.
-//!   - `lights/<name>.json` holds one set of stick lights, named the same way.
+//!   - `curves/named-<name>.json` holds one HDR curve, named the same way as keymaps.
+//!   - `lights/named-<name>.json` holds one set of stick lights, named the same way.
 //!   - `window-rules.json`, `dock.json`, `autostart.json`, `favourites.json`, `resume.json` (where the Library
 //!     and the second screen were), `sticks.json` (the sticks' calibrations, by controller),
 //!     `controllers.json` (how many players there are, and every controller seen, by key, with its name and player), `brightness.json`, `clock.json`, and `first-start.json` (whether the first start is over, see
@@ -368,19 +368,25 @@ fn save_profiles<B: Serialize + DeserializeOwned + Clone + Default + PartialEq>(
     profiles: &Profiles<B>,
 ) -> io::Result<()> {
     fs::create_dir_all(dir)?;
+    let mut files = HashMap::new();
+    for profile in profiles.list() {
+        let name = profile_file(profile);
+        if files.insert(name.clone(), profile.clone()).is_some() {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("duplicate profile file {name}")));
+        }
+    }
     let before = written.take().unwrap_or_else(|| read_folder(dir));
-    let files: HashMap<String, Profile<B>> = profiles.list().iter().map(|p| (profile_file(p), p.clone())).collect();
     write_folder(dir, &before, &files)?;
     *written = Some(files);
     Ok(())
 }
 
-/// A profile's file name. It is the profile's name (see [`Profiles::unique_name`]), except that a profile
-/// owned by an entry or a runner level is named like the owner's settings file ([`screen_file`]).
+/// A shared profile uses the named namespace; an owned profile uses its owner's settings filename.
+/// The namespaces stay disjoint even when a user names a profile after an owner.
 fn profile_file<B>(p: &Profile<B>) -> String {
     match &p.owner {
         Some(owner) => screen_file(owner),
-        None => format!("{}.json", p.name),
+        None => format!("named-{}.json", p.name),
     }
 }
 
@@ -504,10 +510,10 @@ mod tests {
         assert_eq!(back.own_of(&zelda).map(|k| k.id), Some(own));
         let mut files: Vec<String> = fs::read_dir(dir.join("keymaps")).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
         files.sort();
-        assert_eq!(files, ["FPS.json", "Nintendo layout.json", &format!("entry-{}.json", key_of(&zelda))]);
+        assert_eq!(files, [format!("entry-{}.json", key_of(&zelda)), "named-FPS.json".into(), "named-Nintendo layout.json".into()]);
         keymaps.rename(fps, "Racing");
         store.save(&Save::Keymaps(keymaps.clone())).unwrap();
-        assert!(dir.join("keymaps/Racing.json").exists() && !dir.join("keymaps/FPS.json").exists(), "renamed: its file too");
+        assert!(dir.join("keymaps/named-Racing.json").exists() && !dir.join("keymaps/named-FPS.json").exists(), "renamed: its file too");
         assert_eq!(store.keymaps().unwrap(), keymaps);
         store.save(&Save::Keymaps(Keymaps::default())).unwrap();
         assert_eq!(store.keymaps(), Some(Keymaps::default()), "none left: none, not the initial ones");
@@ -624,5 +630,47 @@ mod tests {
         assert_eq!(s.global.get(Setting::FpsCap), Setting::FpsCap.default_value());
         assert_eq!(s.of_in("x", &[]).get(Setting::Power), 2);
         assert_eq!(store.plays().get("a").map(|p| p.count), Some(1), "a line cut short is skipped");
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod profile_identity_tests {
+    use super::*;
+    fn round_trip<B: Serialize + DeserializeOwned + Clone + Default + PartialEq + std::fmt::Debug>() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut profiles = Profiles::<B>::default();
+        let entry: Arc<str> = "snes:Zelda.sfc".into();
+        let runner: Arc<str> = "runner:SNES".into();
+        profiles.make_own(0, &entry).unwrap();
+        profiles.make_own(0, &runner).unwrap();
+        let named = profiles.add(screen_file(&entry).trim_end_matches(".json")).unwrap();
+        profiles.add(screen_file(&runner).trim_end_matches(".json")).unwrap();
+        let mut written = None;
+        save_profiles(dir.path(), &mut written, &profiles).unwrap();
+        assert_eq!(read_profiles::<B>(dir.path()), Some(profiles.clone()));
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 4);
+        profiles.rename(named, screen_file(&runner).trim_end_matches(".json"));
+        save_profiles(dir.path(), &mut written, &profiles).unwrap();
+        assert_eq!(read_profiles::<B>(dir.path()), Some(profiles));
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 4);
+    }
+    #[test]
+    fn named_entry_and_runner_profiles_survive_save_and_rename_for_every_kind() {
+        round_trip::<clamshell_state::keymap::Layers>();
+        round_trip::<Curve>();
+        round_trip::<Lights>();
+    }
+    #[test]
+    fn duplicate_profile_files_fail_before_replacing_saved_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut profiles = Profiles::<Curve>::default();
+        profiles.add("one").unwrap();
+        let mut written = None;
+        save_profiles(dir.path(), &mut written, &profiles).unwrap();
+        let duplicate = Profiles::from_list(vec![Profile::with(1, "one", Curve::default()), Profile::with(2, "one", Curve::default())]);
+        assert_eq!(save_profiles(dir.path(), &mut written, &duplicate).unwrap_err().kind(), io::ErrorKind::InvalidInput);
+        assert_eq!(read_profiles::<Curve>(dir.path()), Some(profiles));
+        assert!(written.is_some());
     }
 }
