@@ -73,6 +73,14 @@ impl UiFrame {
         })
     }
 
+    /// The layer remains in the displayed nested scene even while it needs no new drawing.
+    #[cfg(feature = "nested")]
+    pub(crate) fn keep(&mut self, now: std::time::Instant) {
+        if self.surface.is_some() {
+            self.hold.used(now);
+        }
+    }
+
     /// Drops its surface if the layer hasn't been composed for a while by `now`, else tells `trims` when it
     /// will be.
     pub fn trim(&mut self, now: std::time::Instant, trims: &mut crate::hold::Trims) {

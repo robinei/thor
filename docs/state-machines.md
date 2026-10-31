@@ -2078,3 +2078,18 @@ clients exiting reports no fallback load until a valid interval exists. A direct
 fallback baseline, so later comparisons never span a source change. Metrics tests assert direct reads
 never invoke the scan and cover source loss, missing/reset/repeated counters and bounded loads. Polling
 cadences stay one second when shown and five seconds when hidden, retaining graph history.
+
+## Nested drawing demand
+
+Idle --changed UI recording, client commit, placement, cursor or colour--> pending drawing;
+pending --next host refresh deadline--> submitted --no further change--> idle. Repeated changes
+before that deadline share one drawing. Host exposure also draws. A completed drawing never requests
+another frame by itself. Client frame caps, timed commits, cursor animation and hiding, histogram
+readbacks and resource expiry keep their own deadlines; imports and window facts are handled even
+without drawing. Displayed UI and scene textures stay resident while unused resources still expire.
+Cursor image requests invalidate the visual facts even when they reuse the same cursor surface with
+a different hotspot. No policy or placement is recomputed outside the existing scene model.
+
+The nested real-client test checks idle submission counts, waking on UI input and client commits,
+then the existing client, colour, pointer and clipboard cases. The redraw demand test checks repeated
+changes and returning to idle; cursor tests pin animation boundaries and timer-free static shapes.

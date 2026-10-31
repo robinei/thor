@@ -1,18 +1,20 @@
-//! ClamShell's compositor in a window on a desktop (winit), for development: the window is the whole scene,
-//! both screens side by side at the device's sizes, drawn through the same colour pipeline as on the
-//! device and paced by the host monitor's refresh. It is an ordinary client of the desktop and never takes
-//! over its session: the pointer is captured only through the window, and the host's colour management is
-//! told what the window shows.
+//! The nested host presents only when the displayed scene changes or the host asks for a redraw.
+//! UI recordings, scene placement and client commits provide the damage; client pacing, animated
+//! cursors, timed commits and readbacks keep their own deadlines instead of an idle frame loop.
 
-use std::time::Duration;
+mod demand;
+
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use crate::EventSender;
 use clamshell_state::{Effect, State};
-use clamshell_ui::{Config, Error};
+use clamshell_ui::{Config, Error, Layer, Screen};
 use smithay::{
     backend::{
         renderer::{Frame, Renderer, element::RenderElementStates, gles::GlesRenderer},
-        winit::{self, WinitEvent},
+        winit::{self, WinitEvent, WinitGraphicsBackend},
     },
     reexports::winit::{dpi::PhysicalSize, window::WindowAttributes},
     utils::{Rectangle, Transform},
@@ -24,10 +26,11 @@ use crate::{
     render::{self, UiFrame},
     server::Server,
 };
+use demand::{Redraw, Visuals};
 
-/// Runs the compositor in a window on the desktop until ClamShell quits. The programs it launches are
-/// given its own socket and display ([`crate::Displays`]); ClamShell's environment and the desktop's
-/// compositor are left alone.
+const LAYERS: [Layer; 4] = [Layer::Screen(Screen::Top), Layer::Screen(Screen::Bottom), Layer::Overlay(Screen::Top), Layer::Overlay(Screen::Bottom)];
+
+/// Runs the compositor in a desktop window, with the same colour pipeline as the device.
 #[allow(clippy::too_many_arguments)]
 pub fn run(
     state: State,
@@ -36,149 +39,259 @@ pub fn run(
     start: impl FnOnce(EventSender, crate::Displays),
     on_effect: impl FnMut(&Effect) + 'static,
     identify: impl Fn(u32) -> Process + Send + Sync + 'static,
-    mut on_capture: impl FnMut(Result<clamshell_state::ScreenshotPixels, String>) + 'static,
+    on_capture: impl FnMut(Result<clamshell_state::ScreenshotPixels, String>) + 'static,
     quit: crate::QuitSignals,
 ) -> Result<(), Error> {
-    // The host's raw motion comes through winit (a captured pointer's camera motion), so clients are
-    // offered relative motion and pointer constraints here too.
     let mut base = Base::new(state, config, true, identify, on_effect, quit)?;
     let server = &mut base.server;
-    // The screens are the device's own pixels, on its panels, if the profile knows their size.
     let profile = *server.core.state().profile();
     server.screens.millimetres = [crate::screens::shown_millimetres(None, &profile.top), crate::screens::shown_millimetres(None, &profile.bottom)];
-
-    let attributes =
-        // In the host's pixels, so the screens are as many pixels as the device's, whatever the host's scale.
-        WindowAttributes::default().with_title("ClamShell nested").with_surface_size(PhysicalSize::new(server.screens.size.0 as u32, server.screens.size.1 as u32));
+    let attributes = WindowAttributes::default()
+        .with_title("ClamShell nested")
+        .with_surface_size(PhysicalSize::new(server.screens.size.0 as u32, server.screens.size.1 as u32));
     let (mut backend, events) = winit::init_from_attributes::<GlesRenderer>(attributes)?;
     server.advertise_dmabuf(backend.renderer());
-    // The device's drawing path, the only one: nested shows what the device would.
-    let mut pipeline = crate::colour::render::Pipeline::new(backend.renderer(), server)
+    let pipeline = crate::colour::render::Pipeline::new(backend.renderer(), server)
         .map_err(|error| format!("nested compositor: the colour pipeline can't start, and nested draws only through it: {error}"))?;
     crate::colour::protocol::install(&server.dh);
-    let mut host_colour = crate::colour::host::Host::new(backend.window());
+    let host_colour = crate::colour::host::Host::new(backend.window());
     if host_colour.is_none() {
         log::info!("nested compositor: the host's colour management can't be reached (not a Wayland window), so the window is sRGB");
     }
     backend.window().set_cursor_visible(false);
-    let mut cursor = crate::cursor::Cursor::new(cursors);
     log::info!("nested output format: {:?}", backend.renderer().egl_context().pixel_format());
-    let mut frames: [UiFrame; 4] = std::array::from_fn(|_| UiFrame::new());
-    let mut elements = Vec::new();
-    // Each screen's elements' states (the top's, the second's).
-    let mut states = [RenderElementStates::default(), RenderElementStates::default()];
-    let mut refresh_known = false;
+    // Event callbacks and the after-dispatch turn run sequentially on the same event loop.
+    let drawing = Rc::new(RefCell::new(Drawing {
+        pipeline,
+        host_colour,
+        cursor: crate::cursor::Cursor::new(cursors),
+        frames: std::array::from_fn(|_| UiFrame::new()),
+        elements: Vec::new(),
+        states: std::array::from_fn(|_| RenderElementStates::default()),
+        refresh_known: false,
+        redraw: Redraw::default(),
+        visuals: Visuals::default(),
+        held: None,
+        next_frame: Instant::now(),
+        cursor_due: None,
+        on_capture: Box::new(on_capture),
+        backend,
+    }));
+    let events_drawing = drawing.clone();
     base.event_loop
         .handle()
         .insert_source(events, move |event, _, server| {
-            let result: Result<(), Error> = (|| {
-                match event {
-                    WinitEvent::Resized { size, .. } => {
-                        refresh_known = false;
-                        server.resize((size.w, size.h));
-                    }
-                    WinitEvent::Focus(focused) => {
-                        server.pointer.host_focused = focused;
-                        if !focused {
-                            server.pointer.cursor_activity.hide();
-                            server.touch_cancel();
-                        }
-                    }
-                    WinitEvent::Input(event) => {
-                        // The window is the whole scene, its touch and pointer positions within it.
-                        let whole = Rectangle::from_size((f64::from(server.screens.size.0), f64::from(server.screens.size.1)).into());
-                        server.input(event, crate::input::Host { absolute_cursor: true, touch_frames: false, desktop_keys: true }, |_| {
-                            (whole, Transform::Normal)
-                        });
-                    }
-                    // Through the state's quit, which saves where the Library and the second screen are.
-                    WinitEvent::CloseRequested => server.core.handle(clamshell_state::Event::Quit),
-                    WinitEvent::Redraw => {
-                        // The host tells which monitor shows the window only after it is shown, so ask
-                        // at each frame until it does, and again after a resize.
-                        if !refresh_known && let Some(refresh) = host_refresh(backend.window()) {
-                            refresh_known = true;
-                            if refresh != server.screens.refresh {
-                                log::info!("nested compositor: host refresh {} Hz", f64::from(refresh) / 1000.0);
-                                server.screens.refresh = refresh;
-                                server.resize(server.screens.size);
-                            }
-                        }
-                        server.frame();
-                        if let Some(host) = &mut host_colour {
-                            if let Some(preferred) = host.turn()? {
-                                log::info!("nested compositor: host preferred colour {preferred:?}");
-                            }
-                            let (peak, average) = server.colour_volume();
-                            if let Some(planned) = host.planned_encoding(peak, average) {
-                                host.describe(planned);
-                            }
-                            if let Some(encoding) = host.encoding() {
-                                pipeline.set_outputs(backend.renderer(), [encoding; 2])?;
-                            }
-                            if let Some(advertised) = host.advertised() {
-                                server.describe_screens([advertised; 2]);
-                            }
-                        }
-                        sync_capture(server, backend.window());
-                        server.import_dmabufs(backend.renderer());
-                        let capturing = std::mem::take(&mut server.screenshot_requested);
-                        // Commits timed for no later than this frame, shown at the host's next, go ahead.
-                        let interval = Duration::from_secs_f64(1000.0 / f64::from(server.screens.refresh.max(1000)));
-                        server.release_timed_commits((Duration::from(server.clock.now()) + interval).into(), None);
-                        for (down, states) in [false, true].into_iter().zip(&mut states) {
-                            render::elements(server, &mut frames, &mut cursor, backend.renderer(), &mut elements, down, None, Default::default())?;
-                            pipeline.compose(server, backend.renderer(), down, &mut elements, states, false)?;
-                        }
-                        // What a screenshot was drawn with goes a while after it (see `crate::hold`); a host
-                        // frame comes often enough to drop it near its time.
-                        let mut trims = crate::hold::Trims::default();
-                        pipeline.trim(std::time::Instant::now(), &mut trims);
-                        trims.finish();
-                        if let Some(histogram) = pipeline.take_histogram(backend.renderer(), server) {
-                            server.report_histogram(histogram);
-                        }
-                        {
-                            let (renderer, mut framebuffer) = backend.bind()?;
-                            pipeline.present(renderer, &mut framebuffer, server.screens.size)?;
-                            if capturing {
-                                // (Read at once: the host's frame waits for the GPU anyway.)
-                                let captured = pipeline
-                                    .capture(renderer, server.screens.size)
-                                    .and_then(|()| pipeline.captured(renderer, true).unwrap_or_else(|| Err("no screenshot".into())));
-                                if let Err(error) = &captured {
-                                    log::warn!("compositor screenshot: {error}");
-                                }
-                                // bind() is lazy. Begin an empty frame to actually restore the
-                                // window EGL target after the surfaceless readback mapping.
-                                // No drawing is submitted by this frame; swap supplies presentation synchronization.
-                                drop(renderer.render(&mut framebuffer, server.screens.size.into(), Transform::Flipped180)?.finish()?);
-                                on_capture(captured);
-                            }
-                        }
-                        backend.submit(Some(&[Rectangle::from_size(backend.window_size())]))?;
-                        for (down, states) in [false, true].into_iter().zip(&states) {
-                            server.frame_queued(states, Some(down));
-                            server.frame_shown(states, Some(down));
-                            server.present_submission(states, server.clock.now());
-                        }
-                        // The window redraws at each of the host's frames, so a held callback goes at a later one.
-                        let refresh = Duration::from_secs_f64(1000.0 / f64::from(server.screens.refresh.max(1000)));
-                        server.frame_callbacks(None, refresh, std::time::Instant::now());
-                        backend.window().request_redraw();
-                    }
-                }
-                sync_capture(server, backend.window());
-                Ok(())
-            })();
-            if let Err(error) = result {
+            if let Err(error) = events_drawing.borrow_mut().event(event, server) {
                 log::error!("nested compositor: {error}");
                 server.exit = true;
             }
         })
         .map_err(|e| e.error)?;
-    // The window redraws at each of the host's frames, so it needs no turns of its own.
-    base.run(start, |_, _| None)
+    base.run(start, move |server, now| match drawing.borrow_mut().turn(server, now) {
+        Ok(deadline) => deadline,
+        Err(error) => {
+            log::error!("nested compositor: {error}");
+            server.exit = true;
+            None
+        }
+    })
+}
+
+struct Drawing {
+    pipeline: crate::colour::render::Pipeline,
+    host_colour: Option<crate::colour::host::Host>,
+    cursor: crate::cursor::Cursor,
+    frames: [UiFrame; 4],
+    elements: Vec<render::Element>,
+    states: [RenderElementStates; 2],
+    refresh_known: bool,
+    redraw: Redraw,
+    visuals: Visuals,
+    held: Option<Instant>,
+    next_frame: Instant,
+    cursor_due: Option<Instant>,
+    on_capture: Box<dyn FnMut(Result<clamshell_state::ScreenshotPixels, String>)>,
+    // Keep the EGL context alive until its drawing resources have been dropped.
+    backend: WinitGraphicsBackend<GlesRenderer>,
+}
+
+impl Drawing {
+    fn event(&mut self, event: WinitEvent, server: &mut Server) -> Result<(), Error> {
+        match event {
+            WinitEvent::Resized { size, .. } => {
+                self.refresh_known = false;
+                server.resize((size.w, size.h));
+                self.redraw.changed();
+            }
+            WinitEvent::Focus(focused) => {
+                server.pointer.host_focused = focused;
+                if !focused {
+                    server.pointer.cursor_activity.hide();
+                    server.touch_cancel();
+                }
+            }
+            WinitEvent::Input(event) => {
+                let whole = Rectangle::from_size((f64::from(server.screens.size.0), f64::from(server.screens.size.1)).into());
+                server.input(event, crate::input::Host { absolute_cursor: true, touch_frames: false, desktop_keys: true }, |_| (whole, Transform::Normal));
+            }
+            WinitEvent::CloseRequested => server.core.handle(clamshell_state::Event::Quit),
+            WinitEvent::Redraw => self.draw(server)?,
+        }
+        sync_capture(server, self.backend.window());
+        Ok(())
+    }
+
+    fn colour(&mut self, server: &mut Server) -> Result<(), Error> {
+        if !self.refresh_known
+            && let Some(refresh) = host_refresh(self.backend.window())
+        {
+            self.refresh_known = true;
+            if refresh != server.screens.refresh {
+                log::info!("nested compositor: host refresh {} Hz", f64::from(refresh) / 1000.0);
+                server.screens.refresh = refresh;
+                server.resize(server.screens.size);
+                self.redraw.changed();
+            }
+        }
+        if let Some(host) = &mut self.host_colour {
+            if let Some(preferred) = host.turn()? {
+                log::info!("nested compositor: host preferred colour {preferred:?}");
+            }
+            let (peak, average) = server.colour_volume();
+            if let Some(planned) = host.planned_encoding(peak, average) {
+                host.describe(planned);
+            }
+            host.flush()?;
+            if let Some(encoding) = host.encoding() {
+                if self.pipeline.output_description(false) != encoding {
+                    self.redraw.changed();
+                }
+                self.pipeline.set_outputs(self.backend.renderer(), [encoding; 2])?;
+            }
+            if let Some(advertised) = host.advertised() {
+                server.describe_screens([advertised; 2]);
+            }
+        }
+        Ok(())
+    }
+
+    fn turn(&mut self, server: &mut Server, now: Instant) -> Result<Option<Instant>, Error> {
+        let interval = Duration::from_secs_f64(1000.0 / f64::from(server.screens.refresh.max(1000)));
+        let clock: Duration = server.clock.now().into();
+        let timed =
+            server.release_timed_commits((clock + interval).into(), None).map(|at| now + Duration::from(at).saturating_sub(clock).saturating_sub(interval));
+        // Facts and imports cannot wait for a redraw: clients may be waiting for their answers.
+        server.frame();
+        server.import_dmabufs(self.backend.renderer());
+        self.colour(server)?;
+        sync_capture(server, self.backend.window());
+        if let Some(histogram) = self.pipeline.take_histogram(self.backend.renderer(), server) {
+            server.report_histogram(histogram);
+        }
+        if self.cursor_due.is_some_and(|due| now >= due) {
+            self.redraw.changed();
+        }
+        self.cursor_due = self.cursor.deadline(server, now);
+        if self.held.is_some_and(|due| now >= due) {
+            self.held = server.frame_callbacks(None, interval, now);
+        }
+        let before = server.core.state_revision();
+        if record_ui(server) {
+            self.redraw.changed();
+        }
+        let reported = server.core.state_revision() != before;
+        if self.visuals.observe(server) || server.screenshot_requested {
+            self.redraw.changed();
+        }
+        if now >= self.next_frame && self.redraw.pending() {
+            self.draw(server)?;
+        }
+        // Keep displayed resources without drawing again. Temporary readbacks/passes retain their
+        // normal expiry deadlines, even while the window has no new frame to show.
+        self.pipeline.keep_composed(now);
+        let mut trims = crate::hold::Trims::default();
+        self.pipeline.trim(now, &mut trims);
+        for (frame, layer) in self.frames.iter_mut().zip(LAYERS) {
+            if server.scene.shown().iter().any(|shown| matches!(shown, crate::scene::Shown::Software { layer: shown, .. } if *shown == layer)) {
+                frame.keep(now);
+            }
+            frame.trim(now, &mut trims);
+        }
+        Ok(timed
+            .into_iter()
+            .chain(trims.finish())
+            .chain(self.cursor_due)
+            .chain(self.pipeline.histogram_due(server, now))
+            .chain(self.held)
+            .chain(reported.then_some(now))
+            .chain(self.redraw.pending().then_some(self.next_frame))
+            .min())
+    }
+
+    fn draw(&mut self, server: &mut Server) -> Result<(), Error> {
+        self.redraw.submitted();
+        self.next_frame = Instant::now() + Duration::from_secs_f64(1000.0 / f64::from(server.screens.refresh.max(1000)));
+        server.frame();
+        self.colour(server)?;
+        let Self { backend, pipeline, frames, cursor, elements, states, on_capture, .. } = self;
+        sync_capture(server, backend.window());
+        let capturing = std::mem::take(&mut server.screenshot_requested);
+        for (down, states) in [false, true].into_iter().zip(states.iter_mut()) {
+            render::elements(server, frames, cursor, backend.renderer(), elements, down, None, Default::default())?;
+            pipeline.compose(server, backend.renderer(), down, elements, states, false)?;
+        }
+        if let Some(histogram) = pipeline.take_histogram(backend.renderer(), server) {
+            server.report_histogram(histogram);
+        }
+        {
+            let (renderer, mut framebuffer) = backend.bind()?;
+            pipeline.present(renderer, &mut framebuffer, server.screens.size)?;
+            if capturing {
+                // (Read at once: the host's frame waits for the GPU anyway.)
+                let captured = pipeline
+                    .capture(renderer, server.screens.size)
+                    .and_then(|()| pipeline.captured(renderer, true).unwrap_or_else(|| Err("no screenshot".into())));
+                if let Err(error) = &captured {
+                    log::warn!("compositor screenshot: {error}");
+                }
+                // bind() is lazy. Begin an empty frame to actually restore the
+                // window EGL target after the surfaceless readback mapping.
+                // No drawing is submitted by this frame; swap supplies presentation synchronization.
+                drop(renderer.render(&mut framebuffer, server.screens.size.into(), Transform::Flipped180)?.finish()?);
+                on_capture(captured);
+            }
+        }
+        backend.submit(Some(&[Rectangle::from_size(backend.window_size())]))?;
+        for (down, states) in [false, true].into_iter().zip(states.iter()) {
+            server.frame_queued(states, Some(down));
+            server.frame_shown(states, Some(down));
+            server.present_submission(states, server.clock.now());
+        }
+
+        // Remember only content composed before callbacks unblock any later FIFO commits.
+        self.visuals.observe(server);
+        self.held = server.frame_callbacks(None, Duration::from_secs_f64(1000.0 / f64::from(server.screens.refresh.max(1000))), Instant::now());
+        self.cursor_due = self.cursor.deadline(server, Instant::now());
+        log::debug!("nested frame submitted");
+        Ok(())
+    }
+}
+
+/// Record stale visible layers to discover real UI damage without a GPU draw.
+fn record_ui(server: &mut Server) -> bool {
+    server.place();
+    let mut changed = false;
+    for layer in LAYERS {
+        if layer == Layer::Screen(Screen::Top) && server.scene.covers_top() {
+            continue;
+        }
+        if server.core.stale(layer) {
+            changed |= server.core.record(layer, false).is_some();
+        }
+    }
+    server.core.frames_done();
+    server.place();
+    changed
 }
 
 /// The refresh of the monitor showing the window, in mHz, once the host says.

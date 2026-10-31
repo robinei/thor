@@ -28,7 +28,7 @@ pub(crate) struct ClientWindow {
 /// How the state says a window is shown: its presentation and its entry's settings for the picture.
 /// Each is a search of the library for the window's entry, so they are read once per state revision
 /// ([`Server::refresh_shown`], as the scene is placed), not on every frame and commit.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub(crate) struct Shown {
     pub presentation: Option<clamshell_state::presentation::WindowPresentation>,
     pub clarity: clamshell_state::presentation::Clarity,

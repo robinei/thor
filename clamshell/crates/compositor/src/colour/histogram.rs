@@ -55,6 +55,20 @@ struct Reading {
 }
 
 impl Measure {
+    /// Poll only an outstanding readback, or take the next sample while the editor asks for one.
+    #[cfg(feature = "nested")]
+    pub(crate) fn deadline(&self, wanted: bool, now: Instant) -> Option<Instant> {
+        if self.failed {
+            None
+        } else if self.reading.is_some() {
+            Some(now + Duration::from_millis(2))
+        } else if wanted {
+            Some(self.last.map_or(now, |last| last + EVERY))
+        } else {
+            None
+        }
+    }
+
     /// Measures the window the state asks for, if it is time to.
     pub fn turn(&mut self, renderer: &mut GlesRenderer, server: &Server, now: Instant) {
         if self.failed {
@@ -204,6 +218,20 @@ fn count(levels: impl Iterator<Item = u8>) -> [u16; HISTOGRAM_BINS] {
 mod tests {
     #![allow(clippy::indexing_slicing)]
     use super::*;
+
+    #[cfg(feature = "nested")]
+    #[test]
+    fn sampling_has_a_deadline_only_while_wanted_and_stops_after_failure() {
+        let now = Instant::now();
+        let mut measure = Measure::default();
+        assert_eq!(measure.deadline(false, now), None);
+        assert_eq!(measure.deadline(true, now), Some(now));
+        measure.last = Some(now);
+        assert_eq!(measure.deadline(true, now), Some(now + EVERY));
+        assert_eq!(measure.deadline(false, now), None);
+        measure.failed = true;
+        assert_eq!(measure.deadline(true, now), None);
+    }
 
     #[test]
     fn levels_are_counted_into_equal_steps() {

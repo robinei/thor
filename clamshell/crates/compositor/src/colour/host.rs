@@ -95,13 +95,19 @@ impl Host {
     /// Dispatches only events winit has already read. It never performs a socket read or round trip.
     pub(crate) fn turn(&mut self) -> Result<Option<ColourDescription>, String> {
         self.queue.dispatch_pending(&mut self.data).map_err(|error| error.to_string())?;
+        self.flush()?;
+        Ok(std::mem::take(&mut self.data.changed).then_some(self.data.preferred).flatten())
+    }
+    /// Sends descriptions created after dispatch without waiting for another host frame.
+    pub(crate) fn flush(&self) -> Result<(), String> {
         if let Err(error) = self.connection.flush()
             && !matches!(&error,wayland_client::backend::WaylandError::Io(error) if error.kind()==std::io::ErrorKind::WouldBlock)
         {
             return Err(error.to_string());
         }
-        Ok(std::mem::take(&mut self.data.changed).then_some(self.data.preferred).flatten())
+        Ok(())
     }
+
     /// A PQ signal retains highlight headroom even when the host prefers a bounded gamma signal.
     /// Primaries come from the preferred description; reference white is our encoding policy.
     pub fn planned_encoding(&self, peak: u32, average: u32) -> Option<ColourDescription> {

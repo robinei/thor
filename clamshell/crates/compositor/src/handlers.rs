@@ -266,6 +266,7 @@ impl SeatHandler for Server {
     }
     fn cursor_image(&mut self, _: &Seat<Self>, image: smithay::input::pointer::CursorImageStatus) {
         self.pointer.cursor = image;
+        self.windows_changed();
     }
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
         let client = focused.and_then(|s| self.dh.get_client(s.id()).ok());

@@ -180,7 +180,9 @@ and fixed once. Seven rules:
   only the rectangle around the differing commands is redrawn: every command meeting it is played again,
   clipped to it, from the background up, so blending stays exact. Each pixmap knows the frame it holds, so a
   reused one also gets what changed since it last held a frame. An idle tick costs a recording and a
-  comparison, about 0.02 ms.
+  comparison, about 0.02 ms. The nested host submits only for changed recordings or visual facts,
+  paced to its refresh deadline, and for host exposure. Client pacing, cursor animation, colour
+  measurement and resource expiry have independent deadlines; there is no idle frame timer.
 - **Input.** A frame keeps its targets (a rectangle, an id, the key of the list item it showed, what a
   finger along it sets, such as a level or a slider, and what holding it does). A touch is matched against the frame the user saw and carries that item's key, so a list that re-sorted
   meanwhile doesn't redirect it. Pad navigation moves between the same targets by direction. What the

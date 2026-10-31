@@ -478,6 +478,21 @@ impl Pipeline {
         Ok(changed)
     }
 
+    /// Nested keeps both composed scenes displayed between redraws.
+    #[cfg(feature = "nested")]
+    pub(crate) fn keep_composed(&mut self, now: std::time::Instant) {
+        for scene in &mut self.scenes {
+            if scene.texture.is_some() {
+                scene.hold.used(now);
+            }
+        }
+    }
+
+    #[cfg(feature = "nested")]
+    pub(crate) fn histogram_due(&self, server: &Server, now: std::time::Instant) -> Option<std::time::Instant> {
+        self.histogram.deadline(server.core.state().histogram_window().is_some(), now)
+    }
+
     /// Drops the textures of scenes not composed through for a while by `now`, the textures of their
     /// picture passes, and the screenshot's (see `crate::hold`).
     pub(crate) fn trim(&mut self, now: std::time::Instant, trims: &mut crate::hold::Trims) {

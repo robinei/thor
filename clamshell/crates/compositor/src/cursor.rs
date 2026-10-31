@@ -301,6 +301,19 @@ impl Cursor {
         }
     }
 
+    /// When a visible named cursor's next animation frame begins. Static and hidden cursors do not
+    /// keep the nested loop awake; a client's cursor updates through its surface commits.
+    #[cfg(feature = "nested")]
+    pub(crate) fn deadline(&self, server: &Server, now: Instant) -> Option<Instant> {
+        if !server.pointer.cursor_activity.visible(now) {
+            return None;
+        }
+        let CursorImageStatus::Named(icon) = server.effective_cursor() else { return None };
+        let (_, frames) = self.cached.iter().find(|(known, _)| *known == icon)?;
+        animation_wait(frames.iter().map(|frame| frame.delay), now.saturating_duration_since(server.started).as_millis())
+            .map(|wait| now + Duration::from_millis(wait))
+    }
+
     /// Copies `shape`'s image to the top left of a square buffer `side` pixels a side, the rest clear:
     /// `bytes`, rows of `stride` pixels, turned a quarter if `quarter`, blue first if `bgra`. A client's
     /// cursor is sent its frame callbacks, as when it is drawn.
@@ -392,6 +405,25 @@ impl Cursor {
         };
         Ok(index)
     }
+}
+
+#[cfg(any(feature = "nested", test))]
+fn animation_wait(delays: impl Iterator<Item = u32> + Clone, millis: u128) -> Option<u64> {
+    if delays.clone().count() < 2 {
+        return None;
+    }
+    let total: u128 = delays.clone().map(u128::from).sum();
+    if total == 0 {
+        return None;
+    }
+    let mut elapsed = millis % total;
+    for delay in delays {
+        if elapsed < u128::from(delay) {
+            return u64::try_from(u128::from(delay) - elapsed).ok();
+        }
+        elapsed -= u128::from(delay);
+    }
+    None
 }
 
 fn animation_frame(delays: impl Iterator<Item = u32> + Clone, millis: u128) -> usize {
@@ -489,6 +521,19 @@ mod tests {
         assert_eq!(activity.deadline(start + HIDE_AFTER * 2), None);
         activity.motion(start + HIDE_AFTER * 2);
         assert!(activity.visible(start + HIDE_AFTER * 2));
+    }
+
+    #[test]
+    fn animation_deadlines_follow_frame_boundaries_without_polling_static_shapes() {
+        let wait = |time| animation_wait([0, 20, 30].into_iter(), time);
+        assert_eq!(wait(0), Some(20));
+        assert_eq!(wait(19), Some(1));
+        assert_eq!(wait(20), Some(30));
+        assert_eq!(wait(49), Some(1));
+        assert_eq!(wait(50), Some(20));
+        assert_eq!(animation_wait([100].into_iter(), 0), None);
+        assert_eq!(animation_wait([0, 0].into_iter(), 0), None);
+        assert_eq!(animation_wait(std::iter::empty(), 0), None);
     }
 
     #[test]

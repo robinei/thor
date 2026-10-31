@@ -23,10 +23,23 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gpu", action="store_true", help="require hardware EGL and native dmabuf traffic")
     args = parser.parse_args()
-    with Nested(gpu=args.gpu) as n:
+    fixture = Nested(gpu=args.gpu)
+    fixture.env["RUST_LOG"] += ",clamshell_compositor::nested=debug"
+    with fixture as n:
         directory, runtime, private_home, env, host, nested = n.directory, n.runtime, n.home, n.env, n.host, n.nested
         nested_socket, processes, expected_exits = n.nested_socket, n.processes, n.expected_exits
         spawn, wait, image, shot, control = n.spawn, n.wait, n.image, n.shot, n.control
+        # No client is drawing: state readings still arrive, but they must not drive a frame loop.
+        control("tab", "dock")
+        time.sleep(1)
+        submitted = n.log().count("nested frame submitted")
+        time.sleep(1.2)
+        idle_frames = n.log().count("nested frame submitted") - submitted
+        # A clock minute or burn-in orbit boundary may cause a legitimate UI update in this interval.
+        assert idle_frames <= 3, f"idle nested presentation kept running: {idle_frames} frames"
+        control("tab", "settings")
+        wait(lambda: n.log().count("nested frame submitted") > submitted + idle_frames, "UI input redraws an idle host")
+        control("tab", "sysinfo")
         for backend in ["--nested", "--drm"]:
             second = subprocess.run([str(BIN), backend], env=host, capture_output=True, text=True, timeout=5)
             assert second.returncode != 0 and "another ClamShell session already uses" in second.stderr, second.stderr
