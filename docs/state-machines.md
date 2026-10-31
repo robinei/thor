@@ -2021,3 +2021,8 @@ own input source. A release ends its source's original press even if a mode has 
 opening the FPS menu prevents activation of the hidden tile; ordinary Enter still changes its value.
 `enter_releases_its_original_press_when_a_mode_appears` checks release while a dock move takes input,
 then Enter ending that move without leaving a press held.
+
+A glyph awaiting fallback discovery reserves the same built-in advance for fitting, measurement and
+drawing. `fitting_keeps_waiting_characters_within_the_available_width` checks Keep::Start and Keep::End
+at two scales before discovery answers and after an answer without a font. The selected substring and
+recorded width agree and stay within the available width; existing finder tests cover a font arriving.

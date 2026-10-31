@@ -163,7 +163,10 @@ impl Canvas<'_> {
 
     fn char_width(&mut self, size: f32, ch: char) -> f32 {
         let px = size * self.scale;
-        self.cache.glyph(ch, px).map_or(0.0, |(m, _)| m.advance_width) / self.scale
+        match self.cache.glyph(ch, px) {
+            Some((m, _)) => m.advance_width / self.scale,
+            None => self.cache.waiting_advance(ch, px) / self.scale,
+        }
     }
 
     /// Draws one line of text with its ink centred in `r`. The ink is what the glyphs cover, rather than
@@ -274,6 +277,36 @@ mod tests {
         let tail = text.get(start..).unwrap();
         assert!(c.text_width(20.0, tail) <= width && tail.ends_with("Past"), "{tail:?}");
         assert!(c.text_fit(Rect::new(0.0, 0.0, width, 30.0), 20.0, rgb(0xffffff), text, Keep::Start) <= width + 0.5);
+    }
+
+    #[test]
+    fn fitting_keeps_waiting_characters_within_the_available_width() {
+        use crate::gfx::fonts::Found;
+        for scale in [1.0, 2.0] {
+            let (requests, _unanswered) = std::sync::mpsc::channel();
+            let mut cache = DrawCache::with_finder(requests);
+            let mut rec = Recording::default();
+            assert_eq!(cache.face('あ'), Face::Waiting);
+            for answered in [false, true] {
+                if answered {
+                    // A failed discovery also resolves Waiting: use the built-in missing glyph.
+                    assert_eq!(cache.found(Found { ch: 'あ', path: None, font: None }), Face::Builtin);
+                }
+                let mut c = Canvas::new(&mut rec, (800, 100), scale, &mut cache);
+                let text = "ああああああABC";
+                let width = 80.0;
+                assert!(c.text_width(20.0, text) > width);
+                for keep in [Keep::Start, Keep::End] {
+                    let (start, end) = c.fit(20.0, text, width, keep);
+                    let part = text.get(start..end).unwrap();
+                    assert!(part.len() < text.len(), "the waiting characters count towards the cut");
+                    let measured = c.text_width(20.0, part) + if keep == Keep::Start { c.text_width(20.0, ELLIPSIS) } else { 0.0 };
+                    let drawn = c.text_fit(Rect::new(0.0, 0.0, width, 30.0), 20.0, rgb(0x888888), text, keep);
+                    assert_eq!(drawn, measured);
+                    assert!(drawn <= width, "{keep:?}, answered={answered}, scale={scale}: {drawn}");
+                }
+            }
+        }
     }
 
     /// A character waiting for its font keeps its room: the line drawn is as wide as measured, and the
