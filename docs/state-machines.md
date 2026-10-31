@@ -1960,3 +1960,9 @@ The inactive slot is replaceable on retry; the selected slot is never overwritte
 `tools/tests/package-recovery.py` injects failure before/after each publication rename, validates EFI
 and ABL coherence with the real boot-image packer, and checks retries and repeated slot alternation.
 Physical power interruption on FAT remains a device check.
+
+First boot: missing swap --enough free space--> create valid swap --file exists, including retry-->
+atomically reconcile fstab --not active--> activate --valid resume offset--> configure resume and mark
+complete. An activation/offset/boot-publication failure leaves the completion marker absent; retries
+repeat the unfinished work. Already active swap is not activated twice. Insufficient space intentionally
+completes without disk swap. `SwapRecovery` in the package fixtures covers these paths and repetition.

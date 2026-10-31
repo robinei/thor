@@ -25,16 +25,27 @@ if [ ! -e /swapfile ]; then
         chmod 600 /swapfile.new
         mkswap /swapfile.new
         mv /swapfile.new /swapfile
-        grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap defaults 0 0' >> /etc/fstab
-        swapon /swapfile
     else
         echo "$free GiB free: no swap file, so no hibernate (suspend only)"
     fi
 fi
 
 if [ -e /swapfile ]; then
+    # Creation may have completed before an earlier run stopped. Reconcile the remaining steps even
+    # when the file was already there; publish fstab as a whole, so an interrupted append cannot stick.
+    if ! awk '$1 == "/swapfile" && $3 == "swap" { found = 1 } END { exit !found }' /etc/fstab; then
+        fstab=$(mktemp /etc/.fstab.XXXXXX)
+        awk '$1 != "/swapfile"' /etc/fstab > "$fstab"
+        echo '/swapfile none swap defaults 0 0' >> "$fstab"
+        chmod --reference=/etc/fstab "$fstab"
+        mv "$fstab" /etc/fstab
+    fi
+    if ! swapon --show=NAME --noheadings | grep -qx /swapfile; then
+        swapon /swapfile
+    fi
     # The file's first block (ext4 blocks and pages are both 4 KiB here, so it is the offset in pages).
     offset=$(filefrag -v /swapfile | awk '$1 == "0:" { sub(/\.\.$/, "", $4); print $4 }')
+    [[ $offset =~ ^[0-9]+$ ]] || { echo "could not read the swap file's resume offset" >&2; exit 1; }
     case $disk in *[0-9]) esp=${disk}p1 ;; *) esp=${disk}1 ;; esac
     mkdir -p /run/thor-esp
     # (A run cut off before may have left it mounted.)
@@ -44,6 +55,7 @@ if [ -e /swapfile ]; then
     options=$(sed -n 's/^options //p' "$entry" | sed -E 's/ ?resume(_offset)?=[^ ]*//g')
     sed -i "s|^options .*|options $options resume=LABEL=THOR_ROOT resume_offset=$offset|" "$entry"
     umount /run/thor-esp
+    sync -f /etc/fstab
     thor-boot
 fi
 touch /var/lib/thor-firstboot
