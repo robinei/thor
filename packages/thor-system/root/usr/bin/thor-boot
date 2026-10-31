@@ -1,7 +1,7 @@
 #!/bin/bash
 # Puts the kernel (linux-thor's), our initramfs and the command line in force on the root's card's FAT
-# partition, both ways the card boots: as files for systemd-boot (which it updates too: /Image, the
-# Thor's device tree, /initramfs-thor.img; the loader entry's options line is the command line), and in
+# partition, both ways the card boots: as one selected slot for systemd-boot (which it updates too: the kernel,
+# Thor's device tree and initramfs; the loader entry's options line is the command line), and in
 # /KERNEL for the ABL, repacked (checked before it replaces the old one). Run as root. pacman runs it after
 # updates of the kernel or of what the initramfs and the boot loader are made of (90-thor-boot.hook); the
 # first boot, after putting the swap file's place on the command line; the image build, once.
@@ -30,34 +30,47 @@ trap 'umount "$mnt"; rm -rf "$work"' EXIT
 
 cmdline=$(sed -n 's/^options //p' "$mnt/loader/entries/thor.conf")
 [ -n "$cmdline" ] || { echo "thor-boot: no options line in the loader entry"; exit 1; }
-# The new files, each written beside the one in use (.new), checked, and only then put in its place: a
-# failure or a power cut before that leaves the card as it was, booting the previous kernel (whose modules
-# thor-modules kept). First, room for them beside the old ones.
+# Fill the inactive slot, then select the complete set with one loader-entry rename. The slot
+# selected now is never written while preparing a replacement.
+entry=$mnt/loader/entries/thor.conf
+current=$(awk '$1 == "linux" { print $2 }' "$entry")
+case $current in
+    /thor-a/Image) next=thor-b ;;
+    /thor-b/Image) next=thor-a ;;
+    *) echo "thor-boot: the loader entry does not select a Thor boot slot: $current"; exit 1 ;;
+esac
+slot=$mnt/$next
+stage=$slot.new
+rm -rf "$stage" "$slot"
 { gzip -c "$modules/Image"; cat "$modules"/dtbs/*.dtb; } > "$work/kernel.gz"
 need=$(( $(stat -c %s "$modules/Image" /boot/initramfs-thor.img "$modules/dtbs/qcs8550-ayn-thor.dtb" \
     /usr/lib/systemd/boot/efi/systemd-bootaa64.efi "$work/kernel.gz" /boot/initramfs-thor.img | paste -sd+) ))
 free=$(( $(stat -f -c '%a * %S' "$mnt") ))
 [ "$free" -gt "$(( need + 4 * 1024 * 1024 ))" ] \
-    || { echo "thor-boot: the FAT partition has $(( free >> 20 )) MiB free, the new files need $(( need >> 20 )) MiB: nothing changed"; exit 1; }
-mkdir -p "$mnt/dtbs" "$mnt/EFI/BOOT"
-# systemd-boot's: the kernel (an EFI program), the Thor's device tree, the initramfs, the loader.
-cp "$modules/Image" "$mnt/Image.new"
-cp "$modules/dtbs/qcs8550-ayn-thor.dtb" "$mnt/dtbs/qcs8550-ayn-thor.dtb.new"
-cp /boot/initramfs-thor.img "$mnt/initramfs-thor.img.new"
+    || { echo "thor-boot: insufficient FAT space for $(( need >> 20 )) MiB; selected boot files unchanged"; exit 1; }
+mkdir -p "$stage" "$mnt/EFI/BOOT"
+cp "$modules/Image" "$stage/Image"
+cp "$modules/dtbs/qcs8550-ayn-thor.dtb" "$stage/thor.dtb"
+cp /boot/initramfs-thor.img "$stage/initramfs.img"
 cp /usr/lib/systemd/boot/efi/systemd-bootaa64.efi "$mnt/EFI/BOOT/BOOTAA64.EFI.new"
-# The ABL's: /KERNEL (its header from the image's first one: ROCKNIX's addresses and page size) with the
-# kernel as their build makes it, the gzip'd Image with all the device trees appended (the ABL picks the
-# Thor's).
-python3 /usr/lib/thor/bootimg.py repack "$mnt/KERNEL" --kernel "$work/kernel.gz" --ramdisk "$mnt/initramfs-thor.img.new" \
+# ABL has one coherent image of its own, published independently of the EFI entry.
+python3 /usr/lib/thor/bootimg.py repack "$mnt/KERNEL" --kernel "$work/kernel.gz" --ramdisk "$stage/initramfs.img" \
     --cmdline "$cmdline" -o "$mnt/KERNEL.new"
 python3 /usr/lib/thor/bootimg.py info "$mnt/KERNEL.new" > /dev/null
-for f in Image dtbs/qcs8550-ayn-thor.dtb initramfs-thor.img EFI/BOOT/BOOTAA64.EFI KERNEL; do
-    cmp -s "$mnt/$f.new" "$mnt/$f" 2> /dev/null && rm "$mnt/$f.new" && continue
-    [ "$(stat -c %s "$mnt/$f.new")" -gt 0 ] || { echo "thor-boot: $f.new is empty: nothing changed"; exit 1; }
+awk -v slot="$next" '
+    $1 == "linux" { $0 = "linux /" slot "/Image" }
+    $1 == "initrd" { $0 = "initrd /" slot "/initramfs.img" }
+    $1 == "devicetree" { $0 = "devicetree /" slot "/thor.dtb" }
+    { print }
+' "$entry" > "$entry.new"
+for f in "$stage/Image" "$stage/thor.dtb" "$stage/initramfs.img" "$entry.new" "$mnt/EFI/BOOT/BOOTAA64.EFI.new"; do
+    [ "$(stat -c %s "$f")" -gt 0 ] || { echo "thor-boot: $f is empty; selected boot files unchanged"; exit 1; }
 done
 sync
-for f in Image dtbs/qcs8550-ayn-thor.dtb initramfs-thor.img EFI/BOOT/BOOTAA64.EFI KERNEL; do
-    [ ! -e "$mnt/$f.new" ] || mv "$mnt/$f.new" "$mnt/$f"
-done
+mv "$stage" "$slot"
+mv "$mnt/KERNEL.new" "$mnt/KERNEL"
+mv "$mnt/EFI/BOOT/BOOTAA64.EFI.new" "$mnt/EFI/BOOT/BOOTAA64.EFI"
+# This is the commit point for EFI: all three paths change together.
+mv "$entry.new" "$entry"
 sync
-echo "thor-boot: done (command line: $cmdline)"
+echo "thor-boot: done (slot $next; command line: $cmdline)"

@@ -28,7 +28,8 @@ HEADER = struct.Struct("<8s10I16s512s32s1024s")
 
 
 def read(path):
-    data = open(path, "rb").read()
+    with open(path, "rb") as source:
+        data = source.read()
     fields = HEADER.unpack_from(data)
     magic, ksize, kaddr, rsize, raddr, ssize, saddr, tags, page, version, osver, name, cmdline, _id, extra = fields
     if magic != MAGIC or version != 0:

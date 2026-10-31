@@ -1950,3 +1950,13 @@ A save with duplicate output filenames fails before changing any saved data. The
 `named_entry_and_runner_profiles_survive_save_and_rename_for_every_kind` and
 `duplicate_profile_files_fail_before_replacing_saved_data` cover keymaps, curves and lights, including
 renames and invalid duplicate input.
+
+## Boot-file publication
+
+Selected slot A --update--> prepare slot B --complete and synced--> publish B and atomically select B;
+then the roles reverse. Any failure before the entry switch leaves the selected EFI slot intact; a
+failure after it leaves the new complete slot selected. ABL publishes one complete KERNEL independently.
+The inactive slot is replaceable on retry; the selected slot is never overwritten during preparation.
+`tools/tests/package-recovery.py` injects failure before/after each publication rename, validates EFI
+and ABL coherence with the real boot-image packer, and checks retries and repeated slot alternation.
+Physical power interruption on FAT remains a device check.

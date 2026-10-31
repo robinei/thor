@@ -60,7 +60,16 @@ trap 'umount -R -l "$root" 2> /dev/null || true; umount -l "$boot" 2> /dev/null 
 udevadm settle
 mount "${dev}p2" "$root"
 mods=$root/usr/lib/modules
-card() { mount -o ro "${dev}p1" "$boot"; sha256sum "$boot/KERNEL" "$boot/Image" "$boot/initramfs-thor.img" | cut -c1-16; ls "$boot"/*.new "$boot"/*/*.new 2> /dev/null; umount "$boot"; }
+card() {
+    mount -o ro "${dev}p1" "$boot"
+    local image initrd tree
+    image=$(awk '$1 == "linux" { print $2 }' "$boot/loader/entries/thor.conf")
+    initrd=$(awk '$1 == "initrd" { print $2 }' "$boot/loader/entries/thor.conf")
+    tree=$(awk '$1 == "devicetree" { print $2 }' "$boot/loader/entries/thor.conf")
+    sha256sum "$boot/KERNEL" "$boot$image" "$boot$initrd" "$boot$tree" | awk '{ print substr($1, 1, 16) }'
+    ls "$boot"/*.new "$boot"/*/*.new 2> /dev/null
+    umount "$boot"
+}
 cp "$work"/linux-thor-*.pkg.tar.* "$root/var/cache/"
 fail=0
 check() { if eval "$2"; then echo "ok    $1"; else echo "FAIL  $1"; fail=1; fi; }

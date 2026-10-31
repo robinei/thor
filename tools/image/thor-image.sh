@@ -22,8 +22,8 @@
 # set.
 #
 # Two ways to boot, one FAT partition: the stock bootloader (U-Boot with UEFI, as Kettle Linux's Thor notes
-# have it) starts systemd-boot (EFI/BOOT/BOOTAA64.EFI), which loads the kernel (an EFI program), our
-# initramfs and the Thor's device tree as files; the ABL boots /KERNEL, an Android boot image of the same
+# have it) starts systemd-boot (EFI/BOOT/BOOTAA64.EFI), which loads the selected thor-a or thor-b
+# slot's kernel (an EFI program), initramfs and device tree; the ABL boots /KERNEL, an Android boot image of the same
 # kernel. Layout: GPT; 1: FAT "ROCKNIX" at 16 MiB, 512 MiB (room for thor-boot's new files beside the
 # old ones), an EFI system partition (as Armada's and Kettle's, which ROCKNIX's ABL boots) with ROCKNIX's
 # label, GPT name "system" and legacy-boot attribute; 2: ext4 THOR_ROOT, the system.
@@ -114,7 +114,7 @@ if [ "$TARGET" = thor ]; then
     # kernel, initramfs and command line into it, and the files systemd-boot loads beside it.
     mkdir -p "$WORK/boot/dtbs"
     bsdtar -xOf "$ROCKNIX" '*/target/KERNEL' > "$WORK/boot/KERNEL"
-    printf 'title   Arch Linux ARM (Thor)\nlinux   /Image\ninitrd  /initramfs-thor.img\ndevicetree /dtbs/qcs8550-ayn-thor.dtb\noptions %s\n' \
+    printf 'title   Arch Linux ARM (Thor)\nlinux   /thor-a/Image\ninitrd  /thor-a/initramfs.img\ndevicetree /thor-a/thor.dtb\noptions %s\n' \
         "$CMDLINE" > "$WORK/boot/loader/entries/thor.conf"
     umount "$WORK/boot"
 else
