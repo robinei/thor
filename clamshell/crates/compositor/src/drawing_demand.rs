@@ -3,8 +3,10 @@
 use crate::{scene, server::Server, windows};
 use smithay::input::pointer::CursorImageStatus;
 
+#[cfg(any(feature = "nested", test))]
 #[derive(Default)]
-pub(super) struct Redraw(bool);
+pub(crate) struct Redraw(bool);
+#[cfg(any(feature = "nested", test))]
 impl Redraw {
     pub fn changed(&mut self) {
         self.0 = true;
@@ -19,7 +21,7 @@ impl Redraw {
 
 /// Snapshots existing scene/presentation facts for comparison; this computes no placement or policy.
 #[derive(Default)]
-pub(super) struct Visuals {
+pub(crate) struct Visuals {
     epoch: Option<u64>,
     colour: Option<u64>,
     scene: Vec<scene::Shown>,

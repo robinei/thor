@@ -265,6 +265,9 @@ pub(super) fn present(drawing: &mut Drawing, server: &mut Server, index: usize) 
     let Drawing { renderer, pipeline, screens, states, cursor, handle, .. } = drawing;
     let screen = screens.get_mut(index)?;
     let states = states.get(screen.scene())?;
+    if screen.needs_compose && !screen.surface.rendering() {
+        return None;
+    }
     let with_layers = prepare_layers(screen, server, cursor);
     let encoding = screen.external.as_ref().map(|external| &external.encoding);
     let sync = if screen.surface.rendering() {

@@ -125,6 +125,9 @@ struct Screen {
     /// Whether composing it fails, every turn: logged at the first.
     compose_failing: bool,
     timing: crate::frame_timing::Monitor,
+    schedule: crate::frame_schedule::Schedule,
+    needs_compose: bool,
+    hw_clock: bool,
 }
 
 impl Screen {
@@ -180,6 +183,9 @@ impl Screen {
             off_failing: false,
             compose_failing: false,
             timing: Default::default(),
+            schedule: Default::default(),
+            needs_compose: true,
+            hw_clock: false,
         }
     }
 
@@ -206,6 +212,10 @@ impl Screen {
     /// drawn whole, composed or its own.
     fn reset_buffers(&mut self) {
         self.timing.cancel();
+        self.schedule.reset();
+        self.needs_compose = true;
+        self.hw_clock = false;
+        self.flipped = None;
         self.surface.reset_buffers();
         // A frame in flight is taken as never shown.
         self.feedback.discard();
@@ -221,6 +231,28 @@ impl Screen {
     /// Which of its layers are on their planes this turn.
     fn planed(&self) -> Planed {
         self.layers.as_ref().map(|layers| layers.planed).unwrap_or_default()
+    }
+
+    /// Delay only GPU composition; scanout, first frames, and screenshots keep their existing path.
+    fn composition_due(&mut self, clock: Time<Monotonic>, now: Instant, capture: bool) -> Option<Instant> {
+        if capture || !self.hw_clock {
+            self.schedule.cancel();
+            return None;
+        }
+        let target = now + Duration::from(self.next_shown(clock)).saturating_sub(Duration::from(clock));
+        if let Some(wake) = self.schedule.deadline(now, target, self.interval) {
+            return Some(wake);
+        }
+        if let Some(target) = self.schedule.started(now) {
+            log::debug!(
+                "drm schedule: screen={} interval_us={} budget_us={} lead_us={}",
+                self.name(),
+                self.interval.as_micros(),
+                self.schedule.budget(self.interval).as_micros(),
+                target.saturating_duration_since(now).as_micros()
+            );
+        }
+        None
     }
 
     /// When a frame composed at `now` would be shown (see [`next_shown`]).
@@ -246,7 +278,8 @@ fn next_shown(flipped: Option<Duration>, interval: Duration, pending: bool, now:
 
 /// What drawing needs, shared by the loop's sources.
 struct Drawing {
-    handle: smithay::reexports::calloop::LoopHandle<'static, Server>,
+    handle: crate::frame_timing::LoopAccess,
+    visuals: crate::drawing_demand::Visuals,
     /// The GPU's display device and its buffers' allocator, which an external display's screen is made
     /// with when it is connected; and the panels' connectors by name, which are no external display.
     drm: DrmDevice,
@@ -438,7 +471,8 @@ pub fn run(
     server.core.handle(clamshell_state::Reading::DisplayModes(rates).into());
 
     let drawing = Rc::new(RefCell::new(Drawing {
-        handle: base.event_loop.handle(),
+        handle: crate::frame_timing::LoopAccess::new(base.event_loop.handle()),
+        visuals: Default::default(),
         drm,
         gbm,
         panels: [profile.top.connector, profile.bottom.connector],
@@ -714,6 +748,15 @@ fn flipped(drawing: &mut Drawing, server: &mut Server, index: usize, metadata: O
         hw_clock,
         Duration::from(time).as_micros()
     );
+    screen.hw_clock = hw_clock;
+    if hw_clock {
+        let now = Instant::now();
+        let age = Duration::from(server.clock.now()).saturating_sub(Duration::from(time));
+        let actual = now.checked_sub(age).unwrap_or(now);
+        if screen.schedule.presented(actual, screen.interval) {
+            log::debug!("drm schedule: screen={} missed target; full-refresh budget restored", screen.name());
+        }
+    }
     screen.flipped = Some(time);
     if submitted {
         // (A screen that doesn't pace queued no elements' states nor feedback: see `present`.)
@@ -747,7 +790,13 @@ fn step(
         return None;
     }
     for screen in &mut drawing.screens {
+        if !screen.timing.available() {
+            screen.schedule.reset();
+        }
         if let Some(sample) = screen.timing.sample() {
+            if screen.timing.available() {
+                screen.schedule.observe(sample.ready);
+            }
             log::debug!("drm frame timing: screen={} cpu_us={} ready_us={}", screen.name(), sample.cpu.as_micros(), sample.ready.as_micros());
         }
     }
@@ -774,15 +823,25 @@ fn step(
     // `ui_scanout`); one showing one window alone may show the window's (see `window_scanout`), or draw it
     // straight onto itself.
     record_overlays(server);
+    let before = server.core.state_revision();
+    let ui_changed = render::record_ui(server);
+    let reported = before != server.core.state_revision();
     layers_decide(drawing, server);
     shows_decide(drawing, server);
+    if drawing.visuals.observe(server) || ui_changed {
+        for screen in &mut drawing.screens {
+            screen.needs_compose = true;
+        }
+    }
     // Each screen composes on its own: when it is free (not waiting for a flip, which composes it with
     // what came meanwhile), unless it shows its own buffers or a window's; for a screenshot, all of them.
     let capture = std::mem::take(&mut server.screenshot_requested);
+    let mut draw_due = None;
     for index in 0..drawing.screens.len() {
         // A failure is warned of at the first, and while it goes on, at debug: it would be every turn.
         match compose(drawing, server, index, capture) {
-            Ok(()) => {
+            Ok(wake) => {
+                draw_due = earlier(draw_due, wake);
                 if let Some(screen) = drawing.screens.get_mut(index) {
                     screen.compose_failing = false;
                 }
@@ -820,7 +879,7 @@ fn step(
             layers.trim(now, &mut trims);
         }
     }
-    let mut due: Option<Instant> = earlier(earlier(timed, trims.finish()), drawing.pipeline.capture_due(now));
+    let mut due: Option<Instant> = earlier(earlier(earlier(timed, draw_due), trims.finish()), drawing.pipeline.capture_due(now));
     for screen in &mut drawing.screens {
         if screen.surface.flip_due().is_some_and(|lost| now >= lost) {
             log::warn!("drm: {} screen: no flip {} ms after its frame: drawn again", screen.name(), crate::presenter::FLIP_LOST.as_millis());
@@ -871,7 +930,7 @@ fn step(
         }
     }
     drawing.pipeline.let_go();
-    after_compose(due, composed, server.pacing.commits, now)
+    after_compose(earlier(due, reported.then_some(now)), composed, server.pacing.commits, now)
 }
 
 /// Turns each screen off or on, as the state last asked of its panel, and the top panel to the refresh
@@ -926,6 +985,11 @@ fn outputs(drawing: &mut Drawing, server: &mut Server) {
                         if rendering {
                             screen.feedback.discard();
                         }
+                        screen.schedule.reset();
+                        screen.timing.cancel();
+                        screen.hw_clock = false;
+                        screen.flipped = None;
+                        screen.needs_compose = true;
                         screen.interval = Duration::from_micros(1_000_000 / u64::from(mode.vrefresh().max(1)));
                         screen.dirty = true;
                     }
@@ -940,30 +1004,46 @@ fn outputs(drawing: &mut Drawing, server: &mut Server) {
 /// Composes screen `index`'s part of the scene if the screen paces it and composes now (see
 /// [`composes`]), or for a screenshot (`capture`), marking each screen showing it changed if its picture
 /// did.
-fn compose(drawing: &mut Drawing, server: &mut Server, index: usize, capture: bool) -> Result<(), Error> {
+fn compose(drawing: &mut Drawing, server: &mut Server, index: usize, capture: bool) -> Result<Option<Instant>, Error> {
     let Drawing { renderer, pipeline, screens, frames, cursor, elements, states, .. } = drawing;
-    let Some(screen) = screens.get(index) else { return Ok(()) };
+    let Some(screen) = screens.get_mut(index) else { return Ok(None) };
     let shows_own = matches!(screen.shows, Shows::Own | Shows::Window(_));
     // (A screen following another's pace shows the scene that one composes.)
     if !screen.paces || !composes(screen.on, screen.surface.in_flight() || screen.surface.rendering(), shows_own, capture) {
-        return Ok(());
+        if shows_own || !screen.on {
+            screen.schedule.cancel();
+        }
+        return Ok(None);
+    }
+    if !capture && !screen.needs_compose {
+        return Ok(None);
     }
     let started = Instant::now();
+    if let Some(wake) = screen.composition_due(server.clock.now(), started, capture) {
+        return Ok(Some(wake));
+    }
     let down = screen.down();
     let skip = match screen.shows {
         Shows::Window(id) => Some(id),
         _ => None,
     };
     let straight = matches!(screen.shows, Shows::Straight(_));
-    let Some(states) = states.get_mut(screen.scene()) else { return Ok(()) };
+    let Some(states) = states.get_mut(screen.scene()) else { return Ok(None) };
     render::elements(server, frames, cursor, renderer, elements, down, skip, screen.planed())?;
-    if pipeline.compose(server, renderer, down, elements, states, straight)? {
+    let changed = pipeline.compose(server, renderer, down, elements, states, straight)?;
+    if !changed {
+        screen.schedule.cancel();
+    }
+    for screen in screens.iter_mut().filter(|screen| screen.down() == down) {
+        screen.needs_compose = false;
+    }
+    if changed {
         for screen in screens.iter_mut().filter(|screen| screen.down() == down) {
             screen.timing.begin(started);
             screen.dirty = true;
         }
     }
-    Ok(())
+    Ok(None)
 }
 
 /// Whether a screen composes this turn: on, not waiting for a flip, and not showing its own buffers or a

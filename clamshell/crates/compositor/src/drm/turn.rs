@@ -34,7 +34,7 @@ pub(super) fn earlier(a: Option<Instant>, b: Option<Instant>) -> Option<Instant>
 /// What decides a screen's turn in [`step`].
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Timing {
-    /// A frame is queued, its flip not yet come.
+    /// A frame is queued, drawing, or waiting for its composition deadline.
     pub(super) pending: bool,
     /// Its part of the scene changed since its last frame.
     pub(super) dirty: bool,
@@ -53,7 +53,11 @@ impl Timing {
     /// `screen`'s, with the server's commit count `commits`.
     pub(super) fn of(screen: &Screen, commits: u64) -> Timing {
         Timing {
-            pending: screen.surface.in_flight() || screen.surface.rendering(),
+            // Do not answer the new content's frame callbacks as though it were an idle commit
+            // while composition is deliberately waiting for its deadline.
+            pending: screen.surface.in_flight()
+                || screen.surface.rendering()
+                || (screen.on && screen.needs_compose && !matches!(screen.shows, Shows::Own | Shows::Window(_))),
             dirty: screen.dirty,
             on: screen.on,
             paces: screen.paces,

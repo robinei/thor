@@ -2119,3 +2119,33 @@ microseconds from drawing start until GPU completion is observed. The latter inc
 and event-loop wakeup delay; it is a conservative observed duration, not isolated GPU execution time.
 DRM flip logs separately report the output, whether its frame was composed, timestamp and whether
 the hardware clock supplied it. Instrumentation itself schedules no idle wakeups.
+
+## Adaptive composition deadlines
+
+An output starts with a full-refresh drawing budget. Four completed GPU observations allow a
+shorter budget: the maximum of its last 32 complete drawing durations, plus 25% headroom (at least
+1/64 of its refresh interval) and observed wakeup lateness, bounded by one refresh. Slow observations
+raise the budget immediately; they remain in the window before it can fall. Wakeup lateness decays
+by 1/32 per complete drawing. No duration from another output is used.
+
+Idle --changed recording or visual facts--> pending composition at predicted next flip minus budget;
+pending --further damage--> same target, freshest content retained; a larger budget may advance
+the wakeup, never postpone it. Pending --deadline--> draw, observe GPU completion, submit;
+--hardware flip--> target checked. A flip more than half a refresh after the target restores the
+full-refresh warm-up and raises lateness headroom. A late arrival draws immediately, without
+skipping an extra refresh. Hardware clock or GPU observations unavailable means immediate
+composition with the conservative budget. Mode change, power reset, lost flip and resume reset
+learning and phase. Each output learns independently, including an external pacing output.
+
+Direct scanout and UI buffers bypass this scheduler; screenshots draw immediately. Empty damage
+clears the pending plan without a submission. Imports, input and state handling proceed while a
+drawing waits; its frame callbacks wait with it. Scene placement and presentation rules stay in the
+common model; the nested and DRM hosts share recording/damage observation. No pending drawing
+means no composition deadline or periodic calibration wakeup.
+
+`frame_schedule` unit tests pin warm-up, headroom, retained slow samples, an advancing wakeup,
+fixed targets, missed-flip recovery, cancellation/reset and independent outputs. A randomized
+10,000-turn test checks bounded budgets and pending-work invariants. DRM VM `frame_schedule`
+checks a changing client against real virtual-DRM flips, completion samples, learned budgets
+and timer-free idle scanout; `screen_changes` and `external_display` cover reset and mirroring.
+Physical Adreno timing and input-to-photon improvement remain device measurements.

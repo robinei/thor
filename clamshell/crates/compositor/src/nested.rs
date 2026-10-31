@@ -2,15 +2,13 @@
 //! UI recordings, scene placement and client commits provide the damage; client pacing, animated
 //! cursors, timed commits and readbacks keep their own deadlines instead of an idle frame loop.
 
-mod demand;
-
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use crate::EventSender;
 use clamshell_state::{Effect, State};
-use clamshell_ui::{Config, Error, Layer, Screen};
+use clamshell_ui::{Config, Error};
 use smithay::{
     backend::{
         renderer::{Frame, Renderer, element::RenderElementStates, gles::GlesRenderer},
@@ -20,15 +18,14 @@ use smithay::{
     utils::{Rectangle, Transform},
 };
 
+use crate::drawing_demand::{Redraw, Visuals};
+use crate::render::{LAYERS, record_ui};
 use crate::{
     base::Base,
     clients::Process,
     render::{self, UiFrame},
     server::Server,
 };
-use demand::{Redraw, Visuals};
-
-const LAYERS: [Layer; 4] = [Layer::Screen(Screen::Top), Layer::Screen(Screen::Bottom), Layer::Overlay(Screen::Top), Layer::Overlay(Screen::Bottom)];
 
 /// Runs the compositor in a desktop window, with the same colour pipeline as the device.
 #[allow(clippy::too_many_arguments)]
@@ -78,7 +75,7 @@ pub fn run(
         cursor_due: None,
         on_capture: Box::new(on_capture),
         timing: Default::default(),
-        handle: base.event_loop.handle(),
+        handle: crate::frame_timing::LoopAccess::new(base.event_loop.handle()),
         backend,
     }));
     let events_drawing = drawing.clone();
@@ -103,7 +100,7 @@ pub fn run(
 
 struct Drawing {
     timing: crate::frame_timing::Monitor,
-    handle: smithay::reexports::calloop::LoopHandle<'static, Server>,
+    handle: crate::frame_timing::LoopAccess,
     pipeline: crate::colour::render::Pipeline,
     host_colour: Option<crate::colour::host::Host>,
     cursor: crate::cursor::Cursor,
@@ -193,6 +190,7 @@ impl Drawing {
         server.frame();
         server.import_dmabufs(self.backend.renderer());
         self.colour(server)?;
+        let ready = self.host_colour.as_ref().is_none_or(|host| host.ready());
         sync_capture(server, self.backend.window());
         if let Some(histogram) = self.pipeline.take_histogram(self.backend.renderer(), server) {
             server.report_histogram(histogram);
@@ -201,7 +199,7 @@ impl Drawing {
             self.redraw.changed();
         }
         self.cursor_due = self.cursor.deadline(server, now);
-        if self.held.is_some_and(|due| now >= due) {
+        if ready && self.held.is_some_and(|due| now >= due) {
             self.held = server.frame_callbacks(None, interval, now);
         }
         let before = server.core.state_revision();
@@ -212,7 +210,6 @@ impl Drawing {
         if self.visuals.observe(server) || server.screenshot_requested {
             self.redraw.changed();
         }
-        let ready = self.host_colour.as_ref().is_none_or(|host| host.ready());
         if ready && now >= self.next_frame && self.redraw.pending() {
             self.draw(server)?;
         }
@@ -232,7 +229,7 @@ impl Drawing {
             .chain(trims.finish())
             .chain(self.cursor_due.filter(|_| ready))
             .chain(self.pipeline.histogram_due(server, now))
-            .chain(self.held)
+            .chain(self.held.filter(|_| ready))
             .chain(reported.then_some(now))
             .chain((ready && self.redraw.pending()).then_some(self.next_frame))
             .min())
@@ -295,23 +292,6 @@ impl Drawing {
         log::debug!("nested frame submitted");
         Ok(())
     }
-}
-
-/// Record stale visible layers to discover real UI damage without a GPU draw.
-fn record_ui(server: &mut Server) -> bool {
-    server.place();
-    let mut changed = false;
-    for layer in LAYERS {
-        if layer == Layer::Screen(Screen::Top) && server.scene.covers_top() {
-            continue;
-        }
-        if server.core.stale(layer) {
-            changed |= server.core.record(layer, false).is_some();
-        }
-    }
-    server.core.frames_done();
-    server.place();
-    changed
 }
 
 /// The refresh of the monitor showing the window, in mHz, once the host says.

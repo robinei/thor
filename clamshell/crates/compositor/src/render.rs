@@ -210,3 +210,22 @@ pub(crate) fn elements(
     }
     Ok(())
 }
+
+pub(crate) const LAYERS: [Layer; 4] = [Layer::Screen(Screen::Top), Layer::Screen(Screen::Bottom), Layer::Overlay(Screen::Top), Layer::Overlay(Screen::Bottom)];
+
+/// Record stale visible layers to discover real UI damage without a GPU draw.
+pub(crate) fn record_ui(server: &mut Server) -> bool {
+    server.place();
+    let mut changed = false;
+    for layer in LAYERS {
+        if layer == Layer::Screen(Screen::Top) && server.scene.covers_top() {
+            continue;
+        }
+        if server.core.stale(layer) {
+            changed |= server.core.record(layer, false).is_some();
+        }
+    }
+    server.core.frames_done();
+    server.place();
+    changed
+}

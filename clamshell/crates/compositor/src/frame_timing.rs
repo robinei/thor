@@ -11,6 +11,19 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Calloop's weak handle is not nameable outside its crate; retain it in a constructor-only closure.
+#[derive(Clone)]
+pub(crate) struct LoopAccess(Rc<dyn Fn() -> Option<LoopHandle<'static, Server>>>);
+impl LoopAccess {
+    pub fn new(handle: LoopHandle<'static, Server>) -> Self {
+        let weak = handle.downgrade();
+        Self(Rc::new(move || weak.upgrade()))
+    }
+    fn upgrade(&self) -> Option<LoopHandle<'static, Server>> {
+        (self.0)()
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Sample {
     pub cpu: Duration,
@@ -35,11 +48,13 @@ type Source = TransientSource<Generic<OwnedFd>>;
 struct Watch {
     source: Dispatcher<'static, Source, Server>,
     token: RegistrationToken,
-    handle: LoopHandle<'static, Server>,
+    handle: LoopAccess,
 }
 impl Drop for Watch {
     fn drop(&mut self) {
-        self.handle.remove(self.token);
+        if let Some(handle) = self.handle.upgrade() {
+            handle.remove(self.token);
+        }
     }
 }
 
@@ -60,16 +75,22 @@ impl Monitor {
         self.observations.borrow_mut().sample = None;
         if let Some(watch) = &mut self.watch {
             watch.source.as_source_mut().remove();
-            if let Err(error) = watch.handle.update(&watch.token) {
+            if let Some(handle) = watch.handle.upgrade()
+                && let Err(error) = handle.update(&watch.token)
+            {
                 log::warn!("frame timing: cancelling fence: {error}");
             }
         }
     }
+    pub fn available(&self) -> bool {
+        !self.failed
+    }
+
     pub fn sample(&mut self) -> Option<Sample> {
         self.observations.borrow_mut().sample.take()
     }
 
-    pub fn submitted(&mut self, sync: &SyncPoint, handle: &LoopHandle<'static, Server>) {
+    pub fn submitted(&mut self, sync: &SyncPoint, handle: &LoopAccess) {
         let now = Instant::now();
         {
             let mut observations = self.observations.borrow_mut();
@@ -88,6 +109,7 @@ impl Monitor {
             log::warn!("frame timing: GPU fence cannot be exported; adaptive scheduling will use a full refresh budget");
             return;
         };
+        let Some(active) = handle.upgrade() else { return };
         let generic = Generic::new(fd, Interest::READ, Mode::Level);
         if self.watch.is_none() {
             let observations = self.observations.clone();
@@ -95,7 +117,7 @@ impl Monitor {
                 observations.borrow_mut().complete(Instant::now());
                 Ok(PostAction::Remove)
             });
-            match handle.register_dispatcher(source.clone()) {
+            match active.register_dispatcher(source.clone()) {
                 Ok(token) => self.watch = Some(Watch { source, token, handle: handle.clone() }),
                 Err(error) => {
                     self.failed = true;
@@ -114,7 +136,7 @@ impl Monitor {
                     source.replace(generic);
                 }
             }
-            if let Err(error) = watch.handle.update(&watch.token) {
+            if let Err(error) = active.update(&watch.token) {
                 self.failed = true;
                 log::warn!("frame timing: registering GPU fence: {error}");
                 self.cancel();
@@ -178,7 +200,7 @@ mod tests {
             let (read, mut write) = std::os::unix::net::UnixStream::pair().unwrap();
             let sync: SyncPoint = FakeFence(read.into(), waits.clone()).into();
             monitor.begin(Instant::now());
-            monitor.submitted(&sync, &event_loop.handle());
+            monitor.submitted(&sync, &LoopAccess::new(event_loop.handle()));
             assert!(monitor.sample().is_none());
             write.write_all(b"x").unwrap();
             event_loop.dispatch(Some(Duration::from_secs(1)), &mut server).unwrap();
@@ -189,5 +211,9 @@ mod tests {
             assert!(monitor.sample().is_none(), "a readable old fence must be unregistered");
         }
         assert_eq!(waits.load(Ordering::Relaxed), 0);
+        let weak = event_loop.handle().downgrade();
+        drop(event_loop);
+        assert!(weak.upgrade().is_none(), "a monitor must not keep the event loop alive");
+        monitor.cancel();
     }
 }
