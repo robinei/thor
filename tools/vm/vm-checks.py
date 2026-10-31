@@ -16,6 +16,7 @@ number of failed checks. Standard library only.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -215,6 +216,16 @@ def windows():
         except (ValueError, KeyError):
             time.sleep(0.1)
     return []
+
+
+def key_of(entry_id):
+    """An entry's key, as the library makes it (crates/library/src/entry.rs): 128 bits of SHA-256 of its
+    id, in hex. Its group in front and its launches' units are named by it."""
+    return hashlib.sha256(entry_id.encode()).hexdigest()[:32]
+
+
+# The checks' terminal: foot's desktop file, the Terminal entry.
+FOOT_KEY = key_of("desktop:foot")
 
 
 def front():
@@ -1146,7 +1157,7 @@ class Checks:
         sh("pkill -x foot || true")
         until(lambda: not sh("pgrep -x foot || true").strip(), 5)
         sh(f"rm -f {TYPED}; setsid -f foot sh -c 'stty -icanon -echo; exec cat > {TYPED}' >/dev/null 2>&1")
-        if not until(lambda: front().startswith("foot_"), 8):
+        if not until(lambda: front() == FOOT_KEY, 8):
             return self.check("an app in front (Terminal)", False, f"front {front()!r}")
         self.icon("keyboard")
         return self.check("pad with an app in front and the keyboard tab: typing",
@@ -1526,10 +1537,10 @@ class Checks:
         entry's group, and a reader of its process's cgroup."""
         sh("pkill -x foot || true")
         # (Gone, its entry ended, the Library in front: a window opening in an entry's group is that entry's.)
-        until(lambda: not sh("pgrep -x foot || true").strip() and not [u for u in units("run-foot") if u.endswith((".service", ".scope"))]
+        until(lambda: not sh("pgrep -x foot || true").strip() and not [u for u in units(f"run-{FOOT_KEY}") if u.endswith((".service", ".scope"))]
               and front() == "the Library", 10)
         sh(how)
-        on = until(lambda: front().startswith("foot_"), 10)
+        on = until(lambda: front() == FOOT_KEY, 10)
         pid = sh("pgrep -n -x foot || true").strip()
         return on, lambda: sh(f"cat /proc/{pid}/cgroup 2>/dev/null").strip() if pid else ""
 
@@ -1541,11 +1552,11 @@ class Checks:
         since = now()
         on, cgroup = self._foot_outside("setsid -f systemd-run --user --scope --quiet --collect --unit=app-thor-checks-foot.scope foot >/dev/null 2>&1")
         self.check("found: a window started outside ClamShell (an app scope) is its entry's, in its group, in front", on, f"front {front()!r}")
-        self.check("  its process moved into a scope of ours", until(lambda: "clamshell-run-foot_" in cgroup(), 5), f"{cgroup()!r}; {adopt(since)}")
+        self.check("  its process moved into a scope of ours", until(lambda: f"clamshell-run-{FOOT_KEY}-" in cgroup(), 5), f"{cgroup()!r}; {adopt(since)}")
         since = now()
         on, cgroup = self._foot_outside("setsid -f foot >/dev/null 2>&1")
         self.check("  one started in a login session too, in its group, in front", on, f"front {front()!r}")
-        self.check("  its process moved into a scope of ours", until(lambda: "clamshell-run-foot_" in cgroup(), 5), f"{cgroup()!r}; {adopt(since)}")
+        self.check("  its process moved into a scope of ours", until(lambda: f"clamshell-run-{FOOT_KEY}-" in cgroup(), 5), f"{cgroup()!r}; {adopt(since)}")
         sh("pkill -x foot || true")
 
     def session_units(self):
