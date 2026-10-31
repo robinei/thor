@@ -101,7 +101,7 @@ pub(crate) fn print_launch_env(paths: &Paths, sources: &Sources, entry: &str) ->
         .and_then(|id| id.parse().ok())
         .ok_or_else(|| format!("launch-env: {entry}: not a Steam game's id (steam:<app id>)"))?;
     let dir = paths.state_dir.as_deref().ok_or("launch-env: no HOME: no settings")?;
-    let settings = Store::open(dir).settings();
+    let settings = Store::open(dir).try_settings().map_err(|e| format!("launch-env: {e}"))?;
     let runner = library::steam_runner(sources, appid).map_err(|e| format!("launch-env: {e}"))?;
     let levels: Vec<&str> = runner.as_deref().into_iter().collect();
     let values = settings.of_in(entry, &levels);

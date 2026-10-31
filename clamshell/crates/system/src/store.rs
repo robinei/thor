@@ -209,6 +209,36 @@ impl Store {
         s
     }
 
+    /// Reads all settings afresh, failing if an existing folder or JSON file cannot be read.
+    /// Missing settings are normal on a first launch. Used by the one-shot Steam launch hook, which
+    /// must report failure rather than silently starting a game with defaults.
+    pub fn try_settings(&mut self) -> io::Result<Settings> {
+        let dir = self.file("settings");
+        let entries = match fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                self.screens = Some(HashMap::new());
+                return Ok(self.settings());
+            }
+            Err(e) => return Err(io::Error::new(e.kind(), format!("{}: {e}", dir.display()))),
+        };
+        let mut screens = HashMap::new();
+        for entry in entries {
+            let entry = entry.map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", dir.display())))?;
+            let path = entry.path();
+            if path.extension().is_none_or(|extension| extension != "json") {
+                continue;
+            }
+            let name =
+                entry.file_name().into_string().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, format!("{}: invalid filename", dir.display())))?;
+            let text = fs::read_to_string(&path).map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", path.display())))?;
+            let screen: Screen = serde_json::from_str(&text).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("{}: {e}", path.display())))?;
+            screens.insert(name, screen);
+        }
+        self.screens = Some(screens);
+        Ok(self.settings())
+    }
+
     /// The settings screens' files on disk, by name.
     fn screens_on_disk(&mut self) -> &HashMap<String, Screen> {
         let dir = self.file("settings");

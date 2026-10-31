@@ -125,3 +125,29 @@ fn a_failure_starts_the_game_as_it_is_and_says_so() {
     assert_eq!(f.read("ran"), "AppId=620 1\n");
     assert!(f.logged("is missing").contains("is missing"));
 }
+
+#[test]
+fn broken_settings_in_the_real_command_reach_the_hooks_notice_branch() {
+    let f = Fakes::new("", false);
+    let d = f.dir.path();
+    let settings = d.join(".local/share/clamshell/settings");
+    fs::create_dir_all(&settings).unwrap();
+    fs::write(settings.join("all.json"), "{broken").unwrap();
+    let config = d.join(".config/clamshell");
+    fs::create_dir_all(&config).unwrap();
+    fs::write(config.join("library.json"), "{\"places\":[]}").unwrap();
+    script(
+        &d.join("bin/clamshell"),
+        &format!(
+            "#!/bin/sh\nif [ \"$1\" = ctl ]; then shift; echo \"$*\" >> '{}/ctl'; exit 0; fi\nexec '{}' \"$@\"\n",
+            d.display(),
+            env!("CARGO_BIN_EXE_clamshell")
+        ),
+    );
+    f.run(&GAME, &[("A", "launch options"), ("CLAMSHELL_DEVICE", "generic"), ("CLAMSHELL_STEAM", "off")], "valve");
+    assert_eq!(f.read("ran"), "-- reaper SteamLaunch AppId=620 -- game\nlaunch options\n-\n-\n");
+    assert_eq!(f.read("ctl"), "launch-env failed steam:620\n");
+    let log = f.logged("settings/all.json");
+    assert!(log.contains("settings/all.json"), "{log}");
+    assert!(log.contains("steam:620: started without ClamShell's settings"), "{log}");
+}

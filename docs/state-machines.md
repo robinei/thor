@@ -2035,3 +2035,10 @@ manual move remembers the current facts again. WindowUp removes its recorded rul
 rules intact; a repeated return does nothing. Closing a window drops its history. Manual/automatic
 return tests in bottom/screen cover identity changes and saved rule lists. Random event sequences
 include title and identity changes and require distinct live window IDs throughout placement history.
+
+The one-shot Steam environment read accepts a missing settings folder as defaults. Any failure to
+list an existing folder, read an existing JSON file or parse it ends the command with an error and no
+environment output. Steam's hook then reports LaunchEnvFailed and logs the failure while starting the
+game with its original environment. Session startup still logs and skips individual unreadable files.
+`launch_env_reports_broken_existing_settings_but_accepts_missing_settings` runs the actual command;
+`broken_settings_in_the_real_command_reach_the_hooks_notice_branch` checks the full hook failure path.

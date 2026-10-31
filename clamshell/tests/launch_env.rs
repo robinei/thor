@@ -37,3 +37,40 @@ fn launch_env_resolves_the_driver_and_preserves_the_env_override_under_a_session
     let text = String::from_utf8(output.stdout).unwrap();
     assert_eq!(text.lines().filter_map(|line| line.strip_prefix("VK_DRIVER_FILES=")).next_back(), Some("/chosen/with spaces.json"));
 }
+
+#[test]
+fn launch_env_reports_broken_existing_settings_but_accepts_missing_settings() {
+    for broken in [None, Some(false), Some(true)] {
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("config/clamshell");
+        std::fs::create_dir_all(&config).unwrap();
+        std::fs::write(config.join("library.json"), "{\"places\":[]}").unwrap();
+        let file = root.path().join("data/clamshell/settings/all.json");
+        if let Some(directory) = broken {
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            if directory {
+                std::fs::create_dir(&file).unwrap();
+            } else {
+                std::fs::write(&file, "{broken").unwrap();
+            }
+        }
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_clamshell"))
+            .args(["--launch-env", "steam:42"])
+            .env_clear()
+            .env("PATH", std::env::var_os("PATH").unwrap())
+            .env("HOME", root.path())
+            .env("XDG_CONFIG_HOME", root.path().join("config"))
+            .env("XDG_DATA_HOME", root.path().join("data"))
+            .env("XDG_RUNTIME_DIR", root.path())
+            .env("CLAMSHELL_DEVICE", "generic")
+            .env("CLAMSHELL_STEAM", "off")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.success(), broken.is_none(), "{}", String::from_utf8_lossy(&output.stderr));
+        if broken.is_some() {
+            assert!(output.stdout.is_empty(), "no partial environment on failure");
+            let error = String::from_utf8_lossy(&output.stderr);
+            assert!(error.contains("launch-env:") && error.contains("settings/all.json"), "{error}");
+        }
+    }
+}
