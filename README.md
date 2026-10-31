@@ -83,18 +83,23 @@ and the rules the code follows are in `docs/architecture.md`. What it has:
 - Bluetooth pairing shows the code a keyboard asks to have typed.
 - A monitor on USB-C mirrors the top screen; while one is connected, its refreshes pace the games.
 
-It is made to be dependable, light and quick, to start and while it runs. The numbers below were
-measured on a desktop PC on 2026-10-23, while ClamShell was still a client of another compositor, and
-haven't been measured again since it became the compositor (the Thor's numbers will come with the
-device):
+It is made to be dependable, light and quick. Measured on 2026-10-31 on a Ryzen 9 5900X and
+Radeon RX 9070 XT, nested in GPU-backed headless sway at 60 Hz, with both screens at their native
+sizes and 1,000 local Library entries ([method and results](docs/measurements/2026-10-31-session.md)):
 
-- **Starting:** both screens are drawn about 80 ms after it starts. It tells systemd it is ready once its
-  loop has turned and its setup is done, and a watchdog restarts it if its main loop ever stops. As it is
-  the compositor, a restart of it ends the programs with windows; what runs without one is found
-  again.
-- **Running:** about 40 MB resident, most of it the two screens' buffers, and about 0.2 % of a CPU over
-  hours of use. A frame takes 0.1-0.6 ms to draw; when an event changes nothing visible, checking costs
-  about 0.02 ms and nothing is drawn. Handling an event or drawing a frame allocates no memory.
+- **Starting:** a warm launch reaches systemd readiness in a median 87 ms; both screens are composed
+  in about 84 ms. The loop's watchdog lets systemd restart a stalled session. A compositor restart ends
+  programs with windows; programs still running without one are found again.
+- **Memory:** about 132 MiB RSS (83 MiB PSS), with GPU allocations accounted separately: about 126 MiB
+  resident VRAM and 10–22 MiB GTT on this desktop driver. Shared mappings can overlap these accounts.
+- **Idle:** about 1.6% of one CPU core with Dock below the Library, or 2.7% with the live System page.
+  About 600 voluntary context switches per second are a wakeup proxy; exact wakeup counters were
+  unavailable. The nested backend continues presenting at the host's refresh rate.
+- **Drawing:** a whole screen costs 0.12–0.43 ms of CPU time; recording and finding it unchanged costs
+  0.004–0.028 ms. Warmed steady-state events and frame drawing allocate no memory.
+
+These process measurements exclude the host compositor and apps. The Thor's DRM and power figures
+will come from the device.
 
 In `clamshell/`, beside the crates, are `android/` (the Waydroid session's script and its clipboard bridge,
 which the package installs) and `tests/` (the nested compositor, real apps and picture tests with their

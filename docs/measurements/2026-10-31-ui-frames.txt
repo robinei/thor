@@ -1,0 +1,12 @@
+    Finished `fast` profile [optimized] target(s) in 0.06s
+     Running unittests src/lib.rs (clamshell/target/fast/deps/clamshell_views-b412cf6ed8e4c364)
+
+running 1 test
+top: the Library   whole frame   0.431 ms   played   0.406 ms   recorded and compared   0.026 ms
+bottom: dock       whole frame   0.120 ms   played   0.116 ms   recorded and compared   0.004 ms
+bottom: settings   whole frame   0.366 ms   played   0.339 ms   recorded and compared   0.027 ms
+bottom: keyboard   whole frame   0.252 ms   played   0.226 ms   recorded and compared   0.028 ms
+test frame_times::frame_times ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 33 filtered out; finished in 0.54s
+
