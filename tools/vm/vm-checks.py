@@ -913,6 +913,53 @@ class Checks:
         self.check("  the overview closed: straight again", until(straight, 8), screen_shows("Top"))
         gone()
 
+    def frame_schedule(self):
+        """Real DRM flips and a changing client, with debug timing enabled only for this check."""
+        drop_in = "$XDG_RUNTIME_DIR/systemd/user/clamshell.service.d/timing-check.conf"
+        config = "[Service]\nEnvironment=RUST_LOG=info,clamshell_compositor::drm=debug\n"
+        sh("printf %s " + shlex.quote(config) + " > " + drop_in + "; systemctl --user daemon-reload; systemctl --user restart clamshell", check=True)
+        try:
+            since = now()
+            program = 'i=0; while :; do printf "\\033[H\\033[2J%06d\\n" "$i"; i=$((i+1)); sleep 0.02; done'
+            sh("setsid -f foot -a thor-scheduling -T thor-scheduling sh -c " + shlex.quote(program) + " >/dev/null 2>&1")
+            if not self.check("a changing client opens", until(lambda: any(w["app_id"] == "thor-scheduling" for w in windows()), 8)):
+                return
+            self.check("DRM supplies the hardware presentation clock", logged(since, "composed=true hardware=true", 8))
+            time.sleep(4)
+            records = journal(since)
+            evidence = Path(tempfile.mkdtemp(prefix="thor-frame-timing-")) / "drm.log"
+            evidence.write_text(records)
+            print(f"        timing evidence: {evidence}")
+            samples = [(int(cpu), int(ready)) for cpu, ready in re.findall(r"drm frame timing: screen=Top cpu_us=(\d+) ready_us=(\d+)", records)]
+            plans = [(int(interval), int(budget), int(lead)) for interval, budget, lead in re.findall(r"drm schedule: screen=Top interval_us=(\d+) budget_us=(\d+) lead_us=(\d+)", records)]
+            self.check("GPU completion samples include CPU submission", len(samples) >= 20 and all(ready >= cpu for cpu, ready in samples), str(samples[:5]))
+            self.check("scheduled budgets stay within the output's refresh", bool(plans) and all(budget <= interval for interval, budget, _ in plans), str(plans[:5]))
+            if samples and plans:
+                recent = []
+                covered = True
+                for line in records.splitlines():
+                    cost = re.search(r"drm frame timing: screen=Top cpu_us=\d+ ready_us=(\d+)", line)
+                    plan = re.search(r"drm schedule: screen=Top interval_us=(\d+) budget_us=(\d+)", line)
+                    if cost:
+                        recent = (recent + [int(cost[1])])[-32:]
+                    if plan and recent:
+                        period, budget = int(plan[1]), int(plan[2])
+                        covered &= budget + 2 >= min(period, max(recent) * 5 // 4)
+                self.check("the learned budget covers recent GPU completion observations", covered)
+            if samples and plans:
+                cpus, ready = sorted(x[0] for x in samples), sorted(x[1] for x in samples)
+                print(f"        timings: {len(samples)} drawings; CPU median {cpus[len(cpus)//2]} us, GPU-ready median {ready[len(ready)//2]} us; budget {min(x[1] for x in plans)}..{max(x[1] for x in plans)} us; worst GPU-ready {max(ready)} us")
+            sh("pkill -f '^foot -a thor-scheduling' || true")
+            until(lambda: not any(w["app_id"] == "thor-scheduling" for w in windows()), 5)
+            control("tab dock")
+            time.sleep(1)
+            idle = now()
+            time.sleep(1.2)
+            records = journal(idle)
+            self.check("scanout while idle has no composition schedule", "drm schedule:" not in records)
+        finally:
+            sh("pkill -f '^foot -a thor-scheduling' || true; rm -f " + drop_in + "; systemctl --user daemon-reload; systemctl --user restart clamshell")
+
     def external_display(self):
         """An external display plugged in and out: the third virtio-gpu output (Virtual-3) forced connected
         and disconnected through its connector's status in sysfs, each followed by the GPU's change event
@@ -1759,7 +1806,7 @@ GLib.MainLoop().run()
 
 
 
-CHECKS = ["session_units", "library_view_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules", "ui_scanout", "screen_changes", "external_display", "pad_windows",
+CHECKS = ["session_units", "library_view_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules", "ui_scanout", "screen_changes", "frame_schedule", "external_display", "pad_windows",
           "pad_library_view", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers",
           "keymap_actuations", "rumble", "launch_and_quit", "pause_hidden", "found_window", "tray_program", "clipboard", "portal",
           "bluetooth", "gyro_sleep"]
