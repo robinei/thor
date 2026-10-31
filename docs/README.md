@@ -26,6 +26,8 @@ Read `architecture.md` first, then `../AGENTS.md` for how work is done here.
 
 ## Plans under way
 
+- `review-2026-10-31.md`: the whole-repository correctness, architecture, maintainability and quality
+  review after the Vulkan-driver setting, with verified findings and a suggested fix order.
 - `refactors-plan.md`: the architecture refactors left from the review of 2026-10-28, with the choices
   to make.
 - `review-2026-10-26b.md`: the second review after the compositor became the only session, and its
@@ -36,7 +38,8 @@ Read `architecture.md` first, then `../AGENTS.md` for how work is done here.
   editors, the file picker and what the image ships. Built, but for packaging the emulators the repos
   lack.
 - `steam-android-plan.md`: Steam, per-game PC-gaming settings (FEX, Turnip, frame generation) and
-  Android, after the 2026-10-30 survey of the other Thor systems. Not started.
+  Android, after the 2026-10-30 survey of the other Thor systems. S2, P1 and P2 implemented; device
+  checks and later phases remain.
 
 ## History
 
