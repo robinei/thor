@@ -2049,3 +2049,10 @@ and releases received file descriptors; the reverse relay ends with the closed s
 is bounded to one maximum legal message (65,532 bytes). Wire parser tests cover fragmented headers and
 bodies and malformed sizes after a valid prefix. Socket-pair tests check closure and descriptor cleanup
 and pass a maximum-sized valid message through the bounded buffer.
+
+Nested test waits give each screenshot/control subprocess their remaining deadline. A timeout kills
+and reaps that subprocess and raises an error naming the active wait, allowing the enclosing session
+to tear down. Nested waits cannot extend their parent's deadline; a predicate returning success after
+the deadline is rejected. Outside waits, probes have a ten-second limit. `nested_env_test.py` stalls
+the image, screenshot and control probes, checks subprocess cleanup and late success, and runs in the
+normal check script. CI's 15-minute job timeout is a final backstop.

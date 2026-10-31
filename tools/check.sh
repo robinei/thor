@@ -7,6 +7,7 @@
 set -eu
 cd "$(dirname "$0")/../clamshell"
 python3 ../tools/tests/package-recovery.py
+python3 tests/nested_env_test.py
 cargo fmt --check
 cargo clippy --workspace --all-targets --quiet -- -D warnings
 # (The development build too: --snapshot and the demo library.)

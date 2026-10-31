@@ -111,16 +111,39 @@ class Nested:
         return process
 
     def wait(self, predicate, description, seconds=10):
+        previous = getattr(self, "_waiting", None)
         until = time.monotonic() + seconds
-        while time.monotonic() < until:
-            failed = [process.returncode for process in self.processes if process.poll() is not None and process not in self.expected_exits]
-            if failed:
-                raise RuntimeError(f"{description}: a process exited: {failed}; logs in {self.directory}")
-            value = predicate()
-            if value:
-                return value
-            time.sleep(0.1)
-        raise RuntimeError(f"timed out: {description}; logs in {self.directory}")
+        if previous is not None:
+            until = min(until, previous[0])
+        self._waiting = (until, description)
+        try:
+            while time.monotonic() < until:
+                failed = [process.returncode for process in self.processes if process.poll() is not None and process not in self.expected_exits]
+                if failed:
+                    raise RuntimeError(f"{description}: a process exited: {failed}; logs in {self.directory}")
+                value = predicate()
+                # A late successful probe is still a timeout, including one that runs no command.
+                remaining = until - time.monotonic()
+                if remaining <= 0:
+                    break
+                if value:
+                    return value
+                time.sleep(min(0.1, remaining))
+            raise RuntimeError(f"timed out: {description}; logs in {self.directory}")
+        finally:
+            self._waiting = previous
+
+    def command(self, args, **kwargs):
+        """Run a probe within the active wait's remaining time, or ten seconds outside a wait."""
+        waiting = getattr(self, "_waiting", None)
+        seconds = waiting[0] - time.monotonic() if waiting else 10
+        description = waiting[1] if waiting else str(args[0])
+        if seconds <= 0:
+            raise RuntimeError(f"timed out: {description}; logs in {self.directory}")
+        try:
+            return subprocess.run(args, timeout=seconds, **kwargs)
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError(f"timed out: {description}; command {args}; logs in {self.directory}") from error
 
     def log(self):
         return (self.directory / "compositor.log").read_text()
@@ -132,7 +155,7 @@ class Nested:
 
     def image(self):
         """The headless output (both screens side by side): width, height, RGB bytes."""
-        result = subprocess.run(["grim", "-o", "HEADLESS-1", "-t", "ppm", "-"], env=self.host, capture_output=True, check=True)
+        result = self.command(["grim", "-o", "HEADLESS-1", "-t", "ppm", "-"], env=self.host, capture_output=True, check=True)
         magic, dimensions, maximum, image = result.stdout.split(b"\n", 3)
         assert magic == b"P6" and maximum == b"255"
         width, height = map(int, dimensions.split())
@@ -140,10 +163,10 @@ class Nested:
         return width, height, image
 
     def shot(self, name):
-        subprocess.run(["grim", "-o", "HEADLESS-1", str(self.directory / f"{name}.png")], env=self.host, check=True)
+        self.command(["grim", "-o", "HEADLESS-1", str(self.directory / f"{name}.png")], env=self.host, check=True)
 
     def control(self, *words):
-        subprocess.run([str(BIN), "ctl", *words], env=self.host, check=True)
+        self.command([str(BIN), "ctl", *words], env=self.host, check=True)
 
     def windows(self):
         """ClamShell's windows (`window events`), as its state has them."""
