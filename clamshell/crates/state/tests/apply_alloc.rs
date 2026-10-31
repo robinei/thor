@@ -264,3 +264,21 @@ fn allocations_per_event() {
     let allocating: Vec<_> = rows.iter().filter(|(_, n)| *n > 0).collect();
     assert!(allocating.is_empty(), "allocations per event: {allocating:?}");
 }
+
+#[test]
+fn an_unidentified_scope_is_checked_without_allocating_on_later_events() {
+    let mut s = State::new(Init { account: clamshell_state::setup::account::Account::NoHelper, ..Init::default() });
+    let mut effects = Vec::with_capacity(64);
+    s.apply(Event::Start, &mut effects);
+    let unit = LaunchUnit { key: clamshell_library::key_of("window:original"), secs: 1, n: 0 };
+    s.apply(Event::Units(vec![unit.clone()]), &mut effects);
+    s.apply(
+        WindowEvent::Opened(WindowFacts { id: 1, app_id: "renamed".into(), pids: vec![500], unit: Some(unit.service()), ..WindowFacts::default() }).into(),
+        &mut effects,
+    );
+    s.apply(Event::tick(100), &mut effects);
+    for tick in 101..110 {
+        assert_eq!(count(&mut s, Event::tick(tick), &mut effects), 0);
+    }
+    assert!(s.session().running_entries().is_empty());
+}

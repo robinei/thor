@@ -2062,3 +2062,11 @@ size refreshes its recency without allocating; adding a 65th size drops all rast
 Eviction changes no metrics, recordings or pixels: a later request rasterises the same font or icon
 again. Resize-workload tests bound retained entries, preserve a frequently used glyph size and compare
 recreated rasters byte for byte. Existing snapshots and warm-allocation tests check the actual views.
+
+An inherited scope is recovered as an entry only when a window or tray identity's canonical key matches
+the scope key. Changed app IDs alone never assign that control slice to another entry. Until identified,
+its windows retain their unit group and remain usable; selecting an inherited frozen window thaws its
+scope even without an entry, and a freezer worker restart replays that scope's current state once.
+A later matching identity can recover the scope normally. Scope recovery
+checks all candidate windows/icons and computes candidate keys without allocating on ordinary events.
+The identity/recovery regression, the unresolved-scope allocation test and random seed 39 cover this.

@@ -38,7 +38,7 @@ use crate::{BuiltinApp, Top};
 
 /// The seeds that run with the other tests, and the events in each.
 /// (828: a Steam game's window freed by a found program ending, checked after every event.)
-const SEEDS: [u64; 9] = [1, 2, 3, 4, 5, 828, 0x5eed, 0xc1a5, 0xdead_beef];
+const SEEDS: [u64; 10] = [1, 2, 3, 4, 5, 39, 828, 0x5eed, 0xc1a5, 0xdead_beef];
 const EVENTS: usize = 4000;
 
 /// SplitMix64: small, seeded, good enough to draw events.

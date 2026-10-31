@@ -339,6 +339,29 @@ pub fn key_of(id: &str) -> String {
     key
 }
 
+/// Whether a formatted full entry id has `key`, without allocating the id or its hexadecimal key.
+/// This lets scope recovery verify a window or tray identity before constructing an entry.
+pub fn key_matches(id: std::fmt::Arguments<'_>, key: &str) -> bool {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write;
+    if key.len() != 32 {
+        return false;
+    }
+    struct Hash(Sha256);
+    impl std::fmt::Write for Hash {
+        fn write_str(&mut self, text: &str) -> std::fmt::Result {
+            self.0.update(text.as_bytes());
+            Ok(())
+        }
+    }
+    let mut hash = Hash(Sha256::new());
+    if hash.write_fmt(id).is_err() {
+        return false;
+    }
+    let hex = |n: u8| if n < 10 { b'0' + n } else { b'a' + n - 10 };
+    hash.0.finalize().iter().take(16).zip(key.as_bytes().chunks_exact(2)).all(|(byte, digits)| digits.iter().copied().eq([hex(byte >> 4), hex(byte & 15)]))
+}
+
 /// A muted colour from a hash of `id`, stable across runs.
 pub(crate) fn color_of(id: &str) -> u32 {
     let h = hash::fnv1a32(id.as_bytes());
@@ -372,5 +395,20 @@ mod identity_tests {
         assert_ne!(first, second, "these ids collided under the old 24-bit hash");
         assert_eq!(first.len(), 32);
         assert_eq!(key_of(&"x".repeat(4096)).len(), 32);
+    }
+}
+
+#[cfg(test)]
+mod key_match_tests {
+    use super::*;
+
+    #[test]
+    fn formatted_identity_matches_only_its_complete_key() {
+        for id in ["window:steam_app_620", "window:12345", "tray:thing", "window:あいう"] {
+            assert!(key_matches(format_args!("{id}"), &key_of(id)));
+            assert!(!key_matches(format_args!("{id}!"), &key_of(id)));
+            assert!(!key_matches(format_args!("{id}"), "short"));
+        }
+        assert!(key_matches(format_args!("{}{}", "window:", 12345), &key_of("window:12345")));
     }
 }

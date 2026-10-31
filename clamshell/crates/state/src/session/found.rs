@@ -349,6 +349,34 @@ mod tests {
     }
 
     #[test]
+    fn recovery_does_not_assign_a_scopes_control_key_to_a_changed_app_identity() {
+        let mut s = device();
+        let key = clamshell_library::key_of("window:original");
+        let unit = crate::LaunchUnit { key: key.clone(), secs: 1, n: 0 };
+        s.applied(Event::Units(vec![unit.clone()]));
+        s.applied(Event::Frozen(vec![key.as_str().into()]));
+        let renamed = WindowFacts { unit: Some(unit.service()), ..window(1, "renamed", 500, "") };
+        s.observed(vec![renamed.clone()]);
+        assert!(s.session().running_entries().is_empty(), "changed metadata cannot rename the control owner");
+        let fx = s.applied(crate::WindowEvent::Activate(1).into());
+        assert_eq!(
+            fx.first(),
+            Some(&Effect::Freeze { slice: LaunchUnit::slice_of(&key), frozen: false }),
+            "unknown frozen windows still thaw when shown: {fx:?}"
+        );
+        let replay = s.applied(Event::Restarted(crate::Thread::Freezer));
+        let freezes: Vec<_> = replay.into_iter().filter(|effect| matches!(effect, Effect::Freeze { .. })).collect();
+        assert_eq!(freezes, vec![Effect::Freeze { slice: LaunchUnit::slice_of(&key), frozen: false }], "a worker restart keeps the unidentified window usable");
+        let original = window(2, "original", 600, "app-original.scope");
+        let fx = s.observed(vec![renamed, original]);
+        assert!(fx.iter().any(|e| matches!(e, Effect::Adopt { unit, pid: 600 } if unit.key == key)));
+        assert_eq!(s.session().running_entries().len(), 1);
+        assert!(s.session().running("window:renamed").is_none());
+        assert_eq!(s.session().running("window:original").map(|r| r.key.as_str()), Some(key.as_str()));
+        assert!(s.session().window(1).is_some(), "the unidentified window remains available");
+    }
+
+    #[test]
     fn nested_in_a_desktop_a_window_found_is_adopted_too() {
         // As a guest in a desktop, a window in ClamShell's compositor belongs to that session, as on the
         // device.

@@ -239,7 +239,7 @@ impl Session {
             let Some(g) = found_in_scope(key, &self.windows, &self.tray, library).filter(|g| !self.running.iter().any(|r| r.id == g.id)) else {
                 continue;
             };
-            self.running.push(Running::of(&Entry { key: key.to_owned(), ..g }, Origin::Ours, start));
+            self.running.push(Running::of(&g, Origin::Ours, start));
         }
         self.follow_ours(clock.mono(), library, notice, plays, out);
         any_started
@@ -509,25 +509,30 @@ impl Session {
     }
 }
 
-/// The entry that the program in our scope of entry `key`, which the library doesn't have, runs as: named
-/// by a window or tray icon in that scope, as when it was found (see [`crate::session::found`]). Of the two
-/// names, the one whose key is the scope's is the one it was found by. Without a window or icon there is
-/// none.
+/// Recovers an old scope only from a window or tray identity whose canonical key matches it.
+/// Changed app ids are presentation facts, not evidence that another entry owns this control slice.
 fn found_in_scope(key: &str, windows: &[Window], tray: &[TrayItem], library: &Library) -> Option<Entry> {
     let in_scope = |unit: Option<&str>| unit.and_then(LaunchUnit::key_of) == Some(key);
-    let by_window = windows.iter().filter(|w| in_scope(w.unit.as_deref())).find_map(|w| {
-        let pid = w.pids.first().copied();
-        (!w.app_id.is_empty() || pid.is_some()).then(|| window_entry(library, w, pid.unwrap_or_default()))
-    });
-    let by_icon = tray.iter().find(|t| in_scope(t.unit.as_deref())).map(|t| tray_entry(library, t));
-    let named = |g: &Option<Entry>| g.as_ref().is_some_and(|g| g.key == key);
-    if named(&by_icon) {
-        by_icon
-    } else if named(&by_window) {
-        by_window
-    } else {
-        by_window.or(by_icon)
-    }
+    let window_matches = |w: &Window| {
+        if let Some(entry) = library.entry_by_desktop(&w.app_id) {
+            return entry.key == key;
+        }
+        if !w.app_id.is_empty() {
+            clamshell_library::key_matches(format_args!("{}{}", ids::WINDOW, w.app_id), key)
+        } else {
+            w.pids.first().is_some_and(|pid| clamshell_library::key_matches(format_args!("{}{pid}", ids::WINDOW), key))
+        }
+    };
+    let icon_matches = |t: &TrayItem| {
+        if let Some(entry) = library.entry_by_desktop(&t.id) {
+            return entry.key == key;
+        }
+        let name = if t.id.is_empty() { &*t.key } else { &t.id };
+        clamshell_library::key_matches(format_args!("{}{name}", ids::TRAY), key)
+    };
+    tray.iter().find(|t| in_scope(t.unit.as_deref()) && icon_matches(t)).map(|t| tray_entry(library, t)).or_else(|| {
+        windows.iter().find(|w| in_scope(w.unit.as_deref()) && window_matches(w)).map(|w| window_entry(library, w, w.pids.first().copied().unwrap_or_default()))
+    })
 }
 
 /// A launch asked for: the entry, the command to run instead of its own, if any, and how it starts.

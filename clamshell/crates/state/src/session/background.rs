@@ -182,6 +182,17 @@ impl Session {
         for id in end {
             self.quit(&id, now, library, out);
         }
+        // An old scope may have changed app ids and not identify an entry yet. Its visible windows
+        // must still be usable when the scope was inherited frozen; do not guess another app's owner.
+        for unit in &self.units {
+            if self.running.iter().any(|r| r.key == unit.key) {
+                continue;
+            }
+            let shown = self.windows.iter().any(|w| w.unit.as_deref().and_then(LaunchUnit::key_of) == Some(unit.key.as_str()) && self.shown(w.id));
+            if shown && self.background.entries.resume(&unit.key) {
+                out.effects.push(Effect::Freeze { slice: LaunchUnit::slice_of(&unit.key), frozen: false });
+            }
+        }
         self.follow_runner_pauses(now, library, settings, out);
     }
 
@@ -230,6 +241,13 @@ impl Session {
     pub(crate) fn freeze_again(&self, out: &mut Out) {
         for r in self.running.iter().filter(|r| r.origin == Origin::Ours) {
             out.effects.push(Effect::Freeze { slice: LaunchUnit::slice_of(&r.key), frozen: self.background.entries.is_paused(&r.key) });
+        }
+        // Unidentified scopes can also have been thawed after being inherited frozen.
+        for (i, unit) in self.units.iter().enumerate() {
+            if self.running.iter().any(|r| r.origin == Origin::Ours && r.key == unit.key) || self.units.iter().take(i).any(|other| other.key == unit.key) {
+                continue;
+            }
+            out.effects.push(Effect::Freeze { slice: LaunchUnit::slice_of(&unit.key), frozen: self.background.entries.is_paused(&unit.key) });
         }
     }
 
