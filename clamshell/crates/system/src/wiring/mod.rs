@@ -33,6 +33,9 @@ pub struct Config {
     pub profile: clamshell_device::DeviceProfile,
     /// The controller.
     pub gamepad: DeviceSpec,
+    /// Saved input configuration, read before entering the compositor.
+    pub sticks: clamshell_state::device_view::sticks::Calibrations,
+    pub players: clamshell_state::device_view::controllers::Players,
     /// Whether ClamShell is the device's own session, in which case it takes the hardware keys.
     pub device_session: bool,
     /// The compositor's socket, for the clipboard.
@@ -146,17 +149,10 @@ pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, gl
     );
     // The controller is grabbed for good, with a virtual Xbox pad for games.
     let pad_taken = pad::Taken::new(paths.grabbed.clone());
-    crate::launch::fex::write_presets(paths.fex.as_deref());
     let pad = started("pad", pad::spawn(env.gamepad.clone(), env.profile.controls, env.profile.sensor_hub, pad_taken.clone(), sink.clone()));
-    // Send the sticks' calibrations and the controllers' players as saved. The state has them too, from
-    // the same files.
-    if let Some(dir) = paths.state_dir.as_deref() {
-        let store = Store::open(dir);
-        pad.send(pad::Command::Sticks(store.sticks()));
-        let saved = store.controllers();
-        let of = saved.controllers.into_iter().map(|c| (c.key, c.player)).collect();
-        pad.send(pad::Command::Players(clamshell_state::device_view::controllers::Players { count: saved.players, of }));
-    }
+    // Use the same startup snapshot as the state, without reading storage on this thread.
+    pad.send(pad::Command::Sticks(env.sticks.clone()));
+    pad.send(pad::Command::Players(env.players.clone()));
     // Sleep waits for the pad to close the gyro's stream.
     log_failed_start("sleep", crate::power::sleep::spawn_hold(pad.clone()));
     let battery = started("battery", battery::spawn(sink.clone()));

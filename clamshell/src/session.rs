@@ -84,6 +84,13 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
     let quit = clamshell_compositor::quit_signals().map_err(|e| format!("quit signals: {e}"))?;
     raise_open_files();
     let device_session = host == Host::Drm;
+    let saved = saved(&paths);
+    let sticks = saved.sticks.clone();
+    let players = clamshell_state::device_view::controllers::Players {
+        count: saved.controllers.players,
+        of: saved.controllers.controllers.iter().map(|c| (c.key.clone(), c.player)).collect(),
+    };
+    clamshell_system::launch::fex::write_presets(paths.fex.as_deref());
     // The library is read on a thread as the system threads start, and comes as `Event::Library`.
     let state = State::new(Init {
         profile: env.profile,
@@ -92,7 +99,7 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
         pad_mouse: env.pad_mouse,
         device_session,
         // Settings, keymaps, curves, window rules, brightness, the dock, where the Library was.
-        ..saved(&paths)
+        ..saved
     });
     // Nested, the screens are the device's own sizes, as pixels of the host's window; on the screens,
     // they are taken from the outputs.
@@ -129,6 +136,8 @@ pub(crate) fn run(env: &Env, paths: Paths, sources: &Sources, host: Host) -> Res
         let system_config = wiring::Config {
             profile: env.profile,
             gamepad: env.gamepad.clone(),
+            sticks,
+            players,
             device_session,
             clipboard_display: displays.socket,
             displays: vec![("WAYLAND_DISPLAY".into(), displays.wayland.clone()), ("DISPLAY".into(), displays.x11.clone())],

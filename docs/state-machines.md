@@ -1989,3 +1989,9 @@ requested size; missing images become the built-in fallback. Drawing consumes pr
 reuses uploaded textures; it never performs theme lookup. Even an unexpected missing prepared shape
 uses a logged in-memory fallback. Cursor tests cover uncommon shapes, size selection and missing images;
 the nested compositor checks cursor rendering, damage and hiding.
+
+At session preparation, persisted stick calibrations and controller players are read once. State and
+the pad worker receive that same snapshot; missing storage supplies defaults to both. FEX presets are
+written before entering either backend. The backend startup callback only sends prepared input data,
+with no persisted-input reads or preset writes. Workspace tests and the nested startup check cover
+this boundary; later input changes and worker restarts follow the existing event/effect routes.
