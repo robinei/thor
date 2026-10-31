@@ -16,7 +16,6 @@ number of failed checks. Standard library only.
 """
 
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -219,9 +218,16 @@ def windows():
 
 
 def key_of(entry_id):
-    """An entry's key, as the library makes it (crates/library/src/entry.rs): 128 bits of SHA-256 of its
-    id, in hex. Its group in front and its launches' units are named by it."""
-    return hashlib.sha256(entry_id.encode()).hexdigest()[:32]
+    """An entry's key, as the library makes it (crates/library/src/entry.rs `key_of`): a slug of its id's
+    last part, `_`, and 64 bits of FNV-1a of the whole id in hex. Its group in front and its launches'
+    units are named by it."""
+    last = re.split(r"[/:]", entry_id)[-1]
+    stem = last.rsplit(".", 1)[0] if "." in last else last
+    slug = "".join(c.lower() if c.isascii() and c.isalnum() else "_" for c in stem)[:16].strip("_") or "entry"
+    h = 0xcbf29ce484222325
+    for b in entry_id.encode():
+        h = ((h ^ b) * 0x100000001b3) & 0xFFFFFFFFFFFFFFFF
+    return f"{slug}_{h:016x}"
 
 
 # The checks' terminal: foot's desktop file, the Terminal entry.

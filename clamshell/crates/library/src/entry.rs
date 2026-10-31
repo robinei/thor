@@ -325,41 +325,32 @@ impl Entry {
 /// How far into a video counts as watched, leaving room for the credits.
 pub const DONE: f64 = 0.9;
 
-/// An entry's stable key for units and files: 128 bits of SHA-256 over the complete id.
-/// The fixed 32-character form leaves room in Unix socket paths. The library rejects conflicting
-/// keys before indexing entries, so even a supplied or colliding key never aliases another entry.
+/// An entry's key, made from its id. Its launches' units and slice and its settings file are named by it.
+///
+/// It has only letters, digits and `_`, because `-` separates the parts of those names. It is the id's
+/// last part (the file name without its extension, or what follows `:`), lowercased and cut to 16
+/// characters, so that it reads as what it is, then `_` and 16 hex digits of FNV-1a (64 bits) of the
+/// whole id, so that similar ids stay distinct. The library rejects colliding keys before indexing
+/// entries, so a collision is reported rather than aliasing another entry.
 pub fn key_of(id: &str) -> String {
-    use sha2::{Digest, Sha256};
-    use std::fmt::Write;
-    let digest = Sha256::digest(id.as_bytes());
-    let mut key = String::with_capacity(32);
-    for byte in digest.iter().take(16) {
-        let _ = write!(key, "{byte:02x}");
-    }
-    key
+    let last = id.rsplit(['/', ':']).next().unwrap_or(id);
+    let stem = last.rsplit_once('.').map_or(last, |(stem, _)| stem);
+    let slug: String = stem.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' }).take(16).collect();
+    let slug = match slug.trim_matches('_') {
+        "" => "entry",
+        trimmed => trimmed,
+    };
+    format!("{slug}_{:016x}", hash::fnv1a64(id.as_bytes()))
 }
 
-/// Whether a formatted full entry id has `key`, without allocating the id or its hexadecimal key.
-/// This lets scope recovery verify a window or tray identity before constructing an entry.
+/// Whether a formatted full entry id has `key`, without allocating the id: its hash is compared with the
+/// key's hash part. This lets scope recovery verify a window or tray identity before constructing an entry.
 pub fn key_matches(id: std::fmt::Arguments<'_>, key: &str) -> bool {
-    use sha2::{Digest, Sha256};
     use std::fmt::Write;
-    if key.len() != 32 {
-        return false;
-    }
-    struct Hash(Sha256);
-    impl std::fmt::Write for Hash {
-        fn write_str(&mut self, text: &str) -> std::fmt::Result {
-            self.0.update(text.as_bytes());
-            Ok(())
-        }
-    }
-    let mut hash = Hash(Sha256::new());
-    if hash.write_fmt(id).is_err() {
-        return false;
-    }
-    let hex = |n: u8| if n < 10 { b'0' + n } else { b'a' + n - 10 };
-    hash.0.finalize().iter().take(16).zip(key.as_bytes().chunks_exact(2)).all(|(byte, digits)| digits.iter().copied().eq([hex(byte >> 4), hex(byte & 15)]))
+    let Some((_, digits)) = key.rsplit_once('_') else { return false };
+    let Ok(wanted) = u64::from_str_radix(digits, 16) else { return false };
+    let mut hash = hash::Fnv64::default();
+    digits.len() == 16 && hash.write_fmt(id).is_ok() && std::hash::Hasher::finish(&hash) == wanted
 }
 
 /// A muted colour from a hash of `id`, stable across runs.
@@ -389,12 +380,13 @@ mod identity_tests {
     use super::*;
     #[test]
     fn keys_use_the_complete_id_and_remain_bounded() {
-        assert_eq!(key_of("abc"), "ba7816bf8f01cfea414140de5dae2223");
+        assert_eq!(key_of("desktop:foot"), format!("foot_{:016x}", hash::fnv1a64(b"desktop:foot")));
+        assert!(key_of("games:Zelda - A Link.sfc").starts_with("zelda___a_link_"), "readable, cut to 16");
+        assert!(key_of("games:...").starts_with("entry_"));
         let first = key_of("games:game-427945349/disc1.cue");
         let second = key_of("games:game-487404394/disc1.cue");
         assert_ne!(first, second, "these ids collided under the old 24-bit hash");
-        assert_eq!(first.len(), 32);
-        assert_eq!(key_of(&"x".repeat(4096)).len(), 32);
+        assert!(key_of(&"x".repeat(4096)).len() <= 16 + 1 + 16);
     }
 }
 

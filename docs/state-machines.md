@@ -1937,7 +1937,8 @@ Session ownership now prevents that second reader.
 
 ## Persistent entry identities
 
-The full entry id produces a bounded 128-bit SHA-256 key for process-control slices and settings files.
+The full entry id produces a key for process-control slices and settings files: a readable slug of its last part (at most 16
+characters), `_`, and 64 bits of FNV-1a of the whole id in hex.
 Different ids supplying the same key are rejected from every library index and reported as problems;
 rebuilding the index keeps that rejection. This prevents a key conflict from selecting or launching a
 peer entry. `keys_use_the_complete_id_and_remain_bounded` and
