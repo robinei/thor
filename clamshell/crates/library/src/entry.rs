@@ -325,21 +325,18 @@ impl Entry {
 /// How far into a video counts as watched, leaving room for the credits.
 pub const DONE: f64 = 0.9;
 
-/// An entry's key, made from its id. Its launches' units and slice are named by it.
-///
-/// It has only letters, digits and `_`, because `-` separates the parts of those names. It is the id's
-/// last part (the file name without its extension, or what follows `:`), lowercased and cut to 16
-/// characters, then `_` and 6 hex digits of a hash of the whole id so that similar ids stay distinct.
+/// An entry's stable key for units and files: 128 bits of SHA-256 over the complete id.
+/// The fixed 32-character form leaves room in Unix socket paths. The library rejects conflicting
+/// keys before indexing entries, so even a supplied or colliding key never aliases another entry.
 pub fn key_of(id: &str) -> String {
-    let last = id.rsplit(['/', ':']).next().unwrap_or(id);
-    let stem = last.rsplit_once('.').map_or(last, |(stem, _)| stem);
-    let mut slug: String = stem.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' }).take(16).collect();
-    let trimmed = slug.trim_matches('_').len();
-    if trimmed == 0 {
-        slug = "entry".into();
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write;
+    let digest = Sha256::digest(id.as_bytes());
+    let mut key = String::with_capacity(32);
+    for byte in digest.iter().take(16) {
+        let _ = write!(key, "{byte:02x}");
     }
-    let h = hash::fnv1a32(id.as_bytes());
-    format!("{}_{:06x}", slug.trim_matches('_'), h & 0x00ff_ffff)
+    key
 }
 
 /// A muted colour from a hash of `id`, stable across runs.
@@ -361,5 +358,19 @@ mod tests {
         for shift in [0, 8, 16] {
             assert!((c >> shift) & 0xff >= 0x40);
         }
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+    #[test]
+    fn keys_use_the_complete_id_and_remain_bounded() {
+        assert_eq!(key_of("abc"), "ba7816bf8f01cfea414140de5dae2223");
+        let first = key_of("games:game-427945349/disc1.cue");
+        let second = key_of("games:game-487404394/disc1.cue");
+        assert_ne!(first, second, "these ids collided under the old 24-bit hash");
+        assert_eq!(first.len(), 32);
+        assert_eq!(key_of(&"x".repeat(4096)).len(), 32);
     }
 }

@@ -598,6 +598,19 @@ mod tests {
     }
 
     #[test]
+    fn settings_with_the_old_entry_key_collision_survive_independently() {
+        let tmp = tempfile::tempdir().unwrap();
+        let first: Arc<str> = "games:game-427945349/disc1.cue".into();
+        let second: Arc<str> = "games:game-487404394/disc1.cue".into();
+        let mut settings = Settings::default();
+        settings.set(Some(&first), Setting::FpsCap, Some(30));
+        settings.set(Some(&second), Setting::FpsCap, Some(60));
+        Store::open(tmp.path()).save(&Save::Settings(settings.clone())).unwrap();
+        assert_eq!(Store::open(tmp.path()).settings(), settings);
+        assert_ne!(screen_file(&first), screen_file(&second));
+    }
+
+    #[test]
     fn what_doesnt_read_back_is_skipped() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path();

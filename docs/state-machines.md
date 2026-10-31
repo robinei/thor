@@ -1934,3 +1934,13 @@ no immediate effects from both reported starting tabs, including a repeated tap.
 already pins `tap collection 1` to that target. The reported difference is not reproduced in the
 state; two sessions reading the same control pipe could divide commands between different views.
 Session ownership now prevents that second reader.
+
+## Persistent entry identities
+
+The full entry id produces a bounded 128-bit SHA-256 key for process-control slices and settings files.
+Different ids supplying the same key are rejected from every library index and reported as problems;
+rebuilding the index keeps that rejection. This prevents a key conflict from selecting or launching a
+peer entry. `keys_use_the_complete_id_and_remain_bounded` and
+`conflicting_persistent_keys_are_rejected_before_any_lookup` cover key derivation and rejection;
+`entries_with_the_old_hash_collision_have_independent_control_slices` pins launch/ForceKill isolation,
+and system `settings_with_the_old_entry_key_collision_survive_independently` pins persistence.

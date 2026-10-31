@@ -77,6 +77,7 @@ impl Library {
     pub fn new(collections: Vec<Collection>, entries: Vec<Entry>) -> Library {
         let mut library = Library { collections, entries, ..Library::default() };
         library.index.build(&library.entries);
+        library.report_rejected_keys();
         library
     }
 
@@ -101,6 +102,16 @@ impl Library {
     pub fn reindex(&mut self) {
         if self.index.stale() {
             self.index.build(&self.entries);
+            self.report_rejected_keys();
+        }
+    }
+
+    fn report_rejected_keys(&mut self) {
+        for id in self.index.rejected() {
+            let message = format!("{id}: persistent key conflicts with another entry; entry unavailable");
+            if !self.problems.contains(&message) {
+                self.problems.push(message);
+            }
         }
     }
 

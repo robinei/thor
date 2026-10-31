@@ -11,7 +11,7 @@ Start
 -- top-tab2.png
 -- top-tab2-down.png
 -- top-back.png
-Units [zelda_lttp_650a1e]
+Units [384fe84f829f9d3150f3113bf7b7d971]
   Apply settings of zelda-lttp
 activate 900
   PadRoute Game
@@ -26,11 +26,11 @@ LibraryView(ToggleFavourite)
   Save Favourites(["zelda-lttp"])
 LibraryView(TogglePin)
   Save Dock(..)
-Units [zelda_lttp_650a1e]
+Units [384fe84f829f9d3150f3113bf7b7d971]
   Apply settings of zelda-lttp
 -- top-played.png
 Pointer(Activate(LibraryView(Entry("ff6"))))
-  Launch ff6 as ff6_09d141
+  Launch ff6 as 1e9565da2057d629c13874bd45229e13
   Save Resume
 -- top-switch.png
 == group top-actions.png
@@ -49,7 +49,7 @@ Tick 1760000000
 Start
   Watch Metrics on
 -- top-folder.png
-Units [1__the_shores_of_030fb1]
+Units [46843a7615ce84a421e6682abff9a4b2]
   Browse in use 1 files
   Apply settings of tv:Cosmos/Season 1/1. The Shores of the Cosmic Ocean.mkv
 activate 900
@@ -91,7 +91,7 @@ Tick 1760000000
 Start
   Watch Metrics on
 Pointer(Activate(LibraryView(Entry("ff6"))))
-  Launch ff6 as ff6_09d141
+  Launch ff6 as 1e9565da2057d629c13874bd45229e13
   Save Resume
 Tick 1760000005
   Save Resume
@@ -126,7 +126,7 @@ Pointer(Activate(Settings(Tile(ChargeLimit))))
   Save Settings
   Apply settings of all
 -- settings-global.png
-Units [zelda_lttp_650a1e]
+Units [384fe84f829f9d3150f3113bf7b7d971]
   Apply settings of zelda-lttp
 activate 900
   PadRoute Game
@@ -178,7 +178,7 @@ Tick 1760000000
 Start
   Watch Metrics on
 Pointer(Activate(LibraryView(Entry("ff6"))))
-  Launch ff6 as ff6_09d141
+  Launch ff6 as 1e9565da2057d629c13874bd45229e13
   Save Resume
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
@@ -449,7 +449,7 @@ Tick 1760000000
 Start
   Watch Metrics on
 Pointer(Activate(LibraryView(Entry("ff6"))))
-  Launch ff6 as ff6_09d141
+  Launch ff6 as 1e9565da2057d629c13874bd45229e13
   Save Resume
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
@@ -517,7 +517,7 @@ Tick 1760000000
 Start
   Watch Metrics on
 Pointer(Activate(LibraryView(Entry("ff6"))))
-  Launch ff6 as ff6_09d141
+  Launch ff6 as 1e9565da2057d629c13874bd45229e13
   Save Resume
 Reading Screens
   SizeTouchpad(Some(TouchLayout { pixels: (1240, 1080), resolution: 17 }))
@@ -533,7 +533,7 @@ Pointer(Activate(Row { list: Curves, i: 2, part: Main }))
 -- curve-edit-slider.png
 Slide(End)
   Save Curves(..)
-Units [ff6_09d141]
+Units [1e9565da2057d629c13874bd45229e13]
   Apply settings of ff6
 activate 30
   PadRoute Game
@@ -549,7 +549,7 @@ Tick 1760000000
 Start
   Watch Metrics on
 Pointer(Activate(LibraryView(Entry("ff6"))))
-  Launch ff6 as ff6_09d141
+  Launch ff6 as 1e9565da2057d629c13874bd45229e13
   Save Resume
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
@@ -572,7 +572,7 @@ Tick 1760000000
 Start
   Watch Metrics on
 Pointer(Activate(LibraryView(Entry("ff6"))))
-  Launch ff6 as ff6_09d141
+  Launch ff6 as 1e9565da2057d629c13874bd45229e13
   Save Resume
 Reading Screens
   SizeTouchpad(Some(TouchLayout { pixels: (1240, 1080), resolution: 17 }))
@@ -580,7 +580,7 @@ Pointer(Activate(Tab(Settings)))
   Watch Metrics off
 Tick 1760000005
   Save Resume
-Units [ff6_09d141]
+Units [1e9565da2057d629c13874bd45229e13]
   Apply settings of ff6
 activate 30
   PadRoute Game
@@ -593,7 +593,7 @@ Tick 1760000000
 Start
   Watch Metrics on
 Pointer(Activate(LibraryView(Entry("ff6"))))
-  Launch ff6 as ff6_09d141
+  Launch ff6 as 1e9565da2057d629c13874bd45229e13
   Save Resume
 Reading Screens
   SizeTouchpad(Some(TouchLayout { pixels: (1240, 1080), resolution: 17 }))
@@ -601,7 +601,7 @@ Pointer(Activate(Tab(Settings)))
   Watch Metrics off
 Tick 1760000005
   Save Resume
-Units [ff6_09d141]
+Units [1e9565da2057d629c13874bd45229e13]
   Apply settings of ff6
 activate 30
   PadRoute Game
@@ -614,7 +614,7 @@ Tick 1760000000
 Start
   Watch Metrics on
 Pointer(Activate(LibraryView(Entry("ff6"))))
-  Launch ff6 as ff6_09d141
+  Launch ff6 as 1e9565da2057d629c13874bd45229e13
   Save Resume
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
@@ -701,7 +701,7 @@ Start
 Pointer(Activate(Tab(Dock)))
   Watch Metrics off
 -- launcher.png
-Units [zelda_lttp_650a1e, foot_666b83, foot_666b83, firefox_16b084]
+Units [384fe84f829f9d3150f3113bf7b7d971, dce8feebdb5fe04c649ef0a5fcb5d5ab, dce8feebdb5fe04c649ef0a5fcb5d5ab, d92440cd230e97399b6e30552d18c6c5]
   Apply settings of desktop:firefox
 activate 8
   Apply settings of desktop:foot
@@ -731,7 +731,7 @@ Tick 1760000000
   Lights(..)
 Start
   Watch Metrics on
-Units [zelda_lttp_650a1e]
+Units [384fe84f829f9d3150f3113bf7b7d971]
   Apply settings of zelda-lttp
 Pointer(Activate(Tab(Battery)))
   Watch Metrics off

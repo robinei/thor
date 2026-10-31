@@ -1043,6 +1043,11 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         sent.players.count.number(),
         s.device_view().controllers().count().number()
     );
+    let running = s.session().running_entries();
+    ensure!(
+        running.iter().enumerate().all(|(i, entry)| running.iter().skip(i + 1).all(|other| entry.id == other.id || entry.key != other.key)),
+        "entry control keys alias different programs"
+    );
     let keys = s.device_view().controllers().list();
     ensure!(keys.iter().enumerate().all(|(i, c)| !keys.iter().skip(i + 1).any(|o| o.key == c.key)), "14: a controller listed twice");
     if started {

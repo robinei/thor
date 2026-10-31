@@ -914,3 +914,32 @@ fn a_window_of_no_program_joins_the_program_in_front_unless_a_launch_waits() {
     assert_eq!(s.session().window(9).and_then(|w| w.claim.clone()), None);
     assert_ne!(s.session().top_window().map(|w| w.id), Some(9));
 }
+
+#[test]
+fn entries_with_the_old_hash_collision_have_independent_control_slices() {
+    let ids = ["games:game-427945349/disc1.cue", "games:game-487404394/disc1.cue"];
+    let entries = ids.map(|id| Entry { launch: Launch::program(vec!["emulator".into()]), ..Entry::new(id, id) });
+    let mut s = State::new(Init { library: Some(Library::new(vec![], entries.into())), ..init() });
+    let mut units = Vec::new();
+    for id in ids {
+        let effects = s.applied(Event::Entry(id.into(), EntryAct::Play));
+        let unit = effects
+            .into_iter()
+            .find_map(|effect| match effect {
+                Effect::Launch { unit, .. } => Some(unit),
+                _ => None,
+            })
+            .unwrap();
+        units.push(unit);
+        s.applied(Event::Units(units.clone()));
+    }
+    assert_eq!(units.len(), 2, "both entries must launch");
+    let first = units.first().unwrap();
+    let second = units.last().unwrap();
+    assert_ne!(first.slice(), second.slice());
+    assert!(s.session().running(ids[0]).is_some());
+    assert!(s.session().running(ids[1]).is_some());
+    assert_eq!(force_kill(&mut s, ids[0]), vec![Effect::EndRun { key: key(ids[0]), force: true }]);
+    assert!(s.session().running(ids[1]).is_some(), "ending one never changes the other's identity");
+    assert_eq!(force_kill(&mut s, ids[1]), vec![Effect::EndRun { key: key(ids[1]), force: true }]);
+}

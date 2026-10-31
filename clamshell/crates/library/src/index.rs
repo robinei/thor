@@ -30,6 +30,8 @@ pub struct Runner {
 pub(crate) struct Index {
     /// Set when the entries changed since it was built; it is empty then.
     stale: bool,
+    /// Full ids rejected because different entries supplied the same persistent key.
+    rejected: Vec<Arc<str>>,
     /// Each id's first slot. Freed slots, whose id is empty, are left out.
     ids: HashMap<Arc<str>, usize>,
     /// Each entry's key ([`Entry::key`]).
@@ -51,7 +53,21 @@ impl Index {
     /// Builds it from `entries`, reusing what it holds.
     pub(crate) fn build(&mut self, entries: &[Entry]) {
         self.drop_all();
+        let mut keyed: Vec<_> = entries.iter().filter(|entry| !entry.id.is_empty()).collect();
+        keyed.sort_unstable_by(|a, b| a.key.cmp(&b.key));
+        for group in keyed.chunk_by(|a, b| a.key == b.key) {
+            if let Some(first) = group.first()
+                && group.iter().any(|other| other.id != first.id)
+            {
+                self.rejected.extend(group.iter().map(|entry| entry.id.clone()));
+            }
+        }
+        self.rejected.sort_unstable();
+        self.rejected.dedup();
         for (i, g) in entries.iter().enumerate().filter(|(_, g)| !g.id.is_empty()) {
+            if self.rejected.binary_search(&g.id).is_ok() {
+                continue;
+            }
             self.ids.entry(g.id.clone()).or_insert(i);
             let key = self.hash(g.key.as_str());
             self.keys.push((key, i));
@@ -87,6 +103,7 @@ impl Index {
 
     /// Empties it, as the entries are about to change.
     pub(crate) fn drop_all(&mut self) {
+        self.rejected.clear();
         self.ids.clear();
         self.keys.clear();
         self.files.clear();
@@ -94,6 +111,10 @@ impl Index {
         self.marks.clear();
         self.runners.clear();
         self.stale = true;
+    }
+
+    pub(crate) fn rejected(&self) -> impl Iterator<Item = &str> {
+        self.rejected.iter().map(AsRef::as_ref)
     }
 
     pub(crate) fn stale(&self) -> bool {
@@ -200,7 +221,9 @@ mod tests {
     /// facts and for some that no entry has.
     fn agrees(lib: &Library) {
         let entries = lib.entries();
-        let first = |is: &dyn Fn(&Entry) -> bool| entries.iter().position(|g| !g.id.is_empty() && is(g));
+        let first = |is: &dyn Fn(&Entry) -> bool| {
+            entries.iter().position(|g| !g.id.is_empty() && !entries.iter().any(|other| other.key == g.key && other.id != g.id) && is(g))
+        };
         let slot = |g: Option<&Entry>| g.and_then(|g| entries.iter().position(|e| std::ptr::eq(e, g)));
         let misses = ["", "nothing", "browse:Files/Home/gone", "STEAM"];
         for id in entries.iter().map(|g| &*g.id).chain(misses) {
@@ -237,15 +260,15 @@ mod tests {
         }
     }
 
-    /// The demo library with entries that share facts: a key, a file, a desktop file name in other case
+    /// The demo library with entries that share facts: a file, a desktop file name in other case
     /// and a `StartupWMClass`, and a library entry for a browsed file.
     fn shared() -> Library {
         let mut lib = demo::library();
         let entries = lib.entries_mut();
         entries.push(Entry { wm_class: Some("Navigator".into()), ..Entry::new("desktop:org.mozilla.firefox", "Firefox") });
         entries.push(Entry { wm_class: Some("firefox".into()), ..Entry::new("desktop:FIREFOX", "Firefox again") });
-        entries.push(Entry { file: Some("/home/thor/notes.txt".into()), key: "notes".into(), ..Entry::new("notes:1", "Notes") });
-        entries.push(Entry { file: Some("/home/thor/notes.txt".into()), key: "notes".into(), ..Entry::new("notes:2", "Notes again") });
+        entries.push(Entry { file: Some("/home/thor/notes.txt".into()), ..Entry::new("notes:1", "Notes") });
+        entries.push(Entry { file: Some("/home/thor/notes.txt".into()), ..Entry::new("notes:2", "Notes again") });
         entries.push(Entry { file: Some("/home/thor/Pictures".into()), items: vec![0], ..Entry::new("folder:Pictures", "Pictures") });
         let snes = RunnerOf::new("snes", "SNES", true);
         entries.push(Entry { runner: Some(snes.clone()), ..Entry::new("snes:zelda", "Zelda") });
@@ -278,7 +301,7 @@ mod tests {
         let lib = shared();
         assert!(lib.index_is_current());
         agrees(&lib);
-        assert_eq!(lib.entry_by_key("notes").map(|g| &*g.id), Some("notes:1"));
+        assert_eq!(lib.entry_by_key(&crate::key_of("notes:1")).map(|g| &*g.id), Some("notes:1"));
         assert_eq!(lib.entry_by_desktop("FireFox").map(|g| &*g.id), Some("desktop:firefox"));
         assert_eq!(lib.entry_by_desktop("navigator").map(|g| &*g.id), Some("desktop:org.mozilla.firefox"));
         assert_eq!(lib.entry_of_desktop_file(&["FIREFOX", "firefox"]).map(|g| &*g.id), Some("desktop:firefox"));
@@ -333,5 +356,27 @@ mod tests {
         let key = lib.entries()[first].key.clone();
         assert_eq!(lib.entry_by_key(&key).map(|g| &*g.title), Some("Final Fantasy VI"));
         agrees(&lib);
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+    #[test]
+    fn conflicting_persistent_keys_are_rejected_before_any_lookup() {
+        let first = Entry::new("first", "First");
+        let mut second = Entry::new("second", "Second");
+        second.key = first.key.clone();
+        let mut library = crate::Library::new(vec![], vec![first, second]);
+        assert!(library.entry("first").is_none());
+        assert!(library.entry("second").is_none());
+        assert!(library.entry_by_key(&crate::key_of("first")).is_none());
+        assert_eq!(library.problems.len(), 2);
+        library.entries_mut().push(Entry::new("third", "Third"));
+        library.reindex();
+        assert!(library.entry("first").is_none());
+        assert!(library.entry("third").is_some());
+        assert_eq!(library.problems.len(), 2, "reindexing does not repeat diagnostics");
+        assert!(library.index_is_current());
     }
 }
