@@ -528,6 +528,8 @@ time.sleep(300)
             assert colour.wait(timeout=5) == 0, "colour client receives close"
             processes.remove(colour)
             wait(lambda: pixels() == (True, False), "SDR client remains unchanged after colour fixture exits")
+        timings = re.findall(r"nested frame timing: cpu_us=(\d+) ready_us=(\d+)", n.log())
+        assert timings and all(int(ready) >= int(cpu) for cpu, ready in timings), "drawing timings include CPU submission and GPU readiness"
         if args.gpu:
             def window_region(down):
                 width, _, data = image()

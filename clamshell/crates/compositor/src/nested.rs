@@ -77,6 +77,8 @@ pub fn run(
         next_frame: Instant::now(),
         cursor_due: None,
         on_capture: Box::new(on_capture),
+        timing: Default::default(),
+        handle: base.event_loop.handle(),
         backend,
     }));
     let events_drawing = drawing.clone();
@@ -100,6 +102,8 @@ pub fn run(
 }
 
 struct Drawing {
+    timing: crate::frame_timing::Monitor,
+    handle: smithay::reexports::calloop::LoopHandle<'static, Server>,
     pipeline: crate::colour::render::Pipeline,
     host_colour: Option<crate::colour::host::Host>,
     cursor: crate::cursor::Cursor,
@@ -178,6 +182,9 @@ impl Drawing {
     }
 
     fn turn(&mut self, server: &mut Server, now: Instant) -> Result<Option<Instant>, Error> {
+        if let Some(sample) = self.timing.sample() {
+            log::debug!("nested frame timing: cpu_us={} ready_us={}", sample.cpu.as_micros(), sample.ready.as_micros());
+        }
         let interval = Duration::from_secs_f64(1000.0 / f64::from(server.screens.refresh.max(1000)));
         let clock: Duration = server.clock.now().into();
         let timed =
@@ -237,11 +244,12 @@ impl Drawing {
             self.redraw.changed();
             return Ok(());
         }
+        self.timing.begin(Instant::now());
         self.redraw.submitted();
         self.next_frame = Instant::now() + Duration::from_secs_f64(1000.0 / f64::from(server.screens.refresh.max(1000)));
         server.frame();
         self.colour(server)?;
-        let Self { backend, pipeline, frames, cursor, elements, states, on_capture, host_colour, .. } = self;
+        let Self { backend, pipeline, frames, cursor, elements, states, on_capture, host_colour, timing, handle, .. } = self;
         sync_capture(server, backend.window());
         let capturing = std::mem::take(&mut server.screenshot_requested);
         for (down, states) in [false, true].into_iter().zip(states.iter_mut()) {
@@ -253,7 +261,8 @@ impl Drawing {
         }
         {
             let (renderer, mut framebuffer) = backend.bind()?;
-            pipeline.present(renderer, &mut framebuffer, server.screens.size)?;
+            let sync = pipeline.present(renderer, &mut framebuffer, server.screens.size)?;
+            timing.submitted(&sync, handle);
             if capturing {
                 // (Read at once: the host's frame waits for the GPU anyway.)
                 let captured = pipeline

@@ -14,6 +14,7 @@ mod cursor;
 mod dmabuf;
 mod draw_fence;
 mod drm;
+mod frame_timing;
 mod frames;
 mod geometry;
 mod handlers;

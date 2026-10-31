@@ -13,6 +13,7 @@ use clamshell_state::colour::{ColourDescription, ColourPrimaries, TransferFuncti
 use clamshell_state::curve::{Curve, REFERENCE_NITS};
 use clamshell_state::settings::AntiAliasing;
 use clamshell_ui::Error;
+use smithay::backend::renderer::sync::SyncPoint;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::{
     backend::{
@@ -537,14 +538,20 @@ impl Pipeline {
     #[cfg(feature = "nested")]
     /// Both scenes side by side, each in its screen's encoding, as the nested host shows both screens in
     /// one window.
-    pub(crate) fn present(&self, renderer: &mut GlesRenderer, target: &mut GlesTarget<'_>, size: (i32, i32)) -> Result<(), Error> {
+    pub(crate) fn present(&self, renderer: &mut GlesRenderer, target: &mut GlesTarget<'_>, size: (i32, i32)) -> Result<SyncPoint, Error> {
         let [top, bottom] = &self.scenes;
         self.present_with(renderer, target, size, [&top.output.1, &bottom.output.1])
     }
 
     /// Both scenes side by side into `target`, of the layout's `size`, the top's encoded by the first of
     /// `programs` and the second's by the other.
-    fn present_with(&self, renderer: &mut GlesRenderer, target: &mut GlesTarget<'_>, size: (i32, i32), programs: [&GlesTexProgram; 2]) -> Result<(), Error> {
+    fn present_with(
+        &self,
+        renderer: &mut GlesRenderer,
+        target: &mut GlesTarget<'_>,
+        size: (i32, i32),
+        programs: [&GlesTexProgram; 2],
+    ) -> Result<SyncPoint, Error> {
         let mut frame = renderer.render(target, size.into(), Transform::Flipped180)?;
         let rectangle = Rectangle::from_size(size.into());
         frame.clear([0.0, 0.0, 0.0, 1.0].into(), &[rectangle])?;
@@ -555,8 +562,7 @@ impl Pipeline {
             let all = Rectangle::from_size(scene.part.size);
             frame.render_texture_from_to(texture, whole, scene.part, &[all], &[], Transform::Normal, 1.0, Some(program), &[])?;
         }
-        drop(frame.finish()?);
-        Ok(())
+        Ok(frame.finish()?)
     }
 
     /// Scene `down`'s encoding for a screen of `output` other than its panel, drawn at `dst` on it.
@@ -627,7 +633,7 @@ impl Pipeline {
         let result = (|| {
             let mut target = renderer.bind(&mut capture.texture).map_err(|error| error.to_string())?;
             let [(_, top), (_, bottom)] = &capture.programs;
-            self.present_with(renderer, &mut target, size, [top, bottom]).map_err(|error| error.to_string())?;
+            drop(self.present_with(renderer, &mut target, size, [top, bottom]).map_err(|error| error.to_string())?);
             let mapping = smithay::backend::renderer::ExportMem::copy_framebuffer(renderer, &target, Rectangle::from_size(size.into()), Fourcc::Abgr8888)
                 .map_err(|e| e.to_string())?;
             drop(target);
@@ -1124,7 +1130,7 @@ mod direct_tests {
         {
             let mut target = renderer.bind(&mut out).unwrap();
             let [top, bottom] = &pipeline.scenes;
-            pipeline.present_with(&mut renderer, &mut target, (14, 4), [&top.output.1, &bottom.output.1]).unwrap();
+            drop(pipeline.present_with(&mut renderer, &mut target, (14, 4), [&top.output.1, &bottom.output.1]).unwrap());
         }
         let drawn = pixels(&mut renderer, &out);
         for (i, px) in drawn.as_chunks::<4>().0.iter().enumerate() {

@@ -262,7 +262,7 @@ pub(super) fn present_ui(screen: &mut Screen, server: &mut Server, pipeline: &mu
 /// presentation feedback; one following another's pace shows the frame only.
 pub(super) fn present(drawing: &mut Drawing, server: &mut Server, index: usize) -> Option<Instant> {
     use crate::presenter::CommitError;
-    let Drawing { renderer, pipeline, screens, states, cursor, .. } = drawing;
+    let Drawing { renderer, pipeline, screens, states, cursor, handle, .. } = drawing;
     let screen = screens.get_mut(index)?;
     let states = states.get(screen.scene())?;
     let with_layers = prepare_layers(screen, server, cursor);
@@ -287,6 +287,7 @@ pub(super) fn present(drawing: &mut Drawing, server: &mut Server, index: usize) 
             screen.drawn_commits = server.pacing.commits;
         }
         screen.dirty = false;
+        screen.timing.submitted(&sync, handle);
         Some(sync)
     };
     let layers = screen.layers.iter().flat_map(PlaneLayers::states);

@@ -2102,3 +2102,20 @@ Its separate event queue registers a waker that pings the outer loop when winit 
 The nested real-client test switches host workspaces, checks clipboard round trips while hidden,
 checks that submissions stop, then checks that exposure resumes drawing. The desktop KWin host
 is also checked for longer than its 30-second watchdog after starting and while obscured.
+
+## Drawing time observations
+
+Each output owns one reusable GPU-fence source. Idle --changed drawing--> CPU start recorded;
+--submission--> CPU duration recorded and the exported fence armed; --fence readable-->
+completion sample, fd unregistered. A fence already complete produces the sample immediately.
+No fence wait or periodic readiness polling is used. Reset/removal cancels the observation and
+unregisters its fd; late completion cannot produce a sample for a cancelled drawing. An unavailable
+fence/source is logged and leaves GPU timing unavailable, never replaced by a CPU-only estimate.
+`frame_timing` tests pin one-shot completion, source reuse and cancellation, including zero wait calls.
+The real-client test checks timing samples from actual drawings.
+
+Debug logs `nested frame timing` and `drm frame timing` report CPU microseconds and elapsed
+microseconds from drawing start until GPU completion is observed. The latter includes GPU queueing
+and event-loop wakeup delay; it is a conservative observed duration, not isolated GPU execution time.
+DRM flip logs separately report the output, whether its frame was composed, timestamp and whether
+the hardware clock supplied it. Instrumentation itself schedules no idle wakeups.

@@ -124,6 +124,7 @@ struct Screen {
     off_failing: bool,
     /// Whether composing it fails, every turn: logged at the first.
     compose_failing: bool,
+    timing: crate::frame_timing::Monitor,
 }
 
 impl Screen {
@@ -178,6 +179,7 @@ impl Screen {
             failing: false,
             off_failing: false,
             compose_failing: false,
+            timing: Default::default(),
         }
     }
 
@@ -203,6 +205,7 @@ impl Screen {
     /// Drops what its buffers hold, as after it was off or away, or a flip was lost: the next frame is
     /// drawn whole, composed or its own.
     fn reset_buffers(&mut self) {
+        self.timing.cancel();
         self.surface.reset_buffers();
         // A frame in flight is taken as never shown.
         self.feedback.discard();
@@ -243,6 +246,7 @@ fn next_shown(flipped: Option<Duration>, interval: Duration, pending: bool, now:
 
 /// What drawing needs, shared by the loop's sources.
 struct Drawing {
+    handle: smithay::reexports::calloop::LoopHandle<'static, Server>,
     /// The GPU's display device and its buffers' allocator, which an external display's screen is made
     /// with when it is connected; and the panels' connectors by name, which are no external display.
     drm: DrmDevice,
@@ -434,6 +438,7 @@ pub fn run(
     server.core.handle(clamshell_state::Reading::DisplayModes(rates).into());
 
     let drawing = Rc::new(RefCell::new(Drawing {
+        handle: base.event_loop.handle(),
         drm,
         gbm,
         panels: [profile.top.connector, profile.bottom.connector],
@@ -702,6 +707,13 @@ fn flipped(drawing: &mut Drawing, server: &mut Server, index: usize, metadata: O
         _ => (server.clock.now(), false),
     };
     let down = screen.down();
+    log::debug!(
+        "drm flip timing: screen={} composed={} hardware={} monotonic_us={}",
+        screen.name(),
+        screen.surface.shows_composed(),
+        hw_clock,
+        Duration::from(time).as_micros()
+    );
     screen.flipped = Some(time);
     if submitted {
         // (A screen that doesn't pace queued no elements' states nor feedback: see `present`.)
@@ -733,6 +745,11 @@ fn step(
             on_capture(Err("the screens are another session's".into()));
         }
         return None;
+    }
+    for screen in &mut drawing.screens {
+        if let Some(sample) = screen.timing.sample() {
+            log::debug!("drm frame timing: screen={} cpu_us={} ready_us={}", screen.name(), sample.cpu.as_micros(), sample.ready.as_micros());
+        }
     }
     pacing_decide(drawing);
     outputs(drawing, server);
@@ -931,6 +948,7 @@ fn compose(drawing: &mut Drawing, server: &mut Server, index: usize, capture: bo
     if !screen.paces || !composes(screen.on, screen.surface.in_flight() || screen.surface.rendering(), shows_own, capture) {
         return Ok(());
     }
+    let started = Instant::now();
     let down = screen.down();
     let skip = match screen.shows {
         Shows::Window(id) => Some(id),
@@ -941,6 +959,7 @@ fn compose(drawing: &mut Drawing, server: &mut Server, index: usize, capture: bo
     render::elements(server, frames, cursor, renderer, elements, down, skip, screen.planed())?;
     if pipeline.compose(server, renderer, down, elements, states, straight)? {
         for screen in screens.iter_mut().filter(|screen| screen.down() == down) {
+            screen.timing.begin(started);
             screen.dirty = true;
         }
     }
