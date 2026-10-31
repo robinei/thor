@@ -117,6 +117,10 @@ pub(super) fn show(screen: &mut Screen, pipeline: &mut Pipeline, to: Shows) {
     }
     screen.dirty |= change.dirty;
     if to != screen.shows {
+        if screen.surface.rendering() {
+            screen.surface.cancel_drawing();
+            screen.feedback.discard();
+        }
         log::info!("drm: the {} screen {to}", screen.name());
     }
     screen.shows = to;
@@ -182,7 +186,7 @@ pub(super) fn shows_decide(drawing: &mut Drawing, server: &mut Server) {
 }
 
 /// Shows the window decided on (see [`shows_decide`]) from its own buffer, in a test commit
-/// first when its shape is new. Returns when to try again if it failed (see [`failed`]): refused, the
+/// first when its shape is new. Returns when to try again while a fence is pending or it failed (see [`failed`]): refused, the
 /// window is composed until its buffers' shape changes, and the scene, which left it out, is drawn whole.
 pub(super) fn present_window(screen: &mut Screen, server: &mut Server, pipeline: &mut Pipeline, cursor: &crate::cursor::Cursor) -> Option<Instant> {
     let with_layers = prepare_layers(screen, server, cursor);
@@ -253,7 +257,7 @@ pub(super) fn present_ui(screen: &mut Screen, server: &mut Server, pipeline: &mu
     }
 }
 
-/// Shows screen `index` its part of the scene. Returns when to try again if it failed (see [`failed`]):
+/// Shows screen `index` its part of the scene. Returns when to try again while a fence is pending or it failed (see [`failed`]):
 /// drawing it failing too. A screen pacing its windows notes what the frame shows of them and takes their
 /// presentation feedback; one following another's pace shows the frame only.
 pub(super) fn present(drawing: &mut Drawing, server: &mut Server, index: usize) -> Option<Instant> {
@@ -263,29 +267,42 @@ pub(super) fn present(drawing: &mut Drawing, server: &mut Server, index: usize) 
     let states = states.get(screen.scene())?;
     let with_layers = prepare_layers(screen, server, cursor);
     let encoding = screen.external.as_ref().map(|external| &external.encoding);
-    let drawn = screen.surface.next_buffer().and_then(|mut buffer| {
-        let mut target = renderer.bind(&mut buffer)?;
-        pipeline.present_screen(renderer, &mut target, screen.down(), screen.size, screen.transform, encoding)
-    });
-    let sync = match drawn {
-        Ok(sync) => sync,
-        Err(error) => return failed(screen, pipeline, Commit::Composed, false, CommitError::Failed(format!("drawing: {error}"))),
+    let sync = if screen.surface.rendering() {
+        None
+    } else {
+        let drawn = screen.surface.next_buffer().and_then(|mut buffer| {
+            let mut target = renderer.bind(&mut buffer)?;
+            pipeline.present_screen(renderer, &mut target, screen.down(), screen.size, screen.transform, encoding)
+        });
+        let sync = match drawn {
+            Ok(sync) => sync,
+            Err(error) => return failed(screen, pipeline, Commit::Composed, false, CommitError::Failed(format!("drawing: {error}"))),
+        };
+        // Capture feedback now: clients can commit more content while this drawing is pending.
+        screen.queued.states.clear();
+        if screen.paces {
+            screen.queued.states.extend(states.states.iter().map(|(id, state)| (id.clone(), *state)));
+            server.frame_queued(states, Some(screen.down()));
+            server.take_feedback(states, Some(screen.down()), &mut screen.feedback);
+            screen.drawn_commits = server.pacing.commits;
+        }
+        screen.dirty = false;
+        Some(sync)
     };
-    // (Not clone_from: a map of another capacity would be allocated anew.)
-    screen.queued.states.clear();
-    if screen.paces {
-        screen.queued.states.extend(states.states.iter().map(|(id, state)| (id.clone(), *state)));
-    }
     let layers = screen.layers.iter().flat_map(PlaneLayers::states);
-    if let Err(error) = screen.surface.queue(Some(sync), layers) {
-        return failed(screen, pipeline, Commit::Composed, with_layers, error);
-    }
-    committed(screen);
-    screen.dirty = false;
-    if screen.paces {
-        server.frame_queued(states, Some(screen.down()));
-        server.take_feedback(states, Some(screen.down()), &mut screen.feedback);
-        screen.answered = server.pacing.commits;
+    match screen.surface.queue(sync, layers) {
+        Ok(false) => return Some(Instant::now() + (screen.interval / 4).max(std::time::Duration::from_millis(1))),
+        Ok(true) => {
+            committed(screen);
+            if screen.paces {
+                screen.answered = screen.drawn_commits;
+            }
+        }
+        Err(error) => {
+            screen.dirty = true;
+            screen.feedback.discard();
+            return failed(screen, pipeline, Commit::Composed, with_layers, error);
+        }
     }
     None
 }

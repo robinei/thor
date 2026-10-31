@@ -53,7 +53,7 @@ impl Timing {
     /// `screen`'s, with the server's commit count `commits`.
     pub(super) fn of(screen: &Screen, commits: u64) -> Timing {
         Timing {
-            pending: screen.surface.in_flight(),
+            pending: screen.surface.in_flight() || screen.surface.rendering(),
             dirty: screen.dirty,
             on: screen.on,
             paces: screen.paces,

@@ -1971,3 +1971,15 @@ Sensor registry: missing/empty --generate and validate in a temporary directory-
 registry --sync and atomic rename--> published. Generation/publication failure leaves no partial
 published registry and can retry. A complete existing registry keeps learned data without regeneration;
 nonempty unknown data is refused and preserved. `RegistryRecovery` package fixtures pin these outcomes.
+
+## Pending GPU drawings
+
+A composed buffer --native fence export--> queued to KMS with that fence; --no native fence and not
+ready--> pending drawing. Pending --zero-time readiness query false--> same drawing, retry at a quarter
+refresh (at least 1 ms), with no blocking wait, redraw or idle polling. Pending --ready--> queued;
+--screen presentation, mode or power changes--> discarded. Drawing captures its surfaces, feedback and
+client-commit counter; later commits are not acknowledged by that older drawing. Only successful KMS
+submission records the captured counter as answered. An unsuccessful submission discards its feedback
+and leaves the screen dirty for retry. `draw_fence` tests check native/failed exports, independent fences,
+readiness and cancellation with no wait calls. DRM VM `ui_scanout`, `screen_changes`, `external_display`
+and `pad_windows` check the real presenter and input (27/27); a real stalled GPU remains a device check.

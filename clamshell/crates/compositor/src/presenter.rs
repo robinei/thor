@@ -28,6 +28,7 @@ pub(crate) struct Presenter {
     opaque: bool,
     /// Whether a commit can wait on the drawing's fence itself, else it is waited on first.
     fencing: bool,
+    drawing: crate::draw_fence::DrawFence,
     /// The buffer taken to draw into, until it is queued.
     next: Option<Slot<GbmBuffer>>,
     /// The frame committed, until its flip, and when it was committed: it is in flight until then.
@@ -142,13 +143,14 @@ impl Presenter {
                             .is_ok_and(|v| v != 0)
                         && plane_has(&surface, "IN_FENCE_FD");
                     if !fencing {
-                        log::info!("drm: commits take no fences here: each frame's drawing is waited for before it is committed");
+                        log::info!("drm: commits take no fences here: unfinished frames stay pending until their drawing is ready");
                     }
                     return Ok(Presenter {
                         surface,
                         swapchain,
                         opaque,
                         fencing,
+                        drawing: Default::default(),
                         next: None,
                         pending: None,
                         queued_at: None,
@@ -231,6 +233,9 @@ impl Presenter {
 
     /// The buffer to draw the next frame into: the same until it is queued.
     pub(crate) fn next_buffer(&mut self) -> Result<Dmabuf, Error> {
+        if self.rendering() {
+            return Err("the previous drawing is still pending".into());
+        }
         self.hold.used(std::time::Instant::now());
         self.composing_buffers = true;
         if self.next.is_none() {
@@ -244,28 +249,32 @@ impl Presenter {
         Ok(slot.export().map_err(|e| format!("exporting the buffer: {e}"))?)
     }
 
-    /// Commits the buffer drawn into, once `sync` says the drawing is done: by the commit waiting on its
-    /// fence where it can, else after waiting here, with the other planes `layers`. It is shown at the next
-    /// flip.
-    pub(crate) fn queue<'l>(&mut self, sync: Option<SyncPoint>, layers: impl Iterator<Item = PlaneState<'l>> + Clone) -> Result<(), CommitError> {
+    /// Queue the drawn buffer, or return false while an unexportable fence is unfinished. A retry
+    /// passes no new sync point and keeps the same buffer, without drawing it again.
+    pub(crate) fn queue<'l>(&mut self, sync: Option<SyncPoint>, layers: impl Iterator<Item = PlaneState<'l>> + Clone) -> Result<bool, CommitError> {
+        let fence = sync.and_then(|sync| self.drawing.prepare(sync, self.fencing));
+        if !self.drawing.ready() {
+            return Ok(false);
+        }
+        self.drawing.clear();
         let slot = self.next.take().ok_or(CommitError::Failed("no buffer drawn".into()))?;
         self.swapchain.submitted(&slot);
-        let fence = sync.and_then(|sync| {
-            let fence = self.fencing.then(|| sync.export()).flatten();
-            if fence.is_none() {
-                // Without a fence to hand the commit, the drawing is waited on here; implicit sync covers
-                // a wait that fails.
-                if let Err(error) = sync.wait() {
-                    log::debug!("drm: waiting for the drawing failed, left to implicit sync: {error:?}");
-                }
-            }
-            fence
-        });
         let fb = *slot.userdata().get::<GbmFramebuffer>().ok_or(CommitError::Failed("no framebuffer".into()))?.as_ref();
         let (src, dst) = whole(&self.surface);
         self.commit(fb, src, dst, Transform::Normal, fence.as_ref().map(std::os::fd::AsFd::as_fd), &[], layers, false)?;
         self.pending = Some(Shown::Composed(slot));
-        Ok(())
+        Ok(true)
+    }
+
+    pub(crate) fn rendering(&self) -> bool {
+        self.drawing.pending()
+    }
+
+    pub(crate) fn cancel_drawing(&mut self) {
+        if self.rendering() {
+            self.drawing.clear();
+            self.next = None;
+        }
     }
 
     /// Commits framebuffer `fb`, one of ClamShell's own buffers (see `ui_scanout`), with the CRTC's colour
@@ -393,6 +402,10 @@ impl Presenter {
     /// Drops the buffers composed into if it hasn't composed for a while by `now` and none of them is shown or
     /// on its way, else tells `trims` when they will be.
     pub(crate) fn trim(&mut self, now: std::time::Instant, trims: &mut crate::hold::Trims) {
+        if self.rendering() {
+            self.hold.used(now);
+            return;
+        }
         if !self.composing_buffers {
             return;
         }
@@ -417,6 +430,7 @@ impl Presenter {
     /// Drops the buffers' contents and any frame in flight, as after the seat was away or a flip was lost:
     /// the next frame is drawn whole.
     pub(crate) fn reset_buffers(&mut self) {
+        self.cancel_drawing();
         self.queued_at = None;
         self.swapchain.reset_buffers();
         self.composing_buffers = false;
@@ -428,6 +442,7 @@ impl Presenter {
 
     /// The screen was turned off: its plane shows none of its buffers any more, so they may be dropped.
     pub(crate) fn off(&mut self) {
+        self.cancel_drawing();
         self.queued_at = None;
         self.last = None;
         self.next = None;
@@ -443,6 +458,7 @@ impl Presenter {
     /// Changes the screen's mode at the next commit, its buffers to its size.
     pub(crate) fn use_mode(&mut self, mode: Mode) -> Result<(), Error> {
         self.surface.use_mode(mode).map_err(|e| format!("{e}"))?;
+        self.cancel_drawing();
         let (w, h) = mode.size();
         self.swapchain.resize(u32::from(w), u32::from(h));
         self.next = None;

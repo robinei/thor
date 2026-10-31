@@ -12,6 +12,7 @@ mod clients;
 mod colour;
 mod cursor;
 mod dmabuf;
+mod draw_fence;
 mod drm;
 mod frames;
 mod geometry;

@@ -87,6 +87,8 @@ struct Screen {
     dirty: bool,
     /// The commits its last frame callbacks answered, and when an idle screen may send the next ones.
     answered: u64,
+    /// The commit counter captured with a drawing, before its fence or KMS submission completes.
+    drawn_commits: u64,
     next_callbacks: Option<Instant>,
     /// When a capped window's frame callback held back is due.
     held: Option<Instant>,
@@ -154,6 +156,7 @@ impl Screen {
             interval: Duration::from_micros(1_000_000 / u64::from(mode.vrefresh().max(1))),
             dirty: true,
             answered: 0,
+            drawn_commits: 0,
             next_callbacks: None,
             held: None,
             on: true,
@@ -828,7 +831,9 @@ fn step(
         }
         due = earlier(due, turn.wake);
         // A commit that failed wakes the loop for the next try (see `failed`).
-        if screen.shows == Shows::Own {
+        if screen.on && screen.surface.rendering() {
+            due = earlier(due, present(drawing, server, index));
+        } else if screen.shows == Shows::Own {
             if screen.on && !screen.surface.in_flight() {
                 due = earlier(due, present_ui(screen, server, &mut drawing.pipeline, &drawing.cursor));
             }
@@ -897,8 +902,12 @@ fn outputs(drawing: &mut Drawing, server: &mut Server) {
             }
             if mode != screen.surface.pending_mode() {
                 log::info!("drm: top screen at {} Hz", mode.vrefresh());
+                let rendering = screen.surface.rendering();
                 match screen.surface.use_mode(mode) {
                     Ok(()) => {
+                        if rendering {
+                            screen.feedback.discard();
+                        }
                         screen.interval = Duration::from_micros(1_000_000 / u64::from(mode.vrefresh().max(1)));
                         screen.dirty = true;
                     }
@@ -918,7 +927,7 @@ fn compose(drawing: &mut Drawing, server: &mut Server, index: usize, capture: bo
     let Some(screen) = screens.get(index) else { return Ok(()) };
     let shows_own = matches!(screen.shows, Shows::Own | Shows::Window(_));
     // (A screen following another's pace shows the scene that one composes.)
-    if !screen.paces || !composes(screen.on, screen.surface.in_flight(), shows_own, capture) {
+    if !screen.paces || !composes(screen.on, screen.surface.in_flight() || screen.surface.rendering(), shows_own, capture) {
         return Ok(());
     }
     let down = screen.down();
