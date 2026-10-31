@@ -234,3 +234,68 @@ fn left_and_right_step_the_players_and_a_controllers_player() {
     assert_eq!(navigate(&s, &d, &memory, Dir::Right), Some(Event::Controller(ControllerEvent::Step(0, 1))));
     assert!(matches!(navigate(&s, &d, &memory, Dir::Up), Some(Event::Pointer(PointerEvent::Focus(Id::Device(DeviceId::Players))))), "up goes by direction");
 }
+
+fn settings_core() -> clamshell_ui::Core {
+    let account = clamshell_state::setup::account::Account::NoHelper;
+    let state = State::new(Init { library: Some(clamshell_library::demo::library()), account, ..Init::default() });
+    let mut core = clamshell_ui::Core::new(state, crate::VIEWS, || {}).expect("a core");
+    for screen in Screen::BOTH {
+        core.resize(screen, (1280, 720), 1);
+    }
+    core.handle(Event::tick(1_760_000_000));
+    core.handle(PointerEvent::Activate(Id::Tab(Tab::Settings)).into());
+    core.handle(PointerEvent::Focus(Id::Settings(SettingsId::Tile(Setting::FpsCap))).into());
+    for layer in [
+        clamshell_ui::Layer::Screen(Screen::Top),
+        clamshell_ui::Layer::Screen(Screen::Bottom),
+        clamshell_ui::Layer::Overlay(Screen::Top),
+        clamshell_ui::Layer::Overlay(Screen::Bottom),
+    ] {
+        core.record(layer, false);
+    }
+    core.frames_done();
+    core
+}
+
+#[test]
+fn enter_refreshes_targets_when_a_menu_opens_before_the_next_frame() {
+    for keyboard in [true, false] {
+        let mut core = settings_core();
+        core.handle(PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::FpsCap))).into());
+        // No intervening frame: the recorded FPS tile is now hidden by its menu.
+        if keyboard {
+            core.key(xkeysym::Keysym::Return, true);
+            core.key(xkeysym::Keysym::Return, false);
+        } else {
+            core.handle(Event::Pad(PadInput::A(true)));
+            core.handle(Event::Pad(PadInput::A(false)));
+        }
+        assert_eq!(core.state().panel().tile_value(Setting::FpsCap), 0);
+        assert!(core.state().pointer().pressed().is_none());
+    }
+    let mut core = settings_core();
+    core.key(xkeysym::Keysym::Return, true);
+    core.key(xkeysym::Keysym::Return, false);
+    assert_eq!(core.state().panel().tile_value(Setting::FpsCap), 30, "ordinary Enter still activates its target");
+    assert!(core.state().pointer().pressed().is_none());
+}
+
+#[test]
+fn enter_releases_its_original_press_when_a_mode_appears() {
+    use clamshell_state::DockId;
+    let mut core = settings_core();
+    core.key(xkeysym::Keysym::Return, true);
+    assert!(core.state().pointer().pressed().is_some());
+    core.handle(PointerEvent::Activate(Id::Tab(Tab::Dock)).into());
+    core.handle(PointerEvent::LongPress(Id::Dock(DockId::Entry(0))).into());
+    core.handle(PointerEvent::Activate(Id::Dock(DockId::Move)).into());
+    assert!(core.state().dock().moving().is_some());
+    // The release ends Enter's press even though a mode now takes A. It must not release PadA.
+    core.key(xkeysym::Keysym::Return, false);
+    assert!(core.state().pointer().pressed().is_none());
+    assert!(core.state().dock().moving().is_some());
+    core.key(xkeysym::Keysym::Return, true);
+    assert!(core.state().dock().moving().is_none(), "a fresh mode takes the next Enter");
+    core.key(xkeysym::Keysym::Return, false);
+    assert!(core.state().pointer().pressed().is_none(), "a mode disappearing leaves no held press");
+}

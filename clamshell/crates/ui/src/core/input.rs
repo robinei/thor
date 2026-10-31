@@ -96,11 +96,16 @@ impl Core {
     ///   between the second screen and whatever else wants it, such as the pad mouse or typing. The pad
     ///   thread sends View from there too.
     pub(crate) fn pad(&mut self, input: PadInput) {
+        self.pad_from(input, Source::PadA);
+    }
+
+    /// Enter follows the same fresh targets and modes as A, but keeps its own press and release.
+    fn pad_from(&mut self, input: PadInput, source: Source) {
         self.handle(Event::PadActive);
         self.fresh();
         // A held A lets go wherever it was pressed, a mode or not, so no press is left held.
         if input == PadInput::A(false) {
-            self.up(Source::PadA, End::Release, std::time::Instant::now());
+            self.up(source, End::Release, std::time::Instant::now());
         }
         // A mode drawn takes the pad's buttons first: a dock tile being moved, or the overview.
         if let Some(mode) = self.mode() {
@@ -121,7 +126,7 @@ impl Core {
             return self.handle_all(event);
         }
         match input {
-            PadInput::A(true) => self.press_focus(Source::PadA),
+            PadInput::A(true) => self.press_focus(source),
             PadInput::A(false) => {}
             // The Back button is B on ClamShell's screens.
             PadInput::B | PadInput::Back => self.handle_all(focus::back(&self.state, &self.screens)),
@@ -172,9 +177,7 @@ impl Core {
     /// mode, the mode's.
     pub fn key(&mut self, sym: Keysym, down: bool) {
         match focus::desktop_key(sym) {
-            Some(PadInput::A(_)) if self.mode().is_some() => self.pad(PadInput::A(down)),
-            Some(PadInput::A(_)) if down => self.press_focus(Source::Enter),
-            Some(PadInput::A(_)) => self.up(Source::Enter, End::Release, std::time::Instant::now()),
+            Some(PadInput::A(_)) => self.pad_from(PadInput::A(down), Source::Enter),
             Some(input) if down => self.pad(input),
             _ => {}
         }

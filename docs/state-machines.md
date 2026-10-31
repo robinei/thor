@@ -2014,3 +2014,10 @@ Pointer lock retains its position and confinement continues to restrict it to th
 `the_free_cursor_stays_in_the_scene_and_crosses_between_both_screens` checks edges, seam and resize;
 `clipping_the_cursor_does_not_clip_relative_motion_sent_to_a_client` checks protocol deltas, alongside
 the existing lock/confinement protocol fixtures.
+
+Desktop Enter follows pad A's routing after refreshing stale targets and modes, but each retains its
+own input source. A release ends its source's original press even if a mode has appeared or vanished.
+`enter_refreshes_targets_when_a_menu_opens_before_the_next_frame` uses the real views to check that
+opening the FPS menu prevents activation of the hidden tile; ordinary Enter still changes its value.
+`enter_releases_its_original_press_when_a_mode_appears` checks release while a dock move takes input,
+then Enter ending that move without leaving a press held.
