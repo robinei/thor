@@ -36,7 +36,7 @@ fn follow(backlights: &Backlights, carried: &super::sound::Carried, commands: &R
     let (mut audio, mut lights) = (false, false);
     let (mut last_audio, mut last_lights) = (Changed::default(), Changed::default());
     loop {
-        if audio && let Some(read) = last_audio.offer(read_audio(carried.seen())) {
+        if audio && let Some(read) = last_audio.offer(read_audio(carried)) {
             sink.send(Event::Reading(Reading::Audio(read)))?;
         }
         if lights && let Some(read) = last_lights.offer(backlights.names()) {
@@ -58,25 +58,42 @@ fn follow(backlights: &Backlights, carried: &super::sound::Carried, commands: &R
     }
 }
 
-/// The PipeWire graph, as `pw-dump` prints it. It is read every few seconds, so a failure is logged at
-/// debug; a missing `pw-dump` is reported at start with the other tools. Both the status's volume and
-/// the sound tab's mixer read it, so a graph read less than [`DUMP_FRESH`] ago is shared.
-fn dump() -> Option<Arc<Value>> {
-    use crate::os::command;
-    static LAST: Mutex<Option<(Instant, Arc<Value>)>> = Mutex::new(None);
-    if let Some((at, graph)) = crate::os::lock(&LAST).as_ref()
-        && at.elapsed() < DUMP_FRESH
-    {
-        return Some(graph.clone());
+/// The PipeWire graph, as `pw-dump` prints it, with the number of the last sound command carried out
+/// before it was read. It is read every few seconds, so a failure is logged at debug; a missing `pw-dump`
+/// is reported at start with the other tools. Both the status's volume and the sound tab's mixer read it,
+/// so a graph read less than [`DUMP_FRESH`] ago is shared (see [`Dumps`]).
+fn dump(carried: &super::sound::Carried) -> (u64, Option<Arc<Value>>) {
+    static DUMPS: Dumps = Dumps(Mutex::new(None));
+    DUMPS.get(carried.seen(), || {
+        use crate::os::command;
+        let ran = command::run("pw-dump", &[] as &[&str], None, command::LIMIT).inspect_err(|e| log::debug!("{e}")).ok()?;
+        if !ran.status.success() {
+            log::debug!("pw-dump: {}", ran.status);
+            return None;
+        }
+        serde_json::from_slice(&ran.stdout).inspect_err(|e| log::debug!("pw-dump: {e}")).ok()
+    })
+}
+
+/// The last graph read, when, and the last sound command carried out before it was read.
+struct Dumps(Mutex<Option<(Instant, u64, Arc<Value>)>>);
+
+impl Dumps {
+    /// A graph that has seen sound command `seen`, the last carried out, and the number of the last it
+    /// has seen. The last graph read is used again while it is fresh and was read after that command: one
+    /// read by the other thread before the command would bring back the level from before it, said to
+    /// have seen it. Otherwise one is read with `read`.
+    fn get(&self, seen: u64, read: impl FnOnce() -> Option<Value>) -> (u64, Option<Arc<Value>>) {
+        if let Some((at, read_after, graph)) = crate::os::lock(&self.0).as_ref()
+            && at.elapsed() < DUMP_FRESH
+            && *read_after >= seen
+        {
+            return (*read_after, Some(graph.clone()));
+        }
+        let Some(graph) = read().map(Arc::new) else { return (seen, None) };
+        *crate::os::lock(&self.0) = Some((Instant::now(), seen, graph.clone()));
+        (seen, Some(graph))
     }
-    let ran = command::run("pw-dump", &[] as &[&str], None, command::LIMIT).inspect_err(|e| log::debug!("{e}")).ok()?;
-    if !ran.status.success() {
-        log::debug!("pw-dump: {}", ran.status);
-        return None;
-    }
-    let graph: Arc<Value> = Arc::new(serde_json::from_slice(&ran.stdout).inspect_err(|e| log::debug!("pw-dump: {e}")).ok()?);
-    *crate::os::lock(&LAST) = Some((Instant::now(), graph.clone()));
-    Some(graph)
 }
 
 /// How long a graph read by `pw-dump` is used again (see [`dump`]).
@@ -84,13 +101,16 @@ const DUMP_FRESH: Duration = Duration::from_secs(1);
 
 /// The outputs and apps, with `seen`, the number of the last sound command carried out before they were
 /// read.
-fn read_audio(seen: u64) -> Audio {
-    Audio { seen, ..dump().map(|v| parse(&v)).unwrap_or_default() }
+fn read_audio(carried: &super::sound::Carried) -> Audio {
+    let (seen, graph) = dump(carried);
+    Audio { seen, ..graph.map(|v| parse(&v)).unwrap_or_default() }
 }
 
-/// The default output's volume (0-100) and whether it is muted.
-pub(crate) fn read_volume() -> Option<(u8, bool)> {
-    dump().and_then(|graph| default_volume(&graph))
+/// The default output's volume (0-100) and whether it is muted, with the number of the last sound command
+/// carried out before they were read.
+pub(crate) fn read_volume(carried: &super::sound::Carried) -> (u64, Option<(u8, bool)>) {
+    let (seen, graph) = dump(carried);
+    (seen, graph.and_then(|graph| default_volume(&graph)))
 }
 
 static NULL: Value = Value::Null;
@@ -173,6 +193,24 @@ fn parse(dump: &Value) -> Audio {
 mod tests {
     use super::*;
 
+    /// A graph read before a sound command was carried out isn't used again for a reading said to have
+    /// seen it, as when the other thread read it a moment before the change: the old volume would come
+    /// back.
+    #[test]
+    fn a_graph_read_before_a_command_is_read_again_after_it() {
+        let dumps = Dumps(Mutex::new(None));
+        let reads = std::cell::Cell::new(0);
+        let read = || {
+            reads.set(reads.get() + 1);
+            Some(Value::from(reads.get()))
+        };
+        assert_eq!(dumps.get(4, read), (4, Some(Arc::new(Value::from(1)))));
+        assert_eq!(dumps.get(4, read), (4, Some(Arc::new(Value::from(1)))), "shared while fresh");
+        assert_eq!(dumps.get(5, read), (5, Some(Arc::new(Value::from(2)))), "command 5 carried out since: read again");
+        assert_eq!(reads.get(), 2);
+        assert_eq!(dumps.get(6, || None), (6, None), "a failed read says what it would have seen");
+    }
+
     #[test]
     fn reads_outputs_streams_and_the_default() {
         let dump = serde_json::json!([
@@ -213,9 +251,10 @@ mod live {
     #[test]
     #[ignore = "needs PipeWire"]
     fn reads_pipewire() {
-        let audio = super::read_audio(0);
+        let carried = crate::audio::sound::Carried::default();
+        let audio = super::read_audio(&carried);
         println!("{audio:#?}");
         assert!(audio.outputs.iter().filter(|o| o.default).count() <= 1);
-        println!("{:?}", super::read_volume());
+        println!("{:?}", super::read_volume(&carried));
     }
 }

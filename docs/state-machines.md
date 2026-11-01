@@ -730,7 +730,10 @@ Wi-Fi and Bluetooth readings replace the state whole; the system is the authorit
 The sound (volume, mute, streams, outputs) is the system's: readings are kept as they come, each with
 the number of the last sound command carried out when it was read, and what is shown is ClamShell's
 latest command of a kind until a reading has seen it, then the reading (`Levels::volume`). A reading
-from before a command can't win over it; one after shows whatever changed the sound since. Commands
+from before a command can't win over it; one after shows whatever changed the sound since. The status
+and the mixer share a `pw-dump` graph read less than a second ago only if it was read after the last
+command carried out, so a reading never claims a command its graph hasn't seen (system
+`a_graph_read_before_a_command_is_read_again_after_it`). Commands
 the sound thread hadn't carried out when it restarted give way to the readings. Brightness and
 per-screen shares are ClamShell's; the slider; the brightness save. Tests:
 `the_volume_tab_watches_and_sets_levels`, `commands_lost_with_the_sound_thread_give_way_to_the_readings`,

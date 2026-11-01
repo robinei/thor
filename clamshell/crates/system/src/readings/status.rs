@@ -55,8 +55,8 @@ fn follow(backlights: &Backlights, carried: &Carried, sink: &impl Sink, commands
 fn read(backlights: &Backlights, carried: &Carried) -> Status {
     let (battery, charging, discharging) = read_battery().unwrap_or((None, false, false));
     let wifi = sys::text("/proc/net/wireless").as_deref().and_then(parse_wireless);
-    let sound_seen = carried.seen();
-    let (volume, muted) = mixer::read_volume().map_or((None, false), |(v, m)| (Some(v), m));
+    let (sound_seen, read) = mixer::read_volume(carried);
+    let (volume, muted) = read.map_or((None, false), |(v, m)| (Some(v), m));
     Status { battery, charging, discharging, wifi, volume, muted, sound_seen, brightness: backlights.level() }
 }
 
