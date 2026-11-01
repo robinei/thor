@@ -310,6 +310,29 @@ struct Pads {
     look_due: bool,
     /// The system sleeps: the gyro stays closed until it wakes.
     asleep: bool,
+    /// The extras' last search that left one missing: the controller they were for and the input devices
+    /// there were. They aren't looked for again until either changes (see [`Extras`]).
+    extras_missing: Option<Extras>,
+}
+
+/// What the gyro and the AYN button were looked for with: the slot of the controller they go with, and
+/// the input devices (`/dev/input/event*`) there were. Looking opens every input device, which holds up
+/// the controllers' reads (see [`PadThread::route_events`]), so a search that found nothing is made again
+/// only for another controller or another set of devices.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Extras {
+    slot: u32,
+    devices: Vec<std::ffi::OsString>,
+}
+
+impl Extras {
+    fn now(slot: u32) -> Extras {
+        let mut devices: Vec<std::ffi::OsString> = std::fs::read_dir("/dev/input")
+            .map(|d| d.flatten().map(|e| e.file_name()).filter(|n| n.to_string_lossy().starts_with("event")).collect())
+            .unwrap_or_default();
+        devices.sort();
+        Extras { slot, devices }
+    }
 }
 
 /// A player's router, what it makes of the player's controller, and its keymap's buzz playing.
@@ -617,15 +640,21 @@ impl<S: Sink> PadThread<S> {
             return;
         };
         let Some(slot) = pads.controllers.get(host).map(|c| c.slot) else { return };
+        let looked = Extras::now(slot);
+        let search = pads.extras_missing.as_ref() != Some(&looked);
         // The AYN button, from whichever controller had it.
         if self.controls.auxiliary.is_some() && pads.controllers.get(host).is_some_and(|c| c.ayn.is_none()) {
             let had = pads.controllers.iter_mut().find_map(|c| c.ayn.take());
-            let ayn = had.or_else(|| AuxiliaryKey::find(self.controls.auxiliary));
+            let ayn = had.or_else(|| search.then(|| AuxiliaryKey::find(self.controls.auxiliary)).flatten());
             if let Some(c) = pads.controllers.get_mut(host) {
                 c.ayn = ayn;
             }
         }
         if pads.asleep || pads.motion.as_ref().is_some_and(|(_, s)| *s == slot) {
+            pads.extras_missing = self.ayn_missing(pads, host).then_some(looked);
+            return;
+        }
+        if !search {
             return;
         }
         // Closed before it is found again, for the sensor hub's stream.
@@ -634,6 +663,12 @@ impl<S: Sink> PadThread<S> {
         // The sensor hub is the built-in controller's, or any controller's where the device names none.
         let hub = if c.builtin || self.controls.builtin_driver.is_none() { self.sensor_hub } else { None };
         pads.motion = find_motion(motion::Ident { name: &c.name, phys: &c.phys, uniq: &c.uniq }, hub).map(|m| (m, c.slot));
+        pads.extras_missing = (pads.motion.is_none() || self.ayn_missing(pads, host)).then_some(looked);
+    }
+
+    /// Whether the device has an AYN button the controller at `host` hasn't got.
+    fn ayn_missing(&self, pads: &Pads, host: usize) -> bool {
+        self.controls.auxiliary.is_some() && pads.controllers.get(host).is_some_and(|c| c.ayn.is_none())
     }
 
     /// The state's players changed: each controller goes to its player now, the count's pads and routers
@@ -751,6 +786,7 @@ impl Pads {
             next_look: None,
             look_due: false,
             asleep: false,
+            extras_missing: None,
         }
     }
 
@@ -1071,6 +1107,8 @@ impl<S: Sink> PadThread<S> {
                 }
                 Ok(Command::Woke) => {
                     pads.asleep = false;
+                    // The gyro was closed for sleep, not missing: it is looked for again.
+                    pads.extras_missing = None;
                     self.place_extras(pads);
                 }
                 Ok(Command::CalibrateSticks) => {
@@ -1164,6 +1202,18 @@ impl<S: Sink> PadThread<S> {
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+
+    /// A search for the gyro and the AYN button that found nothing is made again only for another
+    /// controller or another set of input devices: a look with the same ones skips it.
+    #[test]
+    fn a_search_for_the_extras_is_made_again_only_when_something_changed() {
+        let missing = Extras { slot: 1, devices: vec!["event0".into(), "event3".into()] };
+        let pads = Pads { extras_missing: Some(missing.clone()), ..Pads::new(Player::ONE, &std::array::from_fn(|_| Keymap::default()), PadRoute::Ui, false) };
+        let search = |now: &Extras| pads.extras_missing.as_ref() != Some(now);
+        assert!(!search(&missing), "the same controller and devices");
+        assert!(search(&Extras { devices: vec!["event0".into(), "event3".into(), "event4".into()], ..missing.clone() }), "a device added");
+        assert!(search(&Extras { slot: 2, ..missing }), "another controller");
+    }
     use crate::os::evdev::Press;
     use clamshell_state::keymap::{Binding, Button, Input, Output};
     use evdev::KeyCode;
