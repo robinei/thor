@@ -595,6 +595,7 @@ State: `clip`, `selected`, `armed`, `busy`, `hidden`, the listings.
 | Library read again: the listings of the folders open (each collection's open path, a pick's way) applied again in order with one index build; the others dropped, listed again when opened | `only_the_open_folders_listings_outlive_the_library_read_again`, `listings_outlive_the_library_read_again`; tests `a_reload_keeps_the_listings_of_folders_in_folders_listed_again` |
 | Busy, Done: each operation sent ends in one Done, in order; `busy` lasts while any runs; Failed (outside an operation, an archive not mounted) only tells | `busy_lasts_while_any_operation_runs` |
 | sync: `Browse(Open)` on folder or hidden changes, `Browse(InUse)` by hash | `the_folder_open_is_listed…`, `an_archive_is_a_folder_…` |
+| the browse thread (or ClamShell) started again: an archive mount left running is kept until `InUse` has named it and then doesn't; the rest left are cleaned up (system `files/archives.rs`) | system `a_mount_kept_from_before_is_unmounted_only_once_the_files_in_use_have_named_it`, `mounts_left_running_are_kept_and_the_rest_cleaned_up`; ignored `live_mount_and_unmount` (ratarmount) |
 
 ### Edit mode (the Library/edit.rs, form.rs)
 

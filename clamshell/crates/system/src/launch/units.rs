@@ -237,11 +237,12 @@ pub(crate) fn end(unit: &str, force: bool) -> Result<(), Error> {
     })
 }
 
-/// Stops every running unit whose name matches `pattern`, a glob as `ListUnitsByPatterns` takes it.
-pub(crate) fn stop_matching(pattern: &str) -> Result<(), Error> {
+/// Stops every running unit whose name matches `pattern`, a glob as `ListUnitsByPatterns` takes it, but
+/// those `spared` names.
+pub(crate) fn stop_matching(pattern: &str, spared: &dyn Fn(&str) -> bool) -> Result<(), Error> {
     with_manager(|bus| {
         for row in units(bus, &[pattern])? {
-            if !matches!(row.3.as_str(), "inactive" | "failed") {
+            if !matches!(row.3.as_str(), "inactive" | "failed") && !spared(&row.0) {
                 call::<(Path<'static>,)>(bus, "StopUnit", (row.0.as_str(), "replace"))?;
             }
         }

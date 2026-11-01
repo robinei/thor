@@ -6,8 +6,8 @@
 //! Each mount is a service of its own, `clamshell-archive-<hash>.service`, running ratarmount in the
 //! foreground in the session's `background-graphical.slice`. Unmounting means stopping the service. After it
 //! stops or crashes the mount is detached lazily, so none is left behind, and the session ending stops
-//! them all. The indexes are kept in the cache, not beside the archives. Services left by an earlier
-//! ClamShell are stopped at start.
+//! them all. The indexes are kept in the cache, not beside the archives. Mounts left by an earlier
+//! ClamShell are kept, since a launch that outlived it may read from them (see [`Mounts::new`]).
 
 use std::ffi::{OsStr, OsString};
 use std::fs;
@@ -39,44 +39,62 @@ pub(crate) struct Mounts {
     /// Where they are mounted, each in a dir of its own, and where their indexes are kept.
     root: Option<PathBuf>,
     index: Option<PathBuf>,
-    mounted: Vec<(PathBuf, PathBuf)>,
+    mounted: Vec<Mount>,
+}
+
+/// An archive mounted, known by its dir (a hash of the archive's path, as is its service's name).
+#[derive(Debug, PartialEq, Eq)]
+struct Mount {
+    dir: PathBuf,
+    /// Mounted by an earlier ClamShell, and not yet named by the files in use (see [`Mounts::new`]).
+    adopted: bool,
 }
 
 impl Mounts {
-    /// Mounts go under `runtime`'s `archives` (ClamShell's runtime folder) and indexes in `cache`. Mounts
-    /// left there by an earlier ClamShell are unmounted.
+    /// Mounts go under `runtime`'s `archives` (ClamShell's runtime folder) and indexes in `cache`. A mount
+    /// an earlier ClamShell left running is kept: a launch that outlived it may be reading from it, and
+    /// which file a launch from before opened isn't known again. It is unmounted once the files in use
+    /// have named it and no longer do, else when the session ends. Services left starting or stopped and
+    /// dirs left unmounted are cleaned up.
     pub(crate) fn new(runtime: Option<&Path>, cache: Option<PathBuf>) -> Mounts {
         let root = runtime.map(|d| d.join("archives"));
-        // Clean up after an earlier ClamShell: stop its services, detach any mount left, remove the dirs.
-        if let Err(e) = crate::launch::units::stop_matching("clamshell-archive-*.service") {
+        let mut mounted = Vec::new();
+        let mut stale = Vec::new();
+        if let Some(root) = &root {
+            let live = mounted_under(root);
+            (mounted, stale) = adopt(root, &live, &active);
+            for m in &mounted {
+                log::info!("archives: {} kept, mounted before", m.dir.display());
+            }
+        }
+        let ours = |unit: &str| mounted.iter().any(|m| unit_of_dir(&m.dir).as_deref() == Some(unit));
+        if let Err(e) = crate::launch::units::stop_matching("clamshell-archive-*.service", &ours) {
             log::warn!("archives: stopping those left before: {e}");
         }
-        if let Some(root) = &root {
-            for dir in mounted_under(root) {
-                detach(&dir);
-            }
-            let entries = fs::read_dir(root).inspect_err(|e| {
-                crate::os::log_unread("archives", root, e);
-            });
-            for e in entries.into_iter().flatten().flatten() {
-                if let Err(err) = fs::remove_dir(e.path()) {
-                    log::warn!("archives: removing {}: {err}", e.path().display());
+        for (dir, is_mount) in stale {
+            match is_mount {
+                true => detach(&dir),
+                false => {
+                    if let Err(err) = fs::remove_dir(&dir) {
+                        log::warn!("archives: removing {}: {err}", dir.display());
+                    }
                 }
             }
         }
-        Mounts { root, index: cache.map(|c| c.join("archive-index")), mounted: Vec::new() }
+        Mounts { root, index: cache.map(|c| c.join("archive-index")), mounted }
     }
 
     /// Where `archive` is mounted, mounting it now if it isn't. Errs with what went wrong if it can't be,
     /// or once `interrupted` says something else was asked for meanwhile: mounting a big archive reads it
     /// through first, which can take a while.
     pub(crate) fn mount(&mut self, archive: &Path, interrupted: &mut dyn FnMut() -> bool) -> Result<PathBuf, NotMounted> {
-        if let Some((_, dir)) = self.mounted.iter().find(|(a, _)| a == archive) {
-            return Ok(dir.clone());
-        }
         let name = archive.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned());
         let root = self.root.as_ref().ok_or_else(|| NotMounted::Failed("no runtime dir".into()))?;
-        let dir = root.join(format!("{:016x}", hash(archive)));
+        let dir = dir_of(root, archive);
+        if let Some(m) = self.mounted.iter_mut().find(|m| m.dir == dir) {
+            m.adopted = false;
+            return Ok(dir);
+        }
         fs::create_dir_all(&dir).map_err(|e| NotMounted::Failed(format!("Opening {name}: {e}")))?;
         let unit = unit_of(archive);
         let mut argv: Vec<OsString> = ["ratarmount", "--foreground"].map(OsString::from).into();
@@ -147,25 +165,61 @@ impl Mounts {
             return Err(NotMounted::Failed(format!("{name} can't be opened (damaged, or it has a password)")));
         }
         log::info!("archives: {} mounted at {}", archive.display(), dir.display());
-        self.mounted.push((archive.to_path_buf(), dir.clone()));
+        self.mounted.push(Mount { dir: dir.clone(), adopted: false });
         Ok(dir)
     }
 
     /// Unmounts the archives `in_use` doesn't need. An archive is needed if a path in `in_use` is the
-    /// archive or is inside its mount.
+    /// archive or is inside its mount. One mounted before ClamShell started is needed until `in_use` first
+    /// names it.
     pub(crate) fn keep(&mut self, in_use: &[&Path]) {
-        self.mounted.retain(|(archive, dir)| {
-            let used = in_use.iter().any(|p| *p == archive || p.starts_with(dir));
-            if !used {
-                log::info!("archives: {} unmounted", archive.display());
-                if let Err(e) = crate::launch::units::end(&unit_of(archive), false) {
-                    log::warn!("archives: {}: {e}", archive.display());
-                    detach(dir);
-                }
+        for dir in self.unused(in_use) {
+            log::info!("archives: {} unmounted", dir.display());
+            let stopped = unit_of_dir(&dir).map(|unit| crate::launch::units::end(&unit, false));
+            if let Some(Err(e)) = &stopped {
+                log::warn!("archives: {}: {e}", dir.display());
             }
-            used
-        });
+            if !matches!(stopped, Some(Ok(()))) {
+                detach(&dir);
+            }
+        }
     }
+
+    /// Forgets the mounts `in_use` doesn't need (see [`Mounts::keep`]) and returns their dirs.
+    fn unused(&mut self, in_use: &[&Path]) -> Vec<PathBuf> {
+        let Some(root) = &self.root else { return Vec::new() };
+        let mut gone = Vec::new();
+        self.mounted.retain_mut(|m| {
+            let used = in_use.iter().any(|p| p.starts_with(&m.dir) || dir_of(root, p) == m.dir);
+            if used {
+                m.adopted = false;
+            }
+            if !used && !m.adopted {
+                gone.push(m.dir.clone());
+                return false;
+            }
+            true
+        });
+        gone
+    }
+}
+
+/// The dirs under `root` sorted: the mounts whose service is running (`active`) are kept, and every
+/// other dir is stale, with whether it is a mount still (`live`).
+fn adopt(root: &Path, live: &[PathBuf], active: &dyn Fn(&str) -> bool) -> (Vec<Mount>, Vec<(PathBuf, bool)>) {
+    let entries = fs::read_dir(root).inspect_err(|e| {
+        crate::os::log_unread("archives", root, e);
+    });
+    let mut kept = Vec::new();
+    let mut stale = Vec::new();
+    for dir in entries.into_iter().flatten().flatten().map(|e| e.path()) {
+        let is_mount = live.contains(&dir);
+        match is_mount && unit_of_dir(&dir).is_some_and(|u| active(&u)) {
+            true => kept.push(Mount { dir, adopted: true }),
+            false => stale.push((dir, is_mount)),
+        }
+    }
+    (kept, stale)
 }
 
 /// The mounts directly under `root`.
@@ -173,9 +227,19 @@ fn mounted_under(root: &Path) -> Vec<PathBuf> {
     crate::os::sys::mount_table().into_iter().map(|m| m.dir).filter(|d| d.parent() == Some(root)).collect()
 }
 
+/// The dir under `root` archive `archive` is mounted on.
+fn dir_of(root: &Path, archive: &Path) -> PathBuf {
+    root.join(format!("{:016x}", hash(archive)))
+}
+
 /// The service of archive `archive`'s mount.
 fn unit_of(archive: &Path) -> String {
     format!("clamshell-archive-{:016x}.service", hash(archive))
+}
+
+/// The service of the mount on `dir`, named as its dir is.
+fn unit_of_dir(dir: &Path) -> Option<String> {
+    Some(format!("clamshell-archive-{}.service", dir.file_name()?.to_str()?))
 }
 
 /// Whether service `unit` is running or starting. If the user manager can't be asked, it counts as
@@ -220,6 +284,48 @@ mod tests {
     }
 
     #[test]
+    fn mounts_left_running_are_kept_and_the_rest_cleaned_up() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let [running, crashed, empty] = [Path::new("/a.zip"), Path::new("/b.zip"), Path::new("/c.zip")].map(|a| dir_of(root, a));
+        for dir in [&running, &crashed, &empty] {
+            fs::create_dir(dir).unwrap();
+        }
+        let live = [running.clone(), crashed.clone()];
+        let unit = unit_of(Path::new("/a.zip"));
+        let (kept, stale) = adopt(root, &live, &|u| u == unit);
+        assert_eq!(kept, [Mount { dir: running, adopted: true }]);
+        let mut stale = stale;
+        stale.sort();
+        let mut expected = vec![(crashed, true), (empty, false)];
+        expected.sort();
+        assert_eq!(stale, expected, "the crashed one is detached, the empty dir removed");
+    }
+
+    #[test]
+    fn a_mount_kept_from_before_is_unmounted_only_once_the_files_in_use_have_named_it() {
+        let root = PathBuf::from("/run/archives");
+        let game = dir_of(&root, Path::new("/roms/game.7z"));
+        let other = dir_of(&root, Path::new("/roms/other.zip"));
+        let mut mounts =
+            Mounts { root: Some(root), index: None, mounted: vec![Mount { dir: game.clone(), adopted: true }, Mount { dir: other.clone(), adopted: false }] };
+        assert_eq!(mounts.unused(&[]), [other], "the files in use at start don't know what a launch from before opened");
+        let disc = game.join("disc1.cue");
+        assert!(mounts.unused(&[disc.as_path()]).is_empty());
+        assert_eq!(mounts.unused(&[]), [game], "named, then no longer");
+        assert!(mounts.mounted.is_empty());
+    }
+
+    #[test]
+    fn an_archive_in_use_by_its_own_path_stays_mounted() {
+        let root = PathBuf::from("/run/archives");
+        let archive = Path::new("/roms/game.7z");
+        let mut mounts = Mounts { root: Some(root.clone()), index: None, mounted: vec![Mount { dir: dir_of(&root, archive), adopted: true }] };
+        assert!(mounts.unused(&[archive]).is_empty());
+        assert_eq!(mounts.mounted, [Mount { dir: dir_of(&root, archive), adopted: false }]);
+    }
+
+    #[test]
     #[ignore = "needs a user manager, ratarmount and bsdtar"]
     fn live_mount_and_unmount() {
         let tmp = tempfile::tempdir().unwrap();
@@ -231,6 +337,11 @@ mod tests {
         assert_eq!(mounts.mount(&zip, &mut || true), Err(NotMounted::Interrupted), "something else asked for at once");
         let at = mounts.mount(&zip, &mut || false).unwrap();
         assert_eq!(fs::read_to_string(at.join("inside.txt")).unwrap(), "hello");
+        // A ClamShell started again keeps it, until the files in use have named it and no longer do.
+        let mut mounts = Mounts::new(Some(dir), None);
+        mounts.keep(&[]);
+        assert_eq!(fs::read_to_string(at.join("inside.txt")).unwrap(), "hello", "kept from before");
+        assert_eq!(mounts.mount(&zip, &mut || false).unwrap(), at);
         mounts.keep(&[]);
         let unit = unit_of(&zip);
         let gone = (0..50).any(|_| {

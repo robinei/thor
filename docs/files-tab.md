@@ -72,7 +72,10 @@ are offered only where they can be done.)
   compressed tar is read through once for its index.
 - It stays mounted while it is needed: the folder open is it or in it, an entry of it is copied (to be
   pasted), or a running launch opened a file in it. Then its service is stopped, and the mount detached
-  after it (lazily, also if ratarmount crashed). Services left by a ClamShell before are stopped at start.
+  after it (lazily, also if ratarmount crashed). A mount a ClamShell before left running is kept at start,
+  since a launch that outlived it may read from it and which file it opened isn't known again; it goes
+  once the files in use have named it and then no longer do, or when the session ends. Services left
+  starting, and dirs left unmounted, are cleaned up at start.
 - Random access in a solid 7z or a rar is slow (a read may decompress from the start of a block): a game
   that reads a big disc image packed so is better extracted.
 - One that can't be mounted (damaged, a password) opens empty, with a notice saying why.
