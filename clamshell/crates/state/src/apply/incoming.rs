@@ -26,6 +26,9 @@ impl State {
         }
         self.levels.save_due(mono_secs, out);
         self.bottom.expire_notice(mono_secs);
+        if self.setup.reread_due(mono_secs) {
+            out.effects.push(Effect::Account(crate::setup::account::AccountCommand::Read));
+        }
     }
 
     /// A reading of the system from a system thread. It is stored, and after a status reading the
@@ -55,7 +58,7 @@ impl State {
             Reading::Audio(audio) => self.levels.read_audio(audio),
             Reading::Backlights(backlights) => self.levels.read_backlights(backlights),
             Reading::Time(time) => self.sys.read_time(time),
-            Reading::Account(account) => self.setup.read_account(account),
+            Reading::Account(account) => self.setup.read_account(account, self.clock.mono()),
         }
         if status && let Some(warning) = self.sys.battery_warning() {
             self.notify(warning, out);

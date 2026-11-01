@@ -157,6 +157,8 @@ fn spawn_account(
 ) -> io::Result<Worker<AccountCommand>> {
     use clamshell_state::setup::account::Account;
     Worker::spawn(clamshell_state::Thread::Account.name(), move |commands| {
+        // Whether the last read failed, so that a read that works again is logged (the failure was).
+        let mut failing = false;
         for command in commands {
             let changing = command != AccountCommand::Read;
             let events = crate::os::worker::or_on_panic(
@@ -178,6 +180,13 @@ fn spawn_account(
                 },
             );
             for event in events {
+                if let Event::Reading(Reading::Account(account)) = &event {
+                    let failed = matches!(account, Account::Failed(_));
+                    if failing && !failed {
+                        log::info!("account: read after failing");
+                    }
+                    failing = failed;
+                }
                 if sink.send(event).is_err() {
                     return;
                 }

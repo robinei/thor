@@ -19,7 +19,8 @@ pub enum Account {
     Unread,
     /// There is no helper, as off the device: nothing to set.
     NoHelper,
-    /// The helper is there but couldn't read it: why. It is read again while Setup shows.
+    /// The helper is there but couldn't read it: why. It is read again, after a wait that grows with each
+    /// failure in a row (see [`crate::setup::Setup::reread_due`]).
     Failed(String),
     /// Read: whether the session's user has a password, and whether remote login (sshd) is on.
     Read { password: bool, ssh: bool },

@@ -47,6 +47,8 @@ CHECKS_PASSWORD = "thor-checks-1"
 ACCOUNT = "sudo env PKEXEC_UID=$(id -u) /usr/lib/thor/thor-account"
 # What ClamShell logged at its start in `setup` of not reading the account, if anything.
 AT_START = []
+# Whether ClamShell then read it again by itself.
+READ_AGAIN = False
 # PipeWire's null sink, the machine having no audio device, if it isn't there, at half volume.
 NULL_SINK = """wpctl status | grep -q thor-checks-sink || wpctl status | grep -q 'Test sink' || pw-cli create-node adapter \\
     '{ factory.name=support.null-audio-sink node.name=thor-checks-sink node.description="Test sink" media.class=Audio/Sink object.linger=true audio.position=[FL FR] }' > /dev/null 2>&1
@@ -500,17 +502,15 @@ systemctl --user restart clamshell
     # ClamShell, a user service outside any login session, is polkit's "active local session" through
     # logind's session for the user: when that isn't the console's (seen while the console's login was
     # being replaced, ssh sessions open), pkexec is refused, and the account unread shows Setup and holds
-    # every launch until it is read again. Said by session_units, and ClamShell started again so that
-    # the other checks can run.
-    global AT_START
+    # every launch until it is read again, which ClamShell does with growing waits up to a minute. Waited
+    # for here, so that the other checks can run, and said by session_units.
+    global AT_START, READ_AGAIN
     lines = journal(since).splitlines()
     last = max((i for i, line in enumerate(lines) if "Starting ClamShell" in line), default=0)
     AT_START = [line for line in lines[last:] if "account: " in line]
     if AT_START:
-        print(f"  (ClamShell started without reading the account, started again: {AT_START[-1]})")
-        sh("systemctl --user restart clamshell")
-        until(lambda: sh("systemctl --user is-active clamshell").strip() == "active", 15)
-        time.sleep(2)
+        print(f"  (ClamShell started without reading the account: {AT_START[-1]}; waiting for it to be read again)")
+        READ_AGAIN = logged(since, "account: read after failing", 90)
     return since
 
 
@@ -1700,7 +1700,7 @@ class Checks:
         status = sh("systemctl --user show -P StatusText clamshell").strip()
         self.check("  systemctl status says what runs", "running" in status and "windows" in status, repr(status))
         self.check("  the compositor taps and drags on ClamShell's touchpad", "ClamShell's touchpad taps and drags" in sh("journalctl --user -b -u clamshell -o cat --no-pager"))
-        self.check("  the account read at its start (pkexec, thor-system's polkit rule)", not AT_START,
+        self.check("  the account read (pkexec, thor-system's polkit rule), again if it failed at the start", not AT_START or READ_AGAIN,
                    " ".join(AT_START)[-300:])
 
     def tray_program(self):

@@ -213,6 +213,40 @@ mod tests {
         assert!(s.session().top_window().is_none(), "Setup in front of the window");
     }
 
+    /// A failed read (polkit refusing pkexec for a while) is read again while the watch that read it stays
+    /// on: 2 s after the failure, the wait doubling with each failure in a row up to 60 s. Once a read
+    /// succeeds, Setup goes and launches run.
+    #[test]
+    fn a_failed_read_is_read_again_with_growing_waits_and_launches_follow() {
+        let reread = |fx: &[Effect]| fx.iter().filter(|e| matches!(e, Effect::Account(AccountCommand::Read))).count();
+        let failed = || Event::Reading(Reading::Account(Account::Failed("Error creating textual authentication agent".into())));
+        let mut s = State::new(Init { account: Account::Unread, ..init() });
+        s.applied(Event::tick(100));
+        s.applied(Event::Start);
+        s.applied(failed());
+        assert_eq!(s.setup().wizard(), Some(Step::Password));
+        let mut at = 100;
+        for wait in [2, 4, 8, 16, 32, 60, 60] {
+            assert_eq!(reread(&s.applied(Event::tick(at + wait - 1))), 0, "not before {wait} s");
+            assert_eq!(reread(&s.applied(Event::tick(at + wait))), 1, "after {wait} s");
+            assert_eq!(reread(&s.applied(Event::tick(at + wait + 1))), 0, "once");
+            at += wait + 1;
+            s.applied(Event::tick(at));
+            s.applied(failed());
+        }
+        // A read that is never answered is asked again after the longest wait.
+        s.applied(Event::tick(at + 60));
+        assert_eq!(reread(&s.applied(Event::tick(at + 120))), 1, "unanswered: asked again");
+        let fx = s.applied(Event::Reading(Reading::Account(Account::Read { password: true, ssh: false })));
+        assert!(fx.contains(&Effect::Watch(crate::Watch::Account, false)), "{fx:?}");
+        assert_eq!((s.setup().wizard(), s.setup().reread_at()), (None, None));
+        assert_eq!(reread(&s.applied(Event::tick(at + 1000))), 0, "read: no more");
+        assert!(launch_now(&mut s, "zelda-lttp").iter().any(|e| matches!(e, Effect::Launch { .. })), "launches run");
+        // A later failure starts from the shortest wait again.
+        s.applied(failed());
+        assert_eq!(s.setup().reread_at(), Some(at + 1000 + 2));
+    }
+
     /// While Setup shows, keys typed on the keyboard go only to its editor.
     #[test]
     fn keys_without_an_editor_go_nowhere_while_setup_shows() {

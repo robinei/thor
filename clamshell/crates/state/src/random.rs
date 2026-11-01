@@ -963,6 +963,11 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     // password (see `crate::setup::wizard`). And Setup, while it shows, is in front.
     ensure!(!(s.setup().holds_programs() && effects.iter().any(|e| matches!(e, Effect::Launch { .. }))), "launched while the account holds programs");
     ensure!(s.setup().wizard().is_none() || s.session().shown_app() == Some(clamshell_library::BuiltinApp::Setup), "Setup is needed but not in front");
+    // An account that failed to read is read again within the longest wait, and only then.
+    let failed = matches!(s.setup().account(), crate::setup::account::Account::Failed(_));
+    let reread = s.setup().reread_at();
+    ensure!(failed == reread.is_some(), "account {:?} with a read again at {reread:?}", s.setup().account());
+    ensure!(reread.is_none_or(|at| at <= s.clock().mono() + crate::setup::REREAD_MOST), "the account read again only at {reread:?}");
     // 4. Live window ids are unique.
     for (i, window) in s.session().windows().iter().enumerate() {
         ensure!(!s.session().windows().iter().skip(i + 1).any(|other| other.id == window.id), "duplicate window id {}", window.id);

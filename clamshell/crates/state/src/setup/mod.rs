@@ -18,7 +18,22 @@ pub struct Setup {
     account: Account,
     /// Why the password last typed in Setup wasn't set, until another is (see [`wizard`]).
     password_problem: Option<String>,
+    /// While the account reads Failed: when it is read again (monotonic seconds), and the wait before that.
+    reread: Option<Reread>,
 }
+
+/// A read of the account again after a failed one, at `at`, `wait` seconds after the failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Reread {
+    at: u64,
+    wait: u64,
+}
+
+/// The wait before the account is read again after its first failed read, in seconds. It doubles with each
+/// failure in a row, up to [`REREAD_MOST`].
+pub const REREAD_FIRST: u64 = 2;
+/// The longest wait between reads of an account that keeps failing to read, in seconds.
+pub const REREAD_MOST: u64 = 60;
 
 impl Setup {
     /// Setup as ClamShell starts: shown at the first start (see [`wizard`]).
@@ -48,12 +63,41 @@ impl Setup {
         &self.account
     }
 
-    /// A reading of the account. A password set answers what went wrong with the one before.
-    pub(crate) fn read_account(&mut self, account: Account) {
+    /// A reading of the account at `now`. A password set answers what went wrong with the one before. A
+    /// failed read is read again ([`Setup::reread_due`]): polkit can refuse pkexec for a while, as when
+    /// ClamShell starts while the console's login is being replaced, and the watch that read it stays on.
+    pub(crate) fn read_account(&mut self, account: Account, now: u64) {
         if account.password() {
             self.password_problem = None;
         }
+        self.reread = match (&account, self.reread) {
+            (Account::Failed(_), None) => Some(Reread { at: now + REREAD_FIRST, wait: REREAD_FIRST }),
+            (Account::Failed(_), Some(last)) => {
+                let wait = (last.wait * 2).min(REREAD_MOST);
+                Some(Reread { at: now + wait, wait })
+            }
+            _ => None,
+        };
         self.account = account;
+    }
+
+    /// Whether the account, which failed to read, is to be read again at `now`: [`REREAD_FIRST`] seconds
+    /// after the first failure, the wait doubling with each failure in a row up to [`REREAD_MOST`]. The
+    /// next is timed from that read's answer, or, if none comes, [`REREAD_MOST`] seconds after it was asked.
+    pub(crate) fn reread_due(&mut self, now: u64) -> bool {
+        match &mut self.reread {
+            Some(reread) if now >= reread.at => {
+                reread.at = now + REREAD_MOST;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// When the account, which failed to read, is read again (monotonic seconds). None unless it reads
+    /// Failed.
+    pub fn reread_at(&self) -> Option<u64> {
+        self.reread.map(|r| r.at)
     }
 
     /// The account helper answered a change with `result`, or can't any more (its thread was started
