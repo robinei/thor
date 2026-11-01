@@ -180,21 +180,54 @@ pub(crate) fn spawn(policy: ChargePolicy, method: Option<String>) -> io::Result<
                     last = Some(values);
                 }
                 Next::Elapsed => charge.battery(limit.unwrap_or(100), &mut quiet),
-                // When ClamShell ends, hand the battery back to the firmware's own charging, so that a
-                // session that doesn't come back doesn't leave it held.
-                Next::Disconnected => return charge.battery(100, &mut quiet),
+                // When ClamShell ends, hand the hardware back: every core online, no caps, the battery
+                // to the firmware's own charging, so a session that doesn't come back (a maintenance
+                // pass, a desktop) doesn't run on slow cores or leave charging held.
+                Next::Disconnected => {
+                    release_caps(Path::new("/sys"), &mut quiet);
+                    return charge.battery(100, &mut quiet);
+                }
             }
         }
     })
 }
 
-/// Hands the battery back to its firmware's own charging, as the hardware thread does when ClamShell ends:
-/// for after it ended, by a crash or a kill too (clamshell.service's `ExecStopPost`), so that a session
-/// that doesn't come back doesn't leave charging held or limited. `policy` and `method` are as for
+/// Hands the hardware back, as the hardware thread does when ClamShell ends: every core online, the CPU
+/// and GPU uncapped, and the battery to its firmware's own charging. For after ClamShell ended, by a crash
+/// or a kill too (clamshell.service's `ExecStopPost`), so that a session that doesn't come back doesn't
+/// run on three slow cores or leave charging held or limited. `policy` and `method` are as for
 /// [`spawn`].
-pub(crate) fn release_charge(policy: ChargePolicy, method: Option<&str>) {
+pub(crate) fn release_hardware(policy: ChargePolicy, method: Option<&str>) {
+    let mut quiet = Quiet::default();
+    release_caps(Path::new("/sys"), &mut quiet);
     let mut charge = Charge { hold: Hold::selected(method, policy), switches: policy.switches, held: false };
-    charge.battery(100, &mut Quiet::default());
+    charge.battery(100, &mut quiet);
+}
+
+/// Brings every CPU under `sys` (sysfs) online and lifts the CPU's and the GPU's frequency caps to their
+/// most.
+fn release_caps(sys: &Path, quiet: &mut Quiet) {
+    let cpus = sys.join("devices/system/cpu");
+    for dir in sys::entries(&cpus) {
+        let online = dir.join("online");
+        let is_cpu = dir.file_name().and_then(|n| n.to_str()?.strip_prefix("cpu")?.parse::<u32>().ok()).is_some();
+        if is_cpu && online.exists() && sys::read::<u64>(&online) == Some(0) {
+            write(&online, 1, quiet);
+        }
+    }
+    for dir in sys::entries(cpus.join("cpufreq")) {
+        if let Some(max) = sys::read::<u64>(dir.join("cpuinfo_max_freq")) {
+            write(&dir.join("scaling_max_freq"), max, quiet);
+        }
+    }
+    for dir in sys::entries(sys.join("class/devfreq")) {
+        if dir.file_name().is_some_and(|n| n.to_string_lossy().contains("gpu"))
+            && let Some(&max) = read_list(&dir.join("available_frequencies")).iter().max()
+        {
+            write(&dir.join("max_freq"), max, quiet);
+        }
+    }
+    log::info!("tuning: every core online, the caps lifted");
 }
 
 /// Applies the settings in force to the hardware: frequency caps for the profile, or the CPU and GPU caps
@@ -371,6 +404,29 @@ mod tests {
         assert_eq!(targets(Hold::Firmware, 0, true), (100, 0, 0, 0));
         assert_eq!(targets(Hold::Firmware, 100, true), (100, 100, 1, 0), "release on shutdown");
         assert_eq!(targets(Hold::Threshold, 0, false), (100, 0, 1, 0), "Bypass always uses current");
+    }
+
+    /// Handing the hardware back brings the offline cores online and lifts the CPU's and the GPU's caps.
+    #[test]
+    fn the_hardware_is_handed_back_with_every_core_and_no_caps() {
+        let tmp = tempfile::tempdir().unwrap();
+        let sys = tmp.path();
+        let put = |p: &str, v: &str| {
+            let p = sys.join(p);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, v).unwrap();
+        };
+        put("devices/system/cpu/cpu0/topology", "");
+        put("devices/system/cpu/cpu5/online", "0");
+        put("devices/system/cpu/cpufreq/policy0/cpuinfo_max_freq", "1800000");
+        put("devices/system/cpu/cpufreq/policy0/scaling_max_freq", "900000");
+        put("class/devfreq/3d00000.gpu/available_frequencies", "300000000 900000000 600000000");
+        put("class/devfreq/3d00000.gpu/max_freq", "300000000");
+        release_caps(sys, &mut Quiet::default());
+        let read = |p: &str| std::fs::read_to_string(sys.join(p)).unwrap();
+        assert_eq!(read("devices/system/cpu/cpu5/online"), "1");
+        assert_eq!(read("devices/system/cpu/cpufreq/policy0/scaling_max_freq"), "1800000");
+        assert_eq!(read("class/devfreq/3d00000.gpu/max_freq"), "900000000");
     }
 
     #[test]

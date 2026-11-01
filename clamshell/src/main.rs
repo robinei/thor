@@ -96,8 +96,8 @@ fn carry_out(command: Command) -> Result<(), String> {
         }
         Command::Tray => commands::print_tray(),
         Command::LaunchEnv(entry) => commands::print_launch_env(&paths, &sources, &entry),
-        Command::ReleaseCharge => {
-            clamshell_system::release_charge(env.profile.charge, env.charge_limit.as_deref());
+        Command::ReleaseHardware => {
+            clamshell_system::release_hardware(env.profile.charge, env.charge_limit.as_deref());
             Ok(())
         }
         Command::FetchMetadata => commands::fetch_metadata(&paths, &sources),

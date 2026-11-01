@@ -19,9 +19,10 @@ Type=notify
 NotifyAccess=main
 WatchdogSec=30
 ExecStart=/usr/bin/clamshell --drm
-# However it ended (a crash, a kill), the battery goes back to its own charging; a session that comes
-# back holds it again as its settings say. (Its failure, logged, doesn't make the session's.)
-ExecStopPost=-/usr/bin/clamshell --release-charge
+# However it ended (a crash, a kill), the hardware is handed back: every core online, no caps, the battery
+# to its own charging; a session that comes back sets them again as its settings say. (Its failure,
+# logged, doesn't make the session's.)
+ExecStopPost=-/usr/bin/clamshell --release-hardware
 Restart=on-failure
 RestartSec=2
 Slice=session.slice

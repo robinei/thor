@@ -36,9 +36,10 @@ pub enum Command {
     /// with the `dev` feature).
     #[cfg(any(test, feature = "dev"))]
     Snapshot(PathBuf),
-    /// `--release-charge`: hand the battery back to its firmware's own charging, as ClamShell does when it
-    /// ends; for after it ended in a way it couldn't (clamshell.service's `ExecStopPost`).
-    ReleaseCharge,
+    /// `--release-hardware`: hand the hardware back (every core online, no caps, the battery to its
+    /// firmware's own charging), as ClamShell does when it ends; for after it ended in a way it couldn't
+    /// (clamshell.service's `ExecStopPost`).
+    ReleaseHardware,
     /// `ctl COMMAND...`: send a command to the running ClamShell (`volume up`, `screenshot`, ...; see
     /// [`crate::control`]).
     Ctl(Vec<String>),
@@ -54,7 +55,7 @@ used by ClamShell itself:
   --launch-env ID      a Steam game's environment from the settings (steam:<app id>; Steam's launch hook)
   --wayland-filter     Waydroid's Wayland filter
   --clipboard get|set  the clipboard's text (Waydroid's clipboard sharing)
-  --release-charge     the battery handed back to its own charging (after the session ended)
+  --release-hardware   every core online, no caps, the battery to its own charging (after the session ended)
 for development:
   --snapshot DIR       both screens' views drawn into DIR (built with --features dev)
   --library            the library as it reads, written out
@@ -77,7 +78,7 @@ pub fn parse(args: &[String]) -> Option<Command> {
         [flag, what] if flag == "--clipboard" && what == "get" => Command::ClipboardGet,
         [flag, what] if flag == "--clipboard" && what == "set" => Command::ClipboardSet,
         [flag] if flag == "--fetch-metadata" => Command::FetchMetadata,
-        [flag] if flag == "--release-charge" => Command::ReleaseCharge,
+        [flag] if flag == "--release-hardware" => Command::ReleaseHardware,
         [ctl, rest @ ..] if ctl == "ctl" && !rest.is_empty() => Command::Ctl(rest.to_vec()),
         _ => return None,
     })
@@ -92,8 +93,8 @@ mod tests {
     }
 
     #[test]
-    fn release_charge_parses() {
-        assert!(matches!(parse(&args("--release-charge")), Some(Command::ReleaseCharge)));
+    fn release_hardware_parses() {
+        assert!(matches!(parse(&args("--release-hardware")), Some(Command::ReleaseHardware)));
     }
 
     #[test]

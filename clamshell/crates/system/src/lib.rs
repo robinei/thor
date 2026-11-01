@@ -50,9 +50,10 @@ use clamshell_state::Event;
 
 pub use os::worker::Closed;
 
-/// Hands the battery back to its firmware's own charging (see `power::tuning`), for after ClamShell ended.
-pub fn release_charge(policy: clamshell_device::charge::Charge, method: Option<&str>) {
-    power::tuning::release_charge(policy, method);
+/// Hands the hardware back (see `power::tuning`), for after ClamShell ended: every core online, no caps,
+/// the battery to its firmware's own charging.
+pub fn release_hardware(policy: clamshell_device::charge::Charge, method: Option<&str>) {
+    power::tuning::release_hardware(policy, method);
 }
 
 /// Where system threads deliver events: the compositor's event loop.
