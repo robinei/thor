@@ -7,23 +7,28 @@ on:
   push:
   pull_request:
 
+# (Read only: the token can't change the repository or its releases, where the packages are.)
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
+      # (Actions by commit, not by a tag their owners can move.)
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Libraries ClamShell links, and the time zones (the snapshots draw a clock)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libdbus-1-dev libxkbcommon-dev libseat-dev libinput-dev libudev-dev libgbm-dev libdrm-dev pkg-config tzdata
       - name: The nested compositor test's host and clients (headless sway, Xwayland, foot, grim, a session bus)
         run: sudo apt-get install -y --no-install-recommends sway xwayland foot grim dbus-daemon libglib2.0-bin
       # The version the workspace declares (rust-version), so a newer clippy's lints don't fail a build
       # that passed locally.
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: "1.95"
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: clamshell
       - run: tools/check.sh

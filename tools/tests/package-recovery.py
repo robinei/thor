@@ -925,5 +925,18 @@ esac''')
         self.assertIn("manifest names no linuxarm64 binaries", result.stdout)
 
 
+class Workflow(unittest.TestCase):
+    def test_the_workflow_has_a_read_only_token_and_actions_pinned_by_commit(self):
+        """A compromised action, or a tag moved under it, would otherwise run with a token that can change
+        the release the packages are published on."""
+        text = (REPO / '.github/workflows/check.yml').read_text()
+        self.assertRegex(text, r'(?m)^permissions:\n  contents: read$')
+        uses = re.findall(r'(?m)^\s*-?\s*uses:\s*(\S+)', text)
+        self.assertGreater(len(uses), 0)
+        for action in uses:
+            with self.subTest(action=action):
+                self.assertRegex(action, r'@[0-9a-f]{40}$')
+
+
 if __name__ == '__main__':
     unittest.main()
