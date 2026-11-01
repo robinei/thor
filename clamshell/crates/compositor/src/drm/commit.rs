@@ -46,7 +46,7 @@ pub(super) fn present_layers(screen: &mut Screen, server: &mut Server, pipeline:
     let states = screen.layers.iter().flat_map(PlaneLayers::states);
     match screen.surface.show_again(states) {
         Ok(()) => {
-            committed(screen);
+            committed(screen, Commit::Again);
             None
         }
         Err(error) => failed(screen, pipeline, Commit::Again, with_layers, error),
@@ -82,6 +82,12 @@ pub(super) enum Remedy {
 }
 
 impl Commit {
+    /// Whether it takes the flip a composition was planned for (see `Schedule::superseded`): anything
+    /// but the composed frame.
+    pub(super) fn supersedes_plan(self) -> bool {
+        !matches!(self, Commit::Composed)
+    }
+
     /// Whether the screen has something else to show if it is refused: composing, for the screen's own
     /// buffer or a window's; nothing, for a frame composed or the frame shown again.
     pub(super) fn refusable(self) -> bool {
@@ -168,8 +174,12 @@ pub(super) fn prepare_layers(screen: &mut Screen, server: &mut Server, cursor: &
     screen.layers.as_ref().is_some_and(PlaneLayers::shows)
 }
 
-/// The screen's commit went through: its planes show as placed, and its flip is awaited.
-pub(super) fn committed(screen: &mut Screen) {
+/// The screen's commit `kind` went through: its planes show as placed, and its flip is awaited. A
+/// composition planned for that flip can no longer make it, and is planned again when the screen is free.
+pub(super) fn committed(screen: &mut Screen, kind: Commit) {
+    if kind.supersedes_plan() {
+        screen.schedule.superseded();
+    }
     if std::mem::take(&mut screen.failing) {
         log::info!("drm: the {} screen's commits go through again", screen.name());
     }

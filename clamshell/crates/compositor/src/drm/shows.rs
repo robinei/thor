@@ -217,7 +217,7 @@ pub(super) fn present_window(screen: &mut Screen, server: &mut Server, pipeline:
             screen.queued.states.insert(smithay::backend::renderer::element::Id::from_wayland_resource(&candidate.surface), state);
             server.frame_queued(&screen.queued, Some(down));
             server.take_feedback(&screen.queued, Some(down), &mut screen.feedback);
-            committed(screen);
+            committed(screen, Commit::Window { id: candidate.id });
             screen.dirty = false;
             screen.answered = server.pacing.commits;
             None
@@ -250,7 +250,7 @@ pub(super) fn present_ui(screen: &mut Screen, server: &mut Server, pipeline: &mu
             if fb.is_some() {
                 ui.committed();
             }
-            committed(screen);
+            committed(screen, Commit::Own { drew: fb.is_some() });
             None
         }
         Err(error) => failed(screen, pipeline, Commit::Own { drew: fb.is_some() }, with_layers, error),
@@ -297,7 +297,7 @@ pub(super) fn present(drawing: &mut Drawing, server: &mut Server, index: usize) 
     match screen.surface.queue(sync, layers) {
         Ok(false) => return Some(Instant::now() + (screen.interval / 4).max(std::time::Duration::from_millis(1))),
         Ok(true) => {
-            committed(screen);
+            committed(screen, Commit::Composed);
             if screen.paces {
                 screen.answered = screen.drawn_commits;
             }

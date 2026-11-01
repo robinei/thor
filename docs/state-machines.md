@@ -2260,7 +2260,11 @@ pending --further damage--> same target, freshest content retained; a larger bud
 the wakeup, never postpone it. Pending --deadline--> draw, observe GPU completion, submit;
 --hardware flip--> target checked. A flip more than half a refresh after the target restores the
 full-refresh warm-up and raises lateness headroom. A late arrival draws immediately, without
-skipping an extra refresh. Hardware clock or GPU observations unavailable means immediate
+skipping an extra refresh. Pending --the screen commits anything else for that flip (its planes'
+change, its own buffer, a window's)--> idle: the plan is dropped and made again for the flip after once
+the screen is free, so that its frame, on time, isn't counted against the flip gone by
+(`a_plan_superseded_by_another_commit_plans_for_the_next_flip_and_is_no_miss`,
+`a_commit_of_anything_but_the_composed_frame_supersedes_the_composition_planned`). Hardware clock or GPU observations unavailable means immediate
 composition with the conservative budget. Mode change, power reset, lost flip and resume reset
 learning and phase. Each output learns independently, including an external pacing output.
 

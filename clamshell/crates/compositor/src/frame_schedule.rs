@@ -54,6 +54,12 @@ impl Schedule {
         }
         missed
     }
+    /// The screen committed something else for the flip the plan was for (a plane's change, its own
+    /// buffer, a window's): the plan is dropped, so that the next composition plans for the flip after,
+    /// rather than for the one gone by, which would count its frame shown on time as a miss.
+    pub fn superseded(&mut self) {
+        self.pending = None;
+    }
     pub fn cancel(&mut self) {
         self.pending = None;
         self.submitted = None;
@@ -153,6 +159,27 @@ mod tests {
         let earlier = schedule.deadline(now, now + FRAME * 2, FRAME).unwrap();
         assert!(earlier < old);
         assert_eq!(schedule.started(earlier), Some(now + FRAME));
+    }
+
+    /// A cursor plane's change committed while a composition waits for its deadline takes the flip the
+    /// plan was for: composed at that flip, the frame is planned for the next and shown on time.
+    #[test]
+    fn a_plan_superseded_by_another_commit_plans_for_the_next_flip_and_is_no_miss() {
+        let t0 = Instant::now();
+        let mut schedule = Schedule::default();
+        for _ in 0..8 {
+            schedule.observe(Duration::from_millis(1));
+        }
+        let budget = schedule.budget(FRAME);
+        assert!(schedule.deadline(t0, t0 + FRAME, FRAME).is_some());
+        schedule.superseded();
+        // At that commit's flip, composed for the next.
+        let flip = t0 + FRAME + Duration::from_micros(100);
+        let wake = schedule.deadline(flip, t0 + FRAME * 2, FRAME).unwrap();
+        assert_eq!(wake, (t0 + FRAME * 2).checked_sub(budget).unwrap());
+        assert_eq!(schedule.started(wake), Some(t0 + FRAME * 2));
+        assert!(!schedule.presented(t0 + FRAME * 2, FRAME), "on time");
+        assert_eq!(schedule.budget(FRAME), budget, "nothing unlearned");
     }
 
     #[test]

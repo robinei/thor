@@ -1122,6 +1122,17 @@ mod tests {
         assert!(!Commit::Again.refusable());
     }
 
+    /// A commit of anything but the frame composed takes the flip a composition was planned for, whose
+    /// plan is then made again (see `Schedule::superseded`): a cursor's move while a composition waits.
+    #[test]
+    fn a_commit_of_anything_but_the_composed_frame_supersedes_the_composition_planned() {
+        use super::Commit;
+        assert!(Commit::Again.supersedes_plan());
+        assert!(Commit::Own { drew: false }.supersedes_plan());
+        assert!(Commit::Window { id: 7 }.supersedes_plan());
+        assert!(!Commit::Composed.supersedes_plan());
+    }
+
     use super::{Does, Timing, Turn, screen_turn, timed_wake};
     use std::time::{Duration, Instant};
 
