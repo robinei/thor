@@ -503,7 +503,7 @@ impl Pipeline {
         }
     }
 
-    #[cfg(feature = "nested")]
+    /// When the loop wakes for the histogram's measuring (see [`super::histogram`]).
     pub(crate) fn histogram_due(&self, server: &Server, now: std::time::Instant) -> Option<std::time::Instant> {
         self.histogram.deadline(server.core.state().histogram_window().is_some(), now)
     }

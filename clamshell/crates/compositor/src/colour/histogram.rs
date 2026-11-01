@@ -27,14 +27,18 @@ use crate::server::Server;
 const SIZE: (i32, i32) = (96, 54);
 /// How often it is measured.
 const EVERY: Duration = Duration::from_millis(250);
+/// How long after measuring it failed it is tried again.
+const RETRY: Duration = Duration::from_secs(5);
 
 #[derive(Default)]
 pub(crate) struct Measure {
-    program: Option<Result<GlesTexProgram, String>>,
+    program: Option<GlesTexProgram>,
     target: Option<GlesTexture>,
     last: Option<Instant>,
-    /// Why measuring failed, logged once; it isn't tried again.
-    failed: bool,
+    /// When measuring, having failed, is tried again; whether it failed since it last succeeded (logged at
+    /// warn the first time).
+    retry: Option<Instant>,
+    failing: bool,
     /// The last histogram measured, for the state.
     pub measured: Option<Histogram>,
     /// A readback started and not yet read (see [`Reading`]).
@@ -55,23 +59,43 @@ struct Reading {
 }
 
 impl Measure {
-    /// Poll only an outstanding readback, or take the next sample while the editor asks for one.
-    #[cfg(feature = "nested")]
+    /// When the loop wakes for it: soon for a readback outstanding, else at the next sample while the
+    /// editor asks for one, or once measuring is tried again after it failed.
     pub(crate) fn deadline(&self, wanted: bool, now: Instant) -> Option<Instant> {
-        if self.failed {
-            None
-        } else if self.reading.is_some() {
+        if self.reading.is_some() {
             Some(now + Duration::from_millis(2))
-        } else if wanted {
-            Some(self.last.map_or(now, |last| last + EVERY))
-        } else {
+        } else if !wanted {
             None
+        } else if let Some(retry) = self.retry {
+            Some(retry)
+        } else {
+            Some(self.last.map_or(now, |last| last + EVERY))
+        }
+    }
+
+    /// Measuring failed at `now` with `error`: tried again after [`RETRY`], the program made again. Warned
+    /// of the first time, until it succeeds again.
+    fn failed(&mut self, now: Instant, error: &str) {
+        if std::mem::replace(&mut self.failing, true) {
+            log::debug!("compositor: the curve's histogram can't be measured still: {error}");
+        } else {
+            log::warn!("compositor: the curve's histogram can't be measured, the plot shows none: {error}; tried again every {} s", RETRY.as_secs());
+        }
+        self.retry = Some(now + RETRY);
+        self.program = None;
+    }
+
+    /// Measuring succeeded: logged if it had failed.
+    fn measured(&mut self) {
+        self.retry = None;
+        if std::mem::take(&mut self.failing) {
+            log::info!("compositor: the curve's histogram is measured again");
         }
     }
 
     /// Measures the window the state asks for, if it is time to.
     pub fn turn(&mut self, renderer: &mut GlesRenderer, server: &Server, now: Instant) {
-        if self.failed {
+        if self.retry.is_some_and(|retry| now < retry) {
             return;
         }
         if let Some(reading) = self.reading.take() {
@@ -89,9 +113,9 @@ impl Measure {
             return;
         }
         self.last = Some(now);
-        if let Err(error) = self.measure(renderer, server, window) {
-            log::warn!("compositor: the curve's histogram can't be measured, the plot shows none: {error}");
-            self.failed = true;
+        match self.measure(renderer, server, window) {
+            Ok(()) => self.measured(),
+            Err(error) => self.failed(now, &error),
         }
     }
 
@@ -114,13 +138,13 @@ impl Measure {
             _ => 2.0,
         };
         let to_reference = 203.0 / colour.luminances().reference.max(1) as f32;
-        if self.program.is_none() {
-            self.program = Some(super::chain::pass_program(renderer, "measure()", super::shaders::MEASURE, false).map_err(|e| e.to_string()));
-        }
         let program = match &self.program {
-            Some(Ok(program)) => program.clone(),
-            Some(Err(error)) => return Err(error.clone()),
-            None => return Ok(()),
+            Some(program) => program.clone(),
+            None => {
+                let program = super::chain::pass_program(renderer, "measure()", super::shaders::MEASURE, false).map_err(|e| e.to_string())?;
+                self.program = Some(program.clone());
+                program
+            }
         };
         if self.target.is_none() {
             self.target = Some(renderer.create_buffer(Fourcc::Abgr8888, SIZE.into()).map_err(|e| e.to_string())?);
@@ -219,9 +243,10 @@ mod tests {
     #![allow(clippy::indexing_slicing)]
     use super::*;
 
-    #[cfg(feature = "nested")]
+    /// The loop wakes for the next sample while it is wanted; after a failure, to try again a while later,
+    /// and on as before once that succeeds.
     #[test]
-    fn sampling_has_a_deadline_only_while_wanted_and_stops_after_failure() {
+    fn sampling_has_a_deadline_only_while_wanted_and_is_tried_again_after_a_failure() {
         let now = Instant::now();
         let mut measure = Measure::default();
         assert_eq!(measure.deadline(false, now), None);
@@ -229,8 +254,17 @@ mod tests {
         measure.last = Some(now);
         assert_eq!(measure.deadline(true, now), Some(now + EVERY));
         assert_eq!(measure.deadline(false, now), None);
-        measure.failed = true;
-        assert_eq!(measure.deadline(true, now), None);
+        measure.failed(now, "a test");
+        assert!(measure.failing);
+        assert_eq!(measure.deadline(true, now), Some(now + RETRY), "tried again, not given up");
+        assert_eq!(measure.deadline(false, now), None);
+        let later = now + RETRY;
+        measure.failed(later, "a test");
+        assert_eq!(measure.deadline(true, later), Some(later + RETRY));
+        measure.last = Some(later + RETRY);
+        measure.measured();
+        assert!(!measure.failing);
+        assert_eq!(measure.deadline(true, later + RETRY), Some(later + RETRY + EVERY), "on as before");
     }
 
     #[test]

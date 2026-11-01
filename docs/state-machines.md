@@ -513,7 +513,9 @@ picture's histogram: while the edit screen is open the compositor draws the plot
 small, its luminance as the content's signal level (SDR's, or PQ's with its white at the reference),
 reads it back four times a second and counts it into 64 bins, without the black bars a game draws at
 its edges and the blended line beside each (`colour::histogram`, `Reading::Histogram`,
-for `State::histogram_window`). The plot draws the levels along the bottom, each bar filled with the grey
+for `State::histogram_window`). The loop wakes for each sample and readback on both hosts, whether or not
+the picture changes; measuring that fails is warned of and tried again five seconds later, the plot showing
+none meanwhile (`sampling_has_a_deadline_only_while_wanted_and_is_tried_again_after_a_failure`). The plot draws the levels along the bottom, each bar filled with the grey
 of the light the curve gives it (black to paper white the darker half of the greys, paper white to the
 screen's peak the lighter) but for its left quarter, the grey of its light as the content is, so a bar
 lighter or darker on the right than on the left is brightened or darkened. There are no axis lines. The

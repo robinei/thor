@@ -985,6 +985,9 @@ fn step(
         }
     }
     let mut due: Option<Instant> = earlier(earlier(earlier(timed, draw_due), trims.finish()), drawing.pipeline.capture_due(now));
+    // (The histogram's next sample, and its readback, while a curve's edit screen plots it: the picture
+    // may not change meanwhile.)
+    due = earlier(due, drawing.pipeline.histogram_due(server, now));
     for screen in &mut drawing.screens {
         if screen.surface.flip_due().is_some_and(|lost| now >= lost) {
             log::warn!("drm: {} screen: no flip {} ms after its frame: drawn again", screen.name(), crate::presenter::FLIP_LOST.as_millis());
