@@ -53,17 +53,28 @@ fn create(path: &Path) -> bool {
 /// The longest command line taken. A longer one is skipped, up to its end, with a warning.
 const LONGEST: usize = 4096;
 
+/// How often the reader looks whether the pipe is still there, while nothing is sent.
+const LOOK_EVERY: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Reads commands from the pipe at `path`, one per line, and sends their events. The pipe is created if it
-/// doesn't exist, and created again if it is deleted. The thread is started again after a panic.
+/// doesn't exist, and created again if it is deleted or replaced. The thread is started again after a
+/// panic.
 pub fn spawn(path: PathBuf, sink: impl Sink) {
-    // Each writer closes the pipe after its line, so it is opened again for the next one.
+    spawn_looking(path, sink, LOOK_EVERY);
+}
+
+/// [`spawn`], looking whether the pipe is still there every `every`.
+fn spawn_looking(path: PathBuf, sink: impl Sink, every: std::time::Duration) {
+    // The pipe is opened for reading and writing, once. With a writer always there, itself, it never
+    // reads as ended between two writers, so a line sent while it would have been opened again can't
+    // fail; and `send` still fails at once while ClamShell isn't running, since nobody holds it open.
     let spawned = worker::lasting("control", move || {
         loop {
             if !create(&path) {
                 std::thread::sleep(RETRY);
                 continue;
             }
-            let file = match std::fs::File::open(&path) {
+            let file = match std::fs::OpenOptions::new().read(true).write(true).open(&path) {
                 Ok(file) => file,
                 Err(e) => {
                     log::warn!("control: {}: {e}; trying again", path.display());
@@ -71,13 +82,58 @@ pub fn spawn(path: PathBuf, sink: impl Sink) {
                     continue;
                 }
             };
-            if read(std::io::BufReader::new(file), &path, &sink).is_err() {
+            let Some(watched) = Watched::new(file, &path, every) else {
+                std::thread::sleep(RETRY);
+                continue;
+            };
+            if read(std::io::BufReader::new(watched), &path, &sink).is_err() {
                 return;
             }
         }
     });
     if let Err(e) = spawned {
         log::warn!("control: {e}");
+    }
+}
+
+/// The pipe opened, read until the pipe at its path is another or gone, which reads as its end.
+struct Watched<'a> {
+    file: std::fs::File,
+    path: &'a Path,
+    inode: (u64, u64),
+    every: std::time::Duration,
+}
+
+impl<'a> Watched<'a> {
+    fn new(file: std::fs::File, path: &'a Path, every: std::time::Duration) -> Option<Watched<'a>> {
+        use std::os::unix::fs::MetadataExt;
+        let meta = file.metadata().inspect_err(|e| log::warn!("control: {}: {e}; trying again", path.display())).ok()?;
+        Some(Watched { file, path, inode: (meta.dev(), meta.ino()), every })
+    }
+
+    /// Whether the pipe at the path is still the one opened.
+    fn there(&self) -> bool {
+        use std::os::unix::fs::MetadataExt;
+        std::fs::symlink_metadata(self.path).is_ok_and(|m| (m.dev(), m.ino()) == self.inode)
+    }
+}
+
+impl Read for Watched<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        use rustix::event::{PollFd, PollFlags, Timespec};
+        let every = Timespec { tv_sec: i64::try_from(self.every.as_secs()).unwrap_or(i64::MAX), tv_nsec: i64::from(self.every.subsec_nanos()) };
+        loop {
+            let mut fds = [PollFd::new(&self.file, PollFlags::IN)];
+            match rustix::event::poll(&mut fds, Some(&every)) {
+                Ok(0) if !self.there() => {
+                    log::warn!("control: {} was removed or replaced: made again", self.path.display());
+                    return Ok(0);
+                }
+                Ok(0) | Err(rustix::io::Errno::INTR) => {}
+                Ok(_) => return self.file.read(buf),
+                Err(e) => return Err(e.into()),
+            }
+        }
     }
 }
 
@@ -139,6 +195,46 @@ mod tests {
         let (sink, events) = std::sync::mpsc::channel();
         read(std::io::BufReader::with_capacity(64, input.as_bytes()), Path::new("pipe"), &sink).unwrap();
         assert_eq!(events.try_iter().count(), 2 * parse("home").unwrap().len());
+    }
+
+    /// Waits until a line sent to the pipe at `path` is taken, the reader having opened it.
+    fn until_read(path: &Path) {
+        let start = std::time::Instant::now();
+        while send(Some(&path.to_path_buf()), "home").is_err() {
+            assert!(start.elapsed() < std::time::Duration::from_secs(5), "the reader opened the pipe");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+
+    /// Lines sent one right after another all go through: none is sent while the reader has the pipe
+    /// closed between two writers.
+    #[test]
+    fn lines_sent_back_to_back_all_go_through() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("control");
+        let (sink, events) = std::sync::mpsc::channel();
+        spawn_looking(path.clone(), sink, std::time::Duration::from_millis(100));
+        until_read(&path);
+        let lines = 2000;
+        let failed = (0..lines).filter(|_| send(Some(&path), "home").is_err()).count();
+        assert_eq!(failed, 0);
+        let each = parse("home").unwrap().len();
+        let got = (0..(lines + 1) * each).filter(|_| events.recv_timeout(std::time::Duration::from_secs(5)).is_ok()).count();
+        assert_eq!(got, (lines + 1) * each);
+    }
+
+    /// A pipe removed is made again, and read.
+    #[test]
+    fn a_pipe_removed_is_made_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("control");
+        let (sink, events) = std::sync::mpsc::channel();
+        spawn_looking(path.clone(), sink, std::time::Duration::from_millis(50));
+        until_read(&path);
+        events.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        until_read(&path);
+        events.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
     }
 
     /// A file where the pipe goes is replaced with the pipe, rather than read to its end over and over.
