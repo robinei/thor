@@ -9,8 +9,8 @@
 #                     repository (thor/: thor.db, the packages, their signatures; older versions
 #                     removed); thor-firmware, if one was built, into local/ instead: never published
 #                     (AYN's and Qualcomm's firmware)
-#   repo.sh publish   thor/ uploaded to the release (made if missing): the packages, then the database;
-#                     the files of the version before them deleted (one publish late)
+#   repo.sh publish   thor/ uploaded to the release (made if missing): the packages it lacks, then the
+#                     database; the files of the version before them deleted (one publish late)
 #
 # Signing: the key in ~/.config/thor-repo/gnupg (made for this, without a passphrase; its public half is
 # thor-keyring's), when it is there; without it (a checkout elsewhere) the repository is indexed unsigned,
@@ -82,13 +82,30 @@ publish() {
             --notes "The Thor's pacman repository (not a release): [thor] Server = https://github.com/$GITHUB/releases/download/$RELEASE"
     # As Arch's repositories: the packages first, the database last, so that a device syncing meanwhile
     # finds every file the database it gets names (or the old database, whose files are still there).
+    # Only what the release lacks, or has at another size, is uploaded: --clobber deletes an asset
+    # before uploading it again, so an unchanged package re-sent would be missing meanwhile. (A package's
+    # name holds its version; the databases, the same names each time, are sent whenever they differ.)
+    # Each signature before its file, the database's last of all.
     local files=() db=() f
     for f in *; do
         [ -L "$f" ] && continue
         case $f in thor.db* | thor.files*) db+=("$f") ;; *) files+=("$f") ;; esac
     done
-    gh release upload "$RELEASE" -R "$GITHUB" --clobber "${files[@]}"
-    gh release upload "$RELEASE" -R "$GITHUB" --clobber "${db[@]}"
+    local released
+    released=$(gh release view "$RELEASE" -R "$GITHUB" --json assets -q '.assets[] | "\(.name) \(.size)"')
+    changed() {  # FILE...: those the release lacks or has at another size, each signature first
+        local f
+        for f in "$@"; do
+            grep -qxF "$f $(stat -c %s "$f")" <<< "$released" || echo "$f"
+        done | awk '{ print (/\.sig$/ ? 0 : 1), $0 }' | sort -k1,1 -s | cut -d' ' -f2-
+    }
+    local upload
+    mapfile -t upload < <(changed "${files[@]}")
+    [ ${#upload[@]} -eq 0 ] || gh release upload "$RELEASE" -R "$GITHUB" --clobber "${upload[@]}"
+    mapfile -t upload < <(changed "${db[@]}")
+    for f in "${upload[@]}"; do
+        gh release upload "$RELEASE" -R "$GITHUB" --clobber "$f"
+    done
     # Older versions deleted one publish late: what the previous database named stays until the next
     # publish, for a device that synced just before this one (recorded in ../published).
     local kept=../published

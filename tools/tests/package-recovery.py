@@ -3,6 +3,7 @@
 without root, mounts or services."""
 import contextlib
 import fcntl
+import hashlib
 import importlib.util
 import io
 import os
@@ -16,6 +17,7 @@ import threading
 import time
 import unittest
 import gzip
+import zipfile
 import zlib
 
 sys.dont_write_bytecode = True
@@ -823,6 +825,45 @@ exec "$@"''')
         self.assertFalse(file.exists())
         self.assertEqual([p.name for p in (m.root / 'etc/sudoers.d').iterdir()], ['.keep'])
 
+
+class Publish(unittest.TestCase):
+    """repo.sh publish with a stub gh: only what the release lacks or has at another size is uploaded, each
+    signature before its file, the database last."""
+
+    def machine(self, released):
+        m = Machine()
+        self.addCleanup(m.close)
+        repo = m.root / 'cache/thor-vm/repo/thor'
+        for name, text in [('a-1-1-any.pkg.tar.zst', 'same'), ('a-1-1-any.pkg.tar.zst.sig', 's'), ('b-2-1-any.pkg.tar.zst', 'new'),
+                           ('b-2-1-any.pkg.tar.zst.sig', 's'), ('thor.db', 'database2'), ('thor.db.sig', 'sig2'),
+                           ('thor.files', 'files'), ('thor.files.sig', 'f')]:
+            m.file(f'cache/thor-vm/repo/thor/{name}', text)
+        (repo / 'thor.db.tar.zst').symlink_to('thor.db')
+        m.file('released', ''.join(f'{name} {size}\n' for name, size in released))
+        m.command('gpg')
+        m.command('gh', f'''case "$1 $2" in
+    "release view") case $* in *size*) cat {m.root}/released ;; *--json*) cut -d' ' -f1 {m.root}/released ;; esac ;;
+    "release upload") shift 5; [ "$1" = --clobber ] && shift; echo "upload $*" >> {m.root}/calls ;;
+    "release delete-asset") echo "delete $4" >> {m.root}/calls ;;
+esac''')
+        return m
+
+    def publish(self, m):
+        env = {**m.env, 'XDG_CACHE_HOME': str(m.root / 'cache'), 'HOME': str(m.root)}
+        env.pop('THOR_REPO_DIR', None)
+        return subprocess.run(['bash', REPO / 'tools/repo/repo.sh', 'publish'], env=env, capture_output=True, text=True, timeout=15)
+
+    def test_only_what_changed_is_uploaded_signatures_first_the_database_last(self):
+        m = self.machine([('a-1-1-any.pkg.tar.zst', 4), ('a-1-1-any.pkg.tar.zst.sig', 1), ('old-1-1-any.pkg.tar.zst', 9),
+                          ('thor.db', 8), ('thor.db.sig', 3), ('thor.files', 5), ('thor.files.sig', 1)])
+        result = self.publish(m)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((m.root / 'calls').read_text().splitlines(), [
+            'upload b-2-1-any.pkg.tar.zst.sig b-2-1-any.pkg.tar.zst',
+            'upload thor.db.sig',
+            'upload thor.db',
+            'delete old-1-1-any.pkg.tar.zst',
+        ])
 
 if __name__ == '__main__':
     unittest.main()
