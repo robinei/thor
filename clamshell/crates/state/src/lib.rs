@@ -676,7 +676,7 @@ impl State {
         self.idle.follow(self.clock.mono(), policy, refreshing, self.session.awake_command(), out);
         // Once the front is settled, which the program in force follows; the pad's route then follows the
         // program.
-        let changed = self.session.follow_program(self.clock.mono());
+        let changed = self.session.follow_program();
         let lit = self.bottom_lit();
         self.notifications.follow(self.clock.read().then(|| self.clock.mono()), lit, out);
         if changed {
@@ -716,6 +716,7 @@ impl State {
     fn wanted(&self) -> Wanted<'_> {
         let tab = (self.bottom.tab().definition().watch)(self);
         let settings = self.in_force();
+        let (program, applied) = self.hardware_settings();
         let bottom_off = self.bottom_off();
         Wanted {
             library_view: &self.library_view,
@@ -725,9 +726,9 @@ impl State {
             running: self.session.running_entries(),
             stage: self.idle.stage(),
             levels: &self.levels,
-            program: self.session.program(),
-            settings,
-            refresh: self.refresh_wanted(&settings),
+            program,
+            settings: applied,
+            refresh: self.refresh_wanted(&applied),
             // Off while the refresh rate calibration runs, so only the main screen's vblanks come.
             bottom_on: !bottom_off && !self.device_view.calibrating(),
             bottom_seen: !self.bottom.shows_windows(&self.session) && !bottom_off && !self.bottom_dark(),
@@ -747,14 +748,23 @@ impl State {
         }
     }
 
-    /// The main screen's refresh rate (see [`crate::sync::Wanted::refresh`]), with `in_force` the
-    /// settings in force.
-    fn refresh_wanted(&self, in_force: &Values) -> u16 {
+    /// The entry whose settings the hardware has, and those settings: the entry whose window is waited
+    /// for to come in front ([`Session::awaited_entry`]), else the program in force. A launch in the
+    /// background changes nothing here.
+    pub(crate) fn hardware_settings(&self) -> (Option<&Arc<str>>, Values) {
+        match self.session.awaited_entry() {
+            Some(id) => (Some(id), self.settings_of(id)),
+            None => (self.session.program(), self.in_force()),
+        }
+    }
+
+    /// The main screen's refresh rate (see [`crate::sync::Wanted::refresh`]), with `applied` the
+    /// settings applied.
+    fn refresh_wanted(&self, applied: &Values) -> u16 {
         if let Some(hz) = self.device_view.calibration_rate() {
             return hz;
         }
-        let settings = self.session.refresh_launch().map_or(*in_force, |id| self.settings_of(id));
-        self.presentation.display_modes().refresh_for(settings.get(Setting::Refresh), settings.get(Setting::FpsCap))
+        self.presentation.display_modes().refresh_for(applied.get(Setting::Refresh), applied.get(Setting::FpsCap))
     }
 
     /// Sends the outside what differs from what it was last sent.

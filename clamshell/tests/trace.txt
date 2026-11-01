@@ -32,6 +32,7 @@ Units [zelda_lttp_60a9bb8eed45713e]
 Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_dcd14e18fef443c1
   Save Resume
+  Apply settings of ff6
 -- top-switch.png
 == group top-actions.png
 Tick 1760000000
@@ -93,42 +94,48 @@ Start
 Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_dcd14e18fef443c1
   Save Resume
+  Apply settings of ff6
 Tick 1760000005
   Save Resume
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
 Pointer(Activate(Settings(Tile(FpsCap))))
   Save Settings
+  Apply settings of ff6
 Pointer(Activate(Settings(Tile(FpsCap))))
   Save Settings
+  Apply settings of ff6
 Pointer(Activate(Settings(Tile(FpsCap))))
   Save Settings
+  Apply settings of ff6
 Pointer(Activate(Settings(Tile(FpsCap))))
   Save Settings
+  Apply settings of ff6
 Pointer(Activate(Row { list: Keymaps, i: 2, part: Main }))
   Save Settings
+  Apply settings of ff6
 Pointer(Activate(Settings(Tile(Hud))))
   Save Settings
+  Apply settings of ff6
 -- settings-running.png
 Pointer(Activate(Settings(Tile(Power))))
   Save Settings
-  Apply settings of all
+  Apply settings of ff6
 Pointer(Activate(Settings(Tile(Rumble))))
   Save Settings
-  Apply settings of all
+  Apply settings of ff6
 Pointer(Activate(Settings(Tile(Rumble))))
   Save Settings
-  Apply settings of all
+  Apply settings of ff6
 Pointer(Activate(Settings(Tile(ChargeLimit))))
   Save Settings
-  Apply settings of all
+  Apply settings of ff6
 Pointer(Activate(Settings(Tile(ChargeLimit))))
   Save Settings
-  Apply settings of all
+  Apply settings of ff6
 -- settings-global.png
-Units [zelda_lttp_60a9bb8eed45713e]
-  Apply settings of zelda-lttp
 activate 900
+  Apply settings of zelda-lttp
   PadRoute Game
 Units []
   RecordPlay zelda-lttp from 1759999940 for 60s
@@ -180,6 +187,7 @@ Start
 Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_dcd14e18fef443c1
   Save Resume
+  Apply settings of ff6
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
 Tick 1760000005
@@ -451,6 +459,7 @@ Start
 Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_dcd14e18fef443c1
   Save Resume
+  Apply settings of ff6
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
 Pointer(Activate(Editor(Save)))
@@ -508,6 +517,7 @@ Tick 1760000005
 -- keymap-menu.png
 Pointer(Activate(Row { list: Keymaps, i: 3, part: Main }))
   Save Settings
+  Apply settings of ff6
 -- keymap-delete.png
 == group curves.png
 Tick 1760000000
@@ -519,6 +529,7 @@ Start
 Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_dcd14e18fef443c1
   Save Resume
+  Apply settings of ff6
 Reading Screens
   SizeTouchpad(Some(TouchLayout { pixels: (1240, 1080), resolution: 17 }))
 Pointer(Activate(Tab(Settings)))
@@ -528,13 +539,12 @@ Tick 1760000005
 -- curves.png
 Pointer(Activate(Row { list: Curves, i: 2, part: Main }))
   Save Settings
+  Apply settings of ff6
 -- curves-reset.png
 -- curve-edit.png
 -- curve-edit-slider.png
 Slide(End)
   Save Curves(..)
-Units [ff6_dcd14e18fef443c1]
-  Apply settings of ff6
 activate 30
   PadRoute Game
 -- curve-edit-hdr.png
@@ -551,6 +561,7 @@ Start
 Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_dcd14e18fef443c1
   Save Resume
+  Apply settings of ff6
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
 Tick 1760000005
@@ -574,14 +585,13 @@ Start
 Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_dcd14e18fef443c1
   Save Resume
+  Apply settings of ff6
 Reading Screens
   SizeTouchpad(Some(TouchLayout { pixels: (1240, 1080), resolution: 17 }))
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
 Tick 1760000005
   Save Resume
-Units [ff6_dcd14e18fef443c1]
-  Apply settings of ff6
 activate 30
   PadRoute Game
 -- curve-edit-histogram.png
@@ -595,14 +605,13 @@ Start
 Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_dcd14e18fef443c1
   Save Resume
+  Apply settings of ff6
 Reading Screens
   SizeTouchpad(Some(TouchLayout { pixels: (1240, 1080), resolution: 17 }))
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
 Tick 1760000005
   Save Resume
-Units [ff6_dcd14e18fef443c1]
-  Apply settings of ff6
 activate 30
   PadRoute Game
 -- curve-edit-scrgb.png
@@ -616,6 +625,7 @@ Start
 Pointer(Activate(LibraryView(Entry("ff6"))))
   Launch ff6 as ff6_dcd14e18fef443c1
   Save Resume
+  Apply settings of ff6
 Pointer(Activate(Tab(Settings)))
   Watch Metrics off
 Pointer(Activate(Editor(Save)))
@@ -669,6 +679,7 @@ Pointer(Activate(Profile(Keymap, Back)))
   PadRoute Ui
 Pointer(Activate(Row { list: Keymaps, i: 3, part: Main }))
   Save Settings
+  Apply settings of ff6
 Tick 1760000005
   Save Resume
 -- keymaps-chosen.png
@@ -678,12 +689,14 @@ Pointer(Activate(Row { list: Keymaps, i: 3, part: Edit }))
 Pointer(Activate(Keymap(MakeOwn)))
   Save Settings
   Save Keymaps
+  Apply settings of ff6
 Pointer(Activate(Profile(Keymap, Back)))
   PadRoute Ui
 -- keymap-own.png
 -- keymap-own-menu.png
 Pointer(Activate(Row { list: Keymaps, i: 3, part: Main }))
   Save Settings
+  Apply settings of ff6
 -- keymap-own-kept.png
 -- keymap-load.png
 -- keymap-save.png

@@ -643,6 +643,7 @@ anchored lists on their item and every list within its ends; Focus scrolls just 
 | Env editor | `the_environment_editor_takes_the_keyboard` |
 | runner keymaps given on Library / Start | `a_runner_gets_its_keymap_once`, `a_runners_keymap_given_while_its_item_runs_is_applied` |
 | a change applies to the program in force (sync's Apply) | tests `a_running_game_takes_changes_at_once`, `a_game_coming_in_front_gets_its_settings_…` |
+| the hardware's settings (sync's Apply, the only route to the tuning thread; `Launch` carries settings for its environment only): the entry whose window is waited for to come in front (`Session::awaited_entry`: a launch in front from when it is asked for, a tray Activate, a launcher's game), else the program in force. A launch in the background (autostart, a launcher started for its game) changes nothing | tests `a_launch_in_front_gets_its_settings_applied_and_one_in_the_background_none`; randomized test, invariant 2 |
 | a launch's environment (`settings::launch_env`, one function for ClamShell's launches, where the launch thread calls it with the `Launch` effect's values and Env tile variables, and for `clamshell --launch-env`): the settings acting at launch (`Setting::through_launch`: the cap's `MESA_VK_WSI_PRESENT_MODE=fifo` and `vblank_mode=3`; x86 emulation's `FEX_APP_CONFIG`; the Vulkan driver's `VK_DRIVER_FILES`), then `SDL_GAMECONTROLLER_IGNORE_DEVICES` (the grabbed controllers; for Steam, joined to Steam's own list), then the Env tile's for All, the runner, the entry. Later ones win, so the user's Env tile wins over what ClamShell sets | `the_settings_then_the_controllers_then_the_env_tile` (the order pinned), `the_launch_carries_the_games_settings_and_environment`, `a_capped_game_is_launched_presenting_in_fifo` |
 | x86 emulation (`Setting::X86`, file key `x86`): Proton's own (0, nothing set), Fast (1), Safe (2), at every level; Fast and Safe give `FEX_APP_CONFIG=~/.cache/clamshell/fex/{fast,safe}.json`, written at ClamShell's start (and by `--launch-env`) where missing or changed | `the_settings_then_…`; system `every_preset_is_written_once_and_kept_while_unchanged` |
 | Vulkan driver (`Setting::VulkanDriver`, file key `vkdriver`): System (0, loader defaults), Newest (1, `VK_DRIVER_FILES=/usr/lib/turnip-devel/share/vulkan/icd.d/freedreno_icd.aarch64.json`), at every level; changes take effect at the next launch. The Env tile follows and can override it | `the_env_tile_can_override_the_selected_driver_and_system_does_not_force_one`, `the_settings_then_…` |
@@ -753,9 +754,9 @@ the pad's route, the stick lights and a refresh rate the settings want go out at
 `what_the_outside_starts_without_goes_out_at_the_first_event`); Start sends none of them again.
 
 The main screen's refresh rate needs no resend: sync sends `Wanted::refresh` whenever it differs from
-what was sent (the calibration's rate, else the rate of the entry launched last while its window is yet
-to show: until the program in force changes, it has a window, it is gone, or `LAUNCH_WAIT` has passed;
-else the settings'. Tests `the_refresh_rate_follows_a_launch_at_once_then_the_settings_in_force`,
+what was sent (the calibration's rate, else the rate of the settings applied: the entry whose window is
+waited for to come in front, while the front intent lasts (session/intent.rs), else the settings in
+force. Tests `the_refresh_rate_follows_a_launch_at_once_then_the_settings_in_force`,
 `the_refresh_rate_goes_back_when_a_launch_fails`, `the_refresh_rate_goes_back_when_a_launch_shows_no_window`,
 `a_refresh_calibration_sets_the_screens_and_then_gives_them_back`).
 
@@ -1841,9 +1842,9 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
    emits nothing.
 2. **What was sent mirrors the state:** the last PadRoute is `pad().route()`; each player's last Keymap (up to the count) is its
    keymap in force; Status is watched iff the screens are on; Account iff the UI is up and the account is
-   unread or unreadable, or the Device view or Setup is in front with the screens on; the last Apply is `(program, in_force)`; the last Outputs is (screens on, bottom on);
-   the last Refresh is the calibration's rate while it runs, else the rate of the entry launched last
-   while its window is yet to show, else the rate of the settings in force, at the modes known.
+   unread or unreadable, or the Device view or Setup is in front with the screens on; the last Apply is the entry waited for to come in front and its settings, else `(program, in_force)`; the last Outputs is (screens on, bottom on);
+   the last Refresh is the calibration's rate while it runs, else the rate of the settings applied,
+   at the modes known.
    Once ClamShell set a brightness level, the last Brightness is that level, or a third of it (at
    least 1) while dimmed. The last SizeTouchpad is the second screen's layout, or None while its
    pixels or millimetres aren't known.

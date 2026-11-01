@@ -35,12 +35,12 @@ pub(crate) struct Wanted<'a> {
     /// How far idle has gone, and the levels, for the screens' brightness while dimmed.
     pub(crate) stage: Stage,
     pub(crate) levels: &'a Levels,
-    /// The program in force and the settings in force (see [`crate::State::in_force`]).
+    /// The entry whose settings the hardware is to have, and those settings (see
+    /// [`crate::State::hardware_settings`]): the entry waited for to come in front, else the program in force.
     pub(crate) program: Option<&'a Arc<str>>,
     pub(crate) settings: Values,
-    /// The main screen's refresh rate in Hz: the running refresh rate calibration's, else the settings'
-    /// of the entry launched last while its window is yet to show ([`crate::Session::refresh_launch`]),
-    /// else the settings in force's: their Refresh, or under a frame rate cap one it divides (see
+    /// The main screen's refresh rate in Hz: the running refresh rate calibration's, else that of the
+    /// settings applied: their Refresh, or under a frame rate cap one it divides (see
     /// [`crate::presentation::modes::DisplayModes::refresh_for`]).
     pub(crate) refresh: u16,
     /// The bottom screen is on (see [`crate::State::bottom_off`]).
@@ -303,7 +303,8 @@ impl Sent {
         }
     }
 
-    /// The settings in force are applied when the program in force changes, and when they change.
+    /// The settings are applied when the entry they are for changes, and when they change. This is the
+    /// only way the hardware gets them: a launch's own carry only what its environment takes.
     fn settings(&mut self, w: &Wanted, out: &mut Out) {
         if self.applied.as_ref().is_some_and(|(program, settings)| program.as_ref() == w.program && *settings == w.settings) {
             return;

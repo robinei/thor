@@ -704,7 +704,6 @@ impl Session {
         // If its runner, and so its container, is paused, it is resumed first.
         self.resume_runner_of(&entry, library, out);
         let unit = self.begin_launch(entry.clone(), key, mark, clock, start);
-        self.refresh_launch = Some((entry.clone(), clock.mono()));
         out.effects.push(Effect::Launch { entry, unit, settings: values, tile_env, launch });
         Launched::Yes
     }
@@ -735,7 +734,6 @@ impl Session {
         if start == Start::Front {
             self.set_front_launch(FrontIntent::entry(&g.key, now + LAUNCHER_WAIT));
         }
-        self.refresh_launch = Some((g.id.clone(), now));
         let launch = Launch::Program { argv, workdir: None };
         out.effects.push(Effect::Launch { entry: launcher.id.clone(), unit, settings: values, tile_env, launch });
     }

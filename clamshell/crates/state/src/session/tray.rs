@@ -194,7 +194,12 @@ mod tests {
         // With no window, a tap asks it to show itself. Its window opens with no group, from a child
         // of the icon's process, and is moved to its own group and shown there.
         let at = s.dock().items().iter().position(|i| &*i.id == "desktop:firefox").unwrap() as u16;
-        assert_eq!(tap_dock(&mut s, DockId::Entry(at)), vec![Effect::Tray(TrayCommand::Activate(":1.9/b".into()))]);
+        // Its settings are applied while its window is waited for.
+        let fx = tap_dock(&mut s, DockId::Entry(at));
+        assert!(
+            matches!(fx.as_slice(), [Effect::Tray(TrayCommand::Activate(k)), Effect::Apply { entry: Some(g), .. }] if &**k == ":1.9/b" && &**g == "desktop:firefox"),
+            "{fx:?}"
+        );
         let window = WindowFacts { pids: vec![900, 77], ..win(6, "firefox") };
         s.observed(vec![window.clone()]);
         assert_eq!(s.session().window(6).and_then(|w| w.group.clone()), Some(ws.clone()));

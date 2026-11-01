@@ -16,7 +16,8 @@ use crate::settings::Values;
 pub enum Effect {
     /// Start this entry, by its launch command or Steam id and its file, with these settings. Its
     /// environment is [`crate::settings::launch_env`] of the settings and `tile_env`, the Env tile's
-    /// variables for it. It runs in its own unit and in its own group.
+    /// variables for it; the settings are for that alone, the hardware gets its settings by
+    /// [`Effect::Apply`]. It runs in its own unit and in its own group.
     Launch {
         entry: Arc<str>,
         unit: LaunchUnit,
@@ -24,8 +25,9 @@ pub enum Effect {
         tile_env: Vec<(String, String)>,
         launch: Launch,
     },
-    /// The settings in force changed. They are the running entry's (`entry`), or the global ones while
-    /// nothing runs, including when an entry ends. Apply them now.
+    /// The settings the hardware is to have changed (see [`crate::State::hardware_settings`]). They are
+    /// the entry's (`entry`) whose window is waited for to come in front, or the running entry's in
+    /// force, or the global ones while nothing runs, including when an entry ends. Apply them now.
     Apply {
         entry: Option<Arc<str>>,
         settings: Values,

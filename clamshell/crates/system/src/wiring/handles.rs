@@ -77,7 +77,6 @@ impl Handles {
             Effect::SizeTouchpad(layout) => self.touchpad.send(touchpad::Command::Layout(*layout)),
             Effect::Launch { entry, unit, launch, settings, tile_env } => {
                 log::info!("launching {entry}");
-                self.tuning.apply(settings);
                 let ignore = self.pad_taken.ignore();
                 self.launcher.send(launcher::Command::Launch(launcher::Request {
                     entry: entry.clone(),

@@ -167,17 +167,17 @@ fn while_metadata_is_fetched_library_views_view_goes_first() {
     assert!(!s.applied(LibraryViewEvent::ListStep(1).into()).iter().any(|e| matches!(e, Effect::FetchFirst(_))), "done");
 }
 
-/// Sync sends the settings in force, then the keymap, then the pad's route. Nothing outside depends on
-/// the settings coming before the keymap; the keymap must come before the route (see
-/// [`crate::sync::Sent::sync`]).
+/// Sync sends a game's settings as it is launched in front, then, as its window comes, the keymap, then
+/// the pad's route. Nothing outside depends on the settings coming before the keymap; the keymap must
+/// come before the route (see [`crate::sync::Sent::sync`]).
 #[test]
 fn a_game_coming_in_front_gets_its_settings_then_its_keymap_then_the_pad() {
     let mut s = started(Init { keymaps: crate::keymap::Keymaps::initial(), ..init() });
     s.settings_mut().set(Some(&"zelda-lttp".into()), Setting::Keymap, Some(1));
     s.applied(Event::tick(1000));
-    tap(&mut s, entry("zelda-lttp"));
-    tap(&mut s, entry("zelda-lttp"));
-    let mut fx = start(&mut s, "zelda-lttp");
+    let mut fx = tap(&mut s, entry("zelda-lttp"));
+    fx.extend(tap(&mut s, entry("zelda-lttp")));
+    fx.extend(start(&mut s, "zelda-lttp"));
     assert_eq!(s.pad().route(), PadRoute::Ui, "the launch has no window yet");
     fx.extend(show_window(&mut s, "zelda-lttp", 7));
     let sent: Vec<&str> = fx
@@ -469,13 +469,40 @@ fn the_refresh_rate_follows_a_launch_at_once_then_the_settings_in_force() {
     fx.extend(tap(&mut s, entry("zelda-lttp")));
     assert!(fx.iter().any(|e| matches!(e, Effect::Launch { .. })), "{fx:?}");
     assert_eq!(refresh(&fx), [60], "at the launch: {fx:?}");
+    assert!(fx.iter().any(|e| matches!(e, Effect::Apply { entry: Some(g), .. } if &**g == "zelda-lttp")), "{fx:?}");
     let fx = crate::testkit::start(&mut s, "zelda-lttp");
-    assert!(fx.iter().any(|e| matches!(e, Effect::Apply { .. })) && refresh(&fx).is_empty(), "in force, at the same rate: {fx:?}");
+    assert!(!fx.iter().any(|e| matches!(e, Effect::Apply { .. })) && refresh(&fx).is_empty(), "in force, as applied: {fx:?}");
     assert_eq!(refresh(&crate::testkit::end(&mut s, "zelda-lttp")), [0], "ended: the global rate, as is");
 }
 
+/// The hardware gets settings only from sync: a launch in front has its settings applied with it, as
+/// the entry whose window is waited for, while one in the background (autostart, a launcher started for
+/// its game) leaves the settings in force as they are. The launch effect carries settings for the
+/// launch's environment only; the system applies none of them.
+#[test]
+fn a_launch_in_front_gets_its_settings_applied_and_one_in_the_background_none() {
+    let mut settings = crate::settings::Settings::default();
+    settings.set(Some(&"zelda-lttp".into()), Setting::CpuMax, Some(50));
+    settings.set(Some(&"ff6".into()), Setting::CpuMax, Some(70));
+    let mut s = State::new(Init { settings, autostart: vec!["zelda-lttp".into()], ..init() });
+    s.ui_up();
+    let global = s.prefs().settings().global;
+    let fx = s.applied(Event::Units(vec![]));
+    assert!(fx.iter().any(|e| matches!(e, Effect::Launch { entry, .. } if &**entry == "zelda-lttp")), "{fx:?}");
+    assert!(!fx.iter().any(|e| matches!(e, Effect::Apply { .. })), "in the background: {fx:?}");
+    let fx = start(&mut s, "zelda-lttp");
+    assert!(fx.contains(&Effect::Apply { entry: Some("zelda-lttp".into()), settings: s.settings_of("zelda-lttp") }), "now in force: {fx:?}");
+    let mut fx = tap(&mut s, entry("ff6"));
+    fx.extend(tap(&mut s, entry("ff6")));
+    let launch = fx.iter().position(|e| matches!(e, Effect::Launch { entry, .. } if &**entry == "ff6"));
+    let apply = fx.iter().position(|e| matches!(e, Effect::Apply { entry: Some(g), settings } if &**g == "ff6" && settings.get(Setting::CpuMax) == 70));
+    assert!(launch.is_some() && apply.is_some(), "in front, with it: {fx:?}");
+    assert_ne!(global.get(Setting::CpuMax), 70);
+}
+
 /// A launch whose window doesn't show (a tray program, or one whose windows go below) holds the main
-/// screen's rate only for the launch's wait: the program in front gets its rate back.
+/// screen's rate only while its window is waited for (see [`crate::session::intent::WINDOW_WAIT`]): the
+/// program in front gets its rate back.
 #[test]
 fn the_refresh_rate_goes_back_when_a_launch_shows_no_window() {
     let mut settings = crate::settings::Settings::default();
@@ -492,8 +519,8 @@ fn the_refresh_rate_goes_back_when_a_launch_shows_no_window() {
     assert_eq!(refresh(&fx), [60], "at the launch: {fx:?}");
     let fx = crate::testkit::start(&mut s, "zelda-lttp");
     assert!(refresh(&fx).is_empty(), "running, its window to come: {fx:?}");
-    assert!(refresh(&s.applied(Event::tick(1000 + crate::session::running::LAUNCH_WAIT - 1))).is_empty());
-    assert_eq!(refresh(&s.applied(Event::tick(1000 + crate::session::running::LAUNCH_WAIT))), [0], "ff6's again");
+    assert!(refresh(&s.applied(Event::tick(1000 + crate::session::intent::WINDOW_WAIT))).is_empty());
+    assert_eq!(refresh(&s.applied(Event::tick(1001 + crate::session::intent::WINDOW_WAIT))), [0], "ff6's again");
 }
 
 /// A launch that fails gives the main screen back to the settings in force.

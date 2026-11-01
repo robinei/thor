@@ -1083,11 +1083,11 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         ensure!(sent.brightness == Some(want), "2: brightness sent {:?}, level {level}, dimmed {dimmed}", sent.brightness);
     }
     // The refresh, from the rates the model told: the calibration's while it runs; else the settings' (the
-    // entry launched last while its window is yet to show, else in force) Refresh if set; else, under a
+    // entry waited for to come in front, else in force) Refresh if set; else, under a
     // frame rate cap the start rate isn't a multiple of, a rate the screen has that the cap divides with
     // none higher (0 if there is none), so every capped frame is shown for as many refreshes; else 0, the
     // screen as it is.
-    let settings = s.session().refresh_launch().map_or_else(|| s.in_force(), |id| s.settings_of(id));
+    let settings = s.session().awaited_entry().map_or_else(|| s.in_force(), |id| s.settings_of(id));
     let (wanted, cap) = (settings.get(Setting::Refresh), settings.get(Setting::FpsCap));
     if let Some(hz) = s.device_view().calibration_rate() {
         ensure!(sent.refresh == hz, "2: refresh sent {}, the calibration's {hz}", sent.refresh);
@@ -1104,8 +1104,13 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
             w.rates
         );
     }
-    let apply = (s.session().program().cloned(), s.in_force());
-    ensure!(sent.apply.as_ref() == Some(&apply), "2: applied {:?}, in force {:?}", sent.apply, apply);
+    // The hardware's settings: those of the entry waited for to come in front, else in force; never a
+    // background launch's (no other route gives the hardware settings).
+    let apply = match s.session().awaited_entry() {
+        Some(id) => (Some(id.clone()), s.settings_of(id)),
+        None => (s.session().program().cloned(), s.in_force()),
+    };
+    ensure!(sent.apply.as_ref() == Some(&apply), "2: applied {:?}, wanted {:?}", sent.apply, apply);
     let touchpad = s.presentation().touchpad();
     ensure!(sent.touchpad == touchpad, "2: touchpad sent {:?}, the second screen's {touchpad:?}", sent.touchpad);
 

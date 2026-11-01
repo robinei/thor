@@ -80,9 +80,6 @@ pub struct Session {
     running: Vec<Running>,
     /// The id of the program in force (see [`crate::session::program`]).
     program: Option<Arc<str>>,
-    /// The entry launched last and when (monotonic seconds), while its window is yet to show (see
-    /// [`Session::refresh_launch`]).
-    refresh_launch: Option<(Arc<str>, u64)>,
     /// Launches asked for that haven't started.
     launching: Vec<Launching>,
     /// Launcher games asked for while their launcher's own launch was starting, and how each starts: they
@@ -225,12 +222,14 @@ impl Session {
         self.program.as_ref()
     }
 
-    /// The entry launched last whose settings the main screen's refresh rate follows, ahead of the
-    /// program in force's, so that the rate changes before its window shows. Until the program in force
-    /// changes, or the entry has a window, or it is gone, or [`crate::session::running::LAUNCH_WAIT`]
-    /// has passed since its launch (one that never shows a window, such as a tray program).
-    pub(crate) fn refresh_launch(&self) -> Option<&Arc<str>> {
-        self.refresh_launch.as_ref().map(|(id, _)| id)
+    /// The entry whose window is waited for to come in front (see [`crate::session::intent`]): a launch
+    /// in front, starting or started, or an entry that runs. Its settings are applied ahead of the
+    /// program in force's (see [`crate::State::hardware_settings`]), so that a game starts under its own and the
+    /// screen's rate changes before its window shows. A launch in the background has none.
+    pub(crate) fn awaited_entry(&self) -> Option<&Arc<str>> {
+        let intent = self.front_launch.as_ref()?;
+        let launching = intent.unit().and_then(|unit| self.launching.iter().find(|l| l.unit == *unit)).map(|l| &l.entry);
+        launching.or_else(|| self.running.iter().find(|r| r.key == intent.key()).map(|r| &r.id))
     }
 
     pub fn windows(&self) -> &[Window] {
