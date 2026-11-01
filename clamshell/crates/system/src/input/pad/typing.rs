@@ -22,7 +22,7 @@ impl Mapping for Typing {
             Some((KeyCode::BTN_EAST, press)) => (KeyCode::KEY_BACKSPACE, press),
             _ => return,
         };
-        // Autorepeat is passed on, so a held B keeps deleting.
+        // (The merge drops the controller's autorepeat: a held B keeps deleting by the client's key repeat.)
         out.mouse.extend([Raw::key(key.0, key.1), Raw::REPORT]);
     }
 
@@ -49,8 +49,8 @@ mod tests {
         assert_eq!(out.mouse, vec![Raw::key(KeyCode::KEY_UP, Press::Down), Raw::key(KeyCode::KEY_DOWN, Press::Up), Raw::REPORT]);
         out.mouse.clear();
         Typing.event(Raw::key(KeyCode::BTN_SOUTH, Press::Down), now, &mut out);
-        Typing.event(Raw::key(KeyCode::BTN_EAST, Press::Repeat), now, &mut out);
+        Typing.event(Raw::key(KeyCode::BTN_EAST, Press::Down), now, &mut out);
         Typing.event(Raw::key(KeyCode::BTN_NORTH, Press::Down), now, &mut out);
-        assert_eq!(out.mouse, vec![Raw::key(KeyCode::KEY_ENTER, Press::Down), Raw::REPORT, Raw::key(KeyCode::KEY_BACKSPACE, Press::Repeat), Raw::REPORT]);
+        assert_eq!(out.mouse, vec![Raw::key(KeyCode::KEY_ENTER, Press::Down), Raw::REPORT, Raw::key(KeyCode::KEY_BACKSPACE, Press::Down), Raw::REPORT]);
     }
 }

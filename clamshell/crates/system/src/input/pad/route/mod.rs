@@ -204,8 +204,7 @@ pub(crate) struct PadRouter {
     home: Home,
     /// Buttons a combination took. Their release stays ClamShell's too.
     taken: Vec<KeyCode>,
-    /// Whether the D-pad's up or down was taken by a Home shortcut. If so, its events are ClamShell's until
-    /// it is centred.
+    /// The sticks' range, for the right stick's position as Home's flicks read it.
     stick_range: Range,
     flick: Flick,
     stick_taken: bool,

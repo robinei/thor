@@ -82,7 +82,6 @@ impl PadMouse {
     }
 
     fn button(&self, button: KeyCode, press: Press, out: &mut Out) {
-        // A repeat means the button is held, since a mouse button has no repeats.
         let press = if press.held() { Press::Down } else { Press::Up };
         out.mouse.extend([Raw::key(button, press), Raw::REPORT]);
     }
