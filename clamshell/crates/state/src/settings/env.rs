@@ -10,9 +10,17 @@ pub fn count_env(text: &str) -> usize {
     vars(text).count()
 }
 
-/// The `KEY=value` words of `text` with a key, split at their first `=`.
+/// The `KEY=value` words of `text` whose key is a variable's name ([`env_name`]), split at their first
+/// `=`. A word with another key is left out, so the tile counts only the variables a launch gets.
 fn vars(text: &str) -> impl Iterator<Item = (&str, &str)> {
-    Words { rest: text }.filter_map(|word| word.split_once('=')).filter(|(k, _)| !k.is_empty())
+    Words { rest: text }.filter_map(|word| word.split_once('=')).filter(|(k, _)| env_name(k))
+}
+
+/// Whether `name` can be a launched program's environment variable: `[A-Za-z_][A-Za-z0-9_]*`, what
+/// systemd-run and a shell take. systemd-run refuses a launch with any other, so every launch's
+/// variables are checked by this one rule: ClamShell's own, the Env tile's and Steam's hook's.
+pub fn env_name(name: &str) -> bool {
+    name.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_') && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// The words of a text. Words are separated by whitespace and trimmed. A word starting with `'` or `"`
@@ -46,6 +54,16 @@ impl<'a> Iterator for Words<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A word whose key isn't a variable's name is left out, and counted as none.
+    #[test]
+    fn only_variables_names_are_taken() {
+        let mut vars = Vec::new();
+        parse_env("MY-VAR=1 OK=2 1X=3 _a1=4 BASH_FUNC_x%%=5 É=6", &mut vars);
+        assert_eq!(vars, [("OK".to_owned(), "2".to_owned()), ("_a1".to_owned(), "4".to_owned())]);
+        assert_eq!(count_env("MY-VAR=1 OK=2"), 1);
+        assert!(env_name("SDL_GAMECONTROLLER_IGNORE_DEVICES") && !env_name("") && !env_name("A B"));
+    }
 
     #[test]
     fn counting_variables_agrees_with_parsing_them() {

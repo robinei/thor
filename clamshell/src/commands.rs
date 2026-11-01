@@ -124,8 +124,7 @@ pub(crate) fn print_launch_env(paths: &Paths, sources: &Sources, entry: &str) ->
     clamshell_state::settings::launch_env(&values, facts, &tile, &mut env);
     for (key, value) in env {
         // A line each, read by a shell: a name it can export, and a value on one line.
-        let name = key.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_') && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
-        if !name || value.contains('\n') {
+        if !clamshell_state::settings::env::env_name(&key) || value.contains('\n') {
             log::warn!("launch-env: {entry}: {key:?} isn't a variable a game can be given: skipped");
             continue;
         }

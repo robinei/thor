@@ -4,6 +4,7 @@
 //! manager for this. (A program found running is moved into a scope over D-Bus instead, see
 //! [`crate::launch::units::adopt`]: `systemd-run` only starts new processes.)
 
+use clamshell_state::settings::env::env_name;
 use std::ffi::OsString;
 use std::fmt;
 use std::io;
@@ -73,6 +74,14 @@ const UNIT_OWN: [&str; 13] = [
 /// its workdir or else /, with its environment. `systemd-run` returns once systemd has started it, or
 /// failed to.
 pub(crate) fn command(job: &Job) -> Option<Command> {
+    command_in(job, std::env::vars_os().filter_map(|(k, _)| k.into_string().ok()))
+}
+
+/// [`command`], with ClamShell's environment's names given. A name that can't be a variable
+/// ([`clamshell_state::settings::env::env_name`]) would make systemd-run refuse the whole launch, so it is
+/// left out: ClamShell's own (an exported bash function, `BASH_FUNC_x%%`, in a desktop session) at debug,
+/// since it is expected, a launch's own with a warning.
+fn command_in(job: &Job, own: impl Iterator<Item = String>) -> Option<Command> {
     let (program, args) = job.argv.split_first()?;
     let mut cmd = Command::new("systemd-run");
     cmd.args(["--user", "--quiet", "--collect", &format!("--unit={}", job.unit)]);
@@ -93,9 +102,22 @@ pub(crate) fn command(job: &Job) -> Option<Command> {
     // send its games to another compositor), then the job's own, which go before it. ClamShell's are
     // named only, for systemd-run to take from its own environment, which is ClamShell's: their values
     // aren't on its command line, which any user can read.
-    let own = std::env::vars_os().filter_map(|(k, _)| k.into_string().ok()).filter(|k| !UNIT_OWN.contains(&k.as_str()));
+    let own = own.filter(|k| !UNIT_OWN.contains(&k.as_str())).filter(|k| {
+        let ok = env_name(k);
+        if !ok {
+            log::debug!("launcher: {}: ClamShell's {k:?} isn't a variable's name: not passed on", job.unit);
+        }
+        ok
+    });
     cmd.args(own.map(|k| format!("--setenv={k}")));
-    cmd.args(job.env.iter().map(|(k, v)| format!("--setenv={k}={v}")));
+    let env = job.env.iter().filter(|(k, _)| {
+        let ok = env_name(k);
+        if !ok {
+            log::warn!("launcher: {}: {k:?} isn't a variable's name: left out", job.unit);
+        }
+        ok
+    });
+    cmd.args(env.map(|(k, v)| format!("--setenv={k}={v}")));
     cmd.arg("--").arg(program).args(args);
     Some(cmd)
 }
@@ -161,6 +183,24 @@ mod tests {
         assert!(args.contains(&"--service-type=exec"), "started once its program runs: {args:?}");
         assert!(args.contains(&"--property=Delegate=yes"), "delegated, for the Steam follower: {args:?}");
         assert!(args.contains(&"--property=ExecStopPost=/bin/true"), "its own properties: {args:?}");
+    }
+
+    /// A name that can't be a variable, which would make systemd-run refuse the launch, is left out:
+    /// ClamShell's own and the launch's.
+    #[test]
+    fn names_that_cant_be_variables_are_left_out() {
+        let job = Job {
+            unit: "clamshell-run-jobtest-0-0".into(),
+            slice: None,
+            argv: vec!["prog".into()],
+            env: vec![("MY-VAR".into(), "1".into()), ("OK".into(), "2".into())],
+            workdir: None,
+            properties: vec![],
+        };
+        let own = ["PATH", "BASH_FUNC_x%%"].map(String::from).into_iter();
+        let cmd = command_in(&job, own).unwrap();
+        let setenv: Vec<&str> = cmd.get_args().filter_map(|a| a.to_str()).filter(|a| a.starts_with("--setenv=")).collect();
+        assert_eq!(setenv, ["--setenv=PATH", "--setenv=OK=2"]);
     }
 
     /// Starts services on this machine's user manager. Run it by hand with `--ignored`.
