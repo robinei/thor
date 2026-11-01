@@ -1,8 +1,13 @@
-//! Installed graphics components, read on the system or launch thread, never while drawing.
+//! Installed graphics components, read on the system or launch thread, never while drawing: the
+//! packages' versions for the Vulkan driver menu ([`read`], from pacman's database), and at each launch
+//! only whether the newest driver's files are there ([`launch_facts`]).
 use clamshell_state::settings::{LaunchFacts, Values, VulkanDriver};
 use clamshell_state::status::Installed;
 use std::path::Path;
 
+/// turnip-devel's manifest. Its name has the architecture the driver is built for, which is aarch64 only
+/// (an Adreno driver, `packages/turnip-devel`): elsewhere there is no such package and the file is never
+/// there.
 pub const TURNIP_ICD: &str = "/usr/lib/turnip-devel/share/vulkan/icd.d/freedreno_icd.aarch64.json";
 const TURNIP_LIBRARY: &str = "/usr/lib/turnip-devel/libvulkan_freedreno.so";
 
@@ -62,23 +67,29 @@ pub fn read(root: &Path) -> Installed {
             _ => {}
         }
     }
-    if turnip.is_some() && (!root.join(TURNIP_ICD.trim_start_matches('/')).is_file() || !root.join(TURNIP_LIBRARY.trim_start_matches('/')).is_file()) {
+    if turnip.is_some() && !turnip_files(root) {
         log::warn!("turnip-devel is registered but its driver or manifest is missing; the newer driver is unavailable");
         turnip = None;
     }
     Installed { mesa: system.or(mesa), turnip_devel: turnip }
 }
 
-/// Resolve the driver again at launch, so removing its package cannot leave a stale loader path.
+/// Whether turnip-devel's manifest and library are both under `root`.
+fn turnip_files(root: &Path) -> bool {
+    [TURNIP_ICD, TURNIP_LIBRARY].iter().all(|file| root.join(file.trim_start_matches('/')).is_file())
+}
+
+/// The launch's facts. The driver is looked for again at each launch, by its files alone (pacman's
+/// database is the menu's, [`read`]), so that removing its package can't leave a stale loader path.
 pub fn launch_facts<'a>(values: &Values, fex: Option<&'a Path>, ignore: Option<&'a str>) -> LaunchFacts<'a> {
     launch_facts_at(Path::new("/"), values, fex, ignore)
 }
 pub(crate) fn launch_facts_at<'a>(root: &Path, values: &Values, fex: Option<&'a Path>, ignore: Option<&'a str>) -> LaunchFacts<'a> {
     let turnip_devel = if values.choice::<VulkanDriver>() == VulkanDriver::Newest {
-        if read(root).turnip_devel.is_some() {
+        if turnip_files(root) {
             Some(Path::new(TURNIP_ICD))
         } else {
-            log::warn!("turnip-devel is not installed; launching with the system Vulkan driver");
+            log::warn!("turnip-devel's driver or manifest is missing; launching with the system Vulkan driver");
             None
         }
     } else {
@@ -134,5 +145,17 @@ mod tests {
         let user = vec![("VK_DRIVER_FILES".to_owned(), "/chosen/driver.json".to_owned())];
         launch_env(&values, launch_facts_at(root.path(), &values, None, None), &user, &mut env);
         assert_eq!(env, user);
+    }
+
+    /// A launch looks only for the driver's files: pacman's database is read for the menu's versions,
+    /// not at every launch.
+    #[test]
+    fn a_launch_finds_the_newest_driver_by_its_files_alone() {
+        let root = tempfile::tempdir().unwrap();
+        driver(root.path());
+        let mut values = Values::default();
+        values.set(clamshell_state::settings::Setting::VulkanDriver, VulkanDriver::Newest as u16);
+        assert_eq!(launch_facts_at(root.path(), &values, None, None).turnip_devel, Some(Path::new(TURNIP_ICD)), "no package entry read");
+        assert_eq!(read(root.path()).turnip_devel, None, "the menu's version is the package's");
     }
 }
