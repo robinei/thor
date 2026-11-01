@@ -34,10 +34,12 @@ pub(crate) struct Pipeline {
     scenes: [Scene; 2],
     /// The shaders decoding a surface into a scene, by its kind of colour (see [`program_colour`]) and the
     /// scene's primaries.
-    shaders: Vec<((ColourDescription, ColourPrimaries), GlesTexProgram)>,
+    shaders: Programs<ColourPrimaries>,
     /// The shaders decoding a surface and encoding it for a screen in one pass, by its kind of colour and the
     /// screen's.
-    direct_shaders: Vec<((ColourDescription, ColourDescription), GlesTexProgram)>,
+    direct_shaders: Programs<ColourDescription>,
+    /// The surfaces whose colour couldn't be drawn (see [`final_program`]), logged once.
+    failed: Vec<Id>,
     revision: u64,
     /// The surfaces whose pictures take passes before the scene this frame, kept so that composing
     /// allocates nothing.
@@ -65,6 +67,10 @@ struct Capture {
     size: (i32, i32),
     programs: [(ColourPrimaries, GlesTexProgram); 2],
 }
+
+/// Final-pass programs, by the kind of surface colour they decode (see [`program_colour`]) and what they
+/// draw into: a scene's primaries, or a screen's description.
+type Programs<T> = Vec<((ColourDescription, T), GlesTexProgram)>;
 
 /// A screen's scene: its surfaces decoded into half floats, kept between frames, of which only what changed
 /// is drawn; its encoding; and, if its frame is one surface, that surface drawn straight onto the screen.
@@ -283,6 +289,7 @@ impl Pipeline {
             scenes: [Scene::new(top, (output, program.clone())), Scene::new(bottom, (output, program))],
             shaders: Vec::new(),
             direct_shaders: Vec::new(),
+            failed: Vec::new(),
             revision: 0,
             chained: Vec::new(),
             histogram: Default::default(),
@@ -338,7 +345,8 @@ impl Pipeline {
             }
             self.revision = server.colour.revision;
         }
-        let Pipeline { scenes, shaders, direct_shaders, chained, .. } = self;
+        let Pipeline { scenes, shaders, direct_shaders, failed, chained, .. } = self;
+        failed.retain(|id| server.colour.surfaces.contains_key(id));
         let [top, bottom] = scenes;
         let scene = if down { bottom } else { top };
         if scene.part != part {
@@ -412,7 +420,10 @@ impl Pipeline {
         scene.converted.clear();
         scene.direct = None;
         for inner in elements.drain(..) {
-            let colour = server.colour.surfaces.get(inner.id()).map(|colour| **colour).unwrap_or_default();
+            let own = server.colour.surfaces.get(inner.id()).map(|colour| **colour).unwrap_or_default();
+            let caches = (&mut *shaders, &mut *direct_shaders);
+            let (colour, program, decode) =
+                final_program(renderer, caches, failed, direct.then_some(scene.output.0), scene.output.0.primaries, inner.id(), own)?;
             let look = scene.last_curves.iter().find(|(id, _)| id == inner.id()).map(|(_, look)| *look);
             let (curve, headroom) = look.as_ref().map_or((None, 1.0), |look| (look.curve.as_ref(), look.headroom));
             let peak = hdr_peak(colour, look.map_or(0, |look| look.hdr_peak));
@@ -430,17 +441,6 @@ impl Pipeline {
                 };
                 [a, b, clarity]
             });
-            let decode = decode_uniforms(colour)?;
-            // Order: the program after its uniforms, which refuse what it couldn't draw (primaries without a
-            // matrix to BT.2020).
-            let kind = program_colour(colour);
-            let program = if direct {
-                let output = scene.output.0;
-                cached(direct_shaders, (kind, output), || direct_shader(renderer, kind, output))?
-            } else {
-                let primaries = scene.output.0.primaries;
-                cached(shaders, (kind, primaries), || decode_shader(renderer, kind, primaries))?
-            };
             let smaa_blend = match replaced.iter().find(|(id, _)| id == inner.id()).map(|(_, chained)| chained) {
                 Some(super::chain::Chained::Weights(weights)) => Some(weights.clone()),
                 _ => None,
@@ -761,6 +761,45 @@ pub(crate) fn curve_uniforms(curve: Option<&Curve>, headroom: f32, hdr_peak: Opt
         [f32::from(c.black) / 1000.0, f32::from(c.contrast) / 100.0, f32::from(c.start) / 100.0, peak],
         [white / REFERENCE_NITS as f32, f32::from(c.saturation) / 100.0, headroom, 1.0],
     ]
+}
+
+/// The colour an element of a surface described as `own` is drawn as, with its program and uniforms: drawn
+/// straight onto a screen of `straight`'s description, else into a scene in `scene`'s primaries. If they
+/// can't be made for its own description (primaries without a matrix to BT.2020, a program the driver
+/// refuses), it is drawn as an sRGB surface: one surface's failure fails neither its screen nor, nested,
+/// the session. That is logged once for the surface (`failed`). An error only when the default can't be
+/// drawn either.
+fn final_program(
+    renderer: &mut GlesRenderer,
+    (shaders, direct_shaders): (&mut Programs<ColourPrimaries>, &mut Programs<ColourDescription>),
+    failed: &mut Vec<Id>,
+    straight: Option<ColourDescription>,
+    scene: ColourPrimaries,
+    id: &Id,
+    own: ColourDescription,
+) -> Result<(ColourDescription, GlesTexProgram, Decode), Error> {
+    let mut made = |colour: ColourDescription| -> Result<(GlesTexProgram, Decode), Error> {
+        // Order: the uniforms first, which refuse what the program couldn't draw.
+        let decode = decode_uniforms(colour)?;
+        let kind = program_colour(colour);
+        let program = match straight {
+            Some(output) => cached(direct_shaders, (kind, output), || direct_shader(renderer, kind, output))?,
+            None => cached(shaders, (kind, scene), || decode_shader(renderer, kind, scene))?,
+        };
+        Ok((program, decode))
+    };
+    match made(own) {
+        Ok((program, decode)) => Ok((own, program, decode)),
+        Err(error) => {
+            if !failed.contains(id) {
+                log::warn!("colour: a surface's colour {own:?} can't be drawn ({error}): drawn as sRGB");
+                failed.push(id.clone());
+            }
+            let fallback = ColourDescription::default();
+            let (program, decode) = made(fallback)?;
+            Ok((fallback, program, decode))
+        }
+    }
 }
 
 /// The description a final pass's program is made for, standing for all with the same kind of transfer
@@ -1193,6 +1232,24 @@ pub(super) mod direct_tests {
     fn white(renderer: &mut GlesRenderer, (w, h): (i32, i32)) -> GlesTexture {
         let picture = vec![255u8; usize::try_from(w * h * 4).unwrap()];
         renderer.import_memory(&picture, Fourcc::Abgr8888, (w, h).into(), false).unwrap()
+    }
+
+    /// A surface whose colour can't be drawn (here primaries with D50's white point, which have no matrix to
+    /// BT.2020) is drawn as sRGB, logged once, rather than failing its screen's composition (and nested, the
+    /// session).
+    #[test]
+    fn a_surface_whose_colour_cant_be_drawn_is_drawn_as_srgb() {
+        let mut renderer = renderer();
+        let (mut shaders, mut direct, mut failed) = (Vec::new(), Vec::new(), Vec::new());
+        let id = Id::new();
+        let d50 = [(640000, 330000), (300000, 600000), (150000, 60000), (345700, 358500)];
+        let odd = ColourDescription { primaries: ColourPrimaries::Custom(d50), ..ColourDescription::default() };
+        for straight in [None, Some(ColourDescription::default())] {
+            let (colour, _, decode) =
+                final_program(&mut renderer, (&mut shaders, &mut direct), &mut failed, straight, ColourPrimaries::Srgb, &id, odd).unwrap();
+            assert_eq!((colour, decode), (ColourDescription::default(), decode_uniforms(ColourDescription::default()).unwrap()));
+        }
+        assert_eq!(failed, [id], "logged once");
     }
 
     /// Both scenes are drawn where they go side by side, the second's off the origin too (as the nested

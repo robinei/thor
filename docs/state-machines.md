@@ -1027,6 +1027,7 @@ the exported event ring, and PQ, linear and SDR pixels from an EGL client.
     client --its buffer fails to import while drawing: a shared-memory pool it shrank under us--> ended [reason logged; the frame goes on]
     client --its buffer fails to import while drawing, for our reasons (the GPU's memory, a context lost in a recovery)--> the surface not drawn this time [a warning once for the surface, then debug; tried again at the next drawing]
     client --a dmabuf fails to import--> failed [logged]; --more than 64 imports pending--> invalid_format ends the client
+    surface --its colour can't be drawn (primaries without a matrix to BT.2020, a final-pass program the driver refuses)--> drawn as sRGB [a warning once for the surface; the screen's composition goes on]
     client --protocol error--> gone [warn]; --disconnects--> gone [debug]
 
 Other clients' windows and the event loop go on. Under the nested host a renderer or host window error
@@ -1036,7 +1037,7 @@ on.
 Tests: `a_protocol_error_disconnects_only_its_client` (a duplicate role on a second connection; the healthy
 client's title still changes afterwards), `a_dmabuf_that_fails_to_import_is_failed_and_its_client_stays`,
 `a_buffer_refused_for_our_reasons_leaves_its_client_connected` (the refusal and which errors are the
-client's), `a_refused_x11_buffer_leaves_xwayland_connected`. A real failed import while drawing is not
+client's), `a_refused_x11_buffer_leaves_xwayland_connected`, `a_surface_whose_colour_cant_be_drawn_is_drawn_as_srgb`. A real failed import while drawing is not
 induced in a test.
 
 ### The window event ring and its replay (trace.rs)
