@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Package recovery transitions on temporary filesystems, without root, mounts or services."""
+"""The packages' scripts and rules: their syntax, and their recovery transitions on temporary filesystems,
+without root, mounts or services."""
 import importlib.util
 import os
+import shutil
 import sys
 import re
 from pathlib import Path
@@ -45,6 +47,82 @@ class Machine:
 
     def close(self):
         self.temp.cleanup()
+
+
+def tracked(*paths):
+    out = subprocess.run(['git', '-C', REPO, 'ls-files', '-z', *paths], capture_output=True, text=True, check=True).stdout
+    return [REPO / name for name in out.split('\0') if name]
+
+
+def shebang(path):
+    with open(path, 'rb') as f:
+        first = f.readline(200)
+    return first.decode(errors='replace').strip() if first.startswith(b'#!') else ''
+
+
+# Syntax only bash has, in a script for /bin/sh (dash, busybox's ash and Android's mksh lack it): [[ ]],
+# process substitution, arrays, PIPESTATUS, $'...' strings, &>.
+BASHISMS = re.compile(r"(^|[\s;&|(])\[\[\s|[<>]\(|^\s*function\s|\bPIPESTATUS\b|\$\{\w+\[|^\s*\w+=\(|\$'|&>")
+
+
+class Syntax(unittest.TestCase):
+    """Every shell script, PKGBUILD and install file of the packages and tools parses, and one for /bin/sh
+    has no bash-only syntax; the Python scripts compile; makepkg reads every PKGBUILD; the udev and polkit
+    rules parse. (makepkg, udevadm and node: each part skipped, said, where the tool is missing.)"""
+
+    def shell(self):
+        scripts = []
+        for path in tracked('packages', 'tools', 'clamshell/android'):
+            line = shebang(path)
+            if path.name == 'PKGBUILD' or path.suffix == '.install' or line.endswith('bash'):
+                scripts.append((path, 'bash'))
+            elif line.endswith('sh') or (path.suffix == '.sh' and not line):
+                scripts.append((path, 'sh'))
+        return scripts
+
+    def test_shell_scripts_parse_and_those_for_sh_use_only_sh(self):
+        scripts = self.shell()
+        self.assertGreater(len(scripts), 40)
+        for path, shell in scripts:
+            with self.subTest(path=str(path.relative_to(REPO))):
+                result = subprocess.run(['bash', '-n', path], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                if shell == 'sh':
+                    lines = [f'{n}: {line}' for n, line in enumerate(path.read_text().splitlines(), 1)
+                             if not line.lstrip().startswith('#') and BASHISMS.search(line)]
+                    self.assertEqual(lines, [], 'bash-only syntax in a script for sh')
+
+    def test_python_scripts_compile(self):
+        for path in tracked('packages', 'tools', 'clamshell/android'):
+            if path.suffix == '.py' or 'python' in shebang(path):
+                with self.subTest(path=str(path.relative_to(REPO))):
+                    compile(path.read_text(), str(path), 'exec')
+
+    @unittest.skipUnless(shutil.which('makepkg'), 'no makepkg here')
+    def test_makepkg_reads_every_pkgbuild(self):
+        for path in tracked('packages'):
+            if path.name == 'PKGBUILD':
+                with self.subTest(package=path.parent.name):
+                    result = subprocess.run(['makepkg', '--printsrcinfo'], cwd=path.parent, capture_output=True, text=True, timeout=30)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn('pkgname = ', result.stdout)
+
+    @unittest.skipUnless(shutil.which('udevadm') and subprocess.run(['udevadm', 'verify', '--help'], capture_output=True).returncode == 0,
+                         'no udevadm verify here')
+    def test_udev_rules_parse(self):
+        rules = [path for path in tracked('packages') if path.parent.name == 'rules.d' and 'udev' in path.parts]
+        self.assertGreater(len(rules), 0)
+        result = subprocess.run(['udevadm', 'verify', '--no-style', *rules], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @unittest.skipUnless(shutil.which('node'), 'no node here')
+    def test_polkit_rules_parse(self):
+        rules = [path for path in tracked('packages') if 'polkit-1' in path.parts]
+        self.assertGreater(len(rules), 0)
+        for path in rules:
+            with self.subTest(path=str(path.relative_to(REPO))):
+                result = subprocess.run(['node', '--check'], input=path.read_text(), capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class BootRecovery(unittest.TestCase):

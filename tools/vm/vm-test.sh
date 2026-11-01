@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # The VM suite end to end: builds what the VM runs, boots it headless, waits for ClamShell, brings up
 # the Bluetooth test device, runs tools/vm/vm-checks.py, and stops the VM. About twenty minutes; run before
 # pushing, after changes to the pad, the session or the devices. Exit status: the checks'. Each run's whole
