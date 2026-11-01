@@ -241,6 +241,15 @@ impl Edit {
         }
     }
 
+    /// How many options the form shows for its chosen field: none unless it is choosing.
+    pub fn choices(&self, config: &Config) -> usize {
+        let Some(form) = self.form.as_ref().filter(|f| f.choosing) else { return 0 };
+        let Some(&field) = form.item.fields().get(form.field) else { return 0 };
+        let mut n = 0;
+        form.item.as_ref().each_option(config, field, |_, _| n += 1);
+        n
+    }
+
     pub fn listed(&self, config: &Config) -> usize {
         match self.panel {
             Panel::Sources => config.sources.len() + 1,

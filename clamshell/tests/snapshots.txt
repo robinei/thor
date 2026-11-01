@@ -63,7 +63,7 @@ launcher.png f1d1c21fd1d2331a
 library-edit-command-top.png 863e81d9e7a1a9cf
 library-edit-command.png 331dd9eae9a3a271
 library-edit-cut.png 06f7ec08d1aa6052
-library-edit-form.png 0b48bdddbe6ca817
+library-edit-form.png 15c3ee2028d17217
 library-edit-icons.png f4b0a561e396a5c1
 library-edit-name.png 8c2febe1953f7f1b
 library-edit-runners.png 26949cfedb5374f5

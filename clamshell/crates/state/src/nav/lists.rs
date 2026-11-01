@@ -15,6 +15,7 @@ use std::sync::Arc;
 use crate::id::{AudioId, DockId, Id, LibraryViewId};
 use crate::keymap::screens::Keymapping;
 use crate::kit::list::{EMPTY, ItemKey, RowsOf, Scroll};
+use crate::library_view::edit::EditId;
 use crate::{Dock, Level, Levels, LibraryView, Panel, Pointer, Prefs, Radios, Session, Sys};
 
 /// A scrolled list.
@@ -47,6 +48,8 @@ pub enum ListId {
     /// The Library's edit mode's list: the open folder's rows, or the sources' or runners' (see
     /// [`crate::library_view::edit`]).
     LibraryEdit,
+    /// The options of the edit mode's form's chosen field.
+    EditChoices,
 }
 
 /// Which part of a row a target is: the row itself, or one of its controls.
@@ -62,7 +65,7 @@ pub enum RowPart {
 }
 
 impl ListId {
-    pub const COUNT: usize = 14;
+    pub const COUNT: usize = 15;
     pub const ALL: [ListId; ListId::COUNT] = [
         ListId::LibraryView,
         ListId::Wifi,
@@ -78,6 +81,7 @@ impl ListId {
         ListId::Values,
         ListId::Settings,
         ListId::LibraryEdit,
+        ListId::EditChoices,
     ];
 
     pub fn index(self) -> usize {
@@ -178,6 +182,7 @@ impl<'a> Lists<'a> {
             ListId::Values => RowsOf::Count(self.menu_rows),
             ListId::Settings => RowsOf::Count(self.panel().grid().count().div_ceil(crate::GRID_COLUMNS)),
             ListId::LibraryEdit => RowsOf::Count(self.library_view.edit_rows()),
+            ListId::EditChoices => RowsOf::Count(self.library_view.edit_choices()),
         }
     }
 
@@ -186,7 +191,8 @@ impl<'a> Lists<'a> {
     pub fn of(&self, id: &Id) -> Option<(ListId, usize)> {
         match id {
             Id::Row { list, i, .. } => Some((*list, usize::from(*i))),
-            Id::LibraryView(LibraryViewId::Edit(crate::library_view::edit::EditId::Row(i))) => Some((ListId::LibraryEdit, usize::from(*i))),
+            Id::LibraryView(LibraryViewId::Edit(EditId::Row(i))) => Some((ListId::LibraryEdit, usize::from(*i))),
+            Id::LibraryView(LibraryViewId::Edit(EditId::Choice(i))) => Some((ListId::EditChoices, usize::from(*i))),
             Id::Dock(DockId::Entry(i)) => Some((ListId::Dock, usize::from(*i) / crate::dock::DOCK_COLUMNS)),
             Id::Settings(tile) => self.panel().grid().position(|t| t == *tile).map(|i| (ListId::Settings, i / crate::GRID_COLUMNS)),
             _ => None,
@@ -200,6 +206,8 @@ impl<'a> Lists<'a> {
         let tile = |at: usize, columns: usize, len: usize| (i * columns + at % columns).min(len.checked_sub(1)?).into();
         match id {
             Id::Row { list, part, .. } => Some(Id::Row { list: *list, i: u16::try_from(i).ok()?, part: *part }),
+            Id::LibraryView(LibraryViewId::Edit(EditId::Row(_))) => Some(Id::LibraryView(LibraryViewId::Edit(EditId::Row(u16::try_from(i).ok()?)))),
+            Id::LibraryView(LibraryViewId::Edit(EditId::Choice(_))) => Some(Id::LibraryView(LibraryViewId::Edit(EditId::Choice(u16::try_from(i).ok()?)))),
             Id::Dock(DockId::Entry(at)) => {
                 let tile: Option<usize> = tile(usize::from(*at), crate::dock::DOCK_COLUMNS, self.dock.items().len());
                 Some(Id::Dock(DockId::Entry(u16::try_from(tile?).ok()?)))

@@ -180,6 +180,11 @@ impl LibraryView {
         self.edit.as_ref().zip(self.config_shown()).map_or(0, |(e, c)| e.list_rows(c))
     }
 
+    /// How many options the edit mode's form shows for its chosen field: none unless they show.
+    pub fn edit_choices(&self) -> usize {
+        self.edit.as_ref().zip(self.config_shown()).map_or(0, |(e, c)| e.choices(c))
+    }
+
     /// The thread that writes library.json started again: the writes it hadn't read back won't be.
     pub(crate) fn writes_lost(&mut self) {
         self.written = None;

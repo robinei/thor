@@ -340,3 +340,50 @@ fn view_from_a_game_brings_the_focus_to_the_second_screen() {
         assert_eq!(core.state().pointer().focus(), Some(&Id::Tab(Tab::Wifi)), "via_key {via_key}: where it was");
     }
 }
+
+/// The edit form's options are a scrolled list: with more folders than fit, the pad goes down through
+/// all of them and the list follows, so the last can be chosen.
+#[test]
+fn every_option_of_a_long_choice_list_is_reached() {
+    use clamshell_state::ListId;
+    use clamshell_state::library_view::edit::EditId;
+    let mut library = clamshell_library::demo::library();
+    let mut config = clamshell_library::demo::config();
+    for i in 0..30 {
+        let place = clamshell_library::config::Place { id: format!("p{i}"), name: format!("Folder {i}"), within: Some("games".into()), ..Default::default() };
+        config.places.push(place);
+    }
+    library.config = Some(std::sync::Arc::new(config));
+    let state = State::new(Init { library: Some(library), ..Init::default() });
+    let mut core = clamshell_ui::Core::new(state, crate::VIEWS, || {}).expect("a core");
+    core.resize(Screen::Top, (1920, 1080), 1);
+    core.resize(Screen::Bottom, (1240, 1080), 1);
+    let tap = |core: &mut clamshell_ui::Core, id: Id| core.handle(PointerEvent::Activate(id).into());
+    let edit = |id: EditId| Id::LibraryView(LibraryViewId::Edit(id));
+    let tools = core.state().library_view().library().collections.iter().position(|c| c.name == "Tools").unwrap_or(0);
+    tap(&mut core, Id::LibraryView(LibraryViewId::Collection(tools as u16)));
+    for _ in 0..2 {
+        tap(&mut core, Id::LibraryView(LibraryViewId::Entry("builtin:device".into())));
+    }
+    for id in [Id::Device(clamshell_state::DeviceId::EditLibrary), edit(EditId::Sources), edit(EditId::Open), edit(EditId::Field(3))] {
+        tap(&mut core, id);
+    }
+    let len = core.state().lists().len(ListId::EditChoices);
+    assert_eq!(len, 40, "the ten places of the demo and thirty more");
+    let draw = |core: &mut clamshell_ui::Core| {
+        core.record(clamshell_ui::Layer::Screen(Screen::Top), false);
+        core.frames_done();
+    };
+    draw(&mut core);
+    core.handle(PointerEvent::Focus(edit(EditId::Choice(0))).into());
+    for _ in 1..len {
+        draw(&mut core);
+        core.handle(Event::Pad(PadInput::Down));
+    }
+    assert_eq!(core.state().pointer().focus(), Some(&edit(EditId::Choice(len as u16 - 1))));
+    assert!(core.state().lists().scroll(ListId::EditChoices).offset() > 0.0, "the list scrolled");
+    core.handle(Event::Pad(PadInput::A(true)));
+    core.handle(Event::Pad(PadInput::A(false)));
+    let form = core.state().library_view().edit().and_then(|e| e.form()).expect("the form");
+    assert_eq!(form.item.as_ref().value(&clamshell_library::demo::config(), clamshell_state::library_view::form::Field::Place).to_string(), "p29");
+}

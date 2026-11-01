@@ -211,7 +211,7 @@ impl State {
             ListId::Layers => self.on_layer_row(i, part, long, out),
             ListId::Time => self.sys.on_time_row(i, self.scrolls.get_mut(ListId::Time), out),
             // Their tiles, and the edit mode's rows, are targets of their own.
-            ListId::Dock | ListId::Settings | ListId::LibraryEdit => {}
+            ListId::Dock | ListId::Settings | ListId::LibraryEdit | ListId::EditChoices => {}
             // The Library game's row is its game's target, and a backlight's row is only its level.
             ListId::LibraryView | ListId::Backlights => {}
         }

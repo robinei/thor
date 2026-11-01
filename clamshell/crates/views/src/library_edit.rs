@@ -208,21 +208,23 @@ fn form_view(f: &mut Frame, h: f32, config: &Config, open: &Form, body: Rect) {
     let right = Rect::new(body.x + body.w * 0.55 + pad, body.y, body.w * 0.45 - pad, body.h);
     let Some(&field) = open.item.fields().get(open.field) else { return };
     if open.choosing {
-        let mut y = right.y;
+        // The options, a list row each, the current one marked; scrolled when there are more than fit.
+        let row_h = detail * ACTION;
+        let len = f.s.library_view().edit_choices();
+        let scrolled = Scrolled::begin(f, ListId::EditChoices, right, row_h, len);
+        let shown = scrolled.shown();
         let current = Fmt::<192>::of(format_args!("{}", open.item.as_ref().value(config, field)));
-        let mut j = 0u16;
+        let mut j = 0usize;
         open.item.as_ref().each_option(config, field, |value, label| {
-            // Past the room, the rest isn't drawn.
-            if y > right.y + right.h - detail * ACTION {
-                return;
+            if shown.contains(&j) {
+                // A field shows its value as the option's label (a type) or as the option itself (a runner's id).
+                let mark = label == &*current || value == &*current;
+                let row = widgets::ListRow { label, tone: Tone::high_if(mark), mark, note: "", edit: widgets::EditCell::None };
+                widgets::list_row(f, EditId::Choice(j as u16).into(), scrolled.row(j), pad, detail, row);
             }
-            let r = Rect::new(right.x, y, right.w, detail * ACTION);
-            // A field shows its value as the option's label (a type) or as the option itself (a runner's id).
-            let tone = if label == &*current || value == &*current { Tone::Accent } else { Tone::Fn };
-            f.text_button(EditId::Choice(j).into(), r, detail, tone, label, Align::Start);
-            y += detail * ACTION;
             j += 1;
         });
+        scrolled.end(f, right.x + right.w + pad * 0.2);
     }
 }
 
