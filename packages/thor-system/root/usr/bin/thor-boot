@@ -2,7 +2,9 @@
 # Puts the kernel (linux-thor's), our initramfs and the command line in force on the root's card's FAT
 # partition, both ways the card boots: as one selected slot for systemd-boot (which it updates too: the kernel,
 # Thor's device tree and initramfs; the loader entry's options line is the command line), and in
-# /KERNEL for the ABL, repacked (checked before it replaces the old one). Run as root. pacman runs it after
+# /KERNEL for the ABL, repacked (checked before it replaces the old one). The slot left stays as a second
+# entry, the previous kernel, with its modules (thor-modules), for a kernel that boots and then fails:
+# systemd-boot's menu offers it (the ABL boots only /KERNEL, the newest). Run as root. pacman runs it after
 # updates of the kernel or of what the initramfs and the boot loader are made of (90-thor-boot.hook); the
 # first boot, after putting the swap file's place on the command line; the image build, once.
 set -euo pipefail
@@ -45,6 +47,12 @@ case $current in
 esac
 slot=$mnt/$next
 stage=$slot.new
+# (The previous kernel's entry names the slot about to be filled: gone first.)
+prev=$mnt/loader/entries/thor-prev.conf
+if [ -e "$prev" ]; then
+    rm -f "$prev"
+    sync -f "$mnt"
+fi
 rm -rf "$stage" "$slot"
 { gzip -c "$modules/Image"; cat "$modules"/dtbs/*.dtb; } > "$work/kernel.gz"
 need=$(( $(stat -c %s "$modules/Image" /boot/initramfs-thor.img "$modules/dtbs/qcs8550-ayn-thor.dtb" \
@@ -56,6 +64,8 @@ mkdir -p "$stage" "$mnt/EFI/BOOT"
 cp "$modules/Image" "$stage/Image"
 cp "$modules/dtbs/qcs8550-ayn-thor.dtb" "$stage/thor.dtb"
 cp /boot/initramfs-thor.img "$stage/initramfs.img"
+# (The kernel's release: its modules' folder, kept while the slot is an entry.)
+echo "$kver" > "$stage/release"
 cp /usr/lib/systemd/boot/efi/systemd-bootaa64.efi "$mnt/EFI/BOOT/BOOTAA64.EFI.new"
 # ABL has one coherent image of its own, published independently of the EFI entry.
 python3 /usr/lib/thor/bootimg.py repack "$mnt/KERNEL" --kernel "$work/kernel.gz" --ramdisk "$stage/initramfs.img" \
@@ -81,4 +91,26 @@ sync -f "$mnt"
 # This is the commit point for EFI: all three paths change together.
 mv "$entry.new" "$entry"
 sync -f "$mnt"
+# The slot left as the previous kernel's entry, if it records its kernel; the releases whose modules
+# thor-modules keeps at boot, this one's and that one's.
+left=${current#/}
+left=${left%%/*}
+releases=$kver
+if [ -s "$mnt/$left/release" ]; then
+    awk -v slot="$left" '
+        $1 == "title" { $0 = $0 ", previous kernel" }
+        $1 == "linux" { $0 = "linux /" slot "/Image" }
+        $1 == "initrd" { $0 = "initrd /" slot "/initramfs.img" }
+        $1 == "devicetree" { $0 = "devicetree /" slot "/thor.dtb" }
+        { print }
+    ' "$entry" > "$prev.new"
+    mv "$prev.new" "$prev"
+    sync -f "$mnt"
+    releases="$kver $(cat "$mnt/$left/release")"
+else
+    echo "thor-boot: $left records no kernel: no previous kernel's entry"
+fi
+mkdir -p /var/lib/thor
+printf '%s\n' $releases > /var/lib/thor/boot-releases.new
+mv /var/lib/thor/boot-releases.new /var/lib/thor/boot-releases
 echo "thor-boot: done (slot $next; command line: $cmdline)"

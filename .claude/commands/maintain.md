@@ -40,7 +40,9 @@ Your notes are `changelog.md` in this folder (the device's own).
    thor-boot ran, it must end with "thor-boot: done": if it failed, the card still boots the previous
    kernel (thor-boot replaces the card's files only once all the new ones are written and checked, and
    the previous kernel's modules are kept: thor-modules), but fix it before the user reboots (its log:
-   `/var/log/thor-mkinitcpio.log`). If the kernel, systemd, mesa or the boot changed,
+   `/var/log/thor-mkinitcpio.log`). After it, the boot menu (systemd-boot's, for 3 s) also offers the
+   kernel before ("…, previous kernel"), for a new one that boots and then fails: say so when the kernel
+   changed. If the kernel, systemd, mesa or the boot changed,
    tell the user a reboot is due (don't reboot yourself). If `clamshell` or `thor-session` changed, say
    that restarting ClamShell (`systemctl --user restart clamshell`) takes the new one, and that it closes
    every app and game with a window, this terminal too (ClamShell is their compositor): it is the user's

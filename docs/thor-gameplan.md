@@ -761,9 +761,11 @@ From the review of 2026-10-21 (what Armada, ROCKNIX, Thorch and Kettle do, taken
       pre-transaction hooks before installing the package that brings them): reboot right after it.
 - [ ] A kernel update on the device: `pacman -U` a second linux-thor, then the card has the new kernel
       ("thor-boot: done"), the old release's modules are still there until the next boot
-      (`/usr/lib/modules`), and gone after it (thor-old-modules). Then the FAT partition's room
-      (`df -h` of it with KERNEL, KERNEL.new, Image and the initramfs): if there is room, a second loader
-      entry with the previous kernel (`Image.prev`, its initramfs) for a kernel that boots and then hangs.
+      (`/usr/lib/modules`), and still there after it while its slot is the second entry
+      (`thor-prev.conf`, "…, previous kernel"; thor-old-modules keeps `/var/lib/thor/boot-releases`).
+      Then the boot menu: whether the device's keys move in systemd-boot's menu, and the previous
+      kernel boots from it with its modules (a deliberately broken kernel). And the FAT partition's
+      room (`df -h` of it with KERNEL, KERNEL.new, both slots and the initramfs).
 
 - [ ] The Device view (Tools, Device; it opens by itself at the first start): the sticks calibrated
       (let go, turn each around its edge, let go: the extremes drawn as they are reached; then

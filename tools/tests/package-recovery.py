@@ -135,6 +135,7 @@ class BootRecovery(unittest.TestCase):
         m.file('run/thor-esp/loader/entries/thor.conf', 'title Thor\nlinux /thor-a/Image\ninitrd /thor-a/initramfs.img\ndevicetree /thor-a/thor.dtb\noptions root=LABEL=THOR_ROOT rw\n')
         for name in ['Image', 'initramfs.img', 'thor.dtb']:
             m.file(f'run/thor-esp/thor-a/{name}', f'old {name}')
+        m.file('run/thor-esp/thor-a/release', 'old\n')
         m.file('run/thor-esp/EFI/BOOT/BOOTAA64.EFI', 'old EFI')
         m.file('usr/lib/modules/new/Image', 'new Image')
         m.file('usr/lib/modules/new/dtbs/qcs8550-ayn-thor.dtb', 'new thor.dtb')
@@ -168,16 +169,25 @@ for last; do :; done; echo "mv ${{last#{m.root}/run/thor-esp/}}" >> {m.root}/eve
 
     def run_boot(self, m, **env):
         source = (REPO / 'packages/thor-system/root/usr/bin/thor-boot').read_text()
-        return m.run(source, ['/usr/lib/thor', '/usr/lib/modules/', '/boot/', '/var/log/', '/run/thor-esp', '/run/thor-boot.lock', '/usr/lib/systemd/boot/efi'], **env)
+        return m.run(source, ['/usr/lib/thor', '/usr/lib/modules/', '/boot/', '/var/log/', '/run/thor-esp', '/run/thor-boot.lock', '/usr/lib/systemd/boot/efi', '/var/lib/thor'], **env)
 
-    def coherent(self, m):
+    def entry(self, m, name):
+        """An entry's fields, checked to name one complete slot of one generation."""
         esp = m.root / 'run/thor-esp'
-        fields = dict(line.split(maxsplit=1) for line in (esp / 'loader/entries/thor.conf').read_text().splitlines())
+        fields = dict(line.split(maxsplit=1) for line in (esp / 'loader/entries' / name).read_text().splitlines())
         image = (esp / fields['linux'].lstrip('/')).read_text()
         generation = image.split()[0]
         self.assertIn(generation, ['old', 'new'])
         self.assertEqual((esp / fields['initrd'].lstrip('/')).read_text(), f'{generation} initramfs.img')
         self.assertEqual((esp / fields['devicetree'].lstrip('/')).read_text(), f'{generation} thor.dtb')
+        return fields
+
+    def coherent(self, m):
+        esp = m.root / 'run/thor-esp'
+        fields = self.entry(m, 'thor.conf')
+        # The previous kernel's entry, if there is one, names the other slot, complete.
+        if (esp / 'loader/entries/thor-prev.conf').exists():
+            self.assertNotEqual(self.entry(m, 'thor-prev.conf')['linux'], fields['linux'])
         abl = bootimg.read(esp / 'KERNEL')
         stream = zlib.decompressobj(16 + zlib.MAX_WBITS)
         kernel = stream.decompress(abl['kernel'])
@@ -205,7 +215,42 @@ for last; do :; done; echo "mv ${{last#{m.root}/run/thor-esp/}}" >> {m.root}/eve
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         events = (m.root / 'events').read_text().splitlines()
         # (FAT orders no metadata writes: only a sync between them orders the renames.)
-        self.assertEqual(events, ['sync', 'mv thor-b', 'mv KERNEL', 'mv EFI/BOOT/BOOTAA64.EFI', 'sync', 'mv loader/entries/thor.conf', 'sync'])
+        self.assertEqual(events[:7], ['sync', 'mv thor-b', 'mv KERNEL', 'mv EFI/BOOT/BOOTAA64.EFI', 'sync', 'mv loader/entries/thor.conf', 'sync'])
+
+    def test_the_slot_left_is_a_second_entry_and_its_kernel_is_kept(self):
+        m = self.machine()
+        result = self.run_boot(m)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.coherent(m), '/thor-b/Image')
+        prev = self.entry(m, 'thor-prev.conf')
+        self.assertEqual((prev['title'], prev['linux'], prev['options']), ('Thor, previous kernel', '/thor-a/Image', 'root=LABEL=THOR_ROOT rw'))
+        self.assertEqual((m.root / 'run/thor-esp/thor-a/Image').read_text(), 'old Image')
+        self.assertEqual((m.root / 'var/lib/thor/boot-releases').read_text(), 'new\nold\n')
+        # The next update fills the slot the previous entry named: that entry then names the other one.
+        result = self.run_boot(m)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.coherent(m), '/thor-a/Image')
+        self.assertEqual(self.entry(m, 'thor-prev.conf')['linux'], '/thor-b/Image')
+        self.assertEqual((m.root / 'var/lib/thor/boot-releases').read_text(), 'new\nnew\n')
+
+    def test_a_failed_update_leaves_no_entry_naming_the_slot_it_was_filling(self):
+        for step in range(1, 5):
+            with self.subTest(step=step):
+                m = self.machine()
+                self.assertEqual(self.run_boot(m).returncode, 0)
+                (m.root / 'renames').unlink()
+                result = self.run_boot(m, FAIL_BEFORE=str(step))
+                self.assertEqual(result.returncode, 73, result.stdout + result.stderr)
+                self.coherent(m)
+
+    def test_a_slot_that_records_no_kernel_makes_no_previous_entry(self):
+        m = self.machine()
+        (m.root / 'run/thor-esp/thor-a/release').unlink()
+        result = self.run_boot(m)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((m.root / 'run/thor-esp/loader/entries/thor-prev.conf').exists())
+        self.assertIn('records no kernel', result.stdout)
+        self.assertEqual((m.root / 'var/lib/thor/boot-releases').read_text(), 'new\n')
 
     def test_a_second_run_waits_for_the_first(self):
         m = self.machine()
@@ -255,7 +300,7 @@ esac''')
 
     def modules(self, m, *args, **env):
         source = (REPO / 'packages/thor-system/root/usr/lib/thor/thor-modules').read_text()
-        source = source.replace('/usr/lib/modules', f'{m.root}/usr/lib/modules')
+        source = source.replace('/usr/lib/modules', f'{m.root}/usr/lib/modules').replace('/var/lib/thor/', f'{m.root}/var/lib/thor/')
         script = m.file('thor-modules', source)
         script.chmod(0o755)
         return subprocess.run([script, *args], env={**m.env, **env}, capture_output=True, text=True, timeout=15)
@@ -283,6 +328,15 @@ esac''')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.releases(m), ['r2', 'r3'])
         self.assertIn("r1's modules removed", result.stdout)
+
+    def test_clean_keeps_the_card_slots_kernels(self):
+        m = self.machine(running='r3', installed='r3', owned=('r3',))
+        m.file('usr/lib/modules/r1/kernel/module.ko', 'r1')
+        m.file('usr/lib/modules/r2/kernel/module.ko', 'r2')
+        m.file('var/lib/thor/boot-releases', 'r3\nr2\n')
+        result = self.modules(m, 'clean')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.releases(m), ['r2', 'r3'])
 
     def test_clean_removes_nothing_when_pacman_fails_otherwise(self):
         m = self.machine(running='r2', installed='r3', owned=('r3',))

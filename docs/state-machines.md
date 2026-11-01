@@ -2035,6 +2035,14 @@ The slot's, KERNEL's and EFI's renames are synced to the card before the entry's
 metadata writes), so the entry never names a slot the card lacks.
 One run at a time: a second thor-boot, or thor-firstboot's edit of the entry, waits for
 `/run/thor-boot.lock`.
+
+The previous kernel: each slot records its kernel's release (`release`). After the entry's rename, the
+slot left becomes a second entry, `thor-prev.conf` ("…, previous kernel"), if it records one, and
+`/var/lib/thor/boot-releases` names both releases, whose modules `thor-modules clean` keeps. Before the
+next update fills that slot, its entry is removed and synced, so no entry ever names a slot being filled.
+A slot that records no kernel (one made before, or the image's empty first one) makes no second entry.
+The ABL path has only the newest kernel (/KERNEL). `BootRecovery` pins these; booting the previous entry
+is a device check.
 `tools/tests/package-recovery.py` injects failure before/after each publication rename, validates EFI
 and ABL coherence with the real boot-image packer, and checks retries and repeated slot alternation.
 Physical power interruption on FAT remains a device check.
