@@ -357,6 +357,15 @@ mod tests {
         assert_eq!(s.bottom().tab(), Tab::Dock, "the editor closing goes back where the keyboard came from");
     }
 
+    /// A file of ClamShell's that couldn't be written is said, not only logged: an edit of library.json
+    /// that didn't land vanishes at its read-back, a setting is lost at the next start.
+    #[test]
+    fn a_file_not_saved_is_said() {
+        let mut s = state();
+        s.applied(Event::NotSaved("library.json"));
+        assert_eq!(notice(&s), Some(crate::bottom::notice::NoticeKind::NotSaved("library.json")));
+    }
+
     #[test]
     fn a_second_editor_for_the_keyboard_is_refused_and_what_is_typed_stays() {
         let mut s = state();

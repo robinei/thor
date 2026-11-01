@@ -75,6 +75,9 @@ pub enum Event {
     /// The library read again after the edit mode's write of library.json, written or not (see
     /// [`crate::library_view::LibraryView::config_shown`]).
     LibraryWritten(Box<crate::Library>),
+    /// A file of ClamShell's own couldn't be written: library.json, or a file of the store (named, or its
+    /// folder, as `settings/`). The reason is in the log.
+    NotSaved(&'static str),
     /// From the files thread: a browsed folder listed, file operations under way or done, or removable
     /// storage added or removed.
     Files(crate::library_view::files::FilesEvent),

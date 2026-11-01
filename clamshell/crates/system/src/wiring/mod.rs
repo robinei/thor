@@ -90,7 +90,12 @@ fn rescanner<S: Sink + Clone>(sources: Sources, paths: Paths, queue: meta::Queue
                 // A failed write leaves the file as it was, and what is read shows that.
                 Rescan::Write(config) => match library::write(&sources, &config) {
                     Ok(()) => log::info!("library.json written"),
-                    Err(e) => log::error!("library.json not written: {e}"),
+                    Err(e) => {
+                        log::error!("library.json not written: {e}");
+                        if sink.send(clamshell_state::Event::NotSaved("library.json")).is_err() {
+                            return;
+                        }
+                    }
                 },
             }
             let loaded = library::load(&sources);
@@ -186,10 +191,10 @@ pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, gl
     };
     let browse = started("browse", crate::files::browse::spawn_browse(browsing, sink.clone()));
     let files = started("files", crate::files::ops::spawn_ops(paths.data_home.clone(), sink.clone()));
-    let wifi = started("wifi", wifi::spawn(sink));
+    let wifi = started("wifi", wifi::spawn(sink.clone()));
     let tuning = Tuning { hardware: started("tuning", tuning::spawn(env.profile.charge, env.charge_limit.clone())), pad: pad.clone() };
     tuning.apply(global);
-    let store = paths.state_dir.as_deref().and_then(|dir| Writer::spawn(Store::open(dir)).map_err(|e| log::error!("store thread: {e}")).ok());
+    let store = paths.state_dir.as_deref().and_then(|dir| Writer::spawn(Store::open(dir), sink).map_err(|e| log::error!("store thread: {e}")).ok());
     Handles {
         paths: paths.clone(),
         store,

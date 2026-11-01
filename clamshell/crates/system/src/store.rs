@@ -448,7 +448,8 @@ pub(crate) struct Writer {
 }
 
 impl Writer {
-    pub(crate) fn spawn(mut store: Store) -> io::Result<Writer> {
+    /// A write that fails is logged, and told to `sink` as [`clamshell_state::Event::NotSaved`].
+    pub(crate) fn spawn(mut store: Store, sink: impl crate::Sink) -> io::Result<Writer> {
         let (tx, rx) = mpsc::channel::<Write>();
         let thread = crate::os::worker::start("store", move || {
             crate::os::worker::restarted(clamshell_state::Thread::Store.name(), || {
@@ -458,7 +459,9 @@ impl Writer {
                         Write::Play { id, start, duration } => store.add_play(id, *start, *duration),
                     };
                     if let Err(e) = written {
-                        log::warn!("store: {e}");
+                        let file = file_of(&write);
+                        log::warn!("store: {file}: {e}");
+                        let _ = sink.send(clamshell_state::Event::NotSaved(file));
                     }
                 }
             });
@@ -484,6 +487,29 @@ impl Drop for Writer {
     }
 }
 
+/// The file a write goes to, or its folder, as the user is told it wasn't saved.
+fn file_of(write: &Write) -> &'static str {
+    match write {
+        Write::Play { .. } => "plays.jsonl",
+        Write::Save(save) => match save {
+            Save::Settings(_) => "settings/",
+            Save::Keymaps(_) => "keymaps/",
+            Save::Curves(_) => "curves/",
+            Save::Lights(_) => "lights/",
+            Save::Favourites(_) => "favourites.json",
+            Save::Resume(_) => "resume.json",
+            Save::Brightness(_) => "brightness.json",
+            Save::TwelveHour(_) => "clock.json",
+            Save::WindowRules(_) => "window-rules.json",
+            Save::Dock(_) => "dock.json",
+            Save::Autostart(_) => "autostart.json",
+            Save::FirstStartDone => "first-start.json",
+            Save::Sticks(_) => "sticks.json",
+            Save::Controllers(_) => "controllers.json",
+        },
+    }
+}
+
 /// Whether `path` ends without a newline: its last line was cut short.
 fn ends_mid_line(path: &Path) -> bool {
     use std::io::{Read, Seek, SeekFrom};
@@ -503,7 +529,8 @@ mod tests {
     fn the_writer_writes_in_order_and_finishes_before_it_is_gone() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path();
-        let writer = Writer::spawn(Store::open(dir)).unwrap();
+        let (sink, told) = mpsc::channel();
+        let writer = Writer::spawn(Store::open(dir), sink).unwrap();
         writer.send(Write::Save(Save::Favourites(vec!["a".into()])));
         writer.send(Write::Save(Save::Favourites(vec!["b".into()])));
         writer.send(Write::Play { id: "snes:Zelda.sfc".into(), start: 100, duration: 30 });
@@ -511,6 +538,22 @@ mod tests {
         let store = Store::open(dir);
         assert_eq!(store.favourites(), HashSet::from(["b".to_owned()]));
         assert_eq!(store.plays().get("snes:Zelda.sfc"), Some(&Plays { count: 1, seconds: 30, last: 130 }));
+        assert!(told.try_recv().is_err(), "nothing failed");
+    }
+
+    /// A write that fails is told, with its file, so the user hears of it.
+    #[test]
+    fn a_write_that_fails_is_told() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        // A folder where the file goes: it can't be replaced by a file.
+        fs::create_dir_all(dir.join("favourites.json/x")).unwrap();
+        let (sink, told) = mpsc::channel();
+        let writer = Writer::spawn(Store::open(dir), sink).unwrap();
+        writer.send(Write::Save(Save::Favourites(vec!["a".into()])));
+        writer.send(Write::Save(Save::Dock(vec!["b".into()])));
+        drop(writer);
+        assert_eq!(told.try_iter().collect::<Vec<_>>(), [clamshell_state::Event::NotSaved("favourites.json")]);
     }
 
     #[test]

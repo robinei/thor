@@ -183,7 +183,7 @@ So a Steam game's settings are the saved ones, read from the files when Steam st
 ClamShell's own launches take them from the running state. The two agree once a change is saved, which
 the store thread does as the change is made (a slider when it is let go), well before Steam has started
 a game. They differ only if the save failed: then Steam's games get the settings saved last, the store
-logs the failure at `warn`, and the change would be lost for every game at ClamShell's next start
+logs the failure at `warn` and says so on a notice ("settings/ not saved"), and the change would be lost for every game at ClamShell's next start
 anyway. The hook doesn't ask the running ClamShell instead: that would need a running ClamShell, a
 query on the control pipe with a time limit, and the files as the fallback all the same.
 

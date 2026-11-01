@@ -861,6 +861,7 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             // Read by a rescan, or after one of the edit mode's writes.
             if rng.one_in(2) { Event::Library(Box::new(library.clone())) } else { Event::LibraryWritten(Box::new(library.clone())) }
         }
+        97 if rng.one_in(5) => Event::NotSaved(rng.pick(&["library.json", "settings/"])?),
         97 if rng.one_in(3) => Event::StartedWithoutSettings(rng.pick(&["steam:620", "steam:1"])?.to_string().into()),
         97 => Event::DumpWindowEvents("window-events.json".into()),
         // A system thread started again after a panic.

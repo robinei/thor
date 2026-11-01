@@ -483,6 +483,7 @@ impl State {
                 self.library_read(*library, out);
             }
             Event::Files(e) => self.library_view.on_files(e, self.bottom.notice_mut(), now, out),
+            Event::NotSaved(file) => self.bottom.notice_mut().show(NoticeKind::NotSaved(file), now),
             Event::Fetching(on) => self.fetching(on),
             Event::Tray(items) => self.session.set_tray(items, &self.clock, self.library_view.library(), out),
             Event::Units(units) => self.session.set_units(units),

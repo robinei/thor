@@ -301,7 +301,9 @@ capture screen doesn't listen and Home acts on the top screen.
 
 `show(kind, now)` replaces any notice; a tick after 2 s removes it. Tests: `keys_step_the_levels_and_show_
 them_for_a_moment`, `a_screenshot_is_asked_for_…`, `a_window_moved_down_…`; BottomRule(false):
-`a_window_moved_up_says_its_rule_is_forgotten`; WithoutSettings: `a_steam_game_started_without_its_settings_says_so`; Account: device `an_account_change_says_how_it_went`; Controller: `a_new_controller_joins_player_1_with_a_notice_and_is_remembered`. The gyro's "hold still" notice stays until the calibration answers, at most 30 s:
+`a_window_moved_up_says_its_rule_is_forgotten`; WithoutSettings: `a_steam_game_started_without_its_settings_says_so`; Account: device `an_account_change_says_how_it_went`; Controller: `a_new_controller_joins_player_1_with_a_notice_and_is_remembered`; NotSaved (library.json
+or a store file that couldn't be written, from the rescan and store threads): `a_file_not_saved_is_said`,
+system `a_write_that_fails_is_told`. The gyro's "hold still" notice stays until the calibration answers, at most 30 s:
 `the_gyros_hold_still_shows_until_it_answers_at_most_30_s`. A notice is drawn on one line within the
 screen, a longer one cut keeping its start (views `a_long_notice_is_cut_to_the_screen`, snapshot
 `notice-long.png`).

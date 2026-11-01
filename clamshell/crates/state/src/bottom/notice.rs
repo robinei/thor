@@ -49,6 +49,8 @@ pub enum NoticeKind {
     /// The library was read again and has problems. Holds the first one and how many there are. All of
     /// them are listed under Rescan library on the Tools tab.
     Problems(String, usize),
+    /// A file of ClamShell's own couldn't be written (see [`crate::Event::NotSaved`]).
+    NotSaved(&'static str),
     /// A controller seen for the first time: its name, and the player it joined.
     Controller(String, crate::device_view::controllers::Player),
 }

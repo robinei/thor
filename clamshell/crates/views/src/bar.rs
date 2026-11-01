@@ -144,6 +144,7 @@ fn draw_notice(f: &mut Frame, what: &NoticeKind, w: f32, bar_h: f32) {
         NoticeKind::KeyboardBusy => (None, Fmt::of(format_args!("Finish the text on the keyboard first"))),
         NoticeKind::Problems(first, 1) => (None, Fmt::of(format_args!("{first}"))),
         NoticeKind::Problems(_, n) => (None, Fmt::of(format_args!("{n} problems: see Tools, Rescan library"))),
+        NoticeKind::NotSaved(file) => (None, Fmt::of(format_args!("{file} not saved (see the log)"))),
         NoticeKind::Controller(name, player) => (None, Fmt::of(format_args!("{name}: player {}", player.number()))),
     };
     // Half a bar's height kept free on either side; a longer text is cut, keeping its start.
