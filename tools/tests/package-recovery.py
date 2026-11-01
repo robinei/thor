@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """The packages' scripts and rules: their syntax, and their recovery transitions on temporary filesystems,
 without root, mounts or services."""
+import fcntl
 import importlib.util
 import os
 import shutil
@@ -9,6 +10,7 @@ import re
 from pathlib import Path
 import subprocess
 import tempfile
+import threading
 import time
 import unittest
 import gzip
@@ -166,7 +168,7 @@ for last; do :; done; echo "mv ${{last#{m.root}/run/thor-esp/}}" >> {m.root}/eve
 
     def run_boot(self, m, **env):
         source = (REPO / 'packages/thor-system/root/usr/bin/thor-boot').read_text()
-        return m.run(source, ['/usr/lib/thor', '/usr/lib/modules/', '/boot/', '/var/log/', '/run/thor-esp', '/usr/lib/systemd/boot/efi'], **env)
+        return m.run(source, ['/usr/lib/thor', '/usr/lib/modules/', '/boot/', '/var/log/', '/run/thor-esp', '/run/thor-boot.lock', '/usr/lib/systemd/boot/efi'], **env)
 
     def coherent(self, m):
         esp = m.root / 'run/thor-esp'
@@ -204,6 +206,22 @@ for last; do :; done; echo "mv ${{last#{m.root}/run/thor-esp/}}" >> {m.root}/eve
         events = (m.root / 'events').read_text().splitlines()
         # (FAT orders no metadata writes: only a sync between them orders the renames.)
         self.assertEqual(events, ['sync', 'mv thor-b', 'mv KERNEL', 'mv EFI/BOOT/BOOTAA64.EFI', 'sync', 'mv loader/entries/thor.conf', 'sync'])
+
+    def test_a_second_run_waits_for_the_first(self):
+        m = self.machine()
+        source = (REPO / 'packages/thor-system/root/usr/bin/thor-boot').read_text()
+        self.assertIn('/run/thor-boot.lock', source)
+        # (The first run, holding the lock as thor-boot does.)
+        with open(m.root / 'run/thor-boot.lock', 'w') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            second = threading.Thread(target=lambda: setattr(self, 'second', self.run_boot(m)))
+            second.start()
+            second.join(1.5)
+            self.assertTrue(second.is_alive(), 'the second run went on while the first held the lock')
+            self.assertFalse((m.root / 'events').exists())
+        second.join(15)
+        self.assertEqual(self.second.returncode, 0, self.second.stdout + self.second.stderr)
+        self.assertEqual(self.coherent(m), '/thor-b/Image')
 
     def test_repeated_updates_alternate_slots_without_touching_selected_files(self):
         m = self.machine()
@@ -304,7 +322,7 @@ touch {m.root}/active''')
 
     def run_firstboot(self, m, **env):
         source = (REPO / 'packages/thor-system/root/usr/lib/thor/thor-firstboot').read_text()
-        return m.run(source, ['/swapfile', '/etc/', '/sys/class/block/', '/run/thor-esp', '/var/lib/thor-firstboot'], **env)
+        return m.run(source, ['/swapfile', '/etc/', '/sys/class/block/', '/run/thor-esp', '/run/thor-boot.lock', '/var/lib/thor-firstboot'], **env)
 
     def complete(self, m):
         self.assertTrue((m.root / 'var/lib/thor-firstboot').exists())
@@ -320,6 +338,19 @@ touch {m.root}/active''')
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.complete(m)
         self.assertEqual((m.root / 'activations').read_text(), 'activation\n')
+
+    def test_the_entry_is_edited_under_thor_boots_lock(self):
+        m = self.machine()
+        with open(m.root / 'run/thor-boot.lock', 'w') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            run = threading.Thread(target=lambda: setattr(self, 'result', self.run_firstboot(m)))
+            run.start()
+            run.join(1.5)
+            self.assertTrue(run.is_alive(), 'the entry was edited while thor-boot held the lock')
+            self.assertNotIn('resume', (m.root / 'run/thor-esp/loader/entries/thor.conf').read_text())
+        run.join(15)
+        self.assertEqual(self.result.returncode, 0, self.result.stdout + self.result.stderr)
+        self.complete(m)
 
     def test_failed_activation_is_not_marked_complete_and_can_retry(self):
         m = self.machine()

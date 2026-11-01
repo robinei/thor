@@ -2033,6 +2033,8 @@ failure after it leaves the new complete slot selected. ABL publishes one comple
 The inactive slot is replaceable on retry; the selected slot is never overwritten during preparation.
 The slot's, KERNEL's and EFI's renames are synced to the card before the entry's rename (FAT orders no
 metadata writes), so the entry never names a slot the card lacks.
+One run at a time: a second thor-boot, or thor-firstboot's edit of the entry, waits for
+`/run/thor-boot.lock`.
 `tools/tests/package-recovery.py` injects failure before/after each publication rename, validates EFI
 and ABL coherence with the real boot-image packer, and checks retries and repeated slot alternation.
 Physical power interruption on FAT remains a device check.

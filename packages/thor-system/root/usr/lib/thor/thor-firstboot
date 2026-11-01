@@ -47,14 +47,19 @@ if [ -e /swapfile ]; then
     offset=$(filefrag -v /swapfile | awk '$1 == "0:" { sub(/\.\.$/, "", $4); print $4 }')
     [[ $offset =~ ^[0-9]+$ ]] || { echo "could not read the swap file's resume offset" >&2; exit 1; }
     case $disk in *[0-9]) esp=${disk}p1 ;; *) esp=${disk}1 ;; esac
-    mkdir -p /run/thor-esp
-    # (A run cut off before may have left it mounted.)
-    mountpoint -q /run/thor-esp || mount "$esp" /run/thor-esp
-    entry=/run/thor-esp/loader/entries/thor.conf
-    # (The options line without any resume= of before, then this file's.)
-    options=$(sed -n 's/^options //p' "$entry" | sed -E 's/ ?resume(_offset)?=[^ ]*//g')
-    sed -i "s|^options .*|options $options resume=LABEL=THOR_ROOT resume_offset=$offset|" "$entry"
-    umount /run/thor-esp
+    # (thor-boot's lock, for the mount point and the entry it shares with it; released before thor-boot
+    # runs, which takes it again.)
+    (
+        flock 9
+        mkdir -p /run/thor-esp
+        # (A run cut off before may have left it mounted.)
+        mountpoint -q /run/thor-esp || mount "$esp" /run/thor-esp
+        entry=/run/thor-esp/loader/entries/thor.conf
+        # (The options line without any resume= of before, then this file's.)
+        options=$(sed -n 's/^options //p' "$entry" | sed -E 's/ ?resume(_offset)?=[^ ]*//g')
+        sed -i "s|^options .*|options $options resume=LABEL=THOR_ROOT resume_offset=$offset|" "$entry"
+        umount /run/thor-esp
+    ) 9> /run/thor-boot.lock
     sync -f /etc/fstab
     thor-boot
 fi

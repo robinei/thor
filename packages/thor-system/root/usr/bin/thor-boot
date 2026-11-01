@@ -6,6 +6,10 @@
 # updates of the kernel or of what the initramfs and the boot loader are made of (90-thor-boot.hook); the
 # first boot, after putting the swap file's place on the command line; the image build, once.
 set -euo pipefail
+# One run at a time (thor-firstboot takes the same lock to edit the entry): two at once, the first boot's
+# and a pacman hook's, would fill the same slot and remove each other's stage.
+exec 9> /run/thor-boot.lock
+flock 9
 # The previous kernel's modules back, if an update of linux-thor removed them (thor-modules): the card
 # boots that kernel until this has put the new one there.
 /usr/lib/thor/thor-modules restore
