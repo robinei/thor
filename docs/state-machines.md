@@ -378,7 +378,8 @@ the virtual devices outlive runs and controllers.
     run --/dev/input changed (Look), or every 5 s without inotify--> controllers not taken yet are grabbed [Controller(Connected)]; the Looks waiting are looked for once
     run --a controller's read fails (unplugged)--> it is let go: what only it held on its player's controller is released, its rumble stopped, a calibration of it ends (Sticks(Done(name, None))), the gyro goes if it was its [Controller(Disconnected) once no controller of its key is left]; then Look
     run --Players(count, by key)--> each controller to its player (released on the old, held on the new); routers and pads added or dropped to the count (a dropped player's router lets go first)
-    run --a virtual device fails--> no run: the devices made again, the controllers said gone
+    run --a player's pad can't be made (Players raised, uinput refusing)--> the pads there are stay, that player's events are dropped; it is tried again at each look (`a_pad_that_cant_be_made_leaves_the_others`)
+    run --a virtual device fails to be written--> no run: the devices made again, the controllers said gone
     run --panic--> no run: pads at rest, HomeHeld(false), the controllers said gone; found again at once
 
 Each turn of a run takes the commands waiting, then routes the input read since the last turn, ticks the

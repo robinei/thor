@@ -406,19 +406,22 @@ impl<S: Sink> PadThread<S> {
         }
     }
 
-    /// Sends what the routers made of the controllers' events to the virtual devices and the state.
+    /// Sends what the routers made of the controllers' events to the virtual devices and the state. A
+    /// player whose pad couldn't be made has its pad's events dropped.
     fn emit(&mut self, pads: &mut Pads) -> Result<(), Ended<io::Error>> {
         let Some(devices) = self.devices.as_mut() else {
             return Err(Ended::Lost(io::Error::other("no virtual devices")));
         };
-        for (p, pad) in pads.players.iter_mut().zip(devices.pads.iter_mut()) {
+        for (i, p) in pads.players.iter_mut().enumerate() {
             for event in p.out.events.drain(..) {
                 self.sink.send(event)?;
             }
             if !p.out.pad.is_empty() {
-                // Games read it as an Xbox 360 pad, with X and Y by letter.
-                device::swap_xy(&mut p.out.pad);
-                pad.emit(&p.out.pad)?;
+                if let Some(pad) = devices.pads.get_mut(i) {
+                    // Games read it as an Xbox 360 pad, with X and Y by letter.
+                    device::swap_xy(&mut p.out.pad);
+                    pad.emit(&p.out.pad)?;
+                }
                 p.out.pad.clear();
             }
             if !p.out.mouse.is_empty() {
@@ -435,17 +438,15 @@ impl<S: Sink> PadThread<S> {
     }
 
     /// The virtual devices for `count` players: made if there are none, a pad added for each player
-    /// added and dropped for each player gone.
+    /// added and dropped for each player gone. A pad that can't be made is tried again at the next look
+    /// (see [`grow`]); the pads there are stay, so a game keeps its pad.
     fn make_devices(&mut self) -> io::Result<()> {
         let count = usize::from(self.players.count.number());
         let devices = match self.devices.as_mut() {
             Some(d) => d,
             None => self.devices.insert(Devices { mouse: VirtualMouse::new()?, pads: Vec::new() }),
         };
-        while devices.pads.len() < count {
-            devices.pads.push(VirtualPad::new()?);
-            log::info!("pad: player {}'s virtual pad made", devices.pads.len());
-        }
+        grow(&mut devices.pads, count, VirtualPad::new)?;
         if devices.pads.len() > count {
             devices.pads.truncate(count);
             log::info!("pad: virtual pads for {count} players");
@@ -475,6 +476,10 @@ impl<S: Sink> PadThread<S> {
             log::debug!("pad: no controller ({})", self.spec);
         }
         self.place_extras(pads);
+        // A player's pad that couldn't be made is tried again.
+        if let Err(e) = self.make_devices() {
+            log::warn!("pad: the virtual devices: {e}");
+        }
     }
 
     /// Takes a controller: grabs it and puts it in its player's merge.
@@ -633,6 +638,25 @@ impl<S: Sink> PadThread<S> {
     fn route_merged(&mut self, pads: &mut Pads, now: Instant) {
         route_merged(&mut pads.merged, &mut pads.players, now);
     }
+}
+
+/// Adds pads made by `make` until there are `count`. One that can't be made stops it there, logged, and
+/// the pads there are stay: that is an error only when there is no pad at all.
+fn grow<T>(pads: &mut Vec<T>, count: usize, mut make: impl FnMut() -> io::Result<T>) -> io::Result<()> {
+    while pads.len() < count {
+        match make() {
+            Ok(pad) => {
+                pads.push(pad);
+                log::info!("pad: player {}'s virtual pad made", pads.len());
+            }
+            Err(e) if pads.is_empty() => return Err(e),
+            Err(e) => {
+                log::warn!("pad: player {}'s virtual pad: {e}: tried again at the next look", pads.len() + 1);
+                break;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Hands each player's merged events to its router, `players` being player 1's first.
@@ -1249,6 +1273,25 @@ mod tests {
         assert!(thread.take_commands(&mut pads, &received).unwrap());
         let wake = thread.turn(&mut pads, now).unwrap();
         assert!(wake.is_some_and(|at| at > now && at <= Instant::now() + Duration::from_millis(50)), "the turbo's next beat: {wake:?}");
+    }
+
+    /// A pad that can't be made leaves the pads there are, and the count made so far stands; only with no
+    /// pad at all is it an error, and the virtual devices are made again. (One failure dropped every
+    /// player's pad, player 1's from under its game.)
+    #[test]
+    fn a_pad_that_cant_be_made_leaves_the_others() {
+        let mut made = 0;
+        let mut make = || {
+            made += 1;
+            if made == 2 { Err(io::Error::other("refused")) } else { Ok(made) }
+        };
+        let mut pads = vec![0];
+        grow(&mut pads, 3, &mut make).unwrap();
+        assert_eq!(pads, [0, 1], "player 1's kept, player 2's made, player 3's refused");
+        grow(&mut pads, 3, &mut make).unwrap();
+        assert_eq!(pads, [0, 1, 3], "tried again later");
+        let mut none: Vec<u8> = Vec::new();
+        assert!(grow(&mut none, 2, || Err(io::Error::other("refused"))).is_err(), "no pad at all");
     }
 
     /// Launched programs are told to ignore every controller grabbed, but not ones with the virtual pad's
