@@ -938,5 +938,19 @@ class Workflow(unittest.TestCase):
                 self.assertRegex(action, r'@[0-9a-f]{40}$')
 
 
+class SensorsSandbox(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('systemd-analyze'), 'no systemd-analyze here')
+    def test_hexagonrpcd_runs_sandboxed(self):
+        """hexagonrpcd writes files for a remote processor: it may write only its state folder."""
+        for unit in ['thor-sensors.service', 'thor-sensors-root.service']:
+            with self.subTest(unit=unit):
+                path = REPO / 'packages/thor-sensors' / unit
+                result = subprocess.run(['systemd-analyze', 'security', '--offline=yes', '--no-pager', path], capture_output=True, text=True)
+                level = re.search(r'Overall exposure level for \S+: ([0-9.]+)', result.stdout)
+                self.assertIsNotNone(level, result.stdout[-500:] + result.stderr)
+                self.assertLessEqual(float(level.group(1)), 8.0, result.stdout[-2000:])
+                for setting in ['ProtectSystem=strict', 'ReadWritePaths=/var/lib/thor-sensors', 'ProtectHome=yes', 'NoNewPrivileges=yes']:
+                    self.assertIn(f'\n{setting}\n', path.read_text())
+
 if __name__ == '__main__':
     unittest.main()
