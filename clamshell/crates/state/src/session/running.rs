@@ -731,7 +731,7 @@ impl Session {
         let now = clock.mono();
         self.running.push(Running { mark: library.mark_of(g), ..Running::of(g, Origin::Windows { since: now, until: now + LAUNCHER_WAIT }, now) });
         if start == Start::Front {
-            self.set_front_launch(FrontIntent::entry(&g.key, now + LAUNCHER_WAIT));
+            self.set_front_launch(FrontIntent::handed(&g.key, now, LAUNCHER_WAIT));
         }
         let launch = Launch::Program { argv, workdir: None };
         out.effects.push(Effect::Launch { entry: launcher.id.clone(), unit, settings: values, tile_env, launch });

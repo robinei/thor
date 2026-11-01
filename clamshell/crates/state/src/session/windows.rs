@@ -131,7 +131,7 @@ impl Session {
     }
 
     /// The window `group` shows: the one selected in it, else its last.
-    fn group_window(&self, group: &Group) -> Option<&Window> {
+    pub(super) fn group_window(&self, group: &Group) -> Option<&Window> {
         let selected = self.selected.iter().find(|(g, _)| g == group).map(|(_, id)| *id);
         self.windows
             .iter()

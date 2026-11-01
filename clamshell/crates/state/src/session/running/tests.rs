@@ -1,4 +1,5 @@
 use crate::session::REOPEN_SECS;
+use crate::session::intent::LAUNCHER_SHOWN_AFTER;
 use crate::session::running::{HANDOFF, LAUNCHER_WAIT};
 use crate::testkit::*;
 use crate::*;
@@ -373,6 +374,108 @@ fn a_launchers_dialog_answered_goes_back_though_the_launcher_has_other_child_win
     assert_eq!(s.session().top_window().map(|w| w.id), Some(7), "its dialog in front");
     s.observed(vec![main, friends]);
     assert!(crate::testkit::on_library(&s), "answered: back to the Library, not Steam's friends list");
+}
+
+/// Steam with its window open, behind the Library, and a launch of its game ff6 asked for at 1000, waiting
+/// for its window.
+fn steam_busy_with_ff6() -> (State, WindowFacts) {
+    let mut s = steam_ff6();
+    s.ui_up();
+    s.applied(Event::tick(1000));
+    let steam = LaunchUnit { key: key("desktop:steam"), secs: 1, n: 0 };
+    s.applied(Event::Units(vec![steam.clone()]));
+    let main = win_of(5, "steam", &steam);
+    s.observed(vec![main.clone()]);
+    s.applied(Event::Home);
+    launch(&mut s, "ff6");
+    (s, main)
+}
+
+/// A launcher's game still without its window after [`LAUNCHER_SHOWN_AFTER`] brings the launcher's group
+/// in front: the launcher is likely showing something to see. Before that a launch shows only the game.
+/// The game's window then takes the front, and the launcher, promoted as for a dialog, isn't remembered
+/// as having been in front: the game quitting goes back to the Library.
+#[test]
+fn a_launchers_game_still_without_its_window_brings_the_launcher_in_front() {
+    let (mut s, main) = steam_busy_with_ff6();
+    s.applied(Event::tick(1000 + LAUNCHER_SHOWN_AFTER - 1));
+    assert!(crate::testkit::on_library(&s), "before: only the game is shown");
+    s.applied(Event::tick(1000 + LAUNCHER_SHOWN_AFTER));
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(5), "Steam in front");
+    assert!(s.session().front_launch().is_some(), "the game still waited for");
+    s.applied(Event::tick(1000 + LAUNCHER_SHOWN_AFTER + 20));
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(5), "it stays");
+    s.observed(vec![main.clone(), win(8, "steam_app_620")]);
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(8), "the game in front, Steam behind");
+    s.observed(vec![main]);
+    assert!(crate::testkit::on_library(&s), "the game quit: the Library, not Steam");
+}
+
+/// Home while the launcher is in front for its game gives the launch up: the Library stays.
+#[test]
+fn home_while_a_launcher_is_in_front_for_its_game_cancels_it() {
+    let (mut s, _) = steam_busy_with_ff6();
+    s.applied(Event::tick(1000 + LAUNCHER_SHOWN_AFTER));
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(5));
+    s.applied(Event::Home);
+    assert!(crate::testkit::on_library(&s));
+    assert!(s.session().front_launch().is_none());
+    s.applied(Event::tick(1000 + LAUNCHER_SHOWN_AFTER + 5));
+    assert!(crate::testkit::on_library(&s), "not brought in front again");
+}
+
+/// A launcher with no window, as Steam started silently, has nothing to show: the Library stays, and is
+/// not asked to show itself. A window it opens while the game is still waited for comes in front.
+#[test]
+fn a_launcher_without_a_window_is_not_brought_in_front() {
+    let mut s = steam_ff6();
+    s.ui_up();
+    s.applied(Event::tick(1000));
+    launch(&mut s, "ff6");
+    let fx = s.applied(Event::tick(1000 + LAUNCHER_SHOWN_AFTER));
+    assert!(crate::testkit::on_library(&s));
+    assert!(!fx.iter().any(|e| matches!(e, Effect::Tray(_))), "not asked to show itself: {fx:?}");
+    let steam = LaunchUnit { key: key("desktop:steam"), secs: 1, n: 0 };
+    let mut units = s.session().units().to_vec();
+    units.push(steam.clone());
+    s.applied(Event::Units(units));
+    s.applied(Event::tick(1000 + LAUNCHER_SHOWN_AFTER + 15));
+    s.observed(vec![win_of(5, "steam", &steam)]);
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(5), "Steam's window, once it shows one");
+}
+
+/// A launch of a program that is no launcher's game shows only its window however long it waits.
+#[test]
+fn a_launch_of_no_launchers_game_never_brings_another_program_in_front() {
+    let mut s = state();
+    s.ui_up();
+    s.applied(Event::tick(1000));
+    s.observed(vec![foot()]);
+    s.applied(Event::Home);
+    launch(&mut s, "zelda-lttp");
+    s.applied(Event::tick(1000 + LAUNCHER_SHOWN_AFTER + 60));
+    assert!(crate::testkit::on_library(&s));
+    assert!(s.session().front_launch().is_some());
+}
+
+/// A Heroic game, launched as a launch of Heroic's, brings Heroic's window in front as Steam's does.
+#[test]
+fn a_heroic_game_still_without_its_window_brings_heroic_in_front() {
+    let mut s = launchers();
+    s.ui_up();
+    s.applied(Event::tick(1000));
+    let fx = launch_now(&mut s, "desktop:Pattern Game");
+    let heroic = fx.iter().find_map(|e| match e {
+        Effect::Launch { unit, .. } => Some(unit.clone()),
+        _ => None,
+    });
+    let heroic = heroic.unwrap();
+    s.applied(Event::Units(vec![heroic.clone()]));
+    s.observed(vec![win_of(5, "heroic", &heroic)]);
+    s.applied(Event::tick(1000 + LAUNCHER_SHOWN_AFTER - 1));
+    assert!(crate::testkit::on_library(&s));
+    s.applied(Event::tick(1000 + LAUNCHER_SHOWN_AFTER));
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(5));
 }
 
 /// Another tool than the Device view is asked of the system; an id the library doesn't have plays

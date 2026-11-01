@@ -299,7 +299,10 @@ windows:
   game's launch from its shortcut, which ends, and start the game in their own unit. A Heroic game is
   launched as a launch of Heroic's entry, without Heroic's window (see process-control.md), so that Heroic,
   which runs on after the game, is an entry of its own. A launcher's game waits up to 2 minutes for its
-  first window. See `clamshell/crates/state/src/session/launchers.rs`.
+  first window. A launch from the Library shows only the game; if the game's window hasn't come 30 s after
+  the launch was asked for, the launcher's window comes in front until it does, since a launcher still
+  busy that long is usually showing a prompt, its progress or an error. A launcher with no window (Steam
+  started `-silent`, only in its tray) shows nothing and isn't asked to. See `clamshell/crates/state/src/session/launchers.rs`.
 - The entries of a runner with `handover`, by their windows' app id, their desktop file's name: Waydroid's
   apps, in the Waydroid session.
 

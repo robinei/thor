@@ -13,6 +13,12 @@ use crate::LaunchUnit;
 /// ([`super::running::LAUNCH_WAIT`]).
 pub(crate) const WINDOW_WAIT: u64 = 600;
 
+/// How long a launcher's game launched in front waits for its window before the launcher's group comes in
+/// front, in seconds from when the launch was asked for: a launcher still busy after that long is usually
+/// showing something the user needs to see, such as a prompt, its progress or an error (see
+/// [`super::Session::follow_launcher`]).
+pub(crate) const LAUNCHER_SHOWN_AFTER: u64 = 30;
+
 /// What is waited for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Awaited {
@@ -27,20 +33,32 @@ enum Awaited {
 pub(crate) struct FrontIntent {
     awaited: Awaited,
     until: u64,
-    /// The launcher's dialogs that brought its group in front, while any is open. It is not remembered as
-    /// having been in front, so that what comes after the game is what would have come without it.
+    /// For a launch, when its launcher's group is to come in front if it is a launcher's game still
+    /// without a window ([`LAUNCHER_SHOWN_AFTER`]); none once it has, and for an intent that is not a
+    /// launch.
+    pub(super) launcher_at: Option<u64>,
+    /// The launcher's windows that brought its group in front, while any is open: its dialogs, and the
+    /// window shown at `launcher_at`. It is not remembered as having been in front, so that what comes
+    /// after the game is what would have come without it.
     pub(super) promoted: Vec<i64>,
 }
 
 impl FrontIntent {
     /// Launch `unit`, asked for at `now`: its first window, for [`WINDOW_WAIT`].
     pub(crate) fn launch(unit: LaunchUnit, now: u64) -> FrontIntent {
-        FrontIntent { awaited: Awaited::Launch(unit), until: now + WINDOW_WAIT, promoted: Vec::new() }
+        let launcher_at = Some(now + LAUNCHER_SHOWN_AFTER);
+        FrontIntent { awaited: Awaited::Launch(unit), until: now + WINDOW_WAIT, launcher_at, promoted: Vec::new() }
+    }
+
+    /// The first window of the entry with `key`, a launcher's game whose launch was handed to the launcher
+    /// at `now`, for `wait`.
+    pub(crate) fn handed(key: &str, now: u64, wait: u64) -> FrontIntent {
+        FrontIntent { launcher_at: Some(now + LAUNCHER_SHOWN_AFTER), ..FrontIntent::entry(key, now + wait) }
     }
 
     /// The next window of the entry with `key`, which runs, until `until`.
     pub(crate) fn entry(key: &str, until: u64) -> FrontIntent {
-        FrontIntent { awaited: Awaited::Entry(key.to_owned()), until, promoted: Vec::new() }
+        FrontIntent { awaited: Awaited::Entry(key.to_owned()), until, launcher_at: None, promoted: Vec::new() }
     }
 
     /// The key of the entry whose window is waited for.

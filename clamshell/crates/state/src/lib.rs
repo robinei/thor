@@ -577,7 +577,9 @@ impl State {
     ///    `the_tab_a_rule_leaves_is_settled_in_the_same_event`).
     /// 5. What is shown: a launch's first window, then a group whose window came back, so the one that
     ///    came back ends in front (`a_launchs_first_window_is_shown_before_a_window_that_came_back`);
-    ///    then going back to what was before when the window in front closed. Once that front is settled,
+    ///    then going back to what was before when the window in front closed; then the launcher of a
+    ///    launcher's game still without its window after a while ([`crate::Session::follow_launcher`]).
+    ///    Once that front is settled,
     ///    an app needed now (Setup) is put in front and one no longer needed closed (`State::follow_needed`),
     ///    and apps' file choosers are picked over their program or set
     ///    aside ([`State::follow_portal`]); then the overview follows what is in front.
@@ -653,6 +655,9 @@ impl State {
         self.session.follow_front_launch(self.clock.mono());
         self.session.follow_replacement(self.clock.mono());
         self.session.follow_front(self.clock.mono());
+        // After the launch's window and the going back, so a launcher's game whose window came in this
+        // event takes the front, not its launcher.
+        self.session.follow_launcher(self.clock.mono(), self.library_view.library());
         // An app needed now (Setup) is in front, over any window; one no longer needed closes.
         self.follow_needed();
         // Order: once the front is settled (a launch's window, a closed window's replacement), which an

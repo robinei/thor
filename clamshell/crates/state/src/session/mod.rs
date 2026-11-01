@@ -352,7 +352,8 @@ impl Session {
         self.front_launch = Some(intent);
     }
 
-    /// Whether `group` is a launcher's, promoted for a dialog of it while its game starts.
+    /// Whether `group` is a launcher's, promoted for a dialog of it, or for a while waited (see
+    /// [`Session::follow_launcher`]), while its game starts.
     fn promoted(&self, group: &Group) -> bool {
         self.front_launch.as_ref().is_some_and(|f| f.promoted.iter().any(|d| self.window(*d).is_some_and(|w| w.group.as_ref() == Some(group))))
     }

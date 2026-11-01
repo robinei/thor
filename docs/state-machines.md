@@ -69,7 +69,14 @@ The foreground launch intent (`front_launch`) and two-second replacement history
 an explicitly requested launch may show its first window, and a splash may be replaced without losing
 its place. When the window in front closes and its program still runs, the intent is set again for that
 program for `REWAIT_SECS` (30), so its next window comes in front however late, as Steam's window after
-its update dialog (`a_running_programs_next_window_is_shown_after_its_window_in_front_closed`). The
+its update dialog (`a_running_programs_next_window_is_shown_after_its_window_in_front_closed`). A
+launch shows only the game; but once a launcher's game, launched in front, has waited
+`LAUNCHER_SHOWN_AFTER` (30 s) for its window, the launcher's group comes in front
+(`Session::follow_launcher`, a step of settle after the going back): a launcher still busy that long is
+usually showing something to see, a prompt as a plain window that the dialog rule misses, its progress or
+an error. It is promoted as a launcher's dialog is (`FrontIntent::promoted`), so it isn't remembered as
+having been in front, and the game's window takes the front when it comes. A waiting again after the
+game's window closed (`REWAIT_SECS`) is not a launch and brings nothing in front. The
 compositor reads the placement they lead to from the state after `apply`.
 
 At most one window is shown on top and one placed below, since each is one slot. Live ids are unique,
@@ -148,7 +155,9 @@ Steam is started in its controller interface, `-gamepadui`, every way it starts:
 entry and steam:// links run `steam -gamepadui %U`, and a Steam game from the Library runs `steam -gamepadui
 -silent -applaunch ID`, as a launch of Steam's desktop entry when the client isn't running (with only
 `WAYLAND_DISPLAY` and `DISPLAY` from the game's environment), or handed to the running client; `-silent`
-keeps a cold start from showing the client's window.
+keeps a cold start from showing the client's window. A launch shows only the game; if its window hasn't
+come 30 s after the launch was asked for, Steam's window comes in front, if it shows one, until the
+game's does (see Front and Home).
 
     no client --Launch(Steam game)--> the client started as Steam's own launch, its unit named with the game's launch's time and counter, so two such starts never share a name (`steam_started_for_a_game_has_a_unit_of_its_own`) [the argv above]; the game's unit runs `clamshell --follow-steam ID`
     client running --Launch(Steam game)--> the request handed to the client; the follower started
@@ -174,7 +183,9 @@ The state's side is pinned by `steams_windows_open_behind_a_steam_games_launch`,
 `a_game_steam_started_is_followed_as_a_launch_beside_the_others`,
 `a_steam_game_library_view_started_ends_by_the_launcher_not_its_windows`,
 `a_steam_games_window_is_the_games_though_it_runs_in_steams_scope`,
-and `a_steam_game_found_by_its_window_is_launched_not_found_as_a_program`. The `-gamepadui` argument and the interface it gives are checked on
+`a_steam_game_found_by_its_window_is_launched_not_found_as_a_program`,
+`a_launchers_game_still_without_its_window_brings_the_launcher_in_front` and
+`a_launcher_without_a_window_is_not_brought_in_front`. The `-gamepadui` argument and the interface it gives are checked on
 the device.
 
 ### Front and Home
@@ -184,8 +195,9 @@ the device.
 | settle: the front group has no window left | Focus the most recent top group, else Show(Library); remember it 2 s | front `a_closed_window_goes_back_…` |
 | settle: within 2 s a window reappears there | Focus it | front `a_window_in_front_replaced_at_once_…` |
 | settle: `front_launch` and its window arrived | Focus, cleared | tests `a_launchs_first_window_is_shown_before_…` |
-| `front_launch` (session/intent.rs) is set | for a launch in front: that launch's unit, until `WINDOW_WAIT` (600 s) after it was asked for; else the entry's key, any window of it counting: a tray Activate and a closed front's program still running (`REWAIT_SECS`), a launcher's game (`LAUNCHER_WAIT`), a program found by its window (`HANDOFF`). No intent is made up of a unit that isn't listed, and none is without a deadline | randomized test, invariant 4 |
+| `front_launch` (session/intent.rs) is set | for a launch in front: that launch's unit, until `WINDOW_WAIT` (600 s) after it was asked for, its launcher due in front 30 s after (see below); else the entry's key, any window of it counting: a tray Activate and a closed front's program still running (`REWAIT_SECS`), a launcher's game (`LAUNCHER_WAIT`), a program found by its window (`HANDOFF`). No intent is made up of a unit that isn't listed, and none is without a deadline | randomized test, invariant 4 |
 | settle: `front_launch` past its deadline, its launch neither starting nor listed (unless its entry runs by its windows), or its entry no longer running | cleared: other programs' new windows open in front again | tray `a_launch_that_never_shows_a_window_is_given_up`, `an_activate_never_answered_is_given_up` |
+| settle: `front_launch` a launch of a launcher's game (Steam, Heroic, Lutris; `launchers::launcher_of`) asked for `LAUNCHER_SHOWN_AFTER` (30 s) ago or more, its window not come | the launcher's group in front: Focus of the window it shows on the top screen, promoted as for a launcher's dialog (not remembered as having been in front); it stays until the game's window takes the front, the launcher going behind, or the intent ends (Home, another launch, the deadline). Once only. With no window on the top screen (Steam started `-silent`), nothing, until it shows one; the launcher is not asked to show itself. Already in front, it stays as it is. Before 30 s, and for a launch of no launcher's game, nothing | running `a_launchers_game_still_without_its_window_brings_the_launcher_in_front`, `home_while_a_launcher_is_in_front_for_its_game_cancels_it`, `a_launcher_without_a_window_is_not_brought_in_front`, `a_launch_of_no_launchers_game_never_brings_another_program_in_front`, `a_heroic_game_still_without_its_window_brings_heroic_in_front`; randomized test, invariant 4 |
 | settle: the front group has no window left and its entry still runs | `front_launch` waits for a window of the entry from any of its launches | front `a_running_programs_next_window_is_shown_after_its_window_in_front_closed`, `a_running_entrys_next_window_is_shown_from_any_of_its_launches` |
 | Show of a running entry (launched, adopted or found) with no window but a tray icon | tray Activate; `front_launch` for the entry's next window | tray `a_launched_program_in_its_tray_shows_its_window_when_its_tile_is_tapped` |
 | Home, the Library not in front | Show(Library); cancel foreground launch intent | front `home_always_shows_library_view_and_repeated_home_stays_there` |
@@ -1949,7 +1961,8 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
    window's root is one of them). Each window recorded as sent down is open and recorded once, and one
    recorded with a rule is a stack's root (Up finds it by the root). The front intent
    (session/intent.rs) has a deadline not passed and no further than the longest wait, and waits for a
-   launch starting or listed, or an entry that runs.
+   launch starting or listed, or an entry that runs; once its launcher is due in front
+   (`LAUNCHER_SHOWN_AFTER`), the launcher has no window on the top screen left behind.
 5. **Dock:** ids unique; every running entry is on it; every item is pinned, running or being moved.
 6. **The Library:** the cursor within the list (the selected entry is worked out as the one at it); the collection index in
    range; every entry listed matches the filter.
@@ -1990,8 +2003,8 @@ compositor and systemd follows the effects (focus, moves, windows down). The lib
 handed over to another program (desktop:firefox), an enqueue runner's album, a browsed file, a group (the
 series), the Device tool, and any program may open several windows, now and then a dialog of one already there in its program; stray windows, a landed Steam game's
 or app's window, windows marked with a launcher's game mark (`WindowFacts::game`, in Steam's scope, a unit
-of ours or none), a launcher's dialogs while one of its games launches or is waited for (which promote its
-group), and a stray program's tray icon come and go; a closing window is often the one opened last. Clocks advance mostly
+of ours or none), a launcher's windows while one of its games launches or is waited for (a dialog
+promotes its group; another window opens behind and comes in front once the game has waited 30 s), and a stray program's tray icon come and go; a closing window is often the one opened last. Clocks advance mostly
 by 0-3 s, sometimes by up to 400 s, and now and then by 15-25 minutes to sleep.
 
 It runs 8 fixed seeds × 4000 events with the other tests (about 1.5 s in the debug build). More seeds:

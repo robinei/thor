@@ -498,16 +498,20 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
         // or a stray one.
         53..=60 if w.windows.len() > 8 => return None,
         53..=60 => {
-            // A launcher's dialog, such as Steam asking which version to start, while one of its games is
-            // launching or waited for, often when there can be one: it comes in front, its launcher's
-            // group promoted meanwhile.
+            // A launcher's window while one of its games is launching or waited for, often when there can
+            // be one: a dialog, such as Steam asking which version to start, comes in front, its launcher's
+            // group promoted meanwhile; another window opens behind, and comes in front once the game has
+            // waited long enough.
             let launcher = |id: &str| Some(&*crate::session::launchers::launcher_of(library.entry(id)?)?.entry(library)?.key);
             let launching = s.session().launching().iter().map(|l| &*l.entry);
             let waited = s.session().running_entries().iter().filter(|r| matches!(r.origin, Origin::Windows { .. })).map(|r| &*r.id);
-            let launchers: Vec<&str> = launching.chain(waited).filter_map(launcher).collect();
+            let awaited = s.session().awaited_entry().map(|id| &**id);
+            let launchers: Vec<&str> = launching.chain(waited).chain(awaited).filter_map(launcher).collect();
             let units: Vec<&LaunchUnit> = w.units.iter().filter(|u| launchers.contains(&u.key.as_str())).collect();
             if let Some(unit) = rng.pick(&units).filter(|_| rng.one_in(2)) {
-                let (app_id, unit, role) = (format!("app-{}", unit.key), Some(unit.service()), crate::presentation::WindowRole::Dialog);
+                use crate::presentation::WindowRole;
+                let role = if rng.one_in(2) { WindowRole::Dialog } else { WindowRole::Normal };
+                let (app_id, unit) = (format!("app-{}", unit.key), Some(unit.service()));
                 return Some(WindowEvent::Opened(w.open_as(WindowFacts { app_id, unit, role, ..WindowFacts::default() })).into());
             }
             let mut window = match rng.below(7) {
@@ -1234,6 +1238,9 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         let runs = running.iter().any(|r| r.key == intent.key());
         let started = intent.unit().is_some_and(|u| launching.iter().any(|l| l.unit == *u) || session.units().contains(u));
         ensure!(runs || started, "4: front intent {intent:?} for nothing");
+        // A launcher's game waited for long enough has its launcher in front, if the launcher has a window
+        // that can be (see `Session::follow_launcher`).
+        ensure!(!session.launcher_left_behind(now, s.library_view().library()), "4: {intent:?}'s launcher left behind");
     }
     if let Some(owner) = session.top_window().and_then(|w| session.running_of(w)) {
         ensure!(session.program() == Some(&owner.id), "4: program {:?}, the focused window's {}", session.program(), owner.id);

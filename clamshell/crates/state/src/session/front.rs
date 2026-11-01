@@ -6,7 +6,7 @@ use crate::out::Out;
 use crate::session::InFront;
 use crate::session::intent::FrontIntent;
 use crate::session::windows::{Group, WindowCommand};
-use crate::{Effect, EntryAct, Event, Session};
+use crate::{Effect, EntryAct, Event, Library, Session};
 
 /// How long a program whose window in front closed, still running, is waited for to show another (see
 /// [`Session::follow_front`]): Steam replacing its update dialog with its window takes a while.
@@ -32,6 +32,39 @@ impl Session {
             self.set_front_launch(FrontIntent::entry(key, now + REWAIT_SECS));
         }
         self.closed_front = closed.then_some((was, now));
+    }
+
+    /// Runs after every event, once the front is otherwise settled. Once a launch in front that is a
+    /// launcher's game has waited [`LAUNCHER_SHOWN_AFTER`](super::intent::LAUNCHER_SHOWN_AFTER) for its
+    /// window, the launcher's group comes in front, promoted as for a launcher's dialog (see
+    /// [`FrontIntent::promoted`]): a launcher still busy that long is usually showing something the user
+    /// needs to see. The game's window takes the front when it comes. A launcher with no window on the
+    /// top screen (Steam started silently) has nothing to show and is left until it shows one; one
+    /// already in front stays as it is.
+    pub(crate) fn follow_launcher(&mut self, now: u64, library: &Library) {
+        let Some(group) = self.launcher_due(now, library) else { return };
+        let Some(id) = self.group_window(&group).map(|w| w.id) else { return };
+        let in_front = self.top_window().is_some_and(|w| w.group.as_ref() == Some(&group));
+        let Some(front) = self.front_launch.as_mut() else { return };
+        front.launcher_at = None;
+        if !in_front {
+            front.promoted.push(id);
+            self.command(WindowCommand::FocusWindow(id));
+        }
+    }
+
+    /// The launcher's group, once the launch waiting for its window is a launcher's game and its launcher
+    /// is due to come in front (see [`Session::follow_launcher`]).
+    fn launcher_due(&self, now: u64, library: &Library) -> Option<Group> {
+        let at = self.front_launch.as_ref()?.launcher_at?;
+        (now >= at).then(|| self.front_launcher(library).map(Group::entry)).flatten()
+    }
+
+    /// Whether a launcher due to come in front (see [`Session::follow_launcher`]) has a window that
+    /// could.
+    #[cfg(test)]
+    pub(crate) fn launcher_left_behind(&self, now: u64, library: &Library) -> bool {
+        self.launcher_due(now, library).is_some_and(|group| self.group_window(&group).is_some())
     }
 
     /// Shows what was in front before: the most recent group still shown, or the Library if the Library was in front
