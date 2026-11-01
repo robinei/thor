@@ -608,17 +608,17 @@ impl<S: Sink> PadThread<S> {
     /// The state's players changed: each controller goes to its player now, the count's pads and routers
     /// are made or dropped.
     fn players_changed(&mut self, pads: &mut Pads) -> Result<(), Ended<io::Error>> {
-        let count = self.players.count;
-        // The controllers of players gone go to player 1 before those players' routers go.
+        let want = usize::from(self.players.count.number());
         for c in &pads.controllers {
             let to = self.players.of(&c.key);
             if pads.merge.player(c.slot) != Some(to) {
                 log::info!("pad: {} is player {}", c.name, to.number());
-                pads.merge.set_player(c.slot, to, &mut pads.merged);
             }
         }
-        self.route_merged(pads, Instant::now());
-        let want = usize::from(count.number());
+        let moves = pads.controllers.iter().map(|c| (c.slot, self.players.of(&c.key)));
+        let (keymaps, route, watch) = (&self.keymaps, self.route, self.watch_activity);
+        regroup(&mut pads.merge, &mut pads.merged, &mut pads.players, want, moves, |p| player_route(p, keymaps, route, watch), Instant::now());
+        // The controllers of players gone are player 1's now: those players' routers go.
         if pads.players.len() > want {
             for p in pads.players.iter_mut().skip(want) {
                 p.router.lose(&mut p.out);
@@ -627,10 +627,6 @@ impl<S: Sink> PadThread<S> {
             pads.players.truncate(want);
         }
         self.make_devices()?;
-        while pads.players.len() < want {
-            let p = Player::ALL.get(pads.players.len()).copied().unwrap_or(Player::ONE);
-            pads.players.push(player_route(p, &self.keymaps, self.route, self.watch_activity));
-        }
         Ok(())
     }
 
@@ -657,6 +653,32 @@ fn grow<T>(pads: &mut Vec<T>, count: usize, mut make: impl FnMut() -> io::Result
         }
     }
     Ok(())
+}
+
+/// Each controller to its player (`moves`, its slot and player), with a router for each of `want` players
+/// at least, made by `router`, and the controllers' events routed. Order: the routers of players added
+/// are made before the controllers move, so what a moved controller holds reaches its new player's router
+/// as it moves; made after, at rest, they missed it until it changed. Those of players gone go after this
+/// (see [`PadThread::players_changed`]), once their controllers have moved to player 1.
+fn regroup(
+    merge: &mut Merge,
+    merged: &mut Merged,
+    players: &mut Vec<PlayerRoute>,
+    want: usize,
+    moves: impl Iterator<Item = (u32, Player)>,
+    mut router: impl FnMut(Player) -> PlayerRoute,
+    now: Instant,
+) {
+    while players.len() < want {
+        let p = Player::ALL.get(players.len()).copied().unwrap_or(Player::ONE);
+        players.push(router(p));
+    }
+    for (slot, to) in moves {
+        if merge.player(slot) != Some(to) {
+            merge.set_player(slot, to, merged);
+        }
+    }
+    route_merged(merged, players, now);
 }
 
 /// Hands each player's merged events to its router, `players` being player 1's first.
@@ -1273,6 +1295,27 @@ mod tests {
         assert!(thread.take_commands(&mut pads, &received).unwrap());
         let wake = thread.turn(&mut pads, now).unwrap();
         assert!(wake.is_some_and(|at| at > now && at <= Instant::now() + Duration::from_millis(50)), "the turbo's next beat: {wake:?}");
+    }
+
+    /// A controller moved to a player added with the count holds what it held on its new player's pad.
+    /// (The router was made after the move, at rest, and the held button was dropped.)
+    #[test]
+    fn a_controller_moved_to_a_new_player_keeps_what_it_holds() {
+        let keymaps: [Keymap; Player::MOST] = Default::default();
+        let mut players = routers(Player::ONE, &keymaps, PadRoute::Game, false);
+        let (mut merge, mut merged) = (Merge::default(), Merged::default());
+        merge.add(1, Player::ONE, Inputs::default(), &mut merged);
+        for raw in [key(KeyCode::BTN_SOUTH, true), Raw::REPORT] {
+            merge.event(1, raw, &mut merged);
+        }
+        route_merged(&mut merged, &mut players, Instant::now());
+        for pl in &mut players {
+            pl.out = Out::default();
+        }
+        regroup(&mut merge, &mut merged, &mut players, 2, [(1, p(2))].into_iter(), |p| player_route(p, &keymaps, PadRoute::Game, false), Instant::now());
+        assert_eq!(players.len(), 2);
+        assert_eq!(held(&players[1].out.pad), [KeyCode::BTN_SOUTH], "A held on player 2's pad");
+        assert!(players[0].out.pad.iter().any(|e| *e == key(KeyCode::BTN_SOUTH, false)), "and let go on player 1's: {:?}", players[0].out.pad);
     }
 
     /// A pad that can't be made leaves the pads there are, and the count made so far stands; only with no
