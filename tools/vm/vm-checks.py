@@ -261,12 +261,14 @@ def units(prefix):
 
 
 def screen_shows(role):
-    """What ClamShell's journal last said screen `role` (Top, Bottom) shows: "composes its frames", "shows
-    its own buffers", "shows window N ..." or "draws window N straight ..."; "" if nothing yet."""
+    """What ClamShell's journal last said screen `role` (Top, Bottom) shows since it last started: "composes
+    its frames" (as it starts, unsaid), "shows its own buffers", "shows window N ..." or "draws window N
+    straight ..."."""
     shows = ("composes its frames", "shows its own buffers", "shows window ", "draws window ")
-    lines = [l for l in sh("journalctl --user -u clamshell -b -o cat --no-pager").splitlines()
-             if any(f"drm: the {role} screen {what}" in l for what in shows)]
-    return lines[-1].split(f"drm: the {role} screen ", 1)[1] if lines else ""
+    lines = sh("journalctl --user -u clamshell -b -o cat --no-pager").splitlines()
+    start = max((i for i, line in enumerate(lines) if "Starting ClamShell" in line), default=0)
+    said = [l for l in lines[start:] if any(f"drm: the {role} screen {what}" in l for what in shows)]
+    return said[-1].split(f"drm: the {role} screen ", 1)[1] if said else "composes its frames"
 
 
 def lit(shot, level=60):
@@ -864,6 +866,28 @@ class Checks:
         self.check("  moved up, forgotten: opened again on top", up == [False], up)
         sh("pkill -x foot || true")
 
+    def scanout(self):
+        """The checks of direct scanout (CLAMSHELL_SCANOUT=1), which the device doesn't use yet and the rest of
+        the suite runs without: ClamShell's screens shown from their own buffers, and an external display
+        plugged in and out with them. Put back after."""
+        drop_in = "$XDG_RUNTIME_DIR/systemd/user/clamshell.service.d/scanout-check.conf"
+        config = "[Service]\nEnvironment=CLAMSHELL_SCANOUT=1\n"
+        restarted = lambda: until(lambda: sh("systemctl --user is-active clamshell").strip() == "active" and front() == "the Library", 15)
+        # (Started again twice here after the other checks' restarts: past systemd's start limit unless reset.)
+        again = "; systemctl --user daemon-reload; systemctl --user reset-failed clamshell 2>/dev/null; systemctl --user restart clamshell"
+        sh("printf %s " + shlex.quote(config) + " > " + drop_in + again, check=True)
+        try:
+            if not self.check("started again with direct scanout", restarted()):
+                return
+            time.sleep(1)
+            self.ui_scanout()
+            self.reset()
+            self.external_display(scanout=True)
+        finally:
+            sh("rm -f " + drop_in + again)
+            restarted()
+            time.sleep(1)
+
     def ui_scanout(self):
         def shown(role):
             return screen_shows(role) == "shows its own buffers"
@@ -994,16 +1018,17 @@ class Checks:
             idle = now()
             time.sleep(1.2)
             records = journal(idle)
-            self.check("scanout while idle has no composition schedule", "drm schedule:" not in records)
+            self.check("composed and idle: no composition schedule", "drm schedule:" not in records)
         finally:
             sh("pkill -f '^foot -a thor-scheduling' || true; rm -f " + drop_in + "; systemctl --user daemon-reload; systemctl --user restart clamshell")
 
-    def external_display(self):
+    def external_display(self, scanout=False):
         """An external display plugged in and out: the third virtio-gpu output (Virtual-3) forced connected
         and disconnected through its connector's status in sysfs, each followed by the GPU's change event
         a monitor's hotplug brings (the kernel sends none for a status forced: udevadm sends it).
         Plugged in, it shows the main screen's picture at 1920x1080, the cursor in it, and paces the main
-        screen; unplugged, the main screen paces itself and is scanned out from its own buffers again."""
+        screen; unplugged, the main screen paces itself, composed again, or with `scanout` (see `scanout`)
+        shown from its own buffers again."""
         status = "/sys/class/drm/card*-Virtual-3/status"
         announce = "sudo -n udevadm trigger --action=change --subsystem-match=drm --sysname-match='card[0-9]'"
         if not sh(f"ls {status} 2>/dev/null").strip():
@@ -1055,8 +1080,8 @@ class Checks:
         back = logged(since, "drm: the Top screen paces its windows again", 3)
         self.check("external display unplugged: dropped, the main screen pacing itself again", gone and back,
                    "; ".join(l for l in journal(since).splitlines() if "drm:" in l)[-600:])
-        self.check("  the main screen scanned out from its own buffers again", until(lambda: screen_shows("Top") == "shows its own buffers", 8),
-                   screen_shows("Top"))
+        again = "shows its own buffers" if scanout else "composes its frames"
+        self.check(f"  the main screen {again} again", until(lambda: screen_shows("Top") == again, 8), screen_shows("Top"))
 
     def pad_windows(self):
         if not plug_pad():
@@ -1926,7 +1951,7 @@ GLib.MainLoop().run()
 
 
 
-CHECKS = ["session_units", "library_view_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules", "ui_scanout", "screen_changes", "frame_schedule", "external_display", "pad_windows",
+CHECKS = ["session_units", "library_view_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules", "screen_changes", "frame_schedule", "external_display", "scanout", "pad_windows",
           "pad_library_view", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers",
           "keymap_actuations", "rumble", "launch_and_quit", "pause_hidden", "found_window", "tray_program", "clipboard", "portal",
           "bluetooth", "account", "gyro_sleep"]

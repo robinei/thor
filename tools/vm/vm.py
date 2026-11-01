@@ -185,11 +185,11 @@ def copy_local(program):
 
 def service():
     """The device's clamshell.service, with this machine's build (copied to its disk at each start, see
-    `LOCAL`) and profile, and ClamShell's screens scanned out while they show it alone (its virtual
-    screens take sRGB as it is)."""
+    `LOCAL`) and profile, and otherwise the device's environment: composed, without direct scanout, which
+    vm-checks.py's `scanout` check turns on for its own checks."""
     unit = (REPO / "packages/thor-session/root/usr/lib/systemd/user/clamshell.service").read_text()
     start = (f"ExecStartPre=/bin/sh -c '{copy_local(A.program)}'\nExecStart={local(A.program)} --drm\n"
-             "Environment=CLAMSHELL_DEVICE=vm\nEnvironment=CLAMSHELL_SCANOUT=1")
+             "Environment=CLAMSHELL_DEVICE=vm")
     unit = unit.replace("ExecStart=/usr/bin/clamshell --drm", start)
     unit = unit.replace("ExecStopPost=-/usr/bin/clamshell ", f"ExecStopPost=-{local(A.program)} ")
     if "/usr/bin/clamshell" in unit:

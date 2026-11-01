@@ -2300,5 +2300,7 @@ means no composition deadline or periodic calibration wakeup.
 fixed targets, missed-flip recovery, cancellation/reset and independent outputs. A randomized
 10,000-turn test checks bounded budgets and pending-work invariants. DRM VM `frame_schedule`
 checks a changing client against real virtual-DRM flips, completion samples, learned budgets
-and timer-free idle scanout; `screen_changes` and `external_display` cover reset and mirroring.
+and a timer-free idle; `screen_changes` and `external_display` cover reset and mirroring. The VM
+runs ClamShell in the device's environment, composed, as the device does; its `scanout` check runs
+the direct scanout checks (`ui_scanout`, and `external_display` again) with `CLAMSHELL_SCANOUT=1`.
 Physical Adreno timing and input-to-photon improvement remain device measurements.
