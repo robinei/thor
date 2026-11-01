@@ -176,7 +176,14 @@ fn picture_target(external: bool) -> u32 {
 fn build(gl: &ffi::Gles2, pass: (&str, &str), external: bool, linear: bool, samplers: &[(&str, bool, u32)]) -> Result<Pass, String> {
     let (vertex, fragment) = super::shaders::smaa(pass, external, linear);
     let vs = compile(gl, ffi::VERTEX_SHADER, &vertex)?;
-    let fs = compile(gl, ffi::FRAGMENT_SHADER, &fragment)?;
+    let fs = match compile(gl, ffi::FRAGMENT_SHADER, &fragment) {
+        Ok(fs) => fs,
+        Err(error) => {
+            // SAFETY: GL on Smithay's current context, the shader compiled above.
+            unsafe { gl.DeleteShader(vs) };
+            return Err(error);
+        }
+    };
     // SAFETY: GL on Smithay's current context, with the shaders compiled above.
     unsafe {
         let program = gl.CreateProgram();

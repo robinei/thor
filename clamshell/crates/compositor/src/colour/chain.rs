@@ -66,8 +66,6 @@ pub(crate) struct Chains {
     /// The passes' programs, for a signal and for linear light (see [`Passes::linear`]).
     easu: (Program, Program),
     fxaa: (Program, Program),
-    /// SMAA's programs once made, or why they couldn't be, which isn't tried again.
-    smaa: Option<Result<super::smaa::Smaa, String>>,
     /// The windows whose passes failed, logged once.
     failed: std::collections::HashSet<Id>,
     /// What a run keeps, wants and gives back, kept so that running allocates nothing.
@@ -120,6 +118,7 @@ impl Chains {
     pub fn run<'a>(
         &mut self,
         renderer: &mut GlesRenderer,
+        smaa: &mut Smaa,
         elements: &mut [Element],
         wants: impl Fn(&Id) -> Option<Want<'a>>,
     ) -> Result<&[(Id, Chained)], Error> {
@@ -153,7 +152,7 @@ impl Chains {
             let flipped = read != Read::Copy && source.is_y_inverted();
             // A window whose passes fail is shown without them, as its buffer is; the failure is logged
             // once, and again only after they have worked.
-            if let Err(error) = self.prepare(renderer, &mut chain, want.passes, &source, read, flipped, shown, commit) {
+            if let Err(error) = self.prepare(renderer, smaa, &mut chain, want.passes, &source, read, flipped, shown, commit) {
                 if self.failed.insert(id.clone()) {
                     log::warn!("compositor: a window's picture passes failed, shown without them: {error}");
                 }
@@ -205,9 +204,9 @@ impl Chains {
 
     /// The programs `want` takes, made the first time each is needed; an error if one of them couldn't be
     /// (which isn't tried again).
-    fn programs(&mut self, renderer: &mut GlesRenderer, want: Passes) -> Result<(), Error> {
+    fn programs(&mut self, renderer: &mut GlesRenderer, smaa: &mut Smaa, want: Passes) -> Result<(), Error> {
         if want.smaa {
-            let smaa = self.smaa.get_or_insert_with(|| super::smaa::Smaa::new(renderer).map_err(|e| e.to_string()));
+            let smaa = smaa.get_or_insert_with(|| super::smaa::Smaa::new(renderer).map_err(|e| e.to_string()));
             smaa.as_ref().map_err(|error| Error::from(error.clone()))?;
         }
         for (wanted, pair, call, glsl) in
@@ -228,6 +227,7 @@ impl Chains {
     fn prepare(
         &mut self,
         renderer: &mut GlesRenderer,
+        smaa: &mut Smaa,
         chain: &mut Chain,
         want: Passes,
         source: &GlesTexture,
@@ -236,7 +236,7 @@ impl Chains {
         shown: Size<i32, Buffer>,
         commit: CommitCounter,
     ) -> Result<(), Error> {
-        self.programs(renderer, want)?;
+        self.programs(renderer, smaa, want)?;
         let source_size = source.size();
         let fuse = want.fuse && read != Read::Copy;
         let smaa_now = chain.smaa.as_ref().map(|t| (t.size, t.hdr, t.copy.is_some(), t.out.is_none()));
@@ -260,7 +260,7 @@ impl Chains {
         }
         if chain.commit != Some(commit) {
             chain.commit = None;
-            self.draw(renderer, chain, source, read, flipped, want.linear)?;
+            self.draw(renderer, smaa, chain, source, read, flipped, want.linear)?;
             chain.commit = Some(commit);
         }
         Ok(())
@@ -268,7 +268,17 @@ impl Chains {
 
     /// Draws a window's passes from its buffer's texture `source`, read as `read` (and upside down if
     /// `flipped`): SMAA, then the upscale, each if wanted.
-    fn draw(&mut self, renderer: &mut GlesRenderer, chain: &mut Chain, source: &GlesTexture, read: Read, flipped: bool, linear: bool) -> Result<(), Error> {
+    #[allow(clippy::too_many_arguments)]
+    fn draw(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        smaa: &mut Smaa,
+        chain: &mut Chain,
+        source: &GlesTexture,
+        read: Read,
+        flipped: bool,
+        linear: bool,
+    ) -> Result<(), Error> {
         let mut input = source.clone();
         let mut input_turn = Transform::Normal;
         if let Some(t) = &mut chain.smaa {
@@ -279,7 +289,7 @@ impl Chains {
                 }
                 None => source.clone(),
             };
-            match &mut self.smaa {
+            match smaa {
                 Some(Ok(smaa)) => smaa.run(renderer, (&color, read == Read::External, linear), [&t.edges, &t.blend], t.out.as_ref(), (t.size.w, t.size.h))?,
                 Some(Err(error)) => return Err(error.clone().into()),
                 None => return Err("SMAA's programs not made".into()),
@@ -380,6 +390,11 @@ pub(super) fn render(
 /// A pass's program, made the first time it is needed, or why it couldn't be.
 type Program = Option<Result<GlesTexProgram, String>>;
 
+/// SMAA's programs once made, or why they couldn't be, which isn't tried again. Kept by the pipeline for
+/// its life, not by a scene, which is made again when the screens' layout changes: its GL objects are raw
+/// (see [`super::smaa`]) and would be left behind with it.
+pub(crate) type Smaa = Option<Result<super::smaa::Smaa, String>>;
+
 /// One of a pair: the first, or with `second` the second.
 pub(super) fn side<T>(pair: &mut (T, T), second: bool) -> &mut T {
     if second { &mut pair.1 } else { &mut pair.0 }
@@ -403,11 +418,13 @@ mod tests {
         let source: GlesTexture = renderer.create_buffer(Fourcc::Abgr8888, (64, 64).into()).unwrap();
         let none = Passes { smaa: false, fxaa: false, upscale: false, hdr: false, linear: false, fuse: false };
         let refused: Program = Some(Err("refused".to_owned()));
-        let mut chains = Chains { smaa: Some(Err("refused".to_owned())), fxaa: (refused.clone(), None), easu: (refused, None), ..Default::default() };
+        let mut chains = Chains { fxaa: (refused.clone(), None), easu: (refused, None), ..Default::default() };
+        let mut smaa: Smaa = Some(Err("refused".to_owned()));
         for passes in [Passes { smaa: true, ..none }, Passes { fxaa: true, ..none }, Passes { upscale: true, ..none }] {
             let mut chain = Chain { smaa: None, fxaa: None, upscaled: None, size: (64, 64).into(), commit: None, damage: DamageBag::default() };
             for _ in 0..2 {
-                let prepared = chains.prepare(&mut renderer, &mut chain, passes, &source, Read::Ordinary, false, (128, 128).into(), CommitCounter::default());
+                let prepared =
+                    chains.prepare(&mut renderer, &mut smaa, &mut chain, passes, &source, Read::Ordinary, false, (128, 128).into(), CommitCounter::default());
                 assert!(prepared.is_err());
                 assert!(chain.smaa.is_none() && chain.fxaa.is_none() && chain.upscaled.is_none(), "{passes:?}: no textures");
             }

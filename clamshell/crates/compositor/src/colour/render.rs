@@ -40,6 +40,8 @@ pub(crate) struct Pipeline {
     direct_shaders: Programs<ColourDescription>,
     /// The surfaces whose colour couldn't be drawn (see [`final_program`]), logged once.
     failed: Vec<Id>,
+    /// SMAA's programs, for the scenes' chains (see [`super::chain::Smaa`]).
+    smaa: super::chain::Smaa,
     revision: u64,
     /// The surfaces whose pictures take passes before the scene this frame, kept so that composing
     /// allocates nothing.
@@ -290,6 +292,7 @@ impl Pipeline {
             shaders: Vec::new(),
             direct_shaders: Vec::new(),
             failed: Vec::new(),
+            smaa: None,
             revision: 0,
             chained: Vec::new(),
             histogram: Default::default(),
@@ -345,7 +348,7 @@ impl Pipeline {
             }
             self.revision = server.colour.revision;
         }
-        let Pipeline { scenes, shaders, direct_shaders, failed, chained, .. } = self;
+        let Pipeline { scenes, shaders, direct_shaders, failed, smaa, chained, .. } = self;
         failed.retain(|id| server.colour.surfaces.contains_key(id));
         let [top, bottom] = scenes;
         let scene = if down { bottom } else { top };
@@ -408,7 +411,7 @@ impl Pipeline {
             scene.redraw();
         }
         scene.chains_hold.used(std::time::Instant::now());
-        let replaced = scene.chains.run(renderer, elements, |id| {
+        let replaced = scene.chains.run(renderer, smaa, elements, |id| {
             chained.iter().find(|(chained, ..)| chained == id).map(|(id, surface, aa, upscale, fused)| {
                 let hdr = server.colour.surfaces.get(id).is_some_and(|colour| colour.hdr());
                 let linear = server.colour.surfaces.get(id).is_some_and(|colour| colour.transfer == TransferFunction::Linear);
