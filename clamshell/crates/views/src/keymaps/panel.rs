@@ -4,7 +4,7 @@
 
 use clamshell_state::keymap::screens::{EditView, way_of, ways};
 use clamshell_state::keymap::{Actuation, Binding, Change, Input, Keymap, Kind, Layer, Output, Param, change, params_of};
-use clamshell_state::levels::slider::{Control, Slider};
+use clamshell_state::levels::slider::Control;
 use clamshell_state::profiles::picker::{Kind as ProfileKind, ProfileId};
 use clamshell_state::{Id, KeymapId, Target};
 
@@ -12,8 +12,7 @@ use clamshell_ui::gfx::icons::Icon;
 use clamshell_ui::gfx::{Align, Column, Keep, LINE, Rect};
 use clamshell_ui::toolkit::format::Fmt;
 use clamshell_ui::toolkit::style::{Look, Text, Tone};
-use clamshell_ui::toolkit::widgets::HeldSlider;
-use clamshell_ui::toolkit::{Drag, Frame, Track, widgets};
+use clamshell_ui::toolkit::{Frame, Track, widgets};
 
 use super::words::{Label, as_on_pad, described, shown, summary};
 use super::{BUTTON_H, PANEL_ROW_H, PANEL_TEXT, Picking, remap_title};
@@ -198,21 +197,10 @@ pub(super) fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, vi
             } else if p.switch() {
                 widgets::switch_row(f, Id::Keymap(KeymapId::Toggle(p)), row, small, p.label(), v > 0);
             } else {
-                let value = shown(p, v);
-                let slider = f.s.held_slider().filter(|sl| sl.control == Control::Param(p));
                 // The track spans the screen's width, over the drawing, as the bar's sliders do.
-                let track = Track { x0: body.x, w: body.w };
-                // A held slider is drawn last, so its card covers the rows below it.
-                if let Some(sl) = slider {
-                    held = Some((row, track, sl, p));
-                }
-                f.button(Id::Control(Control::Param(p)), row, Look::ROW, |f| {
-                    if slider.is_none() {
-                        widgets::value_row(f, row, small, p.label(), &value, changed);
-                    }
-                });
-                // The row has nothing to tap, so it slides at once.
-                f.drag(Drag::Slide { control: Control::Param(p), track, at_once: true });
+                let slide = (Control::Param(p), Track { x0: body.x, w: body.w });
+                let row = widgets::slider_row(f, row, small, slide, p.label(), &shown(p, v), Tone::high_if(changed));
+                held = held.or(row.map(|h| (h, p)));
             }
         }
         if input == Input::Gyro && matches!(base.output, Output::Pointer | Output::Stick(_)) {
@@ -237,8 +225,10 @@ pub(super) fn panel(f: &mut Frame, r: Rect, id: u16, keymap: Option<&Keymap>, vi
             widgets::centred_text(f, row.shifted(0.0, small * 0.3), small * 0.85, Tone::Dim, "Slide a value to set it");
         }
     }
-    if let Some((row, track, sl, p)) = held {
-        slider_row(f, row, track, sl, p, r);
+    // A held slider is drawn last, so its card covers the rows below it.
+    if let Some((held, p)) = held {
+        let text = Fmt::<32>::of(format_args!("{} {}", p.label(), shown(p, held.slider.value).as_str()));
+        widgets::held_row(f, held, r, &text);
     }
 }
 
@@ -265,14 +255,4 @@ pub(super) fn invert_row(f: &mut Frame, row: Rect, size: f32, b: &Binding) {
     if label {
         f.c.text_fit(Rect::new(inner.x, row.y, (x - inner.x).max(0.0), row.h), size, Tone::Dim, "Invert", Keep::Start);
     }
-}
-
-/// A parameter's row while its slider is up, using the bar's slider within the panel. The name and value
-/// are above, and the track runs along the row with the thumb under the finger.
-pub(super) fn slider_row(f: &mut Frame, row: Rect, track: Track, sl: Slider, p: Param, panel: Rect) {
-    // As with the bar's slider, the track runs along the screen through the row, and the value is on a
-    // card beside the finger.
-    let text = Fmt::<32>::of(format_args!("{} {}", p.label(), shown(p, sl.value).as_str()));
-    let within = Rect::new(track.x0, panel.y, track.w, panel.h);
-    widgets::held_slider(f, HeldSlider { slider: &sl, x0: track.x0, cy: row.y + row.h / 2.0, h: row.h * 0.75, within, icon: None, text: &text });
 }

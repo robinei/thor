@@ -450,3 +450,46 @@ fn an_unused_keymaps_line_says_it_is_not_used() {
     let text = String::from_utf8_lossy(rec.all_text()).into_owned();
     assert!(text.contains(", not used") && !text.contains("used by not"), "{text}");
 }
+
+/// The keymap's, the curve's and the lights' editors draw their parameters with one slider row: each row
+/// slides its control at once, as nothing else is tapped on it, along the screen's width.
+#[test]
+fn the_editors_parameters_are_one_slider_row() {
+    use clamshell_state::settings::Setting;
+    use clamshell_state::{Control, ListId, PointerEvent, RowPart, SettingsId};
+    use clamshell_ui::toolkit::Drag;
+    let ff6 = || Event::Pointer(PointerEvent::Activate(Id::LibraryView(clamshell_state::LibraryViewId::Entry("ff6".into()))));
+    let editors = [(Setting::Keymap, ListId::Keymaps), (Setting::Curve, ListId::Curves), (Setting::Lights, ListId::Lights)];
+    for (setting, list) in editors {
+        let keymaps = clamshell_state::keymap::Keymaps::initial();
+        let curves = clamshell_state::curve::Curves::initial();
+        let lights = clamshell_state::lights::LightSets::initial();
+        let mut state = State::new(Init { library: Some(clamshell_library::demo::library()), keymaps, curves, lights, ..Init::default() });
+        for event in [
+            ff6(),
+            ff6(),
+            Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Settings))),
+            PointerEvent::LongPress(Id::Settings(SettingsId::Tile(setting))).into(),
+            Event::Pointer(PointerEvent::Activate(Id::Row { list, i: 2, part: RowPart::Edit })),
+        ] {
+            state.apply(event, &mut Vec::new());
+        }
+        if setting == Setting::Keymap {
+            // A stick's panel has sliders.
+            let stick = clamshell_state::keymap::Input::Stick(clamshell_state::keymap::Side::Left);
+            state.apply(Event::Pointer(PointerEvent::Activate(Id::Keymap(clamshell_state::KeymapId::Input(stick)))), &mut Vec::new());
+        }
+        let (targets, _) = draw_bottom(&state, (1240, 1080), &mut DrawCache::load());
+        let rows: Vec<_> =
+            targets.iter().filter(|t| matches!(t.id, Id::Control(Control::Param(_) | Control::Curve(_) | Control::Light(_) | Control::Setting(_)))).collect();
+        assert!(!rows.is_empty(), "{setting:?}: parameter rows drawn");
+        for t in rows {
+            assert!(
+                matches!(t.drag, Some(Drag::Slide { at_once: true, track, .. }) if track.w == 1240.0),
+                "{setting:?}: {:?} slides at once along the screen: {:?}",
+                t.id,
+                t.drag
+            );
+        }
+    }
+}

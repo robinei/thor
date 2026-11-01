@@ -4,6 +4,7 @@
 //! text.
 
 use clamshell_state::Id;
+use clamshell_state::levels::slider::Control;
 
 use super::scroll::Scrolled;
 use super::style::{self, Look, SURFACE_HI, Text, Tone};
@@ -145,6 +146,38 @@ pub fn held_slider(f: &mut Frame, held: HeldSlider) {
     let gx = if at < wx + ww / 2.0 { at + away } else { at - away - content_w };
     let gx = gx.clamp(wx + margin, (wx + ww - content_w - margin).max(wx + margin));
     card(f, gx, card_y, h, icon, text, room);
+}
+
+/// A row whose value a finger slides, as an editor's parameters are: `label` and `value` in `tone`, and
+/// `control`'s slider along `track` (the screen's width, as the bar's sliders have). The row has nothing
+/// to tap, so a finger on it slides at once. While its slider is up the row shows nothing, and it returns
+/// the slider, for [`held_row`] to draw after the rows, so that its card covers those below it.
+pub fn slider_row(f: &mut Frame, row: Rect, size: f32, slide: (Control, Track), label: &str, value: &str, tone: Tone) -> Option<HeldRow> {
+    let (control, track) = slide;
+    let held = f.s.held_slider().filter(|sl| sl.control == control);
+    f.button(Id::Control(control), row, Look::ROW, |f| {
+        if held.is_none() {
+            toned_value_row(f, row, size, label, value, tone);
+        }
+    });
+    f.drag(super::Drag::Slide { control, track, at_once: true });
+    held.map(|slider| HeldRow { row, track, slider })
+}
+
+/// A [`slider_row`] whose slider is up: the row, its track and the slider.
+#[derive(Debug, Clone, Copy)]
+pub struct HeldRow {
+    pub row: Rect,
+    pub track: Track,
+    pub slider: clamshell_state::levels::slider::Slider,
+}
+
+/// Draws a [`slider_row`]'s held slider over its row, with `text` on its card (the label and the value
+/// the slider is at, which the caller formats), the card within `area`. Drawn after the rows.
+pub fn held_row(f: &mut Frame, held: HeldRow, area: Rect, text: &str) {
+    let HeldRow { row, track, slider } = held;
+    let within = Rect::new(track.x0, area.y, track.w, area.h);
+    held_slider(f, HeldSlider { slider: &slider, x0: track.x0, cy: row.y + row.h / 2.0, h: row.h * 0.75, within, icon: None, text });
 }
 
 /// The width of a card's content, an icon and a line of text, at size `h`, at most `room` (see [`card`]).

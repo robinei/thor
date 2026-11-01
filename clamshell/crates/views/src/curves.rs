@@ -17,9 +17,9 @@ use clamshell_state::{Control, Id, Source, State};
 
 use clamshell_ui::gfx::{Align, Column, Keep, Rect, Rgb};
 use clamshell_ui::toolkit::format::Fmt;
-use clamshell_ui::toolkit::style::{Look, Text, Tone};
-use clamshell_ui::toolkit::widgets::{HeaderRight, HeldSlider};
-use clamshell_ui::toolkit::{Drag, Frame, Track, widgets};
+use clamshell_ui::toolkit::style::{Text, Tone};
+use clamshell_ui::toolkit::widgets::HeaderRight;
+use clamshell_ui::toolkit::{Frame, Track, widgets};
 
 /// A parameter row's height, as a fraction of the area's height, and its text, as a fraction of the small
 /// size.
@@ -75,26 +75,17 @@ fn edit(f: &mut Frame, id: u16) {
     // The track spans the screen's width, as the keymap parameters' sliders do.
     let body = f.body();
     let track = Track { x0: body.x, w: body.w };
-    let slider = s.held_slider().filter(|s| matches!(s.control, Control::Curve(_)));
     let mut held = None;
     for p in CurveParam::ALL {
         let Some(row) = col.next(rh) else {
             break;
         };
         let value = p.get(&curve);
-        let sl = slider.filter(|sl| sl.control == Control::Curve(p));
-        if let Some(sl) = sl {
-            held = Some((row, sl, p));
-        }
         let changed = value != p.get(&Curve::default());
         // Dim, not hidden, when it does nothing for this content on this screen.
         let tone = if inert(p, &curve, on) { Tone::Dim } else { Tone::high_if(changed) };
-        f.button(Id::Control(Control::Curve(p)), row, Look::ROW, |f| {
-            if sl.is_none() {
-                widgets::toned_value_row(f, row, size, p.label(), shown(p, value).as_str(), tone);
-            }
-        });
-        f.drag(Drag::Slide { control: Control::Curve(p), track, at_once: false });
+        let row = widgets::slider_row(f, row, size, (Control::Curve(p), track), p.label(), shown(p, value).as_str(), tone);
+        held = held.or(row.map(|h| (h, p)));
     }
     // Set apart from the curve, which may be shared: the content's HDR peak, the setting of the level the
     // picker was opened from. Its slider starts at Default, which writes nothing there; the caption says
@@ -114,29 +105,19 @@ fn edit(f: &mut Frame, id: u16) {
     }
     let mut held_setting = None;
     if let Some(row) = col.next(rh) {
-        let control = Control::Setting(setting);
-        let sl = s.held_slider().filter(|sl| sl.control == control);
         let written = matches!(source, Source::Written(_));
         let text = setting_text(s, setting, written);
-        if let Some(sl) = sl {
-            held_setting = Some((row, sl, text));
-        }
-        f.button(Id::Control(control), row, Look::ROW, |f| {
-            if sl.is_none() {
-                widgets::value_row(f, row, size, setting.title(), text.as_str(), written);
-            }
-        });
-        f.drag(Drag::Slide { control, track, at_once: false });
+        let row = widgets::slider_row(f, row, size, (Control::Setting(setting), track), setting.title(), text.as_str(), Tone::high_if(written));
+        held_setting = row.map(|h| (h, text));
     }
     // A held slider is drawn last, so its card covers the rows below it.
-    let within = Rect::new(track.x0, area.y, track.w, area.h);
-    if let Some((row, sl, p)) = held {
-        let text = Fmt::<48>::of(format_args!("{} {}", p.label(), shown(p, p.value(sl.value)).as_str()));
-        widgets::held_slider(f, HeldSlider { slider: &sl, x0: track.x0, cy: row.y + row.h / 2.0, h: row.h * 0.75, within, icon: None, text: &text });
+    if let Some((held, p)) = held {
+        let text = Fmt::<48>::of(format_args!("{} {}", p.label(), shown(p, p.value(held.slider.value)).as_str()));
+        widgets::held_row(f, held, area, &text);
     }
-    if let Some((row, sl, value)) = held_setting {
+    if let Some((held, value)) = held_setting {
         let text = Fmt::<64>::of(format_args!("{} {}", setting.title(), value.as_str()));
-        widgets::held_slider(f, HeldSlider { slider: &sl, x0: track.x0, cy: row.y + row.h / 2.0, h: row.h * 0.75, within, icon: None, text: &text });
+        widgets::held_row(f, held, area, &text);
     }
 }
 

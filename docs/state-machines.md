@@ -472,7 +472,9 @@ LayerPicker, LayerMenu; Undo per keymap since the edit screen opened. One Back f
 ## Tone curves (curve/)
 
 Screens: the picker's (`profiles::picker`, as for keymaps; Default colours is the default, "Unchanged"; its hint says what a curve does: "Maps the game's SDR or HDR to the screen's"), then Edit
-(a slider per parameter). One Back for all of them (`Id::Profile(Curve, Back)`). The curve chosen is
+(a slider per parameter: `widgets::slider_row`, as the keymaps' and the lights' parameters are; a finger
+on a row slides it at once, as nothing else is tapped there; views
+`the_editors_parameters_are_one_slider_row`). One Back for all of them (`Id::Profile(Curve, Back)`). The curve chosen is
 `Setting::Curve` (an id, 0 Off), per game or for all; the compositor applies it to the game's picture.
 
 | Transition | Test |

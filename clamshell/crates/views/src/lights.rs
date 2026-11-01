@@ -16,8 +16,8 @@ use clamshell_state::{Control, Id};
 use clamshell_ui::gfx::{Column, Rect, Rgb};
 use clamshell_ui::toolkit::format::Fmt;
 use clamshell_ui::toolkit::style::{Look, Text, Tone};
-use clamshell_ui::toolkit::widgets::{HeaderRight, HeldSlider};
-use clamshell_ui::toolkit::{Drag, Frame, Track, widgets};
+use clamshell_ui::toolkit::widgets::HeaderRight;
+use clamshell_ui::toolkit::{Frame, Track, widgets};
 
 /// A row's height, as a fraction of the area's height, and its text, as a fraction of the small size, as
 /// on the curve's edit screen.
@@ -55,31 +55,22 @@ fn edit(f: &mut Frame, id: u16) {
     let body = f.body();
     let track = Track { x0: body.x, w: body.w };
     let colour = lights.colour(if lights.linked { Stick::Left } else { lighting.stick() });
-    let slider = s.held_slider().filter(|sl| matches!(sl.control, Control::Light(_)));
     let mut held = None;
     for p in LightParam::ALL {
         let Some(row) = col.next(rh) else {
             break;
         };
-        let sl = slider.filter(|sl| sl.control == Control::Light(p));
-        if let Some(sl) = sl {
-            held = Some((row, sl, p));
-        }
-        f.button(Id::Control(Control::Light(p)), row, Look::ROW, |f| {
-            if sl.is_none() {
-                widgets::toned_value_row(f, row, size, p.label(), shown(p, p.get(&colour)).as_str(), Tone::Normal);
-            }
-        });
-        f.drag(Drag::Slide { control: Control::Light(p), track, at_once: false });
+        // A colour has no default to differ from, so its values are all as set.
+        let row = widgets::slider_row(f, row, size, (Control::Light(p), track), p.label(), shown(p, p.get(&colour)).as_str(), Tone::Normal);
+        held = held.or(row.map(|h| (h, p)));
     }
     if let Some(row) = col.next(rh) {
         widgets::switch_row(f, Id::Lights(LightsId::Battery), row, size, "Charging shows the battery", lights.battery);
     }
     // A held slider is drawn last, so its card covers the rows below it.
-    if let Some((row, sl, p)) = held {
-        let within = Rect::new(track.x0, area.y, track.w, area.h);
-        let text = Fmt::<32>::of(format_args!("{} {}", p.label(), shown(p, p.value(sl.value)).as_str()));
-        widgets::held_slider(f, HeldSlider { slider: &sl, x0: track.x0, cy: row.y + row.h / 2.0, h: row.h * 0.75, within, icon: None, text: &text });
+    if let Some((held, p)) = held {
+        let text = Fmt::<32>::of(format_args!("{} {}", p.label(), shown(p, p.value(held.slider.value)).as_str()));
+        widgets::held_row(f, held, area, &text);
     }
 }
 
