@@ -207,22 +207,43 @@ pub(crate) fn spawn(
     if let Some(notify) = watched {
         let pad = worker.clone();
         worker::lasting(clamshell_state::Thread::PadDevices.name(), move || {
-            let mut fds = [PollFd::new(&notify, PollFlags::IN)];
-            loop {
-                match rustix::event::poll(&mut fds, None) {
-                    Ok(_) | Err(rustix::io::Errno::INTR) => {}
-                    Err(e) => return log::warn!("pad devices: {e}"),
-                }
+            let wait = || {
+                let mut fds = [PollFd::new(&notify, PollFlags::IN)];
+                rustix::event::poll(&mut fds, None)?;
                 let mut buf = [std::mem::MaybeUninit::uninit(); 4096];
                 let mut reader = rustix::fs::inotify::Reader::new(&notify, &mut buf);
                 while reader.next().is_ok() {}
-                if pad.try_send(Command::Look).is_err() {
-                    return;
-                }
-            }
+                Ok(())
+            };
+            watch_devices(wait, || pad.try_send(Command::Look).is_ok(), std::thread::sleep);
         })?;
     }
     Ok(worker)
+}
+
+/// Tells the pad thread to look for controllers each time /dev/input changes (`wait` returns, having
+/// taken the watch's events), until the thread is gone (`look` is false). If waiting fails, the watch is
+/// given up and the thread is told to look every [`LOOK_UNWATCHED`] instead, as when /dev/input can't be
+/// watched, so controllers plugged in are still found.
+fn watch_devices(mut wait: impl FnMut() -> rustix::io::Result<()>, mut look: impl FnMut() -> bool, mut pause: impl FnMut(Duration)) {
+    loop {
+        match wait() {
+            Ok(()) | Err(rustix::io::Errno::INTR) => {}
+            Err(e) => {
+                log::warn!("pad devices: {e}: /dev/input no longer watched; controllers looked for every {} s", LOOK_UNWATCHED.as_secs());
+                break;
+            }
+        }
+        if !look() {
+            return;
+        }
+    }
+    loop {
+        pause(LOOK_UNWATCHED);
+        if !look() {
+            return;
+        }
+    }
 }
 
 /// What the pad thread keeps across the controllers' comings and goings, and a restart.
@@ -1314,6 +1335,24 @@ mod tests {
         assert_eq!(players.len(), 2);
         assert_eq!(held(&players[1].out.pad), [KeyCode::BTN_SOUTH], "A held on player 2's pad");
         assert!(players[0].out.pad.iter().any(|e| *e == key(KeyCode::BTN_SOUTH, false)), "and let go on player 1's: {:?}", players[0].out.pad);
+    }
+
+    /// The watch of /dev/input failing falls back to timed looks, until the pad thread is gone. (It ended
+    /// for good, and controllers plugged in weren't found until ClamShell started again.)
+    #[test]
+    fn a_failed_watch_falls_back_to_timed_looks() {
+        let mut waits = [Ok(()), Err(rustix::io::Errno::INTR), Err(rustix::io::Errno::NOMEM)].into_iter();
+        let (mut looks, mut pauses) = (0, Vec::new());
+        watch_devices(
+            || waits.next().unwrap_or(Ok(())),
+            || {
+                looks += 1;
+                looks < 5
+            },
+            |d| pauses.push(d),
+        );
+        assert_eq!(looks, 5, "two for the watch, then three timed, the last finding the thread gone");
+        assert_eq!(pauses, [LOOK_UNWATCHED; 3]);
     }
 
     /// A pad that can't be made leaves the pads there are, and the count made so far stands; only with no

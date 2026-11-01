@@ -375,7 +375,7 @@ again for another controller. A run (`Service::Session`) holds the controllers a
 the virtual devices outlive runs and controllers.
 
     no run --connect: the virtual devices made if missing (a pad per player)--> run [the controllers there taken]
-    run --/dev/input changed (Look), or every 5 s without inotify--> controllers not taken yet are grabbed [Controller(Connected)]; the Looks waiting are looked for once
+    run --/dev/input changed (Look), or every 5 s without inotify or once its watch fails (`a_failed_watch_falls_back_to_timed_looks`)--> controllers not taken yet are grabbed [Controller(Connected)]; the Looks waiting are looked for once
     run --a controller's read fails (unplugged)--> it is let go: what only it held on its player's controller is released, its rumble stopped, a calibration of it ends (Sticks(Done(name, None))), the gyro goes if it was its [Controller(Disconnected) once no controller of its key is left]; then Look
     run --Players(count, by key)--> routers for players added made, then each controller to its player (released on the old, held on the new, so a moved controller's held buttons reach a new player's router: `a_controller_moved_to_a_new_player_keeps_what_it_holds`), then the routers of players gone dropped (each letting go first) and the pads to the count
     run --a player's pad can't be made (Players raised, uinput refusing)--> the pads there are stay, that player's events are dropped; it is tried again at each look (`a_pad_that_cant_be_made_leaves_the_others`)
