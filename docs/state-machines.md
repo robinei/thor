@@ -1438,6 +1438,7 @@ dmabufs and vkcube gets its feedback; a real GPU import is checked only there.
     committed --window hidden or covered, or the surface not in the frame's render states--> committed (kept)
     committed --a newer commit with feedback--> discarded
     committed --surface destroyed--> discarded
+    queued --the DRM commit of its frame failed--> committed (back on its surface, for the frame drawn again; a newer commit meanwhile discards it)
 
 Drawing alone completes nothing; a failed nested submission ends the host before any feedback is sent.
 
@@ -1448,7 +1449,7 @@ Drawing alone completes nothing; a failed nested submission ends the host before
 
 Test: `feedback_follows_submission_visibility_superseding_and_surface_destruction` (the nested form: clock
 id, exact times, the output for a toplevel and its synchronised subsurface, nothing with no render states,
-completion once, held at Home and completed on activation, superseded and destroyed feedback discarded).
+completion once, held at Home and completed on activation, superseded and destroyed feedback discarded); `a_failed_commits_feedback_goes_to_the_frame_drawn_again`.
 `tests/nested-compositor.py` runs `examples/feedback-client` on both hosts' modes: a frame with a new buffer
 and an unchanged one get ordered monotonic feedback with refresh 0, sequence 0 and no flags. The DRM flip's
 feedback is checked on the device.

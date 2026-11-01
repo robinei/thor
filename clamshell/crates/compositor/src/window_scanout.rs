@@ -151,9 +151,6 @@ impl Server {
         if clarity.anti_aliasing != clamshell_state::settings::AntiAliasing::Off || clarity.sharpen > 0 || (clarity.integer && !one_to_one) {
             return Err("anti-aliasing, sharpening or nearest-neighbour scaling on");
         }
-        if self.core.state().histogram_window() == Some(id) {
-            return Err("its curve is being edited");
-        }
         let colour = self.colour.surfaces.get(&Id::from_wayland_resource(&surface)).map(|colour| **colour).unwrap_or_default();
         let headroom = self.colour.screen(down).headroom() as f32;
         let curve = curve_uniforms(client.shown.curve.as_ref(), headroom, hdr_peak(colour, client.shown.hdr_peak));

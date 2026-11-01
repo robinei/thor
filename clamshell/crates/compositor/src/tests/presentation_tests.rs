@@ -212,6 +212,86 @@ fn feedback_is_the_queued_frames_and_given_at_its_flip() {
     assert_eq!(checked, 3);
 }
 
+/// A frame whose commit failed gives its feedback back to its surfaces: the screen drawn again shows that
+/// content and presents it; a commit meanwhile supersedes it, which is then discarded.
+#[test]
+fn a_failed_commits_feedback_goes_to_the_frame_drawn_again() {
+    let (mut display, mut server) = ServerBuilder::new().started();
+    let client = spawn_client(&mut display, ClientState::default(), move |globals, mut queue, steps| {
+        let qh = queue.handle();
+        let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
+        let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
+        let shm: wl_shm::WlShm = globals.bind(&qh, 1..=1, ()).unwrap();
+        let presentation: wp_presentation::WpPresentation = globals.bind(&qh, 1..=2, ()).unwrap();
+        let surface = compositor.create_surface(&qh, ());
+        let xdg = shell.get_xdg_surface(&surface, &qh, ());
+        let top = xdg.get_toplevel(&qh, ());
+        top.set_app_id("failed-commit-test".into());
+        surface.commit();
+        let mut client = Client::default();
+        queue.roundtrip(&mut client).unwrap();
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(&vec![0xff; 960 * 540 * 4]).unwrap();
+        let pool = shm.create_pool(file.as_fd(), 960 * 540 * 4, &qh, ());
+        let buffer = pool.create_buffer(0, 960, 540, 960 * 4, wl_shm::Format::Abgr8888, &qh, ());
+        presentation.feedback(&surface, &qh, 1);
+        surface.attach(Some(&buffer), 0, 0);
+        surface.commit();
+        for phase in 0..3 {
+            queue.roundtrip(&mut client).unwrap();
+            steps.step(phase);
+            queue.roundtrip(&mut client).unwrap();
+            match phase {
+                0 => {
+                    assert_eq!((client.presented.clone(), client.discarded.clone()), (vec![(1, Duration::from_secs(123))], vec![]), "drawn again and shown");
+                    presentation.feedback(&surface, &qh, 2);
+                    surface.commit();
+                }
+                1 => {
+                    assert!(client.discarded.is_empty(), "back on the surface, not discarded");
+                    presentation.feedback(&surface, &qh, 3);
+                    surface.commit();
+                }
+                2 => {
+                    assert_eq!(client.discarded, vec![2], "superseded by the commit after");
+                    assert_eq!(client.presented, vec![(1, Duration::from_secs(123)), (3, Duration::from_secs(124))]);
+                }
+                _ => panic!(),
+            }
+        }
+        let _ = (top, xdg);
+    });
+    let mut feedback = crate::pacing::Feedback::default();
+    let checked = client.serve(&mut display, &mut server, Server::frame, move |_, server, phase| {
+        let mut rendered = RenderElementStates::default();
+        server.windows[0].window.with_surfaces(|surface, _| {
+            let state =
+                RenderElementState { visible_area: 1, presentation_state: RenderElementPresentationState::Rendering { reason: None }, needs_capture: false };
+            rendered.states.insert(surface.into(), state);
+        });
+        let refresh = Duration::from_millis(16);
+        match phase {
+            // Queued, its commit failed, drawn again and shown.
+            0 => {
+                server.take_feedback(&rendered, Some(false), &mut feedback);
+                feedback.restore();
+                server.take_feedback(&rendered, Some(false), &mut feedback);
+                server.present_flip(&mut feedback, Duration::from_secs(123).into(), false, refresh, 1);
+            }
+            // Queued, its commit failed; the client commits again before the screen is drawn again.
+            1 => {
+                server.take_feedback(&rendered, Some(false), &mut feedback);
+                feedback.restore();
+            }
+            _ => {
+                server.take_feedback(&rendered, Some(false), &mut feedback);
+                server.present_flip(&mut feedback, Duration::from_secs(124).into(), false, refresh, 1);
+            }
+        }
+    });
+    assert_eq!(checked, 3);
+}
+
 #[test]
 fn the_top_windows_new_buffers_shown_are_its_frame_rate() {
     let (mut display, mut server) = ServerBuilder::new().started();

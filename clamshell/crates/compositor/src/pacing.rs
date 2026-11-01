@@ -6,7 +6,10 @@ use std::time::Instant;
 
 use smithay::{
     backend::renderer::element::RenderElementStates,
-    reexports::{wayland_protocols::wp::presentation_time::server::wp_presentation_feedback::Kind, wayland_server::Resource},
+    reexports::{
+        wayland_protocols::wp::presentation_time::server::wp_presentation_feedback::Kind,
+        wayland_server::{Resource, protocol::wl_surface::WlSurface},
+    },
     utils::{Monotonic, Time},
     wayland::presentation::{PresentationFeedbackCachedState, PresentationFeedbackCallback, Refresh},
 };
@@ -35,8 +38,9 @@ pub(crate) struct Pacing {
 /// the next frame's; given at its flip ([`Server::present_flip`]), or discarded if it never shows.
 #[derive(Default)]
 pub(crate) struct Feedback {
-    /// Each callback, whether its surface is shown from its own buffer, and whether on the second screen.
-    callbacks: Vec<(PresentationFeedbackCallback, bool, bool)>,
+    /// Each callback, whether its surface is shown from its own buffer, whether on the second screen, and
+    /// its surface (see [`Feedback::restore`]).
+    callbacks: Vec<(PresentationFeedbackCallback, bool, bool, WlSurface)>,
     /// The windows whose picture it shows, for their frame rates.
     windows: Vec<i64>,
 }
@@ -46,6 +50,23 @@ impl Feedback {
     pub(crate) fn discard(&mut self) {
         for (callback, ..) in self.callbacks.drain(..) {
             callback.discarded();
+        }
+        self.windows.clear();
+    }
+
+    /// Its frame's commit failed, and the screen is drawn again: each callback is put back on its surface,
+    /// to be taken by the frame that shows that content, or discarded by the surface's next commit if that
+    /// supersedes it (as `PresentationFeedbackCachedState` merges). Discarded at once, the content drawn
+    /// again would show with no feedback.
+    pub(crate) fn restore(&mut self) {
+        for (callback, _, _, surface) in self.callbacks.drain(..) {
+            if surface.is_alive() {
+                smithay::wayland::compositor::with_states(&surface, |states| {
+                    states.cached_state.get::<PresentationFeedbackCachedState>().current().callbacks.push(callback);
+                });
+            } else {
+                callback.discarded();
+            }
         }
         self.windows.clear();
     }
@@ -149,7 +170,7 @@ impl Server {
                     .element_render_state(surface)
                     .is_some_and(|state| state.presentation_state == smithay::backend::renderer::element::RenderElementPresentationState::ZeroCopy);
                 let mut cached = states.cached_state.get::<PresentationFeedbackCachedState>();
-                feedback.callbacks.extend(cached.current().callbacks.drain(..).map(|callback| (callback, zero_copy, down)));
+                feedback.callbacks.extend(cached.current().callbacks.drain(..).map(|callback| (callback, zero_copy, down, surface.clone())));
             });
         }
     }
@@ -157,7 +178,7 @@ impl Server {
     /// The windows `feedback` was taken for get it, and a frame counted for each that showed a new buffer.
     fn give_feedback(&mut self, feedback: &mut Feedback, time: Time<Monotonic>, refresh: Refresh, sequence: u64, kind: Kind) {
         let [top, bottom] = &self.screens.outputs;
-        for (callback, zero_copy, down) in feedback.callbacks.drain(..) {
+        for (callback, zero_copy, down, _) in feedback.callbacks.drain(..) {
             let kind = if zero_copy { kind | Kind::ZeroCopy } else { kind };
             callback.presented(if down { bottom } else { top }, time, refresh, sequence, kind);
         }

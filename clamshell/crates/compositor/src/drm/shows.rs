@@ -304,7 +304,8 @@ pub(super) fn present(drawing: &mut Drawing, server: &mut Server, index: usize) 
         }
         Err(error) => {
             screen.dirty = true;
-            screen.feedback.discard();
+            // Order: back on their surfaces before the screen is drawn again, which takes them.
+            screen.feedback.restore();
             return failed(screen, pipeline, Commit::Composed, with_layers, error);
         }
     }
