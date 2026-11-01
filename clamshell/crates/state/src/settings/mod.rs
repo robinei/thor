@@ -63,7 +63,10 @@ pub enum Setting {
     /// Player 1's keymap by its id (see [`crate::keymap`]). 0 is Default, with no remapping. It is chosen
     /// in the keymap picker. Any id is kept, and one whose keymap is gone counts as Default.
     Keymap,
-    /// Players 2 to 8's keymaps, as player 1's (see [`crate::device_view::controllers`]).
+    /// Players 2 to 8's keymaps, as player 1's (see [`crate::device_view::controllers`]). Flat settings,
+    /// one a player, since the keymap is the only setting per player: before a second one is added, make
+    /// the players' settings an array per player instead (`Setting::KEYMAPS` and its eight names would
+    /// otherwise be repeated for each).
     Keymap2,
     Keymap3,
     Keymap4,
