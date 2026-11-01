@@ -605,25 +605,29 @@ pub fn hint(f: &mut Frame, mut area: Rect, text: &str) -> Rect {
     area
 }
 
-/// A screen's scrolled list, such as networks, devices, keymaps or layers. The rows go in `area` above a
-/// hint line and reach a little into the side margins for their pressed look. The scroll bar is just
-/// right of them.
+/// A screen's scrolled list, such as networks, devices, keymaps or layers. The rows go in `area`, above
+/// a hint line if one is drawn, and reach a little into the side margins for their pressed look. The
+/// scroll bar is just right of them.
 pub struct ListArea {
     pub pad: f32,
     /// The rows' text size.
     pub size: f32,
     pub area: Rect,
     pub row_h: f32,
+    /// A hint is drawn under the rows.
+    hinted: bool,
 }
 
 impl ListArea {
     pub fn new(f: &Frame, area: Rect, row_h: f32) -> ListArea {
-        ListArea { pad: f.pad(), size: f.text(Text::Body), area, row_h }
+        ListArea { pad: f.pad(), size: f.text(Text::Body), area, row_h, hinted: false }
     }
 
-    /// Begins the list of `len` rows above the hint line (see [`Scrolled`]).
+    /// Begins the list of `len` rows, above the hint line if [`ListArea::hint`] drew one (see
+    /// [`Scrolled`]).
     pub fn scrolled(&self, f: &mut Frame, list: clamshell_state::ListId, len: usize) -> Scrolled {
-        let view = Rect::new(self.area.x, self.area.y, self.area.w, self.area.h - hint_h(f) - self.pad * 0.3).widened(self.pad * 0.5);
+        let band = if self.hinted { hint_h(f) + self.pad * 0.3 } else { 0.0 };
+        let view = Rect::new(self.area.x, self.area.y, self.area.w, self.area.h - band).widened(self.pad * 0.5);
         Scrolled::begin(f, list, view, self.row_h, len)
     }
 
@@ -632,8 +636,9 @@ impl ListArea {
         rows.end(f, self.area.right() + self.pad * 0.6);
     }
 
-    /// The hint at the bottom.
-    pub fn hint(&self, f: &mut Frame, text: &str) {
+    /// The hint at the bottom, drawn before the rows are begun, which then leave room for it.
+    pub fn hint(&mut self, f: &mut Frame, text: &str) {
+        self.hinted = true;
         hint(f, self.area, text);
     }
 

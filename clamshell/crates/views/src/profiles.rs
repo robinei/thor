@@ -160,7 +160,7 @@ fn list(f: &mut Frame, kind: Kind, listing: Listing) {
         }
     };
     let loading = (listing != Listing::Pick).then_some(());
-    let list = ListArea::new(f, area, f.body().h * ROW_H);
+    let mut list = ListArea::new(f, area, f.body().h * ROW_H);
     list.hint(f, hint);
     let chosen = panel.profile_chosen(kind);
     let rows = list.scrolled(f, kind.list(), s.lists().len(kind.list()));

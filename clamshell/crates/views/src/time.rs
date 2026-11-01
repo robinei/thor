@@ -171,7 +171,7 @@ fn zones(f: &mut Frame) {
         None => Fmt::of(format_args!("Time zone")),
     };
     let area = widgets::header(f, Some(Id::Time(TimeId::Back)), &title, false, HeaderRight::None);
-    let list = ListArea::new(f, area, f.body().h * ROW_H);
+    let mut list = ListArea::new(f, area, f.body().h * ROW_H);
     if let Some(error) = &zones.error {
         list.hint(f, error);
     }

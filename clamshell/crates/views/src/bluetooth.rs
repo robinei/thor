@@ -18,7 +18,7 @@ use clamshell_ui::toolkit::widgets::{self, RowFace};
 pub(super) fn draw(f: &mut Frame) {
     let bt = f.s.radios().bluetooth();
     let status = Fmt::<256>::of(format_args!("{}", Status(bt)));
-    let list = radio::header(f, Id::Bluetooth(BtId::Power), bt.on, (status_tone(bt), &status));
+    let mut list = radio::header(f, Id::Bluetooth(BtId::Power), bt.on, (status_tone(bt), &status));
     if bt.devices.iter().any(|d| d.paired) {
         list.hint(f, "Long press a paired device to forget it");
     }

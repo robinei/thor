@@ -27,7 +27,7 @@ pub(super) fn draw(f: &mut Frame) {
 pub(super) fn list(f: &mut Frame) {
     let wifi = f.s.radios().wifi();
     let status = Fmt::<256>::of(format_args!("{}", Status(wifi)));
-    let list = radio::header(f, Id::Wifi(WifiId::Power), wifi.on, (status_tone(wifi), &status));
+    let mut list = radio::header(f, Id::Wifi(WifiId::Power), wifi.on, (status_tone(wifi), &status));
     // The networks, as many as fit above the hint.
     if wifi.networks.iter().any(|n| n.saved) {
         list.hint(f, "Long press a saved network to forget it");

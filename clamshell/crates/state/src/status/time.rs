@@ -254,6 +254,22 @@ mod tests {
         assert_eq!(tap(&mut s, REGIONS.len() as u16), vec![Effect::SetTimeZone("UTC".to_owned())]);
     }
 
+    /// The regions open scrolled to the one the zone in force is in, also when the page is shown for the
+    /// first time and the rows that fit are known only once it is drawn.
+    #[test]
+    fn the_regions_open_on_the_current_one_once_the_rows_that_fit_are_known() {
+        let mut s = state();
+        time(&mut s, TimeId::Zone);
+        assert_eq!(s.lists().scroll(ListId::Time).offset(), 0.0, "nothing drawn yet");
+        s.applied(crate::ListEvent::Visible(ListId::Time, 4.0).into());
+        let europe = REGIONS.iter().position(|r| *r == "Europe").unwrap() as f32;
+        assert_eq!(s.lists().scroll(ListId::Time).offset(), europe + 1.0 - 4.0, "Europe shown, at the bottom");
+        // Moved by hand, the list stays where it was put.
+        s.applied(crate::ListEvent::Scroll(ListId::Time, -1.0).into());
+        s.applied(crate::ListEvent::Visible(ListId::Time, 3.0).into());
+        assert_eq!(s.lists().scroll(ListId::Time).offset(), europe - 4.0);
+    }
+
     /// Leaving the tab on a region's zones opens it on its main page next time.
     #[test]
     fn leaving_the_tab_resets_it_to_its_main_page() {

@@ -652,8 +652,11 @@ found by the asking process (the window whose process it is, or started; else th
 
 ## Lists and presses (nav/)
 
-`Scroll{offset, visible, anchor}` per list. Scrolling anchors on the top row's item; settle keeps
-anchored lists on their item and every list within its ends; Focus scrolls just enough. Tests:
+`Scroll{offset, visible, anchor, to_show}` per list. Scrolling anchors on the top row's item; settle keeps
+anchored lists on their item and every list within its ends; Focus scrolls just enough. A row asked to
+be shown before the list was drawn (the time zone pages open on the current region or zone) is shown
+once `Visible` says how many rows fit, unless the list was scrolled meanwhile
+(`the_regions_open_on_the_current_one_once_the_rows_that_fit_are_known`). Tests:
 `rows_under_the_view_stay_when_the_list_changes`, `a_list_changed_by_any_event_stays_within_its_ends`,
 `the_pads_focus_on_a_row_shows_it`. Presses resolve by item key: rows tested; items
 `a_dock_press_acts_on_the_entry_it_came_down_on`, `a_collection_press_acts_on_the_collection_it_came_down_on`,

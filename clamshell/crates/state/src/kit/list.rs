@@ -75,13 +75,16 @@ pub(crate) trait Rows {
 }
 
 /// One list's place. The offset is in rows and is fractional while a finger drags the list. The number
-/// of rows that fit on screen is as last drawn; until it is known, nothing scrolls. The anchor is the
-/// item at the top and the fraction of it scrolled past, to keep it there when the list changes.
+/// of rows that fit on screen is as last drawn; until it is known, nothing scrolls, and a row asked to be
+/// shown meanwhile is shown once it is. The anchor is the item at the top and the fraction of it scrolled
+/// past, to keep it there when the list changes.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Scroll {
     offset: f32,
     visible: Option<f32>,
     anchor: Option<(ItemKey, f32)>,
+    /// A row asked to be shown before the number of rows that fit was known.
+    to_show: Option<usize>,
 }
 
 impl Scroll {
@@ -109,6 +112,8 @@ impl Scroll {
 
     /// Scrolls by `rows` within the list's ends; positive is further down. Returns whether it moved.
     pub(crate) fn scroll_by(&mut self, rows: f32, len: usize) -> bool {
+        // Moved by hand, it no longer waits to show a row.
+        self.to_show = None;
         let before = self.offset;
         self.offset += rows;
         self.clamp(len);
@@ -118,6 +123,7 @@ impl Scroll {
     /// Scrolls just enough to show row `i` whole. Returns whether it moved.
     pub fn show(&mut self, i: usize, len: usize) -> bool {
         let Some(visible) = self.visible else {
+            self.to_show = Some(i);
             return false;
         };
         let before = self.offset;
@@ -138,6 +144,9 @@ impl Scroll {
         }
         self.visible = Some(rows);
         self.clamp(len);
+        if let Some(i) = self.to_show.take() {
+            self.show(i, len);
+        }
         true
     }
 
@@ -180,7 +189,7 @@ impl Scroll {
     }
 }
 
-pub(crate) static EMPTY: Scroll = Scroll { offset: 0.0, visible: None, anchor: None };
+pub(crate) static EMPTY: Scroll = Scroll { offset: 0.0, visible: None, anchor: None, to_show: None };
 
 #[cfg(test)]
 mod tests {

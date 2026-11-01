@@ -167,7 +167,7 @@ fn menu(f: &mut Frame, setting: Setting) {
     let title = Fmt::<128>::of(format_args!("{} for {edited}", setting.title()));
     let area = widgets::header(f, Some(Id::Settings(SettingsId::Back)), &title, false, widgets::HeaderRight::None);
     let driver = setting == Setting::VulkanDriver;
-    let list = widgets::ListArea::new(f, area, f.body().h * super::profiles::ROW_H * if driver { 1.6 } else { 1.0 });
+    let mut list = widgets::ListArea::new(f, area, f.body().h * super::profiles::ROW_H * if driver { 1.6 } else { 1.0 });
     list.hint(f, if driver { "For Vulkan programs. Applies at the next start." } else { "Tap to choose" });
     let now = panel.tile_value(setting);
     let back_to = value_text(s, setting, panel.inherited_value(setting));

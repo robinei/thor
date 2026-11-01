@@ -95,8 +95,8 @@ slider.png 55e23d69fe356b89
 status-low.png dcd7e61aed6a5359
 sysinfo.png 6c6ffed4a78d4995
 time-by-hand.png 686fee2d8dc63df5
-time-europe.png 9e84d4034db845ee
-time-zones.png 8d564e362084b379
+time-europe.png a99f52798f1882d6
+time-zones.png da41d7ce371baeba
 time.png 6d0f95112c60fd44
 top-actions.png 027868c1be1783c4
 top-back.png eb626224a288d10d
