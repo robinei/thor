@@ -1527,10 +1527,13 @@ child's exec setup (`private_descriptors_are_inherited_only_by_the_selected_chil
 | From | Event / condition | To | Effects | Test |
 |---|---|---|---|---|
 | dormant | the listener readable | starting | spawn Xwayland; insert its Wayland client | mod `dormant_xwayland_has_no_child_or_deadline_and_a_connection_wakes_its_listener`; nested "Wayland-only use leaves Xwayland dormant", "X11 client rendered on top" |
-| starting | spawn fails | dormant | logged; again after 1 s while the connection waits | GAP |
+| starting | spawn fails | dormant | a failure (below) | mod `xwayland_failing_soon_after_starting_waits_longer_each_time_then_is_given_up` |
 | starting | display number (5 s, at most 16 bytes), X11 setup, atoms, X-Resource 1.2, Composite | connected | the hidden owner window; SubstructureRedirect on the root; Composite redirect; WM_S0 and _NET_WM_CM_S0 claimed; the RandR mode sizes sent once (`Reading::XwaylandModes`; no RandR is logged) | every nested X11 check depends on it |
 | starting or connected | a transport error; a reply, focus time or selection time past its deadline; BadAccess (another WM); the WM_S0 anchor naming another owner; an extension missing | stopping | logged; its windows closed in the state; the selection bridge cleared; its Wayland client ended; SIGKILL | the transport tests below; wm `outstanding_deadlines_stale_replies_and_menu_ownership_follow_window_lifetimes` (a reply's deadline) |
-| any | pidfd readable, the child gone | dormant | reaped without waiting; its windows closed; its client ended; the listener armed again | nested "crashed Xwayland is reaped through pidfd readiness", "crash recovery waits for another X11 connection" |
+| any | pidfd readable, the child gone | dormant | reaped without waiting; its windows closed; its client ended; the listener armed again; a non-zero exit is a failure (below) | nested "crashed Xwayland is reaped through pidfd readiness", "crash recovery waits for another X11 connection" |
+| dormant after a failure | the next X11 connection | starting | after a wait as a system thread's restart: none, then from 250 ms doubling to 5 s while each run fails within 30 s of its start; none again after a calmer run. The first failure of a run is a warning, its repeats debug lines | mod `xwayland_failing_soon_after_starting_waits_longer_each_time_then_is_given_up` |
+| dormant | the fifth failure in a row, each within 30 s of its start | given up | a warning; Xwayland isn't started again until ClamShell is | same |
+| given up | an X11 connection | given up | accepted and closed at once, so the client gets an error rather than waiting | mod `xwayland_given_up_refuses_x11_connections` |
 | dormant after an exit | the next X11 connection | starting | the replacement on the same display | nested "another client starts a replacement Xwayland", "Xwayland starts again on demand", "Wayland survives Xwayland restart" |
 | any | the compositor ends | — | the child killed and reaped on a thread of its own; only this instance's socket and lock removed | mod `dormant_…` |
 

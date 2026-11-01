@@ -59,9 +59,48 @@ pub(crate) struct Supervisor {
     listener: Option<RegistrationToken>,
     demand: Rc<Cell<bool>>,
     retry: Option<Instant>,
+    restarts: Restarts,
     running: Option<Running>,
 }
+
+/// After a run of failures, the waits before starting Xwayland again grow from none to this, doubling: as
+/// a system thread's after a panic (`clamshell_system`'s `os::worker`).
+const RESTART_FIRST: Duration = Duration::from_millis(250);
+const RESTART_MOST: Duration = Duration::from_secs(5);
+/// A run this long before failing is followed by a start at once.
+const RESTART_CALM: Duration = Duration::from_secs(30);
+/// Failures in a row, each sooner than [`RESTART_CALM`] after its start (or of the start itself), after
+/// which Xwayland is given up: it would only fail again (a broken update, a missing binary).
+const RESTART_GIVE_UP: u32 = 5;
+
+/// The waits before starting Xwayland again after it failed: none at first, then doubling from
+/// [`RESTART_FIRST`] to [`RESTART_MOST`] while it keeps failing soon after starting; none again after a
+/// calm run. None at all, to give up, after [`RESTART_GIVE_UP`] quick failures in a row. An Xwayland that
+/// ends by itself (with its last client) failed nothing.
+#[derive(Debug, Default)]
+struct Restarts {
+    delay: Duration,
+    /// The runs in a row that failed soon after starting.
+    quick: u32,
+    given_up: bool,
+}
+impl Restarts {
+    /// The wait after a run of `ran` that failed, or `None` once given up.
+    fn after(&mut self, ran: Duration) -> Option<Duration> {
+        let calm = ran >= RESTART_CALM;
+        self.quick = if calm { 0 } else { self.quick + 1 };
+        if self.quick >= RESTART_GIVE_UP {
+            self.given_up = true;
+            return None;
+        }
+        let wait = if calm { Duration::ZERO } else { self.delay };
+        self.delay = (wait * 2).clamp(RESTART_FIRST, RESTART_MOST);
+        Some(wait)
+    }
+}
+
 struct Running {
+    started: Instant,
     child: Child,
     client: Client,
     ready_socket: UnixStream,
@@ -83,7 +122,15 @@ fn watch(handle: &LoopHandle<'static, Server>, fd: &impl AsFd, interest: Interes
 }
 impl Supervisor {
     pub fn new(handle: LoopHandle<'static, Server>) -> io::Result<Self> {
-        let mut supervisor = Self { handle, socket: socket::Socket::reserve()?, listener: None, demand: Rc::new(Cell::new(false)), retry: None, running: None };
+        let mut supervisor = Self {
+            handle,
+            socket: socket::Socket::reserve()?,
+            listener: None,
+            demand: Rc::new(Cell::new(false)),
+            retry: None,
+            restarts: Restarts::default(),
+            running: None,
+        };
         supervisor.arm()?;
         log::info!("compositor: X11 socket ready display=:{} (Xwayland dormant)", supervisor.socket.number);
         Ok(supervisor)
@@ -92,6 +139,9 @@ impl Supervisor {
         format!(":{}", self.socket.number)
     }
     fn arm(&mut self) -> io::Result<()> {
+        if let Some(token) = self.listener.take() {
+            self.handle.remove(token);
+        }
         let demand = self.demand.clone();
         let fd = self.socket.listener.as_fd().try_clone_to_owned()?;
         self.listener = Some(
@@ -120,21 +170,58 @@ impl Supervisor {
             )
             .min()
     }
+    /// Xwayland failed (`what`, after running `ran`): started again after a wait (see [`Restarts`]), or
+    /// given up. The first of a run of failures is a warning, the repeats debug lines, giving up a warning.
+    fn failed(&mut self, what: &str, ran: Duration, now: Instant) {
+        let first = self.restarts.quick == 0 || ran >= RESTART_CALM;
+        self.retry = match self.restarts.after(ran) {
+            Some(wait) => {
+                if first {
+                    log::warn!("compositor: Xwayland {what}; started again at the next X11 client");
+                } else {
+                    log::debug!("compositor: Xwayland {what} again; started again in {} ms at the next X11 client", wait.as_millis());
+                }
+                Some(now + wait)
+            }
+            None => {
+                log::warn!(
+                    "compositor: Xwayland {what}, {RESTART_GIVE_UP} times soon after starting: given up, so X11 programs are refused until ClamShell starts again"
+                );
+                None
+            }
+        };
+    }
+    /// Closes the X11 connections waiting to be accepted, so that their clients get an error rather than
+    /// wait for an Xwayland given up.
+    fn refuse(&self) {
+        loop {
+            match self.socket.listener.accept() {
+                Ok(_) => log::debug!("compositor: an X11 connection refused: Xwayland is given up"),
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                Err(error) => {
+                    log::warn!("compositor: refusing X11 connections: {error}");
+                    break;
+                }
+            }
+        }
+    }
     pub fn turn(&mut self, server: &mut Server, now: Instant) {
         if let Some(running) = self.running.as_mut() {
             match running.child.try_wait() {
                 Ok(Some(status)) => {
-                    // (It ends by itself once its last client has, being run with -terminate.)
-                    if status.success() {
-                        log::info!("compositor: Xwayland ended with its last client; awaiting the next");
-                    } else {
-                        log::warn!("compositor: Xwayland exited: {status}; awaiting the next X11 client");
-                    }
+                    let ran = now.saturating_duration_since(running.started);
                     running.remove_sources(&self.handle);
                     running.wm.clear(server);
                     server.dh.backend_handle().kill_client(running.client.id(), DisconnectReason::ConnectionClosed);
                     self.running = None;
                     self.retry = None;
+                    // (It ends by itself once its last client has, being run with -terminate.)
+                    if status.success() {
+                        log::info!("compositor: Xwayland ended with its last client; awaiting the next");
+                    } else {
+                        self.failed(&format!("exited: {status}"), ran, now);
+                    }
                     if let Err(error) = self.arm() {
                         log::error!("compositor: rearming X11 listener: {error}");
                     }
@@ -159,6 +246,15 @@ impl Supervisor {
         }
         server.x11.close.clear();
         server.x11.popup_dismiss.clear();
+        if self.restarts.given_up {
+            if self.demand.replace(false) {
+                self.refuse();
+                if let Err(error) = self.arm() {
+                    log::error!("compositor: rearming X11 listener: {error}");
+                }
+            }
+            return;
+        }
         if !self.demand.get() || self.retry.is_some_and(|deadline| now < deadline) {
             return;
         }
@@ -180,8 +276,13 @@ impl Supervisor {
                 self.demand.set(false);
             }
             Err(error) => {
-                log::warn!("compositor: starting Xwayland: {error}; retrying");
-                self.retry = Some(now + Duration::from_secs(1));
+                self.failed(&format!("can't be started: {error}"), Duration::ZERO, now);
+                // Given up, its listener is watched again, to refuse the connections.
+                if self.restarts.given_up
+                    && let Err(error) = self.arm()
+                {
+                    log::error!("compositor: rearming X11 listener: {error}");
+                }
             }
         }
     }
@@ -227,6 +328,7 @@ impl Running {
         };
         log::info!("compositor: Xwayland started pid={}", child.id());
         Ok(Self {
+            started: now,
             child,
             client,
             ready_socket,
@@ -374,6 +476,42 @@ mod tests {
         assert_eq!(&bytes, b"private");
         assert!(child.wait().unwrap().success());
         assert_eq!(rustix::io::fcntl_getfd(&copy).unwrap(), flags, "the parent retains CLOEXEC");
+    }
+
+    /// Failures soon after starting are followed by waits growing from none, as a system thread's restarts
+    /// are, and the fifth in a row gives up; a calm run starts the count again.
+    #[test]
+    fn xwayland_failing_soon_after_starting_waits_longer_each_time_then_is_given_up() {
+        let mut restarts = Restarts::default();
+        let quick = Duration::from_secs(1);
+        let waits: Vec<_> = (0..4).map(|_| restarts.after(quick)).collect();
+        assert_eq!(waits, [Some(Duration::ZERO), Some(RESTART_FIRST), Some(RESTART_FIRST * 2), Some(RESTART_FIRST * 4)]);
+        assert_eq!(restarts.after(RESTART_CALM), Some(Duration::ZERO), "a calm run starts again at once");
+        assert_eq!(restarts.after(quick), Some(RESTART_FIRST));
+        for _ in 0..3 {
+            assert!(restarts.after(quick).is_some());
+        }
+        assert_eq!(restarts.after(quick), None);
+        assert!(restarts.given_up);
+    }
+
+    /// Xwayland given up, each X11 connection is closed at once, so that its client gets an error rather
+    /// than waiting, and the listener is watched for the next.
+    #[test]
+    fn xwayland_given_up_refuses_x11_connections() {
+        let mut event_loop = smithay::reexports::calloop::EventLoop::<Server>::try_new().unwrap();
+        let mut supervisor = Supervisor::new(event_loop.handle()).unwrap();
+        supervisor.restarts.given_up = true;
+        let mut server = server();
+        let path = format!("/tmp/.X11-unix/X{}", supervisor.socket.number);
+        for _ in 0..2 {
+            let mut client = UnixStream::connect(&path).unwrap();
+            client.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            event_loop.dispatch(Some(Duration::ZERO), &mut server).unwrap();
+            supervisor.turn(&mut server, Instant::now());
+            assert_eq!(client.read(&mut [0; 1]).unwrap(), 0, "closed");
+            assert!(supervisor.running.is_none() && supervisor.deadline().is_none());
+        }
     }
 
     fn server() -> Server {
