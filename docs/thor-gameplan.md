@@ -221,7 +221,8 @@ Known issues and risks, to check first:
    `systemctl stop clamshell-fan` leaves it at half speed. How loud Auto is at a game's usual
    temperature, and whether the hottest sensors' mean lags a GPU spike too long.
 10. Autologin without a password (a handheld's): whoever holds the device has the session. sudo and ssh
-    need the password, which ClamShell's Device view (opened on first start) offers to set (skippable).
+    need the password, which Setup asks for first, before anything of the user's runs; it can't be
+    skipped (security.md, "The account, sudo and ssh"). The Device view changes it later.
 11. The kernel image is 62 MB (ROCKNIX's 34 MB: Armada's config keeps BTF and debug symbols); Armada's
     boots from `/KERNEL` with the same config, so it fits the ABL's load window. If the `/KERNEL` path
     alone fails, this is the suspect: a build with `CONFIG_DEBUG_INFO_BTF=n` and `CONFIG_DEBUG_INFO=n`
@@ -425,7 +426,7 @@ To know:
    `journalctl --directory=MNT/var/log/journal -t thor-selftest` (and `-b -1` etc. for earlier boots;
    the whole journal is there too), or the log file. By hand on the device: `sudo thor-selftest --now`.
    A boot that fails before the root is mounted leaves nothing on the card.
-7. Library: put games in `~/Games/<system>` and videos in `~/Videos/Films` and `~/Videos/TV` (a folder per
+7. Library: put games in `~/Roms/<system>` and videos in `~/Videos/Films` and `~/Videos/TV` (a folder per
    series); add a TMDB key to `~/.config/clamshell/library.json` (`"keys": { "tmdb": "..." }`) for films' and
    series' posters and overviews; Tools → Rescan library. PlayStation games need a BIOS for the
    PlayStation core (Beetle PSX HW: `scph5501.bin` or another it lists, in `~/.config/retroarch/system`;
@@ -471,18 +472,19 @@ first start of `steam` (thor-session too, in a terminal):
   SYSTEM_PATH and SYSTEM_LD_LIBRARY_PATH kept for compatibility tools) with Thorch's flags (no
   verification, repair or update of the client against a bootstrap it didn't install), so
   `steam-setup --update` updates it (maintenance).
-- Desktop mode, as ClamShell starts it (`-silent`, or `-silent -applaunch ID` for a game); no gamescope,
-  no SteamOS stubs (those are for Big Picture's SteamOS mode).
+- Big Picture, as ClamShell starts it (`-gamepadui -silent`, or `-gamepadui -silent -applaunch ID` for a
+  game; `steam.desktop` runs `steam -gamepadui`); no gamescope, no SteamOS stubs (those are for SteamOS's
+  own session).
 
 Tried 2026-10-20 on the PC into a scratch home (the client's first run left out): the downloads, checksums,
 backslash names and links. On the device: whether the first run and the start work as written; whether
-`steam -silent` stays out of sight; the beta's known issues (the quick access menu freezing
+`steam -gamepadui -silent` stays out of sight; the beta's known issues (the quick access menu freezing
 Big Picture on Adreno, Steam #13544; Remote Play's decoding on SM8550's video decoder, #13428).
 
 Then, either way, Steam made as light as it goes, measured before and after with `tools/inventory.sh`
 (Steam's memory and CPU idle in its tray, and while a game runs):
 
-- Started as ClamShell starts it, `-silent` (to its tray, no window).
+- Started as ClamShell starts it, `-gamepadui -silent` (to its tray, no window).
 - Its settings: Low Performance Mode (Library), shader pre-caching's background processing off unless a
   game stutters without it, no start with the computer (ClamShell starts it).
 - Whether Steam idle behind a game costs much: if so, try Steam set to Pauses hidden in ClamShell (its

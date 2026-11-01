@@ -38,8 +38,9 @@ Your notes are `changelog.md` in this folder (the device's own).
    game might be running (ClamShell shows it; `systemctl --user list-units 'clamshell-run-*'`). Then
    `sudo pacman -Syu --noconfirm`. Read the output for warnings, failed hooks and `.pacnew` notices. If
    thor-boot ran, it must end with "thor-boot: done": if it failed, the card still boots the previous
-   kernel (thor-boot replaces the card's files only once all the new ones are written and checked, and
-   the previous kernel's modules are kept: thor-modules), but fix it before the user reboots (its log:
+   kernel (thor-boot replaces the card's files only once all the new ones are written and checked: the
+   slot systemd-boot starts by one rename of its entry, the ABL's `/KERNEL` whole, each complete on its
+   own; and the previous kernel's modules are kept: thor-modules), but fix it before the user reboots (its log:
    `/var/log/thor-mkinitcpio.log`). After it, the boot menu (systemd-boot's, for 3 s) also offers the
    kernel before ("…, previous kernel"), for a new one that boots and then fails: say so when the kernel
    changed. If the kernel, systemd, mesa or the boot changed,

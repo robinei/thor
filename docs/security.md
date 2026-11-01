@@ -68,17 +68,28 @@ polkit rules allow.
 
 ## The account, sudo and ssh
 
-The session's user, `thor`, logs in on its own (tty1's autologin: the device is the session) with its
-account locked until a password is set. `thor-account` (thor-system's, root through pkexec; polkit allows
-the active local session's user without asking: `50-thor.rules`) sets the first password without asking
-for one, changes it only with the current one (checked as PAM does, by `unix_chkpwd` as the user), and
-turns sshd on only once there is a password. So any program running as `thor` (a game, a script Steam
-runs) could set the first password, and with it gain sudo and ssh, if it ran while there was none: which
-is why ClamShell's Setup sets it before anything else of the user's runs (below). Passwords
-are 8 characters at least; sshd (`/etc/ssh/sshd_config.d/50-thor.conf`) takes only `thor`, no root, 3
-tries a connection (and OpenSSH's own penalties for repeated failures). The user's own sshd settings go in
-a file read before it, such as `10-local.conf` (sshd keeps the first value it reads); the packages' files
-in `/etc` are `backup=`, so an edit there is kept too, the new version written beside it as a `.pacnew`.
+The session's user, `thor`, logs in on its own (tty1's autologin: the device is the session), in `wheel`,
+with its account locked until a password is set: no sudo and no ssh until then. `thor-account`
+(thor-system's, root through pkexec; polkit allows the active local session's user without asking:
+`50-thor.rules`) sets the first password without asking for one, changes it only with the current one
+(checked as PAM does, by `unix_chkpwd` as the user), and turns sshd on only once there is a password.
+
+So any program running as `thor` (a game, a script Steam runs) could set the first password, and with it
+gain sudo and ssh, if it ran while there was none. The first password is therefore Setup's first step,
+which can't be skipped, and nothing of the user's is started until the account has one
+(`clamshell_state::setup::account::Account::lets_programs_run`): every launch is held, and "Start with
+ClamShell" waits, until the account, read at every start, reads with a password. Unread, or unreadable
+(the helper failing, as when polkit refuses pkexec while the console's login is being replaced), it is
+held as one without: Setup shows over anything else, the account is read again (2 s after a failed read,
+the wait doubling up to a minute), and its password step can't be passed; only a machine with no helper
+at all lets programs run without one. While Setup shows, the second screen shows only the keyboard. What
+runs before the password is ClamShell and the image's own services.
+
+Passwords are 8 characters at least; sshd (`/etc/ssh/sshd_config.d/50-thor.conf`) takes only `thor`, no
+root, 3 tries a connection (and OpenSSH's own penalties for repeated failures). The user's own sshd
+settings go in a file read before it, such as `10-local.conf` (sshd keeps the first value it reads); the
+packages' files in `/etc` are `backup=`, so an edit there is kept too, the new version written beside it
+as a `.pacnew`.
 
 sudo asks the password, per terminal, as usual. During a maintenance pass (`thor-maintain`) it is shared:
 the pass asks it once, writes `/etc/sudoers.d/zz-thor-maintenance` (`timestamp_type=global`) so that
@@ -88,19 +99,6 @@ process of `thor` has sudo without a prompt. With the file it starts a root unit
 after the device slept past the timestamp), and removes the file; the pass forgets the timestamp as it
 ends, and one killed outright leaves it for up to 15 minutes. Should that unit be cut off too, the next
 boot removes the file (`tmpfiles.d/thor-maintenance.conf`).
-
-## The account and the first password
-
-The image starts with the session's user in `wheel` and no password: no sudo and no ssh until one is
-set. `thor-account` (run as root through pkexec, which polkit allows the active session without asking)
-sets the first one without asking for one, which any process of the user could do. So the first password
-is Setup's first step, which can't be skipped, and nothing of the user's is started until the account has
-one (`clamshell_state::setup::account::Account::lets_programs_run`): every launch is held, and "Start with
-ClamShell" waits, until the account, read at every start, reads with a password. Unread, or unreadable
-(the helper failing, as with no polkit agent yet), it is held as one without: Setup shows over anything
-else, reading it again, and its password step can't be passed; only a machine with no helper at all lets
-programs run without one. While Setup shows, the second screen shows only the keyboard. What runs before
-the password is ClamShell and the image's own services. Changing a password asks for the current one.
 
 ## The power group's files
 

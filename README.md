@@ -231,6 +231,10 @@ rules and launch context.
   --example pattern-game`): test games launched from the Library, their pictures checked to fill the top screen
   at each Resolution and Scaling. Both need sway (as the host), Xwayland and grim; the first also foot,
   dbus-daemon and gdbus, the second a C compiler and SDL 3.
+- By hand, for what they measure or check: `tools/mpv-pad-check.py` (mpv's pad bindings, thor-session's
+  `input.conf`, with a virtual Xbox pad in a headless sway), `tools/measure-drawing.py` (CPU drawing and
+  GPU readiness for plain and SMAA Vulkan clients, nested) and `tools/measure-session.py` (the nested
+  session's start and idle costs, `docs/measurements/`).
 - `tools/vm/vm-test.sh`: the VM suite end to end, about twenty minutes, for what nothing else can check.
   The virtual Thor is `tools/vm/vm.py` (QEMU/KVM, both screens, a fake controller with a gyro and rumble,
   simulated Wi-Fi and Bluetooth; `tools/vm/vm.py --help`), and its checks `tools/vm/vm-checks.py`
