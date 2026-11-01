@@ -227,8 +227,8 @@ listed, and ClamShell can be restarted without losing track.
   on unchanged to the system's dispatcher.
 - **No silent failures:** a failure handled by falling back is logged, at `warn` or, when expected or
   repeating, at `debug`.
-- **No allocation on the hot paths:** applying a steady-state event and drawing a frame allocate nothing,
-  enforced by tests with a counting allocator.
+- **No allocation on the hot paths:** applying a steady-state event, drawing a frame and remapping a
+  controller report in the game allocate nothing, enforced by tests with a counting allocator.
 - **No compatibility code:** nobody depends on old formats yet, so formats change outright.
 
 ## What checks it
@@ -240,7 +240,7 @@ listed, and ClamShell can be restarted without losing track.
 | randomized event-sequence test | invariants after every event over thousands of generated events: sync has nothing left to send, the pad's route and the session consistent, lists within their ends, ... | every commit and CI; more seeds by hand |
 | snapshot test: pixels, focus, trace | every screen's pixels; where the pad's focus goes on every screen, with reachability rules; the effects of scripted scenarios | every commit and CI |
 | damaged frames against whole frames | partial redraws identical to full ones, pixel for pixel, across every scenario | every commit and CI |
-| allocation tests | the event path and frame drawing allocate nothing | every commit and CI |
+| allocation tests | the event path, frame drawing and the pad's game route allocate nothing | every commit and CI |
 | `clamshell/tests/nested-compositor.py` | ClamShell's compositor nested (in a headless sway as the host) with real clients: Wayland and X11 windows, Xwayland's restart, the clipboard, screenshots, moves between the screens | every commit and CI |
 | `clamshell/tests/real-apps.py` | real apps installed on the desktop (RetroArch, Firefox, Wine's Notepad, Lutris, Heroic) in nested ClamShell: each one's window in front, drawn, no compositor error, ended when ClamShell closes it | by hand, for compositor behaviour |
 | `clamshell/tests/picture-scaling.py` (`--gpu` for the Wine games) | test games launched from the Library, their pictures filling the top screen at each Resolution and Scaling | by hand, for the picture |

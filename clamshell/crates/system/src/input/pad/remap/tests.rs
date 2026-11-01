@@ -207,8 +207,10 @@ fn a_trigger_past_its_threshold_and_to_the_other_trigger() {
     assert_eq!((last(&out.pad, AbsoluteAxisCode::ABS_Z), last(&out.pad, AbsoluteAxisCode::ABS_RZ)), (Some(512), Some(0)));
 }
 
+/// A gyro sample, and the tick the pad thread gives the routers after the samples that came together.
 fn gyro(r: &mut PadRouter, ms: u64, yaw: f32, out: &mut Out) {
     r.motion(Sample { rate: super::super::motion::Rate { pitch: 0.0, yaw, roll: 0.0 }, at: Duration::from_millis(ms) }, out);
+    r.tick(Instant::now(), out);
 }
 
 #[test]
@@ -885,4 +887,28 @@ fn a_parameter_slid_applies_at_once() {
         r.set_keymap(keymap(&[(Input::Stick(Side::Left), Binding { deadzone: dz, ..own })]), &mut out);
     }
     assert_eq!(last(&out.pad, AbsoluteAxisCode::ABS_X), Some(0), "half way is inside a deadzone of 50");
+}
+
+/// A controller report's changes reach the game as one report, with what passes through in it: a diagonal
+/// move with a button is one report, not one per event. (The keymap was worked out per event, each
+/// change sent with a report of its own, so a game saw half a move.)
+#[test]
+fn a_controllers_report_reaches_the_game_as_one_report() {
+    let k = keymap(&[(Input::Button(Button::A), to(Output::Pad(PadOut::Button(Button::B))))]);
+    let (mut r, mut out) = router(k, PadRoute::Game);
+    let now = Instant::now();
+    let report = [
+        Raw::abs(AbsoluteAxisCode::ABS_X, 20_000),
+        Raw::abs(AbsoluteAxisCode::ABS_Y, -20_000),
+        key(KeyCode::BTN_SOUTH, Press::Down),
+        key(KeyCode::BTN_C, Press::Down),
+    ];
+    for raw in report {
+        r.event(raw, now, &mut out);
+    }
+    r.event(Raw::REPORT, now, &mut out);
+    assert_eq!(out.pad.iter().filter(|e| e.is_report()).count(), 1, "{:?}", out.pad);
+    assert_eq!(out.pad.last(), Some(&Raw::REPORT));
+    assert_eq!((last(&out.pad, AbsoluteAxisCode::ABS_X), last(&out.pad, AbsoluteAxisCode::ABS_Y)), (Some(20_000), Some(-20_000)));
+    assert_eq!(held(&out.pad), vec![KeyCode::BTN_EAST, KeyCode::BTN_C], "A as B, and C passed through");
 }

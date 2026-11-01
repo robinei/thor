@@ -511,10 +511,14 @@ impl PadRouter {
     fn mapped(&mut self, raw: Raw, now: Instant, out: &mut Out) {
         match self.mapping(self.route) {
             Some(mapping) => mapping.event(raw, now, out),
-            None if remap::known(raw) => self.with_game_snapshot(|remap, snapshot| remap.update(snapshot, now, out)),
-            // What the keymap doesn't know passes through, with its report.
+            // The keymap is worked out at the report's end, once for all its changes.
+            None if remap::known(raw) => self.remap.changed(),
+            // What the keymap doesn't know passes through, in the report the keymap's changes end, or in
+            // its own.
             None if raw.is_report() => {
-                if std::mem::take(&mut self.passed) {
+                let start = out.pad.len();
+                self.with_game_snapshot(|remap, snapshot| remap.flush(snapshot, now, out));
+                if std::mem::take(&mut self.passed) && out.pad.len() == start {
                     out.pad.push(raw);
                 }
             }

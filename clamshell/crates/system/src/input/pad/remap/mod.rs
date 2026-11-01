@@ -3,7 +3,9 @@
 //! Rather than rewriting events one by one, the controller's state is mapped to what every output should
 //! be now. The state is the router's snapshot and the gyro's rate. The outputs are the game's pad
 //! (buttons, D-pad, sticks, triggers), the keys and mouse buttons held on the virtual keyboard and mouse,
-//! wheel steps and pointer motion. Only what changed since the last time is sent. Letting go is then the
+//! wheel steps and pointer motion. It is worked out once per controller report, at its end, and once per
+//! gather of gyro samples, so a report's changes reach the game as one report; once its buffers have
+//! grown, it allocates nothing ([`Scratch`]). Only what changed since the last time is sent. Letting go is then the
 //! same computation with nothing held, so leaving the game, losing the controller or changing the keymap
 //! mid-press never leaves anything down. Chords press their modifiers before their key and let them go
 //! after it.
@@ -128,7 +130,7 @@ impl Gathered {
                 }
             }
             Output::Key(chord) => chord_down(&mut self.w.keys, chord),
-            Output::Mouse(m) => self.w.keys.push(mouse_code(*m)),
+            Output::Mouse(m) => push_new(&mut self.w.keys, mouse_code(*m)),
             Output::Wheel(d) => self.w.wheels.push((input, *d)),
             _ => {}
         }
@@ -149,6 +151,30 @@ struct Wanted {
     pointer: Vec<((f32, f32), u8)>,
 }
 
+impl Wanted {
+    /// Back to the pad at rest, keeping the room.
+    fn clear(&mut self) {
+        self.pad_keys.clear();
+        self.pad_axes.clear();
+        self.keys.clear();
+        self.wheels.clear();
+        self.pointer.clear();
+    }
+}
+
+/// The buffers an update works in, kept to be used again, so an update allocates nothing once they have
+/// grown to what the keymap needs.
+#[derive(Default)]
+struct Scratch {
+    states: Vec<InputState>,
+    risen: Vec<(Input, Actuation)>,
+    decided: Vec<(Input, bool)>,
+    seen: Vec<(Input, Actuation, Binding, bool)>,
+    ended: Vec<(Input, Actuation)>,
+    /// What the update in progress wants, and what was sent before the last update.
+    wanted: Wanted,
+}
+
 /// The remapping, and what it last sent.
 pub(crate) struct Remap {
     keymap: Keymap,
@@ -165,6 +191,9 @@ pub(crate) struct Remap {
     actuators: Vec<Actuator>,
     /// A buzz due because a layer that stays on came on or went off. The next update sends it.
     buzz: Option<Buzz>,
+    /// The controller changed since the last update: the next report, or the next tick, updates.
+    due: bool,
+    scratch: Scratch,
 }
 
 impl Remap {
@@ -179,6 +208,8 @@ impl Remap {
             activations: Vec::new(),
             actuators: Vec::new(),
             buzz: None,
+            due: false,
+            scratch: Scratch::default(),
         }
     }
 
@@ -198,9 +229,12 @@ impl Remap {
     /// Lets go of everything sent, on leaving the game or when the controller is gone. The keyboard's and
     /// mouse's keys go up, and the pad's buttons go up and its axes to rest.
     pub(crate) fn release(&mut self, out: &mut Out) {
-        let rest = Wanted { pad_axes: self.sent.pad_axes.iter().map(|&(a, _)| (a, self.axis_rest(a))).collect(), ..Wanted::default() };
+        let mut rest = std::mem::take(&mut self.scratch.wanted);
+        rest.clear();
+        rest.pad_axes.extend(self.sent.pad_axes.iter().map(|&(a, _)| (a, self.axis_rest(a))));
         self.send(rest, out);
-        self.sent = Wanted::default();
+        self.sent.clear();
+        self.due = false;
         self.gyro = Rate::default();
         self.carry = Carry::default();
         self.last_pointer = None;
@@ -220,10 +254,29 @@ impl Remap {
         }
     }
 
+    /// The controller's state is changing: one of its events is in the router's snapshot. The outputs
+    /// follow at the end of its report ([`Remap::flush`]), so a report's changes reach the game as one
+    /// report, and the keymap is worked out once for it.
+    pub(crate) fn changed(&mut self) {
+        self.due = true;
+    }
+
+    /// The controller's report ended with it as in `snap`: the outputs follow, if it changed.
+    pub(crate) fn flush(&mut self, snap: &PadSnapshot, now: Instant, out: &mut Out) {
+        if self.due {
+            self.update(snap, now, out);
+        }
+    }
+
     /// The controller's state changed to `snap` at `now`, and the outputs follow.
     pub(crate) fn update(&mut self, snap: &PadSnapshot, now: Instant, out: &mut Out) {
+        self.due = false;
         self.actuate(snap, now);
-        let wanted = self.wanted(snap, now);
+        let mut g = Gathered { w: std::mem::take(&mut self.scratch.wanted), ..Gathered::default() };
+        g.w.clear();
+        self.gather(snap, now, &mut g);
+        self.gyro_to_stick(snap, &mut g.sticks);
+        let wanted = self.pad_axes(g, snap);
         self.send(wanted, out);
         if let Some(buzz) = self.buzz.take() {
             out.buzz = Some(buzz);
@@ -234,7 +287,8 @@ impl Remap {
     fn actuate(&mut self, snap: &PadSnapshot, now: Instant) {
         self.decide_layer_holds(snap, now);
         // Read what each input is doing now first. The actuators follow below.
-        let mut states = Vec::new();
+        let mut states = std::mem::take(&mut self.scratch.states);
+        states.clear();
         for input in Input::all() {
             let digital_trigger = self.binding(input).is_some_and(|b| b.output.digital());
             let full_pull = self.find(input, Actuation::FullPull).copied();
@@ -254,8 +308,9 @@ impl Remap {
             states.push(InputState { input, on, full, hold, double, toggles });
         }
         // The actuations that came on now, which may use a Once layer.
-        let mut risen = Vec::new();
-        for InputState { input, on, full, hold, double, toggles } in states {
+        let mut risen = std::mem::take(&mut self.scratch.risen);
+        risen.clear();
+        for InputState { input, on, full, hold, double, toggles } in states.drain(..) {
             let found = self.actuators.iter().position(|a| a.input == input);
             if found.is_none() && !on && !full {
                 continue;
@@ -280,7 +335,9 @@ impl Remap {
         }
         // Actuators at rest that hold nothing on are dropped.
         self.actuators.retain(|a| a.phase != Phase::Up || a.beats.iter().any(|b| b.raw || b.latched));
+        self.scratch.states = states;
         self.activate(now, &risen);
+        self.scratch.risen = risen;
     }
 
     /// Whether an input's actuations are followed. They are for a digital input, and for a trigger mapped
@@ -328,7 +385,8 @@ impl Remap {
                 self.carry.add(-x * gain * dt * px, -y * gain * dt * px);
                 self.flush_pointer(out);
             }
-            Output::Stick(_) => self.update(snap, Instant::now(), out),
+            // The stick follows at the next report or tick, once for the samples that came together.
+            Output::Stick(_) => self.due = true,
             _ => {}
         }
     }
@@ -337,7 +395,7 @@ impl Remap {
     /// turbo's beat, and sticks on the pointer move it. Returns when to tick next, if anything waits for
     /// time.
     pub(crate) fn tick(&mut self, now: Instant, snap: &PadSnapshot, out: &mut Out) -> Option<Instant> {
-        if !self.actuators.is_empty() {
+        if self.due || !self.actuators.is_empty() {
             self.update(snap, now, out);
         }
         let timed = self.next_due(now);
@@ -349,12 +407,8 @@ impl Remap {
     fn next_due(&self, now: Instant) -> Option<Instant> {
         let mut next = None;
         for a in &self.actuators {
-            let mut times = vec![a.due];
-            for act in Actuation::ALL {
-                let b = self.binding_of(a.input, act);
-                times.push(b.and_then(|b| a.beat(act).next_beat(&b, now)));
-            }
-            next = times.into_iter().flatten().chain(next).min();
+            let beats = Actuation::ALL.into_iter().filter_map(|act| self.binding_of(a.input, act).and_then(|b| a.beat(act).next_beat(&b, now)));
+            next = a.due.into_iter().chain(beats).chain(next).min();
         }
         next
     }
@@ -501,16 +555,8 @@ impl Remap {
         self.actuators.iter().find(|a| a.input == input).is_some_and(|a| a.beat(act).on(b, now))
     }
 
-    /// What every output should be for the controller in `snap` at `now`.
-    fn wanted(&self, snap: &PadSnapshot, now: Instant) -> Wanted {
-        let mut g = self.gather(snap, now);
-        self.gyro_to_stick(snap, &mut g.sticks);
-        self.pad_axes(g, snap)
-    }
-
-    /// What the bindings make of each input now.
-    fn gather(&self, snap: &PadSnapshot, now: Instant) -> Gathered {
-        let mut g = Gathered::default();
+    /// What the bindings make of each input now, into `g`.
+    fn gather(&self, snap: &PadSnapshot, now: Instant, g: &mut Gathered) {
         for input in Input::all() {
             let Some(b) = self.binding(input) else {
                 continue;
@@ -568,7 +614,6 @@ impl Remap {
                 Input::Gyro => {}
             }
         }
-        g
     }
 
     /// Adds the gyro's turn to the stick it is bound to, while it acts.
@@ -624,18 +669,12 @@ impl Remap {
         w.pad_axes.push((AbsoluteAxisCode::ABS_HAT0Y, i32::from(down) - i32::from(up)));
         w.pad_keys.sort_by_key(|k| k.0);
         w.pad_keys.dedup();
-        // Keys keep their order, so a chord's modifiers go down before its key.
-        let mut keys = Vec::with_capacity(w.keys.len());
-        for k in w.keys.drain(..) {
-            if !keys.contains(&k) {
-                keys.push(k);
-            }
-        }
-        w.keys = keys;
+        // The keys keep their order, so a chord's modifiers go down before its key; each was added once.
         w
     }
 
-    /// Sends what differs between what was sent and `wanted`, and keeps it as sent.
+    /// Sends what differs between what was sent and `wanted`, and keeps it as sent. What was sent before
+    /// is kept for the next update to fill.
     fn send(&mut self, wanted: Wanted, out: &mut Out) {
         // The game's pad.
         let start = out.pad.len();
@@ -660,12 +699,13 @@ impl Remap {
         // The keyboard and mouse: keys up first, then modifiers up, then modifiers down, then keys down.
         let start = out.mouse.len();
         let modifier = |k: &KeyCode| MODIFIERS.contains(k);
-        let ups = self.sent.keys.iter().filter(|k| !wanted.keys.contains(k));
-        let (mods_up, keys_up): (Vec<KeyCode>, Vec<KeyCode>) = ups.partition(|k| modifier(k));
-        let downs = wanted.keys.iter().filter(|k| !self.sent.keys.contains(k));
-        let (mods_down, keys_down): (Vec<KeyCode>, Vec<KeyCode>) = downs.partition(|k| modifier(k));
-        for (keys, press) in [(keys_up, Press::Up), (mods_up, Press::Up), (mods_down, Press::Down), (keys_down, Press::Down)] {
-            out.mouse.extend(keys.into_iter().map(|k| Raw::key(k, press)));
+        for mods in [false, true] {
+            let ups = self.sent.keys.iter().filter(|k| !wanted.keys.contains(k) && modifier(k) == mods);
+            out.mouse.extend(ups.map(|&k| Raw::key(k, Press::Up)));
+        }
+        for mods in [true, false] {
+            let downs = wanted.keys.iter().filter(|k| !self.sent.keys.contains(k) && modifier(k) == mods);
+            out.mouse.extend(downs.map(|&k| Raw::key(k, Press::Down)));
         }
         // A wheel step for each input that just came on.
         for &(input, d) in &wanted.wheels {
@@ -682,17 +722,22 @@ impl Remap {
         if out.mouse.len() > start {
             out.mouse.push(Raw::REPORT);
         }
-        self.sent = wanted;
+        self.scratch.wanted = std::mem::replace(&mut self.sent, wanted);
     }
 }
 
 /// Adds a chord's keys as held: its modifiers, then its key.
 fn chord_down(keys: &mut Vec<KeyCode>, chord: &Chord) {
     let (mods, key) = chord_keys(chord);
-    for k in mods.into_iter().chain(key) {
-        if !keys.contains(&k) {
-            keys.push(k);
-        }
+    for k in mods.chain(key) {
+        push_new(keys, k);
+    }
+}
+
+/// Adds a key as held, unless it is already.
+fn push_new(keys: &mut Vec<KeyCode>, k: KeyCode) {
+    if !keys.contains(&k) {
+        keys.push(k);
     }
 }
 

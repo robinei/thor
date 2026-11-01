@@ -103,9 +103,9 @@ fn key_of(stroke: &Stroke) -> Option<KeyCode> {
 /// The modifier keys, in the order they go down. They come up in reverse order.
 pub(crate) const MODIFIERS: [KeyCode; 4] = [KeyCode::KEY_LEFTCTRL, KeyCode::KEY_LEFTALT, KeyCode::KEY_LEFTMETA, KeyCode::KEY_LEFTSHIFT];
 
-/// The keys of a keymap's chord: its modifiers, and its key if it has one.
-pub(crate) fn chord_keys(chord: &clamshell_state::keymap::Chord) -> (Vec<KeyCode>, Option<KeyCode>) {
-    let mods = [chord.ctrl, chord.alt, chord.logo, chord.shift].into_iter().zip(MODIFIERS).filter_map(|(on, k)| on.then_some(k)).collect();
+/// The keys of a keymap's chord: its modifiers, and its key if it has one. Nothing is allocated.
+pub(crate) fn chord_keys(chord: &clamshell_state::keymap::Chord) -> (impl Iterator<Item = KeyCode>, Option<KeyCode>) {
+    let mods = [chord.ctrl, chord.alt, chord.logo, chord.shift].into_iter().zip(MODIFIERS).filter_map(|(on, k)| on.then_some(k));
     let key = chord.key.and_then(|key| key_of(&Stroke { key, shift: false, ctrl: false, alt: false, logo: false }));
     (mods, key)
 }

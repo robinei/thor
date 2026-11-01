@@ -15,6 +15,12 @@ fn router(route: PadRoute) -> (PadRouter, Out) {
     (router, out)
 }
 
+/// A controller event, and the report that ends it as the kernel sends them.
+fn event(r: &mut PadRouter, raw: Raw, now: Instant, out: &mut Out) {
+    r.event(raw, now, out);
+    r.event(Raw::REPORT, now, out);
+}
+
 fn key(code: KeyCode, press: Press) -> Raw {
     Raw::key(code, press)
 }
@@ -38,24 +44,24 @@ fn game_activity_is_reported_once_per_keyboard_focus_loss() {
     let now = Instant::now();
     out.events.clear();
     for _ in 0..100 {
-        r.event(key(KeyCode::BTN_SOUTH, Press::Down), now, &mut out);
-        r.event(key(KeyCode::BTN_SOUTH, Press::Up), now, &mut out);
-        r.event(Raw::abs(AbsoluteAxisCode::ABS_X, 30000), now, &mut out);
+        event(&mut r, key(KeyCode::BTN_SOUTH, Press::Down), now, &mut out);
+        event(&mut r, key(KeyCode::BTN_SOUTH, Press::Up), now, &mut out);
+        event(&mut r, Raw::abs(AbsoluteAxisCode::ABS_X, 30000), now, &mut out);
     }
     assert!(out.events.is_empty(), "normal play sends no state activity events");
     r.watch_activity(true);
     for _ in 0..100 {
-        r.event(Raw::abs(AbsoluteAxisCode::ABS_X, 30000), now, &mut out);
-        r.event(key(KeyCode::BTN_SOUTH, Press::Down), now, &mut out);
-        r.event(key(KeyCode::BTN_SOUTH, Press::Up), now, &mut out);
+        event(&mut r, Raw::abs(AbsoluteAxisCode::ABS_X, 30000), now, &mut out);
+        event(&mut r, key(KeyCode::BTN_SOUTH, Press::Down), now, &mut out);
+        event(&mut r, key(KeyCode::BTN_SOUTH, Press::Up), now, &mut out);
     }
     assert_eq!(out.events, vec![Event::PadActive]);
     r.watch_activity(false);
     r.watch_activity(true);
-    r.event(key(KeyCode::BTN_SOUTH, Press::Up), now, &mut out);
-    r.event(Raw::abs(AbsoluteAxisCode::ABS_X, 0), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_SOUTH, Press::Up), now, &mut out);
+    event(&mut r, Raw::abs(AbsoluteAxisCode::ABS_X, 0), now, &mut out);
     assert_eq!(out.events, vec![Event::PadActive], "release and rest do not take focus");
-    r.event(key(KeyCode::BTN_SOUTH, Press::Down), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_SOUTH, Press::Down), now, &mut out);
     assert_eq!(out.events, vec![Event::PadActive, Event::PadActive]);
 }
 
@@ -63,15 +69,15 @@ fn game_activity_is_reported_once_per_keyboard_focus_loss() {
 fn leaving_the_pad_mouse_lets_go_of_its_buttons() {
     let (mut r, mut out) = router(PadRoute::Mouse);
     let now = Instant::now();
-    r.event(key(KeyCode::BTN_SOUTH, Press::Down), now, &mut out);
-    r.event(Raw::abs(AbsoluteAxisCode::ABS_HAT0Y, -1), now, &mut out);
-    r.event(Raw::abs(AbsoluteAxisCode::ABS_RZ, 1000), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_SOUTH, Press::Down), now, &mut out);
+    event(&mut r, Raw::abs(AbsoluteAxisCode::ABS_HAT0Y, -1), now, &mut out);
+    event(&mut r, Raw::abs(AbsoluteAxisCode::ABS_RZ, 1000), now, &mut out);
     assert_eq!(held(&out.mouse), vec![KeyCode::KEY_UP, KeyCode::BTN_LEFT]);
     r.set_route(PadRoute::Ui, &mut out);
     assert_eq!(held(&out.mouse), vec![], "no stuck keys");
     // Back on the pad mouse, the trigger is still held, but it counts only once pressed again.
     r.set_route(PadRoute::Mouse, &mut out);
-    r.event(Raw::abs(AbsoluteAxisCode::ABS_RZ, 1000), now, &mut out);
+    event(&mut r, Raw::abs(AbsoluteAxisCode::ABS_RZ, 1000), now, &mut out);
     assert_eq!(held(&out.mouse), vec![KeyCode::BTN_LEFT]);
 }
 
@@ -79,9 +85,9 @@ fn leaving_the_pad_mouse_lets_go_of_its_buttons() {
 fn leaving_typing_lets_go_of_its_keys() {
     let (mut r, mut out) = router(PadRoute::Keys);
     let now = Instant::now();
-    r.event(key(KeyCode::BTN_EAST, Press::Down), now, &mut out);
-    r.event(key(KeyCode::BTN_EAST, Press::Repeat), now, &mut out);
-    r.event(Raw::abs(AbsoluteAxisCode::ABS_HAT0X, 1), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_EAST, Press::Down), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_EAST, Press::Repeat), now, &mut out);
+    event(&mut r, Raw::abs(AbsoluteAxisCode::ABS_HAT0X, 1), now, &mut out);
     assert_eq!(held(&out.mouse), vec![KeyCode::KEY_BACKSPACE, KeyCode::KEY_RIGHT]);
     r.set_route(PadRoute::Game, &mut out);
     assert_eq!(held(&out.mouse), vec![]);
@@ -91,7 +97,7 @@ fn leaving_typing_lets_go_of_its_keys() {
 fn leaving_navigation_stops_a_held_direction() {
     let (mut r, mut out) = router(PadRoute::Ui);
     let t0 = Instant::now();
-    r.event(Raw::abs(AbsoluteAxisCode::ABS_HAT0Y, 1), t0, &mut out);
+    event(&mut r, Raw::abs(AbsoluteAxisCode::ABS_HAT0Y, 1), t0, &mut out);
     assert_eq!(actions(&out), vec![Event::Pad(PadInput::Down)]);
     assert!(r.tick(t0, &mut out).is_some(), "repeats while held");
     r.set_route(PadRoute::Mouse, &mut out);
@@ -106,7 +112,7 @@ fn the_virtual_pad_is_blanked_away_from_the_game_and_restored_after() {
     let (mut r, mut out) = router(PadRoute::Game);
     assert!(out.pad.is_empty(), "the game sees the controller");
     let now = Instant::now();
-    r.event(key(KeyCode::BTN_TL, Press::Down), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_TL, Press::Down), now, &mut out);
     assert_eq!(out.pad, vec![key(KeyCode::BTN_TL, Press::Down), Raw::REPORT], "passed through");
     out.pad.clear();
     r.set_route(PadRoute::Mouse, &mut out);
@@ -126,16 +132,16 @@ fn the_virtual_pad_is_blanked_away_from_the_game_and_restored_after() {
 fn home_chords_use_the_right_stick_and_not_select_or_the_dpad() {
     let (mut r, mut out) = router(PadRoute::Game);
     let now = Instant::now();
-    r.event(key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
     for code in [KeyCode::BTN_SELECT, KeyCode::BTN_DPAD_UP, KeyCode::BTN_DPAD_DOWN] {
-        r.event(key(code, Press::Down), now, &mut out);
-        r.event(key(code, Press::Up), now, &mut out);
+        event(&mut r, key(code, Press::Down), now, &mut out);
+        event(&mut r, key(code, Press::Up), now, &mut out);
     }
     for code in [KeyCode::BTN_THUMBR, KeyCode::BTN_START] {
-        r.event(key(code, Press::Down), now, &mut out);
-        r.event(key(code, Press::Up), now, &mut out);
+        event(&mut r, key(code, Press::Down), now, &mut out);
+        event(&mut r, key(code, Press::Up), now, &mut out);
     }
-    r.event(key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
     assert_eq!(actions(&out), vec![Event::HardwareKey(HardwareKey::BottomView), Event::HardwareKey(HardwareKey::BottomPower)]);
     assert!(!out.pad.iter().any(|raw| {
         raw.as_key().is_some_and(|(key, _)| matches!(key, KeyCode::BTN_SELECT | KeyCode::BTN_THUMBR | KeyCode::BTN_DPAD_UP | KeyCode::BTN_DPAD_DOWN))
@@ -148,19 +154,19 @@ fn home_with_b_closes_the_window_held_quits_and_the_game_sees_no_b() {
     let now = Instant::now();
     let b = |out: &Out| out.pad.iter().any(|e| e.as_key().is_some_and(|(k, _)| k == KeyCode::BTN_EAST));
     // Letting go soon closes the window.
-    r.event(key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
-    r.event(key(KeyCode::BTN_EAST, Press::Down), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_EAST, Press::Down), now, &mut out);
     assert_eq!(r.tick(now, &mut out), Some(now + QUIT_HOLD), "ticked at the hold's end");
-    r.event(key(KeyCode::BTN_EAST, Press::Up), now + QUIT_HOLD / 2, &mut out);
-    r.event(key(KeyCode::BTN_MODE, Press::Up), now + QUIT_HOLD / 2, &mut out);
+    event(&mut r, key(KeyCode::BTN_EAST, Press::Up), now + QUIT_HOLD / 2, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Up), now + QUIT_HOLD / 2, &mut out);
     assert_eq!(actions(&out), vec![Event::HardwareKey(HardwareKey::CloseWindow)], "not Home as well");
     // Holding quits once the hold is reached, and letting go after that does nothing more.
     out.events.clear();
-    r.event(key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
-    r.event(key(KeyCode::BTN_EAST, Press::Down), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_EAST, Press::Down), now, &mut out);
     r.tick(now + QUIT_HOLD, &mut out);
-    r.event(key(KeyCode::BTN_EAST, Press::Up), now + QUIT_HOLD * 2, &mut out);
-    r.event(key(KeyCode::BTN_MODE, Press::Up), now + QUIT_HOLD * 2, &mut out);
+    event(&mut r, key(KeyCode::BTN_EAST, Press::Up), now + QUIT_HOLD * 2, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Up), now + QUIT_HOLD * 2, &mut out);
     assert_eq!(actions(&out), vec![Event::HardwareKey(HardwareKey::Quit)]);
     assert!(!b(&out), "the game saw no B: {:?}", out.pad);
 }
@@ -169,14 +175,14 @@ fn home_with_b_closes_the_window_held_quits_and_the_game_sees_no_b() {
 fn home_with_rb_is_a_screenshot_and_the_game_sees_neither() {
     let (mut r, mut out) = router(PadRoute::Game);
     let now = Instant::now();
-    r.event(key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
-    r.event(key(KeyCode::BTN_TR, Press::Down), now, &mut out);
-    r.event(key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
-    r.event(key(KeyCode::BTN_TR, Press::Up), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_TR, Press::Down), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_TR, Press::Up), now, &mut out);
     assert_eq!(actions(&out), vec![Event::HardwareKey(HardwareKey::Screenshot)], "not Home as well");
     assert!(out.pad.is_empty(), "RB stays ClamShell's: {:?}", out.pad);
     // RB on its own is the game's again.
-    r.event(key(KeyCode::BTN_TR, Press::Down), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_TR, Press::Down), now, &mut out);
     assert_eq!(out.pad, vec![key(KeyCode::BTN_TR, Press::Down), Raw::REPORT]);
 }
 
@@ -186,28 +192,28 @@ const BACK: KeyCode = KeyCode::BTN_BACK;
 fn home_then_back_with_a_game_in_front_is_its_guide_while_both_are_held() {
     let (mut r, mut out) = router(PadRoute::Game);
     let t0 = Instant::now();
-    r.event(key(KeyCode::BTN_MODE, Press::Down), t0, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Down), t0, &mut out);
     assert_eq!(r.tick(t0 + std::time::Duration::from_secs(2), &mut out), None, "held long: nothing");
     assert!(out.pad.is_empty());
-    r.event(key(BACK, Press::Down), t0, &mut out);
+    event(&mut r, key(BACK, Press::Down), t0, &mut out);
     assert_eq!(out.pad, vec![key(KeyCode::BTN_MODE, Press::Down), Raw::REPORT]);
     // RB pressed in the meantime is the game's, as a Steam chord, not a screenshot.
-    r.event(key(KeyCode::BTN_TR, Press::Down), t0, &mut out);
+    event(&mut r, key(KeyCode::BTN_TR, Press::Down), t0, &mut out);
     assert_eq!(held(&out.pad), vec![KeyCode::BTN_TR, KeyCode::BTN_MODE]);
     // Back let go first puts Guide up. Home's release isn't Home, and Back's release isn't the game's.
-    r.event(key(BACK, Press::Up), t0, &mut out);
+    event(&mut r, key(BACK, Press::Up), t0, &mut out);
     assert_eq!(held(&out.pad), vec![KeyCode::BTN_TR]);
-    r.event(key(KeyCode::BTN_MODE, Press::Up), t0, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Up), t0, &mut out);
     assert!(actions(&out).is_empty(), "not Home: {:?}", out.events);
     assert!(!out.pad.iter().any(|e| e.as_key().is_some_and(|(k, _)| k == BACK)), "Back never reaches the game");
     // Home let go first puts Guide up, and Back's release after that stays ours.
     out = Out::default();
-    r.event(key(KeyCode::BTN_MODE, Press::Down), t0, &mut out);
-    r.event(key(BACK, Press::Down), t0, &mut out);
-    r.event(key(KeyCode::BTN_MODE, Press::Up), t0, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Down), t0, &mut out);
+    event(&mut r, key(BACK, Press::Down), t0, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Up), t0, &mut out);
     assert!(!held(&out.pad).contains(&KeyCode::BTN_MODE));
     let before = out.pad.len();
-    r.event(key(BACK, Press::Up), t0, &mut out);
+    event(&mut r, key(BACK, Press::Up), t0, &mut out);
     assert_eq!(out.pad.len(), before);
     assert!(actions(&out).is_empty());
 }
@@ -216,10 +222,10 @@ fn home_then_back_with_a_game_in_front_is_its_guide_while_both_are_held() {
 fn home_with_another_button_is_a_combination_not_home() {
     let (mut r, mut out) = router(PadRoute::Game);
     let t0 = Instant::now();
-    r.event(key(KeyCode::BTN_MODE, Press::Down), t0, &mut out);
-    r.event(key(KeyCode::BTN_SOUTH, Press::Down), t0, &mut out);
-    r.event(key(KeyCode::BTN_MODE, Press::Up), t0, &mut out);
-    r.event(key(KeyCode::BTN_SOUTH, Press::Up), t0, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Down), t0, &mut out);
+    event(&mut r, key(KeyCode::BTN_SOUTH, Press::Down), t0, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Up), t0, &mut out);
+    event(&mut r, key(KeyCode::BTN_SOUTH, Press::Up), t0, &mut out);
     assert!(actions(&out).is_empty(), "not Home");
     assert!(
         held(&out.pad).is_empty() && !out.pad.iter().any(|e| e.as_key().is_some_and(|(k, _)| k == KeyCode::BTN_SOUTH)),
@@ -227,19 +233,19 @@ fn home_with_another_button_is_a_combination_not_home() {
         out.pad
     );
     // Pressed again afterwards, it is the game's.
-    r.event(key(KeyCode::BTN_SOUTH, Press::Down), t0, &mut out);
+    event(&mut r, key(KeyCode::BTN_SOUTH, Press::Down), t0, &mut out);
     assert_eq!(held(&out.pad), vec![KeyCode::BTN_SOUTH]);
     // Away from the game, Home then Back is neither Guide nor Home.
     let (mut r, mut out) = router(PadRoute::Ui);
     out.pad.clear();
-    r.event(key(KeyCode::BTN_MODE, Press::Down), t0, &mut out);
-    r.event(key(BACK, Press::Down), t0, &mut out);
-    r.event(key(BACK, Press::Up), t0, &mut out);
-    r.event(key(KeyCode::BTN_MODE, Press::Up), t0, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Down), t0, &mut out);
+    event(&mut r, key(BACK, Press::Down), t0, &mut out);
+    event(&mut r, key(BACK, Press::Up), t0, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Up), t0, &mut out);
     assert!(actions(&out).is_empty() && out.pad.is_empty(), "{out:?}");
     // Home alone, held long, is Home on release.
-    r.event(key(KeyCode::BTN_MODE, Press::Down), t0, &mut out);
-    r.event(key(KeyCode::BTN_MODE, Press::Up), t0 + std::time::Duration::from_secs(2), &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Down), t0, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Up), t0 + std::time::Duration::from_secs(2), &mut out);
     assert_eq!(actions(&out), vec![Event::HomeTap]);
 }
 
@@ -247,19 +253,19 @@ fn home_with_another_button_is_a_combination_not_home() {
 fn back_on_clamshells_screens_is_back_and_nothing_with_the_mouse() {
     let (mut r, mut out) = router(PadRoute::Ui);
     out.pad.clear();
-    r.event(key(BACK, Press::Down), Instant::now(), &mut out);
-    r.event(key(BACK, Press::Up), Instant::now(), &mut out);
+    event(&mut r, key(BACK, Press::Down), Instant::now(), &mut out);
+    event(&mut r, key(BACK, Press::Up), Instant::now(), &mut out);
     assert_eq!(actions(&out), vec![Event::Pad(PadInput::Back)]);
     assert!(out.pad.is_empty());
     // While a keymap's edit screen listens, Back is an input to remap.
     let (mut r, mut out) = router(PadRoute::Listen);
     out.pad.clear();
-    r.event(key(BACK, Press::Down), Instant::now(), &mut out);
+    event(&mut r, key(BACK, Press::Down), Instant::now(), &mut out);
     r.event(Raw::REPORT, Instant::now(), &mut out);
     assert_eq!(actions(&out), vec![Event::Listened(clamshell_state::keymap::Input::Button(clamshell_state::keymap::Button::Back))]);
     let (mut r, mut out) = router(PadRoute::Mouse);
     out = Out { pad: vec![], ..out };
-    r.event(key(BACK, Press::Down), Instant::now(), &mut out);
+    event(&mut r, key(BACK, Press::Down), Instant::now(), &mut out);
     assert!(actions(&out).is_empty() && out.mouse.is_empty() && out.pad.is_empty());
 }
 
@@ -267,13 +273,13 @@ fn back_on_clamshells_screens_is_back_and_nothing_with_the_mouse() {
 fn guide_is_let_go_when_the_pad_leaves_the_game() {
     let (mut r, mut out) = router(PadRoute::Game);
     let t0 = Instant::now();
-    r.event(key(KeyCode::BTN_MODE, Press::Down), t0, &mut out);
-    r.event(key(BACK, Press::Down), t0, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Down), t0, &mut out);
+    event(&mut r, key(BACK, Press::Down), t0, &mut out);
     r.set_route(PadRoute::Ui, &mut out);
     assert!(!held(&out.pad).contains(&KeyCode::BTN_MODE), "no stuck Guide");
     out.events.clear();
-    r.event(key(KeyCode::BTN_MODE, Press::Up), t0, &mut out);
-    r.event(key(BACK, Press::Up), t0, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Up), t0, &mut out);
+    event(&mut r, key(BACK, Press::Up), t0, &mut out);
     assert!(actions(&out).is_empty(), "letting go afterwards isn't Home, nor back");
 }
 
@@ -281,16 +287,16 @@ fn guide_is_let_go_when_the_pad_leaves_the_game() {
 fn home_is_always_clamshells_and_view_with_the_mouse_or_typing() {
     let (mut r, mut out) = router(PadRoute::Game);
     let now = Instant::now();
-    r.event(key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
     assert!(actions(&out).is_empty(), "Home acts on release");
-    r.event(key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
-    r.event(key(KeyCode::BTN_SELECT, Press::Down), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_SELECT, Press::Down), now, &mut out);
     assert_eq!(actions(&out), vec![Event::HomeTap]);
     assert_eq!(out.pad, vec![key(KeyCode::BTN_SELECT, Press::Down), Raw::REPORT], "View is the game's");
     r.set_route(PadRoute::Mouse, &mut out);
     out = Out::default();
-    r.event(key(KeyCode::BTN_SELECT, Press::Down), now, &mut out);
-    r.event(key(KeyCode::BTN_SELECT, Press::Up), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_SELECT, Press::Down), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_SELECT, Press::Up), now, &mut out);
     assert_eq!(out, Out { events: vec![Event::Pad(PadInput::Switch)], ..Out::default() });
 }
 
@@ -301,24 +307,24 @@ fn home_flicks_once_and_neutralises_the_games_stick_until_it_returns() {
         r.snapshot.axes.push(Axis { code, value: 0, rest: 0 });
     }
     let now = Instant::now();
-    r.event(Raw::abs(AbsoluteAxisCode::ABS_RX, 30000), now, &mut out);
+    event(&mut r, Raw::abs(AbsoluteAxisCode::ABS_RX, 30000), now, &mut out);
     out = Out::default();
-    r.event(key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
     assert_eq!(out.events, vec![Event::HomeHeld(true)]);
     assert!(out.pad.contains(&Raw::abs(AbsoluteAxisCode::ABS_RX, 0)), "Home must centre the stick the game already saw: {:?}", out.pad);
     out.pad.clear();
     // Already off-centre when Home went down: it must return before this can be a flick.
     for value in [32000, 0, -30000, -32000, 10000, -30000, 0, 30000] {
-        r.event(Raw::abs(AbsoluteAxisCode::ABS_RX, value), now, &mut out);
+        event(&mut r, Raw::abs(AbsoluteAxisCode::ABS_RX, value), now, &mut out);
     }
     assert_eq!(out.events, vec![Event::HomeHeld(true), Event::HardwareKey(HardwareKey::WindowPrevious), Event::HardwareKey(HardwareKey::WindowNext)]);
     assert!(!out.pad.iter().any(|raw| raw.as_abs().is_some_and(|(axis, value)| axis == AbsoluteAxisCode::ABS_RX && value != 0)));
-    r.event(key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
-    r.event(Raw::abs(AbsoluteAxisCode::ABS_RX, 31000), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
+    event(&mut r, Raw::abs(AbsoluteAxisCode::ABS_RX, 31000), now, &mut out);
     assert!(!out.pad.iter().any(|raw| raw.as_abs().is_some_and(|(axis, value)| axis == AbsoluteAxisCode::ABS_RX && value != 0)));
     assert_eq!(out.events.last(), Some(&Event::HomeHeld(false)));
-    r.event(Raw::abs(AbsoluteAxisCode::ABS_RX, 0), now, &mut out);
-    r.event(Raw::abs(AbsoluteAxisCode::ABS_RX, 30000), now, &mut out);
+    event(&mut r, Raw::abs(AbsoluteAxisCode::ABS_RX, 0), now, &mut out);
+    event(&mut r, Raw::abs(AbsoluteAxisCode::ABS_RX, 30000), now, &mut out);
     assert!(out.pad.contains(&Raw::abs(AbsoluteAxisCode::ABS_RX, 30000)));
     assert_eq!(out.events.last(), Some(&Event::HomeHeld(false)));
 }
@@ -326,7 +332,7 @@ fn home_flicks_once_and_neutralises_the_games_stick_until_it_returns() {
 #[test]
 fn losing_the_controller_releases_home_for_the_state() {
     let (mut r, mut out) = router(PadRoute::Game);
-    r.event(key(KeyCode::BTN_MODE, Press::Down), Instant::now(), &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Down), Instant::now(), &mut out);
     r.lose(&mut out);
     assert_eq!(out.events, vec![Event::HomeHeld(true), Event::HomeHeld(false)]);
 }
@@ -339,10 +345,10 @@ fn home_with_the_dpad_is_a_combination_the_game_doesnt_see() {
     let now = Instant::now();
     for axis in [AbsoluteAxisCode::ABS_HAT0X, AbsoluteAxisCode::ABS_HAT0Y] {
         let mut out = Out::default();
-        r.event(key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
-        r.event(Raw::abs(axis, 1), now, &mut out);
+        event(&mut r, key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
+        event(&mut r, Raw::abs(axis, 1), now, &mut out);
         r.event(Raw::REPORT, now, &mut out);
-        r.event(key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
+        event(&mut r, key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
         assert!(actions(&out).is_empty(), "not Home: {:?}", out.events);
         assert!(!out.pad.contains(&Raw::abs(axis, 1)), "{:?}", out.pad);
     }
@@ -357,9 +363,9 @@ fn home_away_from_the_game_centres_the_right_stick_for_the_mapping() {
         r.snapshot.axes.push(Axis { code, value: 0, rest: 0 });
     }
     let t0 = Instant::now();
-    r.event(Raw::abs(AbsoluteAxisCode::ABS_RY, 32767), t0, &mut out);
+    event(&mut r, Raw::abs(AbsoluteAxisCode::ABS_RY, 32767), t0, &mut out);
     assert!(r.tick(t0, &mut out).is_some(), "scrolling");
-    r.event(key(KeyCode::BTN_MODE, Press::Down), t0, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Down), t0, &mut out);
     out.mouse.clear();
     assert_eq!(r.tick(t0 + std::time::Duration::from_secs(1), &mut out), None, "stopped");
     assert!(out.mouse.is_empty(), "{:?}", out.mouse);
@@ -373,10 +379,10 @@ fn game_activity_is_an_axis_past_a_threshold() {
     let now = Instant::now();
     out.events.clear();
     r.watch_activity(true);
-    r.event(Raw::abs(AbsoluteAxisCode::ABS_X, 4096), now, &mut out);
-    r.event(Raw::abs(AbsoluteAxisCode::ABS_X, -4096), now, &mut out);
+    event(&mut r, Raw::abs(AbsoluteAxisCode::ABS_X, 4096), now, &mut out);
+    event(&mut r, Raw::abs(AbsoluteAxisCode::ABS_X, -4096), now, &mut out);
     assert!(out.events.is_empty(), "{:?}", out.events);
-    r.event(Raw::abs(AbsoluteAxisCode::ABS_X, -4097), now, &mut out);
+    event(&mut r, Raw::abs(AbsoluteAxisCode::ABS_X, -4097), now, &mut out);
     assert_eq!(out.events, vec![Event::PadActive]);
 }
 
@@ -415,10 +421,10 @@ fn another_players_router_passes_home_to_its_game_and_remaps_by_its_keymap() {
 fn a_controller_gone_with_home_held_isnt_a_tap_of_home() {
     let (mut r, mut out) = router(PadRoute::Game);
     let now = Instant::now();
-    r.event(key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
     r.controller_gone();
     out.events.clear();
-    r.event(key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
     assert_eq!(out.events, [Event::HomeHeld(false)], "let go, not a tap");
 }
 
@@ -432,10 +438,10 @@ fn home_tapped_with_the_stick_at_rest_leaves_it_the_games() {
         r.snapshot.axes.push(Axis { code, value: 0, rest: 0 });
     }
     let now = Instant::now();
-    r.event(key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
-    r.event(key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
     out.pad.clear();
-    r.event(Raw::abs(AbsoluteAxisCode::ABS_RX, 30000), now, &mut out);
+    event(&mut r, Raw::abs(AbsoluteAxisCode::ABS_RX, 30000), now, &mut out);
     r.event(Raw::REPORT, now, &mut out);
     assert!(out.pad.contains(&Raw::abs(AbsoluteAxisCode::ABS_RX, 30000)), "{:?}", out.pad);
 }

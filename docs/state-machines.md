@@ -433,6 +433,11 @@ game (`another_players_router_passes_home_to_its_game_and_remaps_by_its_keymap`)
 past 4096 (`game_activity_is_an_axis_past_a_threshold`). The VM `pad_windows` check exercises real evdev
 routing, tab switching and bottom-slot swaps.
 
+In the game the keymap is worked out at the end of each controller report, and at the tick after gyro
+samples bound to a stick, so a report's changes reach the game as one report, with what passes through
+(`a_controllers_report_reaches_the_game_as_one_report`); once warm it allocates nothing
+(`no_alloc::the_games_route_allocates_nothing_once_warm`).
+
 Home + right stick press switches to the windows' tab and back; Home + Start controls bottom power; Home + R1
 takes a screenshot; Home + B closes or quits. Select and the D-pad don't move windows or switch the bottom
 view. Tests: `home_chords_use_the_right_stick_and_not_select_or_the_dpad`, and the B and R1 chord tests. The UI's overlay over the top screen's window draws the window arrows while Home is held

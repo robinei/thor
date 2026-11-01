@@ -47,6 +47,8 @@ mod merge;
 pub(crate) mod motion;
 mod mouse;
 mod navigator;
+#[cfg(test)]
+mod no_alloc;
 mod remap;
 mod route;
 mod rumble;

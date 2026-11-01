@@ -7,7 +7,8 @@ impl Remap {
     /// A hold to a layer that is still deciding is decided now if an input that layer maps is pressed. So a
     /// quick chord acts in the layer, as it would have once the hold's time was up.
     pub(super) fn decide_layer_holds(&mut self, snap: &PadSnapshot, now: Instant) {
-        let mut decided = Vec::new();
+        let mut decided = std::mem::take(&mut self.scratch.decided);
+        decided.clear();
         for a in &self.actuators {
             if !matches!(a.phase, Phase::Deciding(_)) {
                 continue;
@@ -30,9 +31,10 @@ impl Remap {
             }
         }
         if decided.is_empty() {
+            self.scratch.decided = decided;
             return;
         }
-        for (input, toggle) in decided {
+        for (input, toggle) in decided.drain(..) {
             if let Some(a) = self.actuators.iter_mut().find(|a| a.input == input) {
                 a.phase = Phase::On { act: Actuation::Hold, until: None };
                 a.due = None;
@@ -41,6 +43,7 @@ impl Remap {
                 }
             }
         }
+        self.scratch.decided = decided;
         self.activate(now, &[]);
     }
 
@@ -67,7 +70,8 @@ impl Remap {
             }
         }
         // The bindings to layers, and whether each is on now.
-        let mut seen = Vec::new();
+        let mut seen = std::mem::take(&mut self.scratch.seen);
+        seen.clear();
         for a in &self.actuators {
             for act in Actuation::ALL {
                 let Some(b) = self.binding_of(a.input, act).filter(|b| matches!(b.output, Output::Layer(_))) else {
@@ -82,7 +86,7 @@ impl Remap {
                 seen.push((x.input, x.act, x.binding, false));
             }
         }
-        for (input, act, b, on) in seen {
+        for (input, act, b, on) in seen.drain(..) {
             let i = self.activations.iter().position(|x| (x.input, x.act) == (input, act));
             let once = |x: &Activation| matches!(x.binding.output, Output::Layer(l) if self.keymap.layer_once(l));
             match (i.and_then(|i| self.activations.get(i)).copied(), on) {
@@ -114,7 +118,9 @@ impl Remap {
         // A Once layer that is armed or toggled and has been used goes off once the input that used it has
         // let go. A toggle goes off too.
         let busy = |actuators: &[Actuator], i: Input| actuators.iter().any(|a| a.input == i && (a.phase != Phase::Up || a.beats.iter().any(|b| b.raw)));
-        let mut ended = Vec::new();
+        self.scratch.seen = seen;
+        let mut ended = std::mem::take(&mut self.scratch.ended);
+        ended.clear();
         for x in &self.activations {
             let once = matches!(x.binding.output, Output::Layer(l) if self.keymap.layer_once(l));
             let waits = x.span == Span::Armed || (x.span == Span::Held && x.binding.toggle);
@@ -126,13 +132,14 @@ impl Remap {
                 ended.push((x.input, x.act));
             }
         }
-        for (input, act) in ended {
+        for (input, act) in ended.drain(..) {
             self.activations.retain(|y| (y.input, y.act) != (input, act));
             if let Some(beat) = self.actuators.iter_mut().find(|a| a.input == input).and_then(|a| a.beats.get_mut(act as usize)) {
                 beat.latched = false;
             }
             self.buzz = Some(Buzz::Off);
         }
+        self.scratch.ended = ended;
         // A layer whose binding is at rest goes off, unless it is armed.
         let actuators = &self.actuators;
         self.activations.retain(|x| x.span == Span::Armed || actuators.iter().any(|a| a.input == x.input));
