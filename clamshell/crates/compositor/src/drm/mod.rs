@@ -369,6 +369,13 @@ struct Drawing {
     states: [RenderElementStates; 2],
     /// Whether the seat is another session's (another VT shown): nothing is drawn or committed meanwhile.
     away: bool,
+    /// Whether a connector is being probed for an external display, off this thread, which answers on
+    /// `probes`; whether the connectors changed meanwhile; and the connectors whose display couldn't be
+    /// shown, left until they are unplugged (see `external`).
+    probing: bool,
+    look_again: bool,
+    probes: smithay::reexports::calloop::channel::Sender<Probed>,
+    failed: Vec<connector::Handle>,
 }
 
 /// A connector chosen for a screen: its handle, mode, the modes it has of that size, its CRTC, and its
@@ -543,6 +550,7 @@ pub fn run(
     rates.set_start(i32::try_from(top.mode.vrefresh()).unwrap_or(0).saturating_mul(1000));
     server.core.handle(clamshell_state::Reading::DisplayModes(rates).into());
 
+    let (probes, probed_connectors) = smithay::reexports::calloop::channel::channel();
     let drawing = Rc::new(RefCell::new(Drawing {
         handle: crate::frame_timing::LoopAccess::new(base.event_loop.handle()),
         visuals: Default::default(),
@@ -557,10 +565,24 @@ pub fn run(
         elements: Vec::new(),
         states: [RenderElementStates::default(), RenderElementStates::default()],
         away: false,
+        probing: false,
+        look_again: false,
+        probes,
+        failed: Vec::new(),
     }));
     let on_capture = Rc::new(RefCell::new(on_capture));
 
-    // Connectors plugged and unplugged: an external display (see `external`), connected already or later.
+    // Connectors plugged and unplugged: an external display (see `external`), connected already or later,
+    // probed off this thread.
+    let answers = drawing.clone();
+    base.event_loop
+        .handle()
+        .insert_source(probed_connectors, move |event, _, server| {
+            if let smithay::reexports::calloop::channel::Event::Msg(answer) = event {
+                probed(&mut answers.borrow_mut(), server, answer);
+            }
+        })
+        .map_err(|e| e.error)?;
     connectors_changed(&mut drawing.borrow_mut(), &mut base.server);
     match smithay::backend::udev::UdevBackend::new(&seat) {
         Ok(udev) => {

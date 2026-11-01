@@ -8,8 +8,9 @@
 //! that the picture composed holds everything, the cursor included (see [`pacing_decide`]).
 //!
 //! The connectors are looked at again at each udev change of the GPU, at start and when the seat is back.
-//! A display connected gets a CRTC no screen uses, a surface and buffers of its own; disconnected, they
-//! are dropped. One external display is shown at a time; another connected meanwhile is logged and left
+//! A display connected is probed for its modes on a thread of its own, then gets a CRTC no screen uses, a
+//! surface and buffers of its own; disconnected, they are dropped. One that can't be shown is left until it
+//! is unplugged. One external display is shown at a time; another connected meanwhile is logged and left
 //! dark.
 
 use super::*;
@@ -131,10 +132,26 @@ pub(super) fn tell_refresh(drawing: &Drawing, server: &mut Server) {
     }
 }
 
+/// A connector probed off the loop's thread (see [`connectors_changed`]): its handle, name, and what the
+/// probe found.
+pub(super) struct Probed {
+    handle: connector::Handle,
+    name: String,
+    info: Result<connector::Info, String>,
+}
+
 /// Looks at the connectors: an external display shown and no longer connected is dropped, and one
-/// connected and not shown gets a screen. Not while the seat is away: its return looks again.
+/// connected and not shown is probed for its modes, off this thread (a moment's wait on the display's
+/// EDID, seconds with a bad dock), to be shown when the probe answers ([`probed`]). One that couldn't be
+/// shown is left until it is unplugged. Not while the seat is away (its return looks again), nor while a
+/// probe runs (its answer looks again): the kernel holds the connectors' lock for the probe, which even an
+/// unprobed look would wait on.
 pub(super) fn connectors_changed(drawing: &mut Drawing, server: &mut Server) {
     if drawing.away {
+        return;
+    }
+    if drawing.probing {
+        drawing.look_again = true;
         return;
     }
     let Drawing { drm, screens, .. } = drawing;
@@ -151,35 +168,85 @@ pub(super) fn connectors_changed(drawing: &mut Drawing, server: &mut Server) {
         Ok(resources) => resources,
         Err(error) => return log::warn!("drm: the connectors: {error}: no external display looked for"),
     };
+    let shown = drawing.screens.iter().find_map(|screen| screen.external.as_ref().map(|external| external.name.clone()));
+    let mut connectors = Vec::new();
     for &handle in resources.connectors() {
         let Ok(info) = drawing.drm.get_connector(handle, false).inspect_err(|error| log::warn!("drm: a connector: {error}")) else { continue };
         let name = connector_name(&info);
-        if info.state() != connector::State::Connected || drawing.panels.contains(&name.as_str()) {
+        if drawing.panels.contains(&name.as_str()) {
             continue;
         }
-        if let Some(shown) = drawing.screens.iter().find_map(|screen| screen.external.as_ref()) {
-            if shown.name != name {
-                log::info!("drm: {name} is connected, but one external display is shown at a time: {} is", shown.name);
-            }
-            continue;
+        let connected = info.state() == connector::State::Connected;
+        if let Some(shown) = shown.as_ref().filter(|shown| connected && **shown != name) {
+            log::info!("drm: {name} is connected, but one external display is shown at a time: {shown} is");
         }
-        if let Err(error) = connect(drawing, server, handle, &resources, name.clone()) {
-            log::warn!("drm: the external display on {name} isn't shown: {error}");
+        connectors.push((handle, connected, name));
+    }
+    let states: Vec<_> = connectors.iter().map(|(handle, connected, _)| (*handle, *connected)).collect();
+    let Some(handle) = to_probe(&states, shown.is_some(), &mut drawing.failed) else { return };
+    let name = connectors.into_iter().find_map(|(h, _, name)| (h == handle).then_some(name)).unwrap_or_default();
+    let fd = drawing.drm.device_fd().clone();
+    let sender = drawing.probes.clone();
+    let probe = name.clone();
+    let spawned = std::thread::Builder::new().name("drm probe".into()).spawn(move || {
+        let info = fd.get_connector(handle, true).map_err(|e| e.to_string());
+        if sender.send(Probed { handle, name: probe, info }).is_err() {
+            log::debug!("drm: a connector's probe answered after the compositor ended");
+        }
+    });
+    match spawned {
+        Ok(_) => drawing.probing = true,
+        Err(error) => {
+            log::warn!("drm: no thread to probe {name} on ({error}): probed here, which waits on its display");
+            let info = drawing.drm.get_connector(handle, true).map_err(|e| e.to_string());
+            probed(drawing, server, Probed { handle, name, info });
         }
     }
 }
 
-/// Gives the external display on connector `handle` (`name`) its screen, mirroring the top screen.
-fn connect(
-    drawing: &mut Drawing,
-    server: &mut Server,
-    handle: connector::Handle,
-    resources: &smithay::reexports::drm::control::ResourceHandles,
-    name: String,
-) -> Result<(), Error> {
-    // Probed (a moment's wait on the display's EDID): the modes of the display now connected, which the
-    // connector's last list, of one connected before, may not be.
-    let info = drawing.drm.get_connector(handle, true).map_err(|e| e.to_string())?;
+/// Which connector, of the ones not a panel's (each its handle and whether it is connected), to probe for
+/// an external display: the first connected that isn't `failed`, while none is `shown`. A failed one no
+/// longer connected is forgotten, to be tried when it is plugged in again.
+pub(super) fn to_probe<H: Copy + PartialEq>(connectors: &[(H, bool)], shown: bool, failed: &mut Vec<H>) -> Option<H> {
+    failed.retain(|handle| connectors.iter().any(|(h, connected)| h == handle && *connected));
+    if shown {
+        return None;
+    }
+    connectors.iter().find(|(handle, connected)| *connected && !failed.contains(handle)).map(|(handle, _)| *handle)
+}
+
+/// A connector's probe answered (see [`connectors_changed`]): the external display on it is shown, or, if
+/// it can't be, left until it is unplugged; then the connectors are looked at again if they changed
+/// meanwhile.
+pub(super) fn probed(drawing: &mut Drawing, server: &mut Server, probed: Probed) {
+    drawing.probing = false;
+    if drawing.away {
+        // (Its return looks again.)
+        return;
+    }
+    let Probed { handle, name, info } = probed;
+    let shown = match info {
+        Ok(info) if info.state() != connector::State::Connected => {
+            log::info!("drm: {name} was unplugged as it was probed");
+            Ok(())
+        }
+        Ok(info) => connect(drawing, server, handle, &info, name.clone()),
+        Err(error) => Err(format!("probing it: {error}").into()),
+    };
+    if let Err(error) = shown {
+        log::warn!("drm: the external display on {name} isn't shown: {error}; not tried again until it is unplugged");
+        drawing.failed.push(handle);
+    }
+    if std::mem::take(&mut drawing.look_again) {
+        connectors_changed(drawing, server);
+    }
+}
+
+/// Gives the external display on connector `handle` (`name`), probed (`info`, the modes of the display now
+/// connected, which the connector's last list, of one connected before, may not be), its screen,
+/// mirroring the top screen.
+fn connect(drawing: &mut Drawing, server: &mut Server, handle: connector::Handle, info: &connector::Info, name: String) -> Result<(), Error> {
+    let resources = drawing.drm.resource_handles().map_err(|e| e.to_string())?;
     let picture = (server.screens.top_width, server.screens.size.1);
     let size = (u16::try_from(picture.0).unwrap_or(0), u16::try_from(picture.1).unwrap_or(0));
     let (mode, one_to_one) = external_mode(info.modes(), ModeFacts::of, size).ok_or("it has no modes")?;
@@ -189,9 +256,9 @@ fn connect(
         log::info!("drm: {name} has no {}x{} mode: the top screen's picture fitted into its {w}x{h}, with bars", size.0, size.1);
     }
     let taken: Vec<crtc::Handle> = drawing.screens.iter().map(|screen| screen.crtc).collect();
-    let crtc = match current_crtc(&drawing.drm, &info, &name, &taken) {
+    let crtc = match current_crtc(&drawing.drm, info, &name, &taken) {
         Some(crtc) => crtc,
-        None => free_crtc(&drawing.drm, resources, &info, &name, &taken)?,
+        None => free_crtc(&drawing.drm, &resources, info, &name, &taken)?,
     };
     let surface = presenter(&mut drawing.drm, &drawing.gbm, &drawing.renderer, crtc, mode, handle)?;
     let dst = fit(picture, (i32::from(w), i32::from(h)));
@@ -260,6 +327,22 @@ mod tests {
         assert_eq!(pacer(connected.iter().copied(), false), Some(2), "connected: the external display");
         assert_eq!(pacer(connected.iter().copied(), true), Some(1), "the second screen paces itself still");
         assert_eq!(pacer([(false, false)].iter().copied(), true), None, "no second screen");
+    }
+
+    /// A connected display is probed once none is shown; one that couldn't be shown is left until it is
+    /// unplugged, then probed again when plugged in.
+    #[test]
+    fn a_display_that_failed_is_probed_again_only_once_unplugged() {
+        let mut failed = Vec::new();
+        assert_eq!(to_probe(&[(1, false), (2, true)], false, &mut failed), Some(2), "the connected one");
+        assert_eq!(to_probe(&[(1, false), (2, true)], true, &mut failed), None, "one shown already");
+        assert_eq!(to_probe::<u32>(&[], false, &mut failed), None);
+        failed.push(2);
+        assert_eq!(to_probe(&[(1, false), (2, true)], false, &mut failed), None, "failed: not again at every change");
+        assert_eq!(to_probe(&[(1, true), (2, true)], false, &mut failed), Some(1), "another one, though");
+        assert_eq!(to_probe(&[(1, false), (2, false)], false, &mut failed), None);
+        assert!(failed.is_empty(), "unplugged: forgotten");
+        assert_eq!(to_probe(&[(1, false), (2, true)], false, &mut failed), Some(2), "plugged in again: probed");
     }
 
     /// The top panel follows the external display's rate where it has a mode at it, else the state's.

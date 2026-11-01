@@ -1433,8 +1433,11 @@ An external display is any connected connector that isn't one of the profile's t
 USB-C's DisplayPort alt mode). The connectors are looked at at start, at each udev change of the GPU
 (Smithay's `UdevBackend`) and when the seat is back; one external display is shown at a time.
 
-    none --a connector connected, not a panel, the seat ours--> mirroring [its modes probed; a mode chosen; a free CRTC, a surface and buffers; the top screen's encoding in sRGB made; logged]
-    none --connected, no mode or CRTC, or the surface fails--> none [warn; tried again at the next change]
+    none --a connector connected, not a panel nor failed, the seat ours--> probing [its modes probed on a thread of its own]
+    probing --any change--> probing [looked at again once the probe answers: the kernel holds the connectors' lock meanwhile]
+    probing --the probe answers--> mirroring [a mode chosen; a free CRTC, a surface and buffers; the top screen's encoding in sRGB made; logged]
+    probing --the probe fails, or no mode or CRTC, or the surface fails--> none [warn; the connector failed: not probed again until it is unplugged]
+    probing --unplugged as it was probed--> none [logged]
     mirroring --another connected--> mirroring [logged, left dark]
     mirroring --its connector no longer connected--> none [its feedback discarded, its screen dropped (its CRTC off); logged]
     any --a change while the seat is away--> unchanged; looked at again when the seat is back
@@ -1443,7 +1446,9 @@ The mode (`external_mode`): of the top screen's size (1920x1080 on the Thor), pr
 60, else its highest rate, the preferred among equals; shown one to one. Without one, its preferred mode,
 else its first, with the picture fitted in the middle with bars (`fit`), logged
 (`an_external_display_shows_1080p_at_120_else_60_else_its_highest`,
-`without_1080p_an_external_display_shows_its_preferred_mode_fitted`).
+`without_1080p_an_external_display_shows_its_preferred_mode_fitted`). Which connector is probed, and a
+failed one left until it is unplugged: `a_display_that_failed_is_probed_again_only_once_unplugged`; the
+probe on its thread and the display shown: the VM's `external_display`.
 
 While mirroring:
 
