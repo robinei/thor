@@ -166,7 +166,8 @@ impl Radios {
     }
 
     /// A tap on the network at `index`, or a long press. A network with a password that isn't saved
-    /// asks for it first.
+    /// asks for it first, and so does a saved one whose password was just refused (it changed on the
+    /// router): the new one replaces the saved one once it joins.
     pub(crate) fn tap_network(&mut self, index: usize, long: bool, editors: &mut Editors, out: &mut Out) {
         let Some(n) = self.wifi.networks.get(index) else {
             return;
@@ -185,7 +186,8 @@ impl Radios {
             self.needs_login(ssid);
             return;
         }
-        if n.secure && !n.saved {
+        let refused = matches!(&self.wifi.error, Some(Problem::WrongPassword { ssid: s }) if *s == ssid);
+        if n.secure && (!n.saved || refused) {
             editors.open(Editor { purpose: Purpose::Password { ssid }, text: String::new() });
             return;
         }
@@ -245,6 +247,23 @@ mod tests {
         assert_eq!(s.bottom().editor(), None);
         assert_eq!(long(&mut s, network(0)), vec![Effect::Wifi(Command::Forget("home".into()))]);
         assert_eq!(long(&mut s, network(1)), vec![], "nothing saved to forget");
+    }
+
+    /// A saved network whose password was refused asks for the password again at the next tap, and the
+    /// new one is sent; others saved still join with what is saved.
+    #[test]
+    fn a_saved_network_whose_password_was_refused_asks_for_it_again() {
+        let mut s = state();
+        tap(&mut s, Id::Tab(Tab::Wifi));
+        let networks = vec![net("home", 70, true, true, false), net("work", 50, true, true, false)];
+        let wrong = Some(Problem::WrongPassword { ssid: "home".into() });
+        read(&mut s, Reading::Wifi(Wifi { present: true, on: true, networks, error: wrong, ..Wifi::default() }));
+        assert_eq!(tap(&mut s, ListId::Wifi.row(0)), vec![], "asks first");
+        assert!(matches!(s.bottom().editor(), Some(Editor { purpose: Purpose::Password { ssid }, .. }) if ssid == "home"));
+        tap(&mut s, Id::Key(crate::bottom::keyboard::find(crate::bottom::keyboard::Key::Char('p')).unwrap()));
+        assert_eq!(tap(&mut s, Id::Editor(EditorId::Save)), vec![Effect::Wifi(Command::Connect { ssid: "home".into(), password: Some(Secret("p".into())) })]);
+        tap(&mut s, Id::Tab(Tab::Wifi));
+        assert_eq!(tap(&mut s, ListId::Wifi.row(1)), vec![Effect::Wifi(Command::Connect { ssid: "work".into(), password: None })], "saved, not refused");
     }
 
     /// The power switch asks for the opposite of what the last reading said; the reading then says

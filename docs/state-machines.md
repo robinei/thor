@@ -716,7 +716,9 @@ can.
 
 Wi-Fi and Bluetooth readings replace the state whole; the system is the authority.
 
-- Wi-Fi: a tap joins (a password editor for a secure unsaved network; NeedsLogin for an enterprise
+- Wi-Fi: a tap joins (a password editor for a secure unsaved network, and for a saved one whose
+  password was just refused, the new one replacing the saved connection once it joins:
+  `a_saved_network_whose_password_was_refused_asks_for_it_again`; NeedsLogin for an enterprise
   one); a long press forgets a saved one; power toggles. Tests: `joining_asks_for_a_password_only_when_
   needed`, `a_network_that_needs_a_login_says_so`, `the_switch_toggles_the_radio_and_a_cancelled_password_joins_nothing`. A reading keeps the join's busy
   mark until it shows the join, the network connected or an error other than the one from before the

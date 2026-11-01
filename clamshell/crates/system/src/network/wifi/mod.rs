@@ -75,6 +75,8 @@ struct Attempt {
     ssid: String,
     /// The connection we added for it, deleted again if the join fails.
     added: Option<Path<'static>>,
+    /// The saved connections it replaces, with a password that changed, deleted once it joins.
+    replaces: Vec<Path<'static>>,
     /// The active connection NetworkManager made for it, and the device it is on.
     active: Path<'static>,
     device: Path<'static>,
@@ -323,6 +325,11 @@ impl<S: Sink> WifiThread<S> {
         }
         if joined {
             log::info!("wifi: joined {}", attempt.ssid);
+            for path in &attempt.replaces {
+                if let Err(e) = s.delete(path) {
+                    log::warn!("wifi: removing {}'s connection saved before: {e}", attempt.ssid);
+                }
+            }
             st.attempt = None;
             return Ok(());
         }
@@ -376,8 +383,12 @@ impl<S: Sink> WifiThread<S> {
                 s.active_changes.clear();
                 s.device_changes.clear();
                 let root = Path::from("/");
-                let (added, active) = match (s.saved()?.into_iter().find(|(_, s)| *s == ssid), password) {
-                    (Some((connection, _)), None) => {
+                let saved: Vec<Path<'static>> = s.saved()?.into_iter().filter(|(_, s)| *s == ssid).map(|(path, _)| path).collect();
+                // A password given for a saved network (its password changed) makes a new connection,
+                // which replaces the saved one once it joins; if it fails, the saved one stays.
+                let replaces = if password.is_some() { saved.clone() } else { Vec::new() };
+                let (added, active) = match (saved.into_iter().next(), password) {
+                    (Some(connection), None) => {
                         let (active,): (Path<'static>,) = s.call(nm::PATH, nm::MANAGER, "ActivateConnection", (connection, device.clone(), root))?;
                         (None, active)
                     }
@@ -392,7 +403,7 @@ impl<S: Sink> WifiThread<S> {
                     }
                 };
                 log::info!("wifi: joining {ssid}");
-                st.attempt = Some(Attempt { ssid, added, active, device, started: Instant::now(), device_failure: None });
+                st.attempt = Some(Attempt { ssid, added, replaces, active, device, started: Instant::now(), device_failure: None });
             }
         }
         Ok(())
