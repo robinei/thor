@@ -325,6 +325,8 @@ struct Controller {
     key: String,
     name: String,
     phys: String,
+    /// Its unique id, such as a Bluetooth controller's address, or empty.
+    uniq: String,
     path: PathBuf,
     grabbed: Grabbed,
     normalise: Normalise,
@@ -341,10 +343,10 @@ struct Controller {
     sticks: calibrate::StickState,
 }
 
-/// The gyro of the controller named `name` at `phys`: its own motion sensor, or else the sensor hub, if
-/// it may have it.
-fn find_motion(name: &str, phys: &str, sensor_hub: Option<clamshell_device::gyro::SensorHub>) -> Option<Box<dyn MotionSource>> {
-    EvdevMotion::find(name, phys)
+/// The gyro of the controller `controller`: its own motion sensor, or else the sensor hub, if it may have
+/// it.
+fn find_motion(controller: motion::Ident, sensor_hub: Option<clamshell_device::gyro::SensorHub>) -> Option<Box<dyn MotionSource>> {
+    EvdevMotion::find(controller)
         .map(|m| Box::new(m) as Box<dyn MotionSource>)
         .or_else(|| sensor_hub::SensorHub::find(sensor_hub).map(|m| Box::new(m) as Box<dyn MotionSource>))
 }
@@ -508,6 +510,7 @@ impl<S: Sink> PadThread<S> {
         let id = real.input_id();
         let (name, phys) = (real.name().unwrap_or("").to_owned(), real.physical_path().unwrap_or("").to_owned());
         let key = device::key(id.vendor(), id.product(), real.unique_name(), &name);
+        let uniq = real.unique_name().unwrap_or("").to_owned();
         let caps = Capabilities::of(&real)?;
         let rumble = Rumble::of(&mut real).unwrap_or_else(|e| {
             log::warn!("pad: {name}: rumble: {e}");
@@ -540,6 +543,7 @@ impl<S: Sink> PadThread<S> {
             key: key.clone(),
             name: name.clone(),
             phys,
+            uniq,
             path,
             grabbed,
             normalise,
@@ -623,7 +627,7 @@ impl<S: Sink> PadThread<S> {
         let Some(c) = pads.controllers.get(host) else { return };
         // The sensor hub is the built-in controller's, or any controller's where the device names none.
         let hub = if c.builtin || self.controls.builtin_driver.is_none() { self.sensor_hub } else { None };
-        pads.motion = find_motion(&c.name, &c.phys, hub).map(|m| (m, c.slot));
+        pads.motion = find_motion(motion::Ident { name: &c.name, phys: &c.phys, uniq: &c.uniq }, hub).map(|m| (m, c.slot));
     }
 
     /// The state's players changed: each controller goes to its player now, the count's pads and routers

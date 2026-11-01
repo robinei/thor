@@ -189,21 +189,39 @@ fn is_motion(d: &RawDevice) -> bool {
     d.properties().contains(PropType::ACCELEROMETER) && d.supported_absolute_axes().is_some_and(|a| GYRO.iter().all(|&g| a.contains(g)))
 }
 
-/// Whether `motion` is `controller`'s. It is if its name starts with the controller's, since drivers call
-/// it `<controller> Motion Sensors`, or if their physical paths differ only in the last part.
-fn pairs(controller: (&str, &str), motion: (&str, &str)) -> bool {
-    let (c_name, c_phys) = controller;
-    let (m_name, m_phys) = motion;
+/// What tells an input device from others: its name, physical path and unique id (a Bluetooth
+/// controller's address), each empty if it has none.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct Ident<'a> {
+    pub(crate) name: &'a str,
+    pub(crate) phys: &'a str,
+    pub(crate) uniq: &'a str,
+}
+
+impl<'a> Ident<'a> {
+    fn of(d: &'a RawDevice) -> Ident<'a> {
+        Ident { name: d.name().unwrap_or(""), phys: d.physical_path().unwrap_or(""), uniq: d.unique_name().unwrap_or("") }
+    }
+}
+
+/// Whether `motion` is `controller`'s. Where both have a unique id, it decides: a Bluetooth device's
+/// physical path is the adapter's address, the same for every controller, and two of one model share a
+/// name. Otherwise it is if its name starts with the controller's, since drivers call it `<controller>
+/// Motion Sensors`, or if their physical paths differ only in the last part.
+fn pairs(controller: Ident, motion: Ident) -> bool {
+    let (c_uniq, m_uniq) = (controller.uniq.trim(), motion.uniq.trim());
+    if !c_uniq.is_empty() && !m_uniq.is_empty() {
+        return c_uniq == m_uniq;
+    }
     let stem = |p: &str| p.rsplit_once('/').map_or(p, |(s, _)| s).to_owned();
-    (!c_name.is_empty() && m_name.starts_with(c_name)) || (!c_phys.is_empty() && stem(c_phys) == stem(m_phys))
+    (!controller.name.is_empty() && motion.name.starts_with(controller.name)) || (!controller.phys.is_empty() && stem(controller.phys) == stem(motion.phys))
 }
 
 impl EvdevMotion {
-    /// The motion sensor of the controller named `name` with physical path `phys`, or else the only one
-    /// there is.
-    pub(crate) fn find(name: &str, phys: &str) -> Option<EvdevMotion> {
+    /// The motion sensor of the controller `controller`, or else the only one there is.
+    pub(crate) fn find(controller: Ident) -> Option<EvdevMotion> {
         let sensors: Vec<RawDevice> = evdev::raw_stream::enumerate().map(|(_, d)| d).filter(is_motion).collect();
-        let paired = sensors.iter().position(|d| pairs((name, phys), (d.name().unwrap_or(""), d.physical_path().unwrap_or(""))));
+        let paired = sensors.iter().position(|d| pairs(controller, Ident::of(d)));
         let chosen = match paired {
             Some(i) => sensors.into_iter().nth(i),
             None if sensors.len() == 1 => sensors.into_iter().next(),
@@ -305,11 +323,19 @@ mod tests {
 
     #[test]
     fn a_motion_sensor_pairs_with_its_controller() {
-        let pad = ("Sony Interactive Entertainment DualSense Wireless Controller", "usb-0000:00:14.0-2/input3");
-        assert!(pairs(pad, ("Sony Interactive Entertainment DualSense Wireless Controller Motion Sensors", "")));
-        assert!(pairs(("x", "usb-0000:00:14.0-2/input0"), ("y", "usb-0000:00:14.0-2/input1")), "the same port");
-        assert!(!pairs(("x", "usb-1/input0"), ("y", "usb-2/input0")));
-        assert!(!pairs(("", ""), ("y", "")), "nothing to pair by");
+        let at = |name, phys| Ident { name, phys, uniq: "" };
+        let pad = at("Sony Interactive Entertainment DualSense Wireless Controller", "usb-0000:00:14.0-2/input3");
+        assert!(pairs(pad, at("Sony Interactive Entertainment DualSense Wireless Controller Motion Sensors", "")));
+        assert!(pairs(at("x", "usb-0000:00:14.0-2/input0"), at("y", "usb-0000:00:14.0-2/input1")), "the same port");
+        assert!(!pairs(at("x", "usb-1/input0"), at("y", "usb-2/input0")));
+        assert!(!pairs(at("", ""), at("y", "")), "nothing to pair by");
+        // Two DualSenses over Bluetooth: the same names, the adapter's address as the physical path, each
+        // its own address as its unique id. (By name and path, either took the first sensor found.)
+        let name = "DualSense Wireless Controller";
+        let sensors = "DualSense Wireless Controller Motion Sensors";
+        let bt = |name, uniq| Ident { name, phys: "e8:48:b8:c8:20:00", uniq };
+        assert!(pairs(bt(name, "a0:5a:5c:00:00:01"), bt(sensors, "a0:5a:5c:00:00:01")));
+        assert!(!pairs(bt(name, "a0:5a:5c:00:00:01"), bt(sensors, "a0:5a:5c:00:00:02")), "the other controller's");
     }
 
     #[test]
