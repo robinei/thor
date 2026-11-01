@@ -6,7 +6,7 @@ impl Wm {
     pub(super) fn reply(&mut self, query: Query, bytes: &[u8], wire: &mut Transport, server: &mut Server) -> io::Result<()> {
         if bytes.first() == Some(&0) {
             match query {
-                Query::Property(id, _) | Query::Pid(id) | Query::Attributes(id) => {
+                Query::Property(id, _) | Query::Pid(id) | Query::Attributes(id) | Query::Geometry(id) => {
                     self.forget(id, server);
                     return Ok(());
                 }
@@ -100,6 +100,16 @@ impl Wm {
                     window.outstanding = window.outstanding.saturating_sub(1);
                 }
             }
+            Query::Geometry(id) => {
+                let reply = GetGeometryReply::try_parse(bytes).map_err(io::Error::other)?.0;
+                if let Some(window) = self.windows.iter_mut().find(|w| w.id == id) {
+                    if window.measuring {
+                        window.size = (reply.width.max(1), reply.height.max(1));
+                        window.measuring = false;
+                    }
+                    window.outstanding = window.outstanding.saturating_sub(1);
+                }
+            }
             Query::Pid(id) => {
                 let reply = res::QueryClientIdsReply::try_parse(bytes).map_err(io::Error::other)?.0;
                 if let Some(window) = self.windows.iter_mut().find(|w| w.id == id) {
@@ -156,6 +166,7 @@ impl Wm {
             serial: None,
             surface: None,
             size: (u16::try_from(geometry.size.w).unwrap_or(1), u16::try_from(geometry.size.h).unwrap_or(1)),
+            measuring: false,
             configured: None,
             parent: None,
             dirty: true,
@@ -191,7 +202,21 @@ impl Wm {
                 let event = ReparentNotifyEvent::try_parse(bytes).map_err(io::Error::other)?.0;
                 if event.parent == self.root {
                     let at = Rectangle::new((i32::from(event.x), i32::from(event.y)).into(), (1, 1).into());
+                    let known = self.windows.len();
                     self.discover(event.window, at, event.override_redirect, wire, server)?;
+                    // ReparentNotify carries no size: it is asked for, one more answer the window waits for.
+                    if self.windows.len() > known
+                        && let Some(window) = self.windows.last_mut()
+                    {
+                        if self.pending.len() < 256 {
+                            let (id, xid) = (window.id, window.xid);
+                            window.measuring = true;
+                            window.outstanding += 1;
+                            self.query(wire, GetGeometryRequest { drawable: xid }, 0, Query::Geometry(id))?;
+                        } else {
+                            log::warn!("compositor: X11 window {} reparented to the root: its size not asked, 256 answers outstanding", window.id);
+                        }
+                    }
                 } else if let Some(id) = self.windows.iter().find(|w| w.xid == event.window).map(|w| w.id) {
                     self.forget(id, server);
                 }
@@ -297,6 +322,10 @@ impl Wm {
                     }
                     if event.value_mask.contains(ConfigWindow::HEIGHT) {
                         window.size.1 = event.height.max(1);
+                    }
+                    // Newer than the size being asked for, if it is.
+                    if event.value_mask.contains(ConfigWindow::WIDTH | ConfigWindow::HEIGHT) {
+                        window.measuring = false;
                     }
                     window.configured = None;
                 }

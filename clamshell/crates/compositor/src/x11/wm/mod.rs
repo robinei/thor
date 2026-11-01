@@ -44,6 +44,7 @@ enum Query {
     Property(i64, &'static str),
     Pid(i64),
     Attributes(i64),
+    Geometry(i64),
     OwnershipBarrier,
     RandrExtension,
     RandrVersion,
@@ -81,6 +82,9 @@ struct Window {
     serial: Option<u64>,
     surface: Option<WlSurface>,
     size: (u16, u16),
+    /// Whether its size is being asked for (a window reparented to the root: ReparentNotify carries none),
+    /// until the answer, or a size the client asks for, comes.
+    measuring: bool,
     configured: Option<Rectangle<i32, smithay::utils::Logical>>,
     /// The parent its facts were last given with: it is looked up again at each settle, until it opens.
     parent: Option<i64>,
@@ -371,23 +375,60 @@ mod tests {
         wm.settle_menus(&mut wire, &mut server).unwrap();
         assert!(!wm.windows[1].wants_map, "its owner gone: dismissed");
     }
-    /// A window reparented into the root is found; one reparented out of it is forgotten.
+    /// A window reparented into the root is found, and its size asked for (ReparentNotify carries none),
+    /// unless the client asks for one first; one reparented out of it is forgotten.
     #[test]
     fn reparenting_finds_and_forgets_top_level_windows() {
         let (_display, mut server) = crate::tests::ServerBuilder::new().build();
         let (socket, _peer) = UnixStream::pair().unwrap();
         let mut wire = Transport::new(socket, Instant::now()).unwrap();
         let mut wm = Wm { root: 1, owner: 2, atoms: Atoms(NAMES.iter().enumerate().map(|(i, name)| (*name, 100 + i as u32)).collect()), ..Wm::default() };
-        let mut reparent = |wm: &mut Wm, parent| {
-            let event = ReparentNotifyEvent { response_type: REPARENT_NOTIFY_EVENT, event: 1, window: 10, parent, ..ReparentNotifyEvent::default() };
-            let mut event = Serialize::serialize(&event).to_vec();
-            event.resize(32, 0);
-            wm.event(&event, &mut wire, &mut server).unwrap();
+        let event = |event: &dyn Fn() -> Vec<u8>| {
+            let mut bytes = event();
+            bytes.resize(32, 0);
+            bytes
         };
-        reparent(&mut wm, 1);
+        let reparent = |parent| {
+            event(&|| {
+                Serialize::serialize(&ReparentNotifyEvent {
+                    response_type: REPARENT_NOTIFY_EVENT,
+                    event: 1,
+                    window: 10,
+                    parent,
+                    ..ReparentNotifyEvent::default()
+                })
+                .to_vec()
+            })
+        };
+        let geometry = |width, height| {
+            let mut bytes = Serialize::serialize(&GetGeometryReply { width, height, ..GetGeometryReply::default() }).to_vec();
+            bytes.resize(32, 0);
+            bytes[0] = 1;
+            bytes
+        };
+        wm.event(&reparent(1), &mut wire, &mut server).unwrap();
         assert_eq!(wm.windows.iter().map(|w| w.xid).collect::<Vec<_>>(), [10]);
-        reparent(&mut wm, 50);
+        assert!(matches!(wm.pending.as_slice(), [Pending { kind: Query::Geometry(_), .. }]));
+        assert_eq!(wm.windows[0].outstanding, PROPERTIES.len() + 3, "waits for its size too");
+        let id = wm.windows[0].id;
+        wm.reply(Query::Geometry(id), &geometry(640, 480), &mut wire, &mut server).unwrap();
+        assert_eq!((wm.windows[0].size, wm.windows[0].outstanding), ((640, 480), PROPERTIES.len() + 2));
+        wm.event(&reparent(50), &mut wire, &mut server).unwrap();
         assert!(wm.windows.is_empty());
+        // A size the client asks for before the answer is newer than the answer.
+        wm.event(&reparent(1), &mut wire, &mut server).unwrap();
+        let id = wm.windows[0].id;
+        let configure = ConfigureRequestEvent {
+            response_type: CONFIGURE_REQUEST_EVENT,
+            window: 10,
+            width: 800,
+            height: 600,
+            value_mask: ConfigWindow::WIDTH | ConfigWindow::HEIGHT,
+            ..ConfigureRequestEvent::default()
+        };
+        wm.event(&event(&|| Serialize::serialize(&configure).to_vec()), &mut wire, &mut server).unwrap();
+        wm.reply(Query::Geometry(id), &geometry(640, 480), &mut wire, &mut server).unwrap();
+        assert_eq!(wm.windows[0].size, (800, 600));
     }
     /// A client may put a window in front only while its program has the focus, and only its program's.
     #[test]

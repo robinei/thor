@@ -1581,6 +1581,8 @@ or malformed clears its fact.
 | From | Event / condition | To | Effects | Test |
 |---|---|---|---|---|
 | — | CreateNotify on the root | known | PropertyChange selected; no queries | wm `outstanding_…` |
+| — | ReparentNotify into the root | known | as CreateNotify; its size asked for (GetGeometry; ReparentNotify carries none), one more answer it waits for; a size the client asks for before the answer wins | wm `reparenting_finds_and_forgets_top_level_windows` |
+| known or placed | ReparentNotify into another window | removed | Closed if open | same |
 | known | MapRequest | querying | attributes, nine properties, the PID (waiting for room under the 256) | same |
 | querying | every reply, then its process identified (asked for once the rest are in; `a_window_opens_once_its_process_is_identified`) | placed | Opened; ConfigureWindow (the presentation's geometry; _NET_WM_STATE fullscreen or empty; WM_STATE Normal); MapWindow; then focus | wm `placement_is_configured_before_mapping_and_focus_waits_for_the_servers_time` (the request order), `an_unchanged_window_sends_no_x11_requests` (nothing again when unchanged) |
 | querying or placed | an error reply to its query | removed | Closed if open | GAP |
