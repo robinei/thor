@@ -169,7 +169,8 @@ and fixed once. Seven rules:
   drawn into a pixmap the host hands it, and the effects in order. Over each screen it records and draws
   another layer the same way, its overlay (over the top screen's window the HUD and the window arrows, or the overview's cells,
   over the bottom screen the notifications, with their targets); the host shows the part of it that
-  draws, over a window or ClamShell's view. The compositor hosts it: it gives it
+  draws, over a window or ClamShell's view. An overlay's targets act as they are pressed, by touch or
+  by the pad's A; the pad moves to them as to the screen's, and not to the screen's targets they cover. The compositor hosts it: it gives it
   input by screen and the screens' sizes, runs it at its deadlines, shows each screen's pixmap (a
   software surface: kept, with only what changed uploaded) where the scene places it, and
   carries out the effects that are its own (the screens' power, the refresh rate, closing windows,

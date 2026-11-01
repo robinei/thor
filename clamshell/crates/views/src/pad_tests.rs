@@ -387,3 +387,54 @@ fn every_option_of_a_long_choice_list_is_reached() {
     let form = core.state().library_view().edit().and_then(|e| e.form()).expect("the form");
     assert_eq!(form.item.as_ref().value(&clamshell_library::demo::config(), clamshell_state::library_view::form::Field::Place).to_string(), "p29");
 }
+
+/// Notifications over the second screen are reached by the pad: down from the bar goes to the newest,
+/// not to what they cover, and A acts on it as a tap does.
+#[test]
+fn the_pad_reaches_notifications_and_not_what_they_cover() {
+    use clamshell_state::notifications::{Notification, NotificationEvent, NotificationId, Urgency};
+    let account = clamshell_state::setup::account::Account::NoHelper;
+    let state = State::new(Init { library: Some(clamshell_library::demo::library()), account, ..Init::default() });
+    let mut core = clamshell_ui::Core::new(state, crate::VIEWS, || {}).expect("a core");
+    core.resize(Screen::Top, (1920, 1080), 1);
+    core.resize(Screen::Bottom, (1240, 1080), 1);
+    core.handle(Event::tick(1_760_000_000));
+    core.handle(PointerEvent::Activate(Id::Tab(Tab::Settings)).into());
+    for id in 1..=2 {
+        let n = Notification {
+            id: NotificationId::Bus(id),
+            app: "mail".into(),
+            summary: format!("note {id}"),
+            body: "a line".into(),
+            urgency: Urgency::Normal,
+            action: None,
+            timeout_ms: 0,
+        };
+        core.handle(NotificationEvent::Notified(Box::new(n)).into());
+    }
+    let draw = |core: &mut clamshell_ui::Core| {
+        for layer in [clamshell_ui::Layer::Screen(Screen::Top), clamshell_ui::Layer::Screen(Screen::Bottom), clamshell_ui::Layer::Overlay(Screen::Bottom)] {
+            core.record(layer, false);
+        }
+        core.frames_done();
+    };
+    draw(&mut core);
+    core.handle(PointerEvent::Focus(Id::Tab(Tab::Settings)).into());
+    core.handle(Event::Pad(PadInput::Down));
+    let newest = Id::Notification { id: NotificationId::Bus(2), close: false };
+    assert_eq!(core.state().pointer().focus(), Some(&newest), "down from the bar: the newest notification");
+    draw(&mut core);
+    core.handle(Event::Pad(PadInput::Right));
+    assert_eq!(core.state().pointer().focus(), Some(&Id::Notification { id: NotificationId::Bus(2), close: true }), "its close mark");
+    draw(&mut core);
+    core.handle(Event::Pad(PadInput::A(true)));
+    core.handle(Event::Pad(PadInput::A(false)));
+    assert_eq!(core.state().notifications().len(), 1, "closed");
+    assert!(core.state().notifications().iter().all(|n| n.id == NotificationId::Bus(1)));
+    // Down from the last notification goes to the screen's first target below them.
+    draw(&mut core);
+    core.handle(PointerEvent::Focus(Id::Notification { id: NotificationId::Bus(1), close: false }).into());
+    core.handle(Event::Pad(PadInput::Down));
+    let below = core.state().pointer().focus().cloned();
+    assert!(matches!(below, Some(Id::Settings(SettingsId::Tile(_)))), "a tile, not the scope tabs the notification covers: {below:?}");
+}

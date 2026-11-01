@@ -72,18 +72,28 @@ impl Default for ScreenCore {
     }
 }
 
-impl Drawn for Screens<ScreenCore> {
+/// What the pad's focus goes over: the screens as last recorded, and the overlays over them.
+struct Layers<'a> {
+    screens: &'a Screens<ScreenCore>,
+    overlays: &'a Screens<ScreenCore>,
+}
+
+impl Drawn for Layers<'_> {
     fn targets(&self, screen: Screen) -> &[Target] {
-        &self[screen].frames.retained.targets
+        &self.screens[screen].frames.retained.targets
+    }
+
+    fn overlay(&self, screen: Screen) -> &[Target] {
+        &self.overlays[screen].frames.retained.targets
     }
 
     fn size(&self, screen: Screen) -> (f32, f32) {
-        let (w, h) = self[screen].size;
+        let (w, h) = self.screens[screen].size;
         (w as f32, h as f32)
     }
 
     fn pad(&self, screen: Screen) -> &PadOut {
-        &self[screen].pad
+        &self.screens[screen].pad
     }
 }
 

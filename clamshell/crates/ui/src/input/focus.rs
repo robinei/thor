@@ -18,6 +18,12 @@ use crate::toolkit::{Drag, PadMove, PadOut, PadUse, Target};
 /// What the last frames drew on each screen, and the screens' sizes in surface pixels.
 pub trait Drawn {
     fn targets(&self, screen: Screen) -> &[Target];
+    /// The targets of what is drawn over the screen, such as the notifications over the second screen.
+    /// The pad moves to them as to the screen's, A acts on them as a touch does, and the screen's
+    /// targets they cover are left out.
+    fn overlay(&self, _screen: Screen) -> &[Target] {
+        &[]
+    }
     fn size(&self, screen: Screen) -> (f32, f32);
     /// What the pad's buttons do there, as the screen's views declared (see [`PadOut`]).
     fn pad(&self, screen: Screen) -> &PadOut;
@@ -63,9 +69,23 @@ pub fn drawn_on(d: &impl Drawn, screen: Option<Screen>, id: &Id) -> bool {
     drawn_in(d, screen, id).is_some()
 }
 
-/// The target `id` as the last frame drew it on `screen`, or on either screen if `screen` is `None`.
+/// The target `id` as the last frame drew it on `screen`, or on either screen if `screen` is `None`: on
+/// the screen or its overlay.
 fn drawn_in<'d>(d: &'d impl Drawn, screen: Option<Screen>, id: &Id) -> Option<&'d Target> {
-    Screen::BOTH.into_iter().filter(|s| screen.is_none_or(|on| on == *s)).find_map(|s| d.targets(s).iter().find(|t| &t.id == id))
+    Screen::BOTH.into_iter().filter(|s| screen.is_none_or(|on| on == *s)).find_map(|s| d.overlay(s).iter().chain(d.targets(s)).find(|t| &t.id == id))
+}
+
+/// Whether `id` is a target of an overlay.
+fn on_overlay(d: &impl Drawn, id: &Id) -> bool {
+    Screen::BOTH.into_iter().any(|s| d.overlay(s).iter().any(|t| &t.id == id))
+}
+
+/// The targets on `screen` the pad may reach: the overlay's, then the screen's that no overlay target
+/// covers (by their middle).
+fn reachable(d: &impl Drawn, screen: Screen) -> impl Iterator<Item = &Target> {
+    let over = d.overlay(screen);
+    let covered = move |t: &&Target| over.iter().any(|o| o.rect.contains(t.rect.x + t.rect.w / 2.0, t.rect.y + t.rect.h / 2.0));
+    over.iter().chain(d.targets(screen).iter().filter(move |t| !covered(t)))
 }
 
 /// The screen the focus is on. It is the top one when the focus isn't on anything drawn.
@@ -115,7 +135,7 @@ pub fn candidates<'d>(s: &State, d: &'d impl Drawn) -> Vec<(Screen, &'d Target)>
     let pad = if held.is_some() { PadUse::Held } else { PadUse::Moves };
     let on = |screen: &Screen| held.map_or(usable(s, *screen), |h| h == *screen);
     let reached = |t: &Target| t.pad == pad || (pad == PadUse::Moves && t.pad == PadUse::List);
-    Screen::BOTH.into_iter().filter(on).flat_map(|screen| d.targets(screen).iter().map(move |t| (screen, t))).filter(|(_, t)| reached(t)).collect()
+    Screen::BOTH.into_iter().filter(on).flat_map(|screen| reachable(d, screen).map(move |t| (screen, t))).filter(|(_, t)| reached(t)).collect()
 }
 
 /// `t` on `screen` placed in the plane [`nav::step`] works in.
@@ -189,12 +209,15 @@ pub fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, dir: Di
 pub enum PadPress {
     /// Presses the target, which holding does as it was drawn to.
     Press(Id, Hold),
+    /// Acts on an overlay's target, as a touch on it does.
+    Act(Id),
     Focus(Event),
 }
 
 pub fn press(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>) -> Option<PadPress> {
     let screen = (!usable(s, Screen::Top)).then_some(Screen::Bottom);
     match s.pointer().focus() {
+        Some(id) if on_overlay(d, id) && drawn_on(d, screen, id) => Some(PadPress::Act(id.clone())),
         Some(id) if let Some(t) = drawn_in(d, screen, id) => Some(PadPress::Press(id.clone(), t.hold)),
         _ if s.pad().on_top() => default_focus(d, Screen::Top).map(|id| PadPress::Focus(PointerEvent::Focus(id).into())),
         _ => focus_bottom(s, d, memory).map(PadPress::Focus),

@@ -771,7 +771,10 @@ bottom screen. Taps reach the state from the bottom screen's overlay as the pres
 (`Core::press_overlay`), as `PointerEvent::Act`, which the state turns into `Tapped` or `Dismissed`
 without moving the focus (`a_notification_pressed_is_tapped_and_its_close_mark_dismisses_it`), not
 through the pointer's presses; the overlay draws them, and so offers them to touch, only while the bottom
-screen is lit (ui `the_newest_three_show_below_the_bar_each_with_its_close_mark`).
+screen is lit (ui `the_newest_three_show_below_the_bar_each_with_its_close_mark`). The pad reaches them
+too: the overlay's targets are among the second screen's for its moves, the screen's targets they cover
+(by their middle) are left out, and A on one is the same `PointerEvent::Act` (views
+`the_pad_reaches_notifications_and_not_what_they_cover`).
 
 What the bus thread does (the name, `Notify` answered with the id, `replaces_id`, the signals) is checked
 by its parsing tests, a live test by hand (`a_notify_call_is_answered_and_sent_on`), and the nested

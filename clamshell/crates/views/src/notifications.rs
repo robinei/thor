@@ -1,7 +1,7 @@
 //! The notifications over the second screen, below the bar: the newest few, each with its summary, the
 //! first line of its body and a close mark, and below them how many more there are. A tap on one invokes
 //! its default action and dismisses it, and the close mark only dismisses it; both act as they are
-//! pressed (`Core::press_overlay`). They sit on a fill barely above black, which sets them apart from
+//! pressed (`Core::press_overlay`), or as the pad's A presses them (see clamshell-ui's `focus::Drawn`). They sit on a fill barely above black, which sets them apart from
 //! ClamShell's view or the window below them without a border, and are drawn only while the screen is
 //! lit, since their time runs only then (see clamshell-state's
 //! `notifications`).

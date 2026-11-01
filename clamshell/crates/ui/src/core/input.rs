@@ -9,7 +9,7 @@ use crate::input::focus::{self, PadPress};
 use crate::input::nav::Dir;
 use crate::input::{End, Source};
 
-use super::{Core, Step};
+use super::{Core, Layers, Step};
 
 impl Core {
     /// A finger or button comes down at `position` on `screen`. It presses the topmost target there,
@@ -120,19 +120,19 @@ impl Core {
             _ => None,
         };
         if let Some(dir) = dir {
-            let event = focus::navigate(&self.state, &self.screens, &self.focus_memory, dir);
+            let event = focus::navigate(&self.state, &self.layers(), &self.focus_memory, dir);
             return self.handle_all(event);
         }
         match input {
             PadInput::A(true) => self.press_focus(source),
             PadInput::A(false) => {}
             // The Back button is B on ClamShell's screens.
-            PadInput::B | PadInput::Back => self.handle_all(focus::back(&self.state, &self.screens)),
-            PadInput::Y | PadInput::X | PadInput::Start => self.handle_all(focus::shortcut(&self.state, &self.screens, input)),
-            PadInput::Shoulder(step) => self.handle_all(focus::shoulder(&self.state, &self.screens, step)),
-            PadInput::Trigger(step) => self.handle_all(focus::trigger(&self.state, &self.screens, step)),
+            PadInput::B | PadInput::Back => self.handle_all(focus::back(&self.state, &self.layers())),
+            PadInput::Y | PadInput::X | PadInput::Start => self.handle_all(focus::shortcut(&self.state, &self.layers(), input)),
+            PadInput::Shoulder(step) => self.handle_all(focus::shoulder(&self.state, &self.layers(), step)),
+            PadInput::Trigger(step) => self.handle_all(focus::trigger(&self.state, &self.layers(), step)),
             PadInput::Switch if self.state.pad().on_top() => {
-                let event = focus::switch_screen(&self.state, &self.screens, &mut self.focus_memory);
+                let event = focus::switch_screen(&self.state, &Layers { screens: &self.screens, overlays: &self.overlays }, &mut self.focus_memory);
                 self.handle_all(event);
             }
             // Move the pad between the second screen and whatever else wants it. When it comes back to
@@ -146,7 +146,7 @@ impl Core {
                 self.after(|core| {
                     if on_ui(&core.state) {
                         core.fresh();
-                        let event = focus::focus_bottom(&core.state, &core.screens, &core.focus_memory);
+                        let event = focus::focus_bottom(&core.state, &core.layers(), &core.focus_memory);
                         core.handle_all(event);
                     }
                 });
@@ -157,14 +157,21 @@ impl Core {
 
     /// A or Enter on the focused target.
     fn press_focus(&mut self, source: Source) {
-        match focus::press(&self.state, &self.screens, &self.focus_memory) {
+        match focus::press(&self.state, &self.layers(), &self.focus_memory) {
             Some(PadPress::Press(id, hold)) => {
                 let actions = self.input.press(source, id, hold, std::time::Instant::now());
                 self.run_actions(actions);
             }
+            // An overlay's target acts as it is pressed, as a touch on it does.
+            Some(PadPress::Act(id)) => self.handle(PointerEvent::Act(id).into()),
             Some(PadPress::Focus(event)) => self.handle(event),
             None => {}
         }
+    }
+
+    /// What the pad's focus goes over (see [`Layers`]).
+    fn layers(&self) -> Layers<'_> {
+        Layers { screens: &self.screens, overlays: &self.overlays }
     }
 
     /// The mode a frame drew that takes the pad's buttons, if one did: the overlays' first, as they are over
