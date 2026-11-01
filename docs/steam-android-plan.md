@@ -404,8 +404,8 @@ Every game Steam starts goes through `steamrtarm64/steam-launch-wrapper`. That i
   - It needs no running ClamShell. It reads `settings/*.json` through `Store` and library.json's runners and sources (no scan), finds the entry's runner level (the Steam source that would take it, else none), and prints the variables.
   - It uses the same function the state uses for its own launches, so there is one place that computes a launch's environment.
 - **What the game gets, later ones overriding earlier ones:** the settings' variables (area 2, the cap's FIFO), then `SDL_GAMECONTROLLER_IGNORE_DEVICES`, then the Env tile's variables for All, the runner and the game.
-  - The user's own Steam launch options (`VAR=x %command%`) come after the hook in Steam's command, so they win over all of it.
-  - The order is ClamShell's levels, then Steam's launch options. `docs/runners.md` says so.
+  - The user's own Steam launch options (`VAR=x %command%`) are set before the hook runs (Steam puts them in front of `steam-launch-wrapper`), so a variable ClamShell also sets is replaced by ClamShell's; the others pass unchanged (found with S2; this section first assumed the opposite).
+  - The order is Steam's launch options, then ClamShell's levels over them. `docs/runners.md` ("Precedence") says so and is the reference.
 - **`ask_steam` simplifies.** It stops passing the environment to `steam -applaunch`, which never reached the game.
 
 The other way, considered: write `<hook> %command%` into each game's `LaunchOptions` in `userdata/<id>/config/localconfig.vdf` before Steam starts (Steam rewrites that file while it runs). Games installed during a session would miss the hook until Steam's next start, and the user's own launch options get edited. Kept only as the fallback if the device shows Steam doesn't call the link for every game.
@@ -1076,7 +1076,7 @@ The `thor` metapackage depends on `thor-android` and `waydroid`, so that setup n
 ## 4. Interactions
 
 - **One settings model.** The new settings sit beside the picture, power and input settings: same levels, same tile, same menu, same dimming. Every setting acting at launch goes through `settings::launch_env`, used by ClamShell's own launches and by `clamshell --launch-env` for Steam's hook.
-- **Steam's launch options against ClamShell's runner.** ClamShell's levels (All, then the Steam runner, then the game, then the Env tile) come first. The user's Steam launch options come after the hook in Steam's command, so they win. The Proton choice is Steam's; FEX, the driver and frame generation apply whichever Proton runs.
+- **Steam's launch options against ClamShell's runner.** The user's Steam launch options are set before the hook runs, so ClamShell's levels (All, then the Steam runner, then the game, then the Env tile) replace a variable of the same name; the others pass unchanged (`docs/runners.md`, "Precedence"). The Proton choice is Steam's; FEX, the driver and frame generation apply whichever Proton runs.
 - **Launchers' games** (Heroic, Lutris). Their settings reach the game only when the launch starts the launcher itself. A launcher already running takes the game from its shortcut, and the variables go nowhere. That is the same silent gap as Steam's before S2. The panel should dim through-launch tiles for launcher games: `Panel::handed_over` extended to them. It is a small change, independent of the phases above.
 - **Picture.**
   - Frame generation versus picture.md's In game frame generation: one at a time; the tile dims.
