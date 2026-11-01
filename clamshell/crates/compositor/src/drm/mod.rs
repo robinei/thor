@@ -44,6 +44,8 @@ mod external;
 mod input_areas;
 mod shows;
 mod turn;
+#[cfg(test)]
+mod turns_tests;
 use commit::*;
 use external::*;
 use input_areas::*;
@@ -1323,7 +1325,8 @@ mod tests {
         assert_eq!(screen_turn(Timing { shows: Shows::Window(7), ..changed }, now).does, Does::Window);
         assert_eq!(screen_turn(Timing { shows: Shows::Straight(7), ..changed }, now).does, Does::Frame);
         let waiting = Timing { layers_dirty: true, composing: true, ..changed };
-        assert_eq!(screen_turn(waiting, now).does, Does::Layers, "ahead of a composition waiting for its deadline");
+        assert_eq!(screen_turn(waiting, now).does, Does::Nothing, "the composition waiting for its deadline carries them");
+        assert_eq!(screen_turn(Timing { layers_dirty: true, ..IDLE }, now).does, Does::Layers, "else at once");
         assert_eq!(screen_turn(Timing { in_flight: true, ..waiting }, now).does, Does::Nothing, "at its flip");
     }
 

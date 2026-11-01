@@ -113,7 +113,8 @@ pub(super) enum Does {
 /// A screen's turn. A frame drawing is committed once the GPU is done with it; a screen showing its own
 /// buffers commits them whenever it is free; otherwise, while a frame of its own is under way (see
 /// [`Timing::pending`]) nothing but a change of its planes, committed with the frame shown when it is free
-/// (its flip sends what is held: a wake now would only turn the loop until it); else the held callbacks
+/// and no composition waits for its deadline (its flip sends what is held: a wake now would only turn the
+/// loop until it); else the held callbacks
 /// once due, and a frame if its part changed and it is on; else, with commits not answered, their
 /// callbacks at most once a refresh. A screen that doesn't pace its windows only shows a frame when its
 /// part changed.
@@ -145,7 +146,10 @@ pub(super) fn screen_turn(timing: Timing, now: Instant) -> Turn {
         Shows::Own => Does::Nothing,
         Shows::Window(_) if present => Does::Window,
         _ if present => Does::Frame,
-        _ if timing.layers_dirty && free => Does::Layers,
+        // Not while a composition waits for its deadline: its commit, before the same flip, carries the
+        // planes. Committed alone, they would take that flip and put the composition off to the next,
+        // and a cursor moving every refresh would keep a game's frames from ever being shown.
+        _ if timing.layers_dirty && free && !timing.composing => Does::Layers,
         _ if answer => Does::Answer,
         _ => Does::Nothing,
     };
