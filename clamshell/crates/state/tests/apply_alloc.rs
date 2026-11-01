@@ -238,6 +238,16 @@ fn allocations_per_event() {
             let lower = WindowFacts { id: 50, app_id: "foot".into(), title: "lower".into(), ..WindowFacts::default() };
             s.apply(WindowEvent::Opened(lower).into(), &mut Vec::new());
             run(&name("a window below, retitled"), s, &|i| WindowEvent::Title { window: 50, title: format!("lower {i}") }.into());
+            // A second window of the program in front, and the window arrows stepping between them.
+            let front = windows.last().unwrap();
+            s.apply(WindowEvent::Opened(WindowFacts { id: 60, ..front.clone() }).into(), &mut Vec::new());
+            s.apply(WindowEvent::Activate(front.id).into(), &mut Vec::new());
+            let before = s.session().top_window().map(|w| w.id);
+            s.apply(Event::HardwareKey(HardwareKey::WindowNext), &mut Vec::new());
+            assert_ne!(s.session().top_window().map(|w| w.id), before, "the arrows step from {before:?}");
+            run(&name("window arrows, next and previous"), s, &|i| {
+                Event::HardwareKey(if i % 2 == 0 { HardwareKey::WindowPrevious } else { HardwareKey::WindowNext })
+            });
             // A launch waiting for its unit, for the launch's wait.
             s.apply(Event::Tick { unix_secs: T0 + 5000, mono_secs: 5000 }, &mut Vec::new());
             s.apply(Event::Entry("zelda-lttp".into(), EntryAct::Play), &mut Vec::new());

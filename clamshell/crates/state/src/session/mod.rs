@@ -360,10 +360,12 @@ impl Session {
     /// Brings the group in front's next or previous top-level window in front, with its dialogs over it.
     pub(crate) fn step_window(&mut self, next: bool) {
         let Some((group, root)) = self.top_window().and_then(|front| Some((front.group.clone()?, self.root_of(front.id)))) else { return };
-        let roots: Vec<i64> = self.windows.iter().filter(|w| self.top_level_in(w, &group)).map(|w| w.id).collect();
-        let Some(at) = roots.iter().position(|id| *id == root) else { return };
-        let to = if next { (at + 1) % roots.len() } else { (at + roots.len() - 1) % roots.len() };
-        if let Some(to) = roots.get(to).copied().filter(|to| *to != root) {
+        // The group's top-level windows, in order, gone through without collecting them.
+        let roots = || self.windows.iter().filter(|w| self.top_level_in(w, &group)).map(|w| w.id);
+        let Some(at) = roots().position(|id| id == root) else { return };
+        let len = roots().count();
+        let to = if next { (at + 1) % len } else { (at + len - 1) % len };
+        if let Some(to) = roots().nth(to).filter(|to| *to != root) {
             self.bring_in_front(to);
         }
     }

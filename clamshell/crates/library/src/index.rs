@@ -3,7 +3,9 @@
 //! through [`crate::Library::entries_mut`], until [`crate::Library::reindex`] builds it again.
 //!
 //! Lookups other than by id go through sorted (hash, slot) pairs, which a rebuild refills without
-//! allocating unless the library grew. A lookup hashes what it is asked, walks the pairs with that hash in
+//! allocating unless the library grew. A rebuild does allocate for its check of entries that share a
+//! key and for its copies of the runners; it comes with a read of the library or a listing, not with
+//! the events that come all the time. A lookup hashes what it is asked, walks the pairs with that hash in
 //! slot order, and takes the first slot whose entry really matches, so a collision costs a comparison and
 //! never gives a wrong entry, and of two matching entries the first in slot order is found, as a scan
 //! would find it.
