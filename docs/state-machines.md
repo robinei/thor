@@ -1651,6 +1651,7 @@ text/plain. Replies and the timestamp have 3 s; a miss stops Xwayland.
 | owned | SelectionClear at or after the acquisition time | lost | transfers cancelled; formats forgotten; an unchanged revision never claims it again | same; nested "a new X11 owner is never reclaimed without a new Wayland copy" |
 | owned | a TARGETS or TIMESTAMP request | owned | the property, then SelectionNotify | nested |
 | owned | a stale revision, an unknown target (MULTIPLE too), the source refusing, the requestor's property busy, 8 transfers running | owned | SelectionNotify None | send `unsupported_duplicate_excess_stale_and_missing_source_requests_are_refused`; nested "unsupported targets are refused" |
+| owned | a request whose requestor is none, the root or one of our windows | owned | ignored and logged: no event mask, property or SelectionNotify (on the root, our mask would replace the WM's substructure redirection) | send `requests_into_the_root_or_our_windows_are_ignored` |
 | owned | a supported request (property None means the target) | reading | the source into a non-blocking pipe; the requestor watched; 5 s deadline | nested "None property falls back to the requested target" |
 | reading | EOF under 16 KiB | done | ChangeProperty, then SelectionNotify; pipe closed | send `small_and_empty_transfers_set_the_property_before_notifying_and_close_the_pipe` |
 | reading | 16 KiB buffered | incremental | INCR, SelectionNotify | send `incr_waits_for_each_delete_keeps_one_bounded_chunk_and_finishes_with_zero_length` |

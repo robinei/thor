@@ -125,7 +125,7 @@ impl Wm {
         wire: &mut Transport,
         server: &mut Server,
     ) -> io::Result<()> {
-        if wire.setup.as_ref().is_some_and(|setup| (xid & !setup.resource_id_mask) == setup.resource_id_base) {
+        if wire.ours(xid) {
             return Ok(());
         }
         if self.windows.iter().any(|w| w.xid == xid) || xid == self.owner {

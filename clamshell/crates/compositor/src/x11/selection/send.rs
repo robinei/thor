@@ -57,6 +57,13 @@ impl Transfer {
 
 impl Bridge {
     pub(super) fn request(&mut self, request: SelectionRequestEvent, wire: &mut Transport, atoms: &Atoms, server: &mut Server, now: Instant) -> io::Result<()> {
+        // A transfer sets the requestor's event mask and properties: never on the root (its mask is the
+        // window manager's redirection) or on a window of ours. Not even refused, as that is an event sent to
+        // the requestor.
+        if !wire.clients(request.requestor) {
+            log::warn!("compositor: ignored an X11 selection request into window {}: the root or one of ours", request.requestor);
+            return Ok(());
+        }
         let property = if request.property == 0 { request.target } else { request.property };
         let selection = (0..2).find(|selection| selection_atom(atoms, *selection) == request.selection && self.exports.get(*selection).owned);
         let Some(selection) = selection else {

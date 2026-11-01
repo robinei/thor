@@ -36,13 +36,24 @@ fn wire(now: Instant) -> (Transport, UnixStream) {
     let mut wire = Transport::new(socket, now).unwrap();
     wire.turn(now).unwrap();
     peer.read_exact(&mut [0; 12]).unwrap();
-    let setup = Setup { status: 1, length: 8, protocol_major_version: 11, maximum_request_length: u16::MAX, resource_id_mask: 0x1fffff, ..Default::default() };
+    // Our resources are 0x400000 and up; the clients' windows in these tests are below.
+    let mut setup = Setup {
+        status: 1,
+        protocol_major_version: 11,
+        maximum_request_length: u16::MAX,
+        resource_id_base: 0x400000,
+        resource_id_mask: 0x1fffff,
+        roots: vec![Screen { root: ROOT, ..Default::default() }],
+        ..Default::default()
+    };
+    setup.length = ((x11rb_protocol::x11_utils::Serialize::serialize(&setup).len() - 8) / 4) as u16;
     peer.write_all(&x11rb_protocol::x11_utils::Serialize::serialize(&setup)).unwrap();
     wire.turn(now).unwrap();
     assert!(wire.setup.is_some());
     peer.set_nonblocking(true).unwrap();
     (wire, peer)
 }
+const ROOT: u32 = 0x3a;
 fn packets(wire: &mut Transport, peer: &mut UnixStream, now: Instant) -> Vec<Vec<u8>> {
     wire.turn(now).unwrap();
     let mut bytes = Vec::new();
@@ -341,4 +352,27 @@ fn split_invalid_utf8_at_a_chunk_boundary_cannot_exceed_the_payload_budget() {
     assert_eq!(transfer.data, b"??");
     assert!(transfer.eof);
     assert_eq!(transfer.buffered(), 2);
+}
+
+/// A request naming the root or one of our windows as its requestor is ignored: answering it would set our
+/// own event mask on that window, which on the root replaces the window manager's redirection.
+#[test]
+fn requests_into_the_root_or_our_windows_are_ignored() {
+    let now = Instant::now();
+    let (_display, mut server) = server();
+    let (mut wire, mut peer) = wire(now);
+    let mut atoms = atoms();
+    atoms.0.push(("CLIPBOARD", 100));
+    let mut bridge = Bridge::default();
+    bridge.exports.clipboard =
+        Export { owned: true, revision: Some(0), formats: vec![Format { atom: 101, mime: "text/plain".into(), latin1: false }], ..Default::default() };
+    let request = SelectionRequestEvent { owner: 5, selection: 100, target: 101, property: 102, ..Default::default() };
+    for requestor in [ROOT, 0x400001, 0] {
+        bridge.request(SelectionRequestEvent { requestor, ..request }, &mut wire, &atoms, &mut server, now).unwrap();
+    }
+    assert!(packets(&mut wire, &mut peer, now).is_empty(), "no event mask, property or notify");
+    assert!(bridge.transfers.is_empty());
+    // A client's own window is answered (here refused: the Wayland source can't be asked in this test).
+    bridge.request(SelectionRequestEvent { requestor: 10, ..request }, &mut wire, &atoms, &mut server, now).unwrap();
+    assert_eq!(packets(&mut wire, &mut peer, now).len(), 1);
 }

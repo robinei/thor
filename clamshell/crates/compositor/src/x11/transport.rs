@@ -127,6 +127,17 @@ impl Transport {
         Ok(())
     }
 
+    /// Whether `xid` is one of the window manager's own resources (its range from the setup).
+    pub fn ours(&self, xid: u32) -> bool {
+        self.setup.as_ref().is_some_and(|setup| (xid & !setup.resource_id_mask) == setup.resource_id_base)
+    }
+    /// Whether a client may name `window` as its own in a request to us: not none, not the root, and not
+    /// one of ours. Changing the event mask or properties of the root or of our windows would change our own
+    /// window management (the root's mask is the WM's substructure redirection).
+    pub fn clients(&self, window: u32) -> bool {
+        self.setup.as_ref().is_some_and(|setup| window != 0 && !setup.roots.iter().any(|screen| screen.root == window)) && !self.ours(window)
+    }
+
     pub fn fd(&self) -> &UnixStream {
         &self.stream
     }
