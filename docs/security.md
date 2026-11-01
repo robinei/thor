@@ -134,3 +134,11 @@ program can't make ClamShell show other files of the user's. What a tray item sa
 id and each menu entry's label, 64 entries a menu, four levels of submenus, and our watcher registers at
 most 64 icons, each named in at most 1 KiB (`a_menus_size_is_bounded`,
 `the_watcher_registers_a_bounded_number_of_icons`).
+
+## Names used as paths
+
+A name from another program or a drive is checked where it is used as a path (`os::fs::is_name`,
+`stays_below`): a window's app id, which any client chooses, is looked up as an icon only if it is one
+file's name, as a tray icon's is; a card's Trash record of where a file goes back to must stay below the
+card's top (the home Trash's is absolute, without `..`), checked before any folder is made
+(`names_and_paths_from_outside_are_checked`, `a_cards_record_leading_out_of_it_is_refused`).

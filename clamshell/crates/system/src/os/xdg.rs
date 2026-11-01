@@ -15,12 +15,22 @@ const THEMES: [&str; 3] = ["hicolor", "Adwaita", "breeze"];
 /// Bitmap sizes, largest first. Icons are drawn at about 120 pixels.
 const SIZES: [u32; 8] = [512, 256, 192, 128, 96, 64, 48, 32];
 
-/// An icon's image file. An absolute path is used as it is. Otherwise the largest image in the themes is
-/// found, scalable ones first, and then the pixmaps folders are tried.
-pub(crate) fn find_icon(name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
-    let path = Path::new(name);
+/// A desktop file's icon: its image file, which it may name by its path (used as it is), else by its name
+/// ([`find_icon`]).
+pub(crate) fn desktop_icon(icon: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
+    let path = Path::new(icon);
     if path.is_absolute() {
         return path.is_file().then(|| path.to_path_buf());
+    }
+    find_icon(icon, dirs)
+}
+
+/// The image file of the icon named `name`: the largest image in the themes, scalable ones first, and then
+/// the pixmaps folders. A name that isn't one ([`crate::os::fs::is_name`]: a path, `..`) finds none, as
+/// it may come from another program.
+pub(crate) fn find_icon(name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
+    if !crate::os::fs::is_name(name) {
+        return None;
     }
     for dir in dirs {
         for theme in THEMES {

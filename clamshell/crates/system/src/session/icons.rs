@@ -1,7 +1,8 @@
 //! Pictures for entries that were found by their window and have no desktop file. On a thread of its
 //! own, the window's app id is looked up in the icon themes the way a desktop file's icon is: as it is,
 //! in lowercase, and its last part in lowercase (`org.gnome.Calculator`, `calculator`). If none is found,
-//! the UI's app glyph stays.
+//! the UI's app glyph stays. Any client chooses its app id, so one that isn't a name (a path, `..`)
+//! finds none: it would lead out of the icon folders to any file of the user's.
 
 use std::io;
 use std::sync::Arc;
@@ -19,6 +20,10 @@ pub(crate) fn spawn(sink: impl Sink) -> io::Result<Worker<(Arc<str>, String)>> {
         for (entry, app_id) in requests {
             let last = app_id.rsplit('.').next().unwrap_or_default().to_lowercase();
             let names = [app_id.clone(), app_id.to_lowercase(), last];
+            if !crate::os::fs::is_name(&app_id) {
+                log::debug!("icons: {app_id:?} isn't a name: no icon");
+                continue;
+            }
             if let Some(path) = names.iter().filter(|n| !n.is_empty()).find_map(|n| xdg::find_icon(n, &dirs))
                 && sink.send(Event::Reading(Reading::Icon { entry, path })).is_err()
             {

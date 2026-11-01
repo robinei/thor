@@ -36,6 +36,20 @@ pub(crate) fn write_file(path: &Path, bytes: &[u8]) -> io::Result<()> {
     fs::File::open(dir)?.sync_all()
 }
 
+/// Whether `name`, from another program or a drive, is one file's name, to be joined to a folder: not
+/// empty, `.` or `..`, and without a `/` or a NUL. A window's app id or a tray icon's name looked up as
+/// an icon must be, or it could lead out of the icon folders to any file of the user's.
+pub(crate) fn is_name(name: &str) -> bool {
+    !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\0'])
+}
+
+/// Whether `path`, from another program or a drive, stays below the folder it is joined to: relative, and
+/// without `..`.
+pub(crate) fn stays_below(path: &Path) -> bool {
+    use std::path::Component;
+    path.components().next().is_some() && path.components().all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
+}
+
 /// Writes `value` as pretty JSON, whole ([`write_file`]).
 pub(crate) fn write_json(path: &Path, value: &impl Serialize) -> io::Result<()> {
     let mut text = serde_json::to_string_pretty(value).map_err(io::Error::other)?;
@@ -59,6 +73,22 @@ pub(crate) fn read_json<T: DeserializeOwned>(path: &Path) -> Option<T> {
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn names_and_paths_from_outside_are_checked() {
+        for name in ["org.gnome.Calculator", "steam", "a b", ".hidden"] {
+            assert!(is_name(name), "{name}");
+        }
+        for name in ["", ".", "..", "/home/x/a.png", "../../x", "a/b", "a\0b"] {
+            assert!(!is_name(name), "{name:?}");
+        }
+        for path in ["a", "a/b", "./a/b"] {
+            assert!(stays_below(Path::new(path)), "{path}");
+        }
+        for path in ["", "/etc/x", "../x", "a/../../x"] {
+            assert!(!stays_below(Path::new(path)), "{path}");
+        }
+    }
 
     /// Two writers of one file at once each put a whole file in place, and neither fails.
     #[test]

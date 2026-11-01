@@ -7,6 +7,7 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use super::ops::{free_name, name_of};
+use crate::os::fs::stays_below;
 use crate::os::{sys, text};
 
 /// The home Trash, in the data home (`$XDG_DATA_HOME`, else `~/.local/share`).
@@ -99,10 +100,16 @@ pub(super) fn restore(path: &Path) -> Result<PathBuf, String> {
     let text = fs::read_to_string(&info).map_err(|e| format!("{}: {e}", info.display()))?;
     let recorded = text.lines().find_map(|l| l.strip_prefix("Path=")).map(text::percent_decode).ok_or_else(|| format!("{}: no Path", info.display()))?;
     let mut to = PathBuf::from(&recorded);
-    // A filesystem's own Trash records paths relative to its top.
-    if to.is_relative()
-        && let Some(top) = info.parent().and_then(Path::parent).and_then(Path::parent)
-    {
+    // A filesystem's own Trash (`<top>/.Trash-<uid>`, on a card) records paths relative to its top, and
+    // what it records is the card's say: it must stay below the top. The home Trash's are absolute.
+    let trash = info.parent().and_then(Path::parent);
+    let own = trash.and_then(Path::file_name).is_some_and(|n| n.to_string_lossy().starts_with(".Trash"));
+    let below = stays_below(&to);
+    let absolute = to.is_absolute() && !to.components().any(|c| c == std::path::Component::ParentDir);
+    if !(below || (absolute && !own)) {
+        return Err(format!("{name}: the Trash's record of where it was ({recorded}) leads out of its place"));
+    }
+    if below && let Some(top) = trash.and_then(Path::parent) {
         to = top.join(to);
     }
     let parent = to.parent().ok_or_else(|| format!("{name}: no folder to go back to"))?.to_path_buf();
@@ -145,6 +152,27 @@ mod tests {
         let to = restore(&trash_dir.join("files/a b.txt")).unwrap();
         assert_eq!(to, home.join("docs/a b.txt").canonicalize().unwrap());
         assert!(!trash_dir.join("info/a b.txt.trashinfo").exists());
+    }
+
+    /// A card's Trash says where its files go back to; a record leading out of the card is refused, and no
+    /// folder is made for it.
+    #[test]
+    fn a_cards_record_leading_out_of_it_is_refused() {
+        let tmp = tempfile::tempdir().unwrap();
+        let top = tmp.path().join("card");
+        let trash = top.join(".Trash-1000");
+        fs::create_dir_all(trash.join("files")).unwrap();
+        fs::create_dir_all(trash.join("info")).unwrap();
+        let outside = tmp.path().join("made");
+        for (name, path) in [("a", outside.join("a").display().to_string()), ("b", "../made/b".to_owned())] {
+            fs::write(trash.join("files").join(name), "x").unwrap();
+            fs::write(trash.join("info").join(format!("{name}.trashinfo")), format!("[Trash Info]\nPath={path}\n")).unwrap();
+            assert!(restore(&trash.join("files").join(name)).is_err(), "{path}");
+        }
+        assert!(!outside.exists(), "no folder made outside the card");
+        fs::write(trash.join("files/c"), "x").unwrap();
+        fs::write(trash.join("info/c.trashinfo"), "[Trash Info]\nPath=games/c\n").unwrap();
+        assert_eq!(restore(&trash.join("files/c")).unwrap(), top.join("games/c"));
     }
 
     /// A symlink goes to the Trash itself; what it points at stays.

@@ -357,7 +357,7 @@ fn read_item(bus: &mut Bus, key: &str, dirs: &[PathBuf]) -> Result<(TrayItem, Op
 /// then in the icon themes.
 fn find_icon(name: &str, theme_path: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
     // A name, not a path: one with a separator or `..` would lead out of the icon folders.
-    if name.contains('/') || name == ".." || name == "." {
+    if !crate::os::fs::is_name(name) {
         log::warn!("tray: icon name {name:?} isn't a name: no icon");
         return None;
     }
