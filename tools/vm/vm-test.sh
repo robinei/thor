@@ -21,8 +21,13 @@ mkdir -p "$RUNS"
 LOG="$RUNS/$STAMP-machine.log"
 python3 tools/vm/vm.py run --headless > "$LOG" 2>&1 &
 VM=$!
-# (Checks that restart the machine leave a QEMU that isn't ours by parentage: stop any on the VM's disk.)
-stop() { kill "$VM" 2>/dev/null; wait "$VM" 2>/dev/null; pkill -f "^$DISK" 2>/dev/null; }
+# (Checks that restart the machine leave a QEMU that isn't ours by parentage: stop any on the VM's disk.
+# The machine is stopped, not shut down, so its disk is synced first: a change a check made last, as
+# sshd enabled again by the account check, would otherwise be lost, and the next run find no way in.)
+stop() {
+    timeout 15 python3 tools/vm/vm.py ssh sync > /dev/null 2>&1
+    kill "$VM" 2>/dev/null; wait "$VM" 2>/dev/null; pkill -f "^$DISK" 2>/dev/null
+}
 trap stop EXIT INT TERM
 # The session and system files as this repository has them, as soon as the machine answers (the login
 # script among them: one from an older checkout may not start the session at all); then the console's

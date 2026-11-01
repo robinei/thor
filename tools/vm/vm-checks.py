@@ -507,7 +507,7 @@ systemctl --user restart clamshell
     global AT_START, READ_AGAIN
     lines = journal(since).splitlines()
     last = max((i for i, line in enumerate(lines) if "Starting ClamShell" in line), default=0)
-    AT_START = [line for line in lines[last:] if "account: " in line]
+    AT_START = [line for line in lines[last:] if "account: " in line and "read after failing" not in line]
     if AT_START:
         print(f"  (ClamShell started without reading the account: {AT_START[-1]}; waiting for it to be read again)")
         READ_AGAIN = logged(since, "account: read after failing", 90)
@@ -1691,6 +1691,33 @@ class Checks:
         power = sh("getent group power | cut -d: -f3").strip()
         self.check("  and ClamShell runs in the group", power in groups, f"power {power}, ClamShell's groups {groups}")
 
+    def ignored_tests(self):
+        """The system crate's tests of the real services, `#[ignore]`d at every commit as the host may lack
+        them (systemd's user manager and cgroups, D-Bus, PipeWire, NetworkManager, BlueZ, UPower,
+        timedated, ratarmount, the GPU's fdinfo), run here, where the machine has them all: built on the
+        host, run from the machine's disk one at a time, each reported as a check of its own."""
+        built = subprocess.run(["cargo", "test", "--release", "--quiet", "-p", "clamshell-system", "--lib", "--no-run",
+                                "--message-format=json"], cwd=vm.REPO / "clamshell", capture_output=True, text=True)
+        artifacts = [json.loads(line) for line in built.stdout.splitlines() if line.startswith("{")]
+        executable = next((a["executable"] for a in artifacts if a.get("executable") and a.get("profile", {}).get("test")
+                           and a.get("target", {}).get("name") == "clamshell_system"), None)
+        if not self.check("ignored tests: the system crate's tests built", built.returncode == 0 and executable is not None,
+                          built.stderr[-400:]):
+            return
+        binary = "/mnt/thor/" + str(Path(executable).relative_to(vm.REPO))
+        sh(vm.copy_local(binary))
+        names = re.findall(r"^(\S+): test$", sh(f"{vm.local(binary)} --ignored --list 2>/dev/null"), re.MULTILINE)
+        # (What the programs they start say on standard error would come between a test's name and its
+        # result: left out. The failures are listed by name at the end.)
+        out = sh(f"cd /tmp && timeout 300 {vm.local(binary)} --ignored --test-threads=1 2>/dev/null")
+        summary = re.search(r"^test result: \w+\. (\d+) passed; (\d+) failed", out, re.MULTILINE)
+        failures = out[out.rfind("\nfailures:\n"):] if "\nfailures:\n" in out else ""
+        failed = set(re.findall(r"^    (\S+)$", failures, re.MULTILINE))
+        self.check("  they ran", bool(names) and summary is not None and int(summary[1]) + int(summary[2]) == len(names),
+                   f"{len(names)} listed; " + out[-600:])
+        for name in names:
+            self.check(f"  {name}", summary is not None and name not in failed, out[out.find(f"---- {name} stdout ----"):][:600])
+
     def session_units(self):
         """The session as systemd sees it: the displays given to the user manager for its services, the
         status line, and the compositor's own tapping on ClamShell's touchpad."""
@@ -1954,7 +1981,7 @@ GLib.MainLoop().run()
 CHECKS = ["session_units", "library_view_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules", "screen_changes", "frame_schedule", "external_display", "scanout", "pad_windows",
           "pad_library_view", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers",
           "keymap_actuations", "rumble", "launch_and_quit", "pause_hidden", "found_window", "tray_program", "clipboard", "portal",
-          "bluetooth", "account", "gyro_sleep"]
+          "bluetooth", "account", "ignored_tests", "gyro_sleep"]
 # Checks run only when named.
 OPT_IN = ["soak", "faults"]
 
