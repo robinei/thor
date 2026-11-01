@@ -166,8 +166,8 @@ fn draw_menu(f: &mut Frame, entry: &std::sync::Arc<str>) {
         } else {
             None
         },
-        if running && (builtin.is_none() || closes) { item(DockId::Quit, if closes { "Close" } else { "Quit" }, Tone::Accent) } else { None },
-        if running && builtin.is_none() { item(DockId::ForceKill, "Force kill", Tone::Accent) } else { None },
+        if running && (builtin.is_none() || closes) { item(DockId::Quit, if closes { "Close" } else { "Quit" }, Tone::Stop) } else { None },
+        if running && builtin.is_none() { item(DockId::ForceKill, "Force kill", Tone::Stop) } else { None },
     ];
     let mut area = widgets::header(f, Some(Id::Dock(DockId::Back)), title, false, HeaderRight::None);
     // What it currently costs, once that has been read (see the battery tab).

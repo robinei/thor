@@ -28,7 +28,8 @@ pub enum Tone {
     Accent,
     /// Running, on, saving power; and what starts something.
     Go,
-    /// What takes something away (the keyboard's Backspace).
+    /// What takes something away: the keyboard's Backspace, and the actions that remove, delete, clear,
+    /// reset, quit or kill.
     Stop,
     /// The keyboard's Fn layer, settings that change how a game looks or plays, and what a keymap remaps.
     /// Also actions, meaning text that does something when tapped. An action has no fill or border, and

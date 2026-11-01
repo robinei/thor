@@ -184,7 +184,7 @@ fn list_view(f: &mut Frame, h: f32, edit: &Edit, config: &Config, panel: Panel, 
         ItemRef::Runner(runner) if edit::runner_in_use(config, runner) => {
             f.c.text_fit(row(y), detail, Tone::Dim, "Remove: a source names it", Keep::Start);
         }
-        _ => f.text_button(EditId::Remove.into(), row(y), detail, Tone::Accent, "Remove", Align::Start),
+        _ => f.text_button(EditId::Remove.into(), row(y), detail, Tone::Stop, "Remove", Align::Start),
     }
 }
 
@@ -377,7 +377,8 @@ fn details(f: &mut Frame, h: f32, edit: &Edit, config: &Config, place: &Place, r
                 if let Some(glyph) = icons::named(name) {
                     f.c.icon(glyph, Rect::new(r.x, r.y + r.h * 0.2, r.h * 0.6, r.h * 0.6), Tone::Normal);
                 }
-                f.c.text_fit(Rect::new(r.x + r.h, r.y, r.w - r.h, r.h), detail, if current { Tone::Accent } else { Tone::Fn }, name, Keep::Start);
+                // The current option white, as an action is when it is the current option of a choice.
+                f.c.text_fit(Rect::new(r.x + r.h, r.y, r.w - r.h, r.h), detail, if current { Tone::High } else { Tone::Fn }, name, Keep::Start);
             });
         }
         return;
@@ -387,7 +388,7 @@ fn details(f: &mut Frame, h: f32, edit: &Edit, config: &Config, place: &Place, r
     } else if edit::used(config, &place.id) {
         f.c.text_fit(row(y), detail, Tone::Dim, "Remove: something is in it", Keep::Start);
     } else {
-        f.text_button(EditId::Remove.into(), row(y), detail, Tone::Accent, "Remove", Align::Start);
+        f.text_button(EditId::Remove.into(), row(y), detail, Tone::Stop, "Remove", Align::Start);
     }
     // Why the last thing asked wasn't done (a name taken, say).
     if let Some(problem) = edit.problem() {

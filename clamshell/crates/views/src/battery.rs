@@ -105,7 +105,7 @@ fn spender_menu(f: &mut Frame, group: &Group) {
     let s = f.s;
     let name = s.sys().battery().spenders.iter().find(|p| p.group == *group).map_or("", |p| p.name(s.library_view().library()));
     let area = widgets::header(f, Some(Id::Battery(BatteryId::Back)), name, false, HeaderRight::None);
-    let items = [(Id::Battery(BatteryId::Quit), "Quit", Tone::Accent), (Id::Battery(BatteryId::ForceKill), "Force kill", Tone::Accent)];
+    let items = [(Id::Battery(BatteryId::Quit), "Quit", Tone::Stop), (Id::Battery(BatteryId::ForceKill), "Force kill", Tone::Stop)];
     widgets::menu(f, area, items);
 }
 

@@ -70,7 +70,7 @@ pub(super) fn layer_menu(f: &mut Frame, id: u16, layer: Layer) {
         widgets::menu(
             f,
             area,
-            [(k(KeymapId::ConfirmClear), "Clear all its bindings", Tone::Accent), (Id::Profile(Kind::Keymap, ProfileId::Back), "Cancel", Tone::Fn)],
+            [(k(KeymapId::ConfirmClear), "Clear all its bindings", Tone::Stop), (Id::Profile(Kind::Keymap, ProfileId::Back), "Cancel", Tone::Fn)],
         );
     } else if layer == Layer::BASE {
         widgets::menu(f, area, [(k(KeymapId::Clear), "Clear", Tone::Fn)]);
@@ -90,7 +90,7 @@ pub(super) fn layer_menu(f: &mut Frame, id: u16, layer: Layer) {
         widgets::menu(
             f,
             rest,
-            [(k(KeymapId::RenameLayer), "Rename", Tone::Fn), (k(KeymapId::Clear), "Clear", Tone::Fn), (k(KeymapId::DeleteLayer), "Delete", Tone::Accent)],
+            [(k(KeymapId::RenameLayer), "Rename", Tone::Fn), (k(KeymapId::Clear), "Clear", Tone::Fn), (k(KeymapId::DeleteLayer), "Delete", Tone::Stop)],
         );
     }
 }

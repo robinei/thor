@@ -204,7 +204,7 @@ fn menu(f: &mut Frame, kind: Kind, id: u16) {
             (p(ProfileId::Edit), "Edit", Tone::Fn),
             (p(ProfileId::LoadFrom), "Load from…", Tone::Fn),
             (p(ProfileId::SaveAs), "Save as…", Tone::Fn),
-            (p(ProfileId::Reset), "Reset", Tone::Accent),
+            (p(ProfileId::Reset), "Reset", Tone::Stop),
         ];
         return widgets::menu(f, area, items);
     }
@@ -212,7 +212,7 @@ fn menu(f: &mut Frame, kind: Kind, id: u16) {
         (p(ProfileId::Edit), "Edit", Tone::Fn),
         (p(ProfileId::Rename), "Rename", Tone::Fn),
         (p(ProfileId::Duplicate), "Duplicate", Tone::Fn),
-        (p(ProfileId::Delete), "Delete", Tone::Accent),
+        (p(ProfileId::Delete), "Delete", Tone::Stop),
     ];
     widgets::menu(f, area, items);
 }
@@ -246,5 +246,5 @@ fn confirm(f: &mut Frame, kind: Kind, title: &str, text: &str, (act, label): (Pr
     let used = f.c.wrap(Span { x: area.x, y: area.y, w: area.w }, size, Tone::Normal, text, 3);
     let pad = f.pad();
     let rest = Rect::new(area.x, area.y + used + pad, area.w, area.h - used - pad);
-    widgets::menu(f, rest, [(Id::Profile(kind, ProfileId::Back), "Keep it", Tone::Fn), (Id::Profile(kind, act), label, Tone::Accent)]);
+    widgets::menu(f, rest, [(Id::Profile(kind, ProfileId::Back), "Keep it", Tone::Fn), (Id::Profile(kind, act), label, Tone::Stop)]);
 }
