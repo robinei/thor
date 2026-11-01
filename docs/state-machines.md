@@ -457,7 +457,7 @@ Screens: the picker's (`profiles::picker`, as for keymaps; Default colours is th
 |---|---|
 | Curve tile → List; a row → chosen for the level edited; Off → 0 | `the_tile_opens_the_picker_and_a_row_chooses_a_curve_for_the_game` |
 | List: Make own → own curve copied from the one in force, Edit opens, chosen; curves saved before the settings that choose it (a stop between leaves an unchosen profile, never settings naming one not saved) | `a_games_own_curve_is_made_from_the_one_in_force_and_opens_on_its_sliders` |
-| Edit: slide start/to → the curve changes as it moves (the compositor reads it each frame); end → saved once if moved | `a_slider_changes_the_curve_as_it_moves_and_saves_once_when_lifted` |
+| Edit: slide start/to → the curve changes as it moves (the compositor reads it each frame); end → saved once if moved. Any slider (curve, keymap, light, setting, level) still held when another starts, its end missed, is ended first and saved | `a_slider_changes_the_curve_as_it_moves_and_saves_once_when_lifted`, `a_slider_left_without_its_end_is_saved_as_another_starts` |
 | Edit --Back--> List --Back--> closed | `back_goes_from_the_sliders_to_the_picker_and_out` |
 | Menu: Delete in use → asks; confirmed → removed, its games back on Off | `deleting_a_curve_in_use_asks_and_puts_its_games_back_on_off` |
 | List: New → named → Edit, a curve that changes nothing | `a_new_curve_is_named_and_changes_nothing_until_edited` |

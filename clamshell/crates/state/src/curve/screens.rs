@@ -277,6 +277,18 @@ mod tests {
     }
 
     /// HDR content's peak is the program's setting, not a curve's. Its slider on the edit screen starts at
+    /// A slider whose end never came, as another starts, is let go first: what it set is saved.
+    #[test]
+    fn a_slider_left_without_its_end_is_saved_as_another_starts() {
+        let mut s = new_state();
+        picker(&mut s);
+        tap(&mut s, Id::Row { list: ListId::Curves, i: 2, part: RowPart::Edit });
+        s.applied(Slide::Start { control: Control::Setting(Setting::HdrPeak), x: 300.0, width: 620.0 }.into());
+        s.applied(Slide::To { x: 5000.0 }.into());
+        let fx = s.applied(Slide::Start { control: Control::Setting(Setting::HdrPeak), x: 300.0, width: 620.0 }.into());
+        assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Settings(v)) if v == s.prefs().settings())), "{fx:?}");
+    }
+
     /// Default, which writes nothing at the level edited; a value is written there, saved when the finger
     /// lifts; and choosing another curve keeps it. Where the value is from follows: read from the defaults,
     /// written to the game, read from All.

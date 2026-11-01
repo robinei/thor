@@ -20,9 +20,11 @@ impl State {
 
     /// A slider held, slid or let go. Each kind is started from, and sets, its own area's value: a level, a
     /// keymap's or a curve's parameter, or a setting; and when it is let go after moving, its area saves.
+    /// One held when another starts, its end missed, is let go first, so that what it set is saved.
     pub(crate) fn on_slide(&mut self, slide: Slide, out: &mut Out) {
         match slide {
             Slide::Start { control, x, width } => {
+                self.on_slide(Slide::End, out);
                 self.slider = match control {
                     Control::Param(param) => self.keymapping.param_slider(param, x, width),
                     Control::Curve(param) => self.curving.slider(param, x, width),
