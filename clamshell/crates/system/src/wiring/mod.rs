@@ -184,11 +184,11 @@ pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, gl
     let battery = started("battery", battery::spawn(sink.clone()));
     let mixer = started("mixer", mixer::spawn(backlights.clone(), carried.clone(), sink.clone()));
     let bluetooth = started("bluetooth", bluetooth::spawn(sink.clone()));
-    let tray = started("tray", crate::session::tray::spawn(sink.clone()));
+    let tray = started("tray", crate::session::tray::spawn(paths.data_dirs.clone(), sink.clone()));
     let notifications = started("notifications", crate::session::notifications::spawn(sink.clone()));
     let portal = started("portal", crate::session::portal::spawn(sink.clone()));
     log_failed_start("clipboard", crate::session::clipboard::spawn(paths.own_runtime.as_deref(), Some(env.clipboard_display.clone()), sink.clone()));
-    let icons = started("icons", crate::session::icons::spawn(sink.clone()));
+    let icons = started("icons", crate::session::icons::spawn(paths.data_dirs.clone(), sink.clone()));
     let system = started(
         "system",
         crate::errands::spawn(paths.screenshots.clone(), env.profile.refresh_calibration.map(|calibration| calibration.program), sink.clone()),

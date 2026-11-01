@@ -15,17 +15,21 @@ pub struct Paths {
     /// Where mpv keeps the position of videos quit before the end. See [`crate::launch::mpv`].
     pub(crate) watch_later: Vec<PathBuf>,
     /// The launches' control sockets, which a command gets as `{socket}`. They are in
-    /// $XDG_RUNTIME_DIR/clamshell/sockets.
-    pub(crate) sockets: PathBuf,
+    /// $XDG_RUNTIME_DIR/clamshell/sockets; without a runtime dir there are none, rather than a shared
+    /// folder anyone could make first.
+    pub(crate) sockets: Option<PathBuf>,
     /// $XDG_RUNTIME_DIR, where systemd's user manager has its socket.
     pub runtime: Option<PathBuf>,
-    /// ClamShell's own folder there, $XDG_RUNTIME_DIR/clamshell: the clipboard kept, archives mounted,
-    /// the launches' sockets.
-    pub(crate) own_runtime: Option<PathBuf>,
+    /// ClamShell's own folder there, $XDG_RUNTIME_DIR/clamshell: the session's lock, the clipboard kept,
+    /// archives mounted, the launches' sockets, the Android filter's settings. Everything that must agree
+    /// on the folder takes it from here.
+    pub own_runtime: Option<PathBuf>,
     /// HOME: a launch's working directory when it names none, mpv's `~`.
     pub(crate) home: Option<PathBuf>,
     /// $XDG_DATA_HOME, else ~/.local/share: the home Trash is there.
     pub(crate) data_home: Option<PathBuf>,
+    /// The XDG data dirs, the user's (`data_home`) first: desktop files and icon themes.
+    pub(crate) data_dirs: Vec<PathBuf>,
     /// The control pipe `clamshell ctl` writes to ($XDG_RUNTIME_DIR/clamshell-control).
     pub control: Option<PathBuf>,
     /// Where screenshots go (~/Pictures/Screenshots).
@@ -46,6 +50,8 @@ pub struct Base {
     cache_home: Option<PathBuf>,
     state_home: Option<PathBuf>,
     runtime: Option<PathBuf>,
+    /// XDG_DATA_DIRS, the system's data dirs, `:`-separated.
+    data_dirs: Option<String>,
 }
 
 impl Base {
@@ -59,6 +65,7 @@ impl Base {
             cache_home: var("XDG_CACHE_HOME"),
             state_home: var("XDG_STATE_HOME"),
             runtime: var("XDG_RUNTIME_DIR"),
+            data_dirs: std::env::var("XDG_DATA_DIRS").ok(),
         }
     }
 
@@ -79,12 +86,14 @@ impl Paths {
         let state_home = base.xdg(base.state_home.as_ref(), ".local/state");
         let watch_later = crate::launch::mpv::watch_later_dirs(config.as_deref(), state_home.as_deref(), base.home.as_deref());
         let own_runtime = base.runtime.as_ref().map(|r| r.join("clamshell"));
+        let data_dirs = crate::os::xdg::data_dirs(data.as_deref(), base.data_dirs.as_deref());
         Paths {
-            sockets: own_runtime.clone().unwrap_or_else(|| std::env::temp_dir().join("clamshell")).join("sockets"),
+            sockets: own_runtime.as_ref().map(|r| r.join("sockets")),
             grabbed: own_runtime.as_ref().map(|r| r.join("grabbed")),
             own_runtime,
             home: base.home.clone(),
             data_home: data,
+            data_dirs,
             runtime: base.runtime.clone(),
             control: base.runtime.as_ref().map(|r| r.join("clamshell-control")),
             screenshots: base.home.as_ref().map(|h| h.join("Pictures/Screenshots")),
@@ -97,8 +106,8 @@ impl Paths {
     }
 
     /// The control socket for launches of entry `key`. See [`clamshell_state::session::enqueue`].
-    pub(crate) fn socket(&self, key: &str) -> PathBuf {
-        self.sockets.join(clamshell_state::session::launch_unit::LaunchUnit::socket_of(key))
+    pub(crate) fn socket(&self, key: &str) -> Option<PathBuf> {
+        Some(self.sockets.as_ref()?.join(clamshell_state::session::launch_unit::LaunchUnit::socket_of(key)))
     }
 
     /// Whether there is a systemd user session to run apps and games as units of.
@@ -122,5 +131,24 @@ mod tests {
         assert_eq!(paths.fex.as_deref(), Some(Path::new("/h/.cache/clamshell/fex")));
         assert_eq!(paths.grabbed.as_deref(), Some(Path::new("/run/u/clamshell/grabbed")));
         assert_eq!(Paths::new(&Base::default()).state_dir, None, "no HOME, no XDG dirs");
+    }
+
+    /// The session's lock, the launches' sockets, the grabbed controllers and the Android filter's
+    /// settings agree on ClamShell's runtime folder by taking it from here; without a runtime dir there is
+    /// none, and no shared folder in /tmp instead. The data dirs are worked out here once too.
+    #[test]
+    fn the_runtime_folder_and_the_data_dirs_are_worked_out_once() {
+        let base = Base { home: Some("/h".into()), runtime: Some("/run/u".into()), ..Base::default() };
+        let paths = Paths::new(&base);
+        assert_eq!(paths.own_runtime.as_deref(), Some(Path::new("/run/u/clamshell")));
+        assert_eq!(paths.sockets.as_deref(), Some(Path::new("/run/u/clamshell/sockets")));
+        assert_eq!(paths.socket("k").map(|s| s.starts_with("/run/u/clamshell/sockets")), Some(true));
+        assert_eq!(paths.control.as_deref(), Some(Path::new("/run/u/clamshell-control")));
+        let without = Paths::new(&Base { home: Some("/h".into()), ..Base::default() });
+        assert_eq!((without.own_runtime, without.sockets, without.grabbed, without.control), (None, None, None, None));
+        let dirs = |base: &Base| Paths::new(base).data_dirs;
+        assert_eq!(dirs(&base), ["/h/.local/share", "/usr/local/share", "/usr/share"].map(PathBuf::from));
+        let set = Base { data_home: Some("/d".into()), data_dirs: Some("/a::/b".into()), ..base };
+        assert_eq!(dirs(&set), ["/d", "/a", "/b"].map(PathBuf::from));
     }
 }

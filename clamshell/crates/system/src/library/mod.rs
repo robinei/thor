@@ -52,7 +52,7 @@ impl Sources {
             steam: home.filter(|_| steam).and_then(steam::default_root),
             state: paths.state_dir.clone(),
             art: paths.art.clone(),
-            data_dirs: crate::os::xdg::data_dirs(),
+            data_dirs: paths.data_dirs.clone(),
             watch_later: paths.watch_later.clone(),
         }
     }

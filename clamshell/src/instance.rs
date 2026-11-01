@@ -1,4 +1,5 @@
-//! One session owns the runtime directory. Keep the locked file open until that session ends.
+//! One session owns ClamShell's runtime folder ([`clamshell_system::paths::Paths::own_runtime`]). Keep the
+//! locked file open until that session ends.
 use std::fs::{File, OpenOptions};
 use std::path::Path;
 
@@ -7,9 +8,10 @@ pub(crate) struct Lock {
 }
 
 impl Lock {
-    pub fn acquire(runtime: Option<&Path>) -> Result<Self, String> {
-        let directory = runtime.ok_or("session lock: XDG_RUNTIME_DIR is missing")?.join("clamshell");
-        std::fs::create_dir_all(&directory).map_err(|error| format!("session lock: {}: {error}", directory.display()))?;
+    /// Locks `own_runtime/session.lock`, `own_runtime` being ClamShell's runtime folder.
+    pub fn acquire(own_runtime: Option<&Path>) -> Result<Self, String> {
+        let directory = own_runtime.ok_or("session lock: XDG_RUNTIME_DIR is missing")?;
+        std::fs::create_dir_all(directory).map_err(|error| format!("session lock: {}: {error}", directory.display()))?;
         let path = directory.join("session.lock");
         let file = OpenOptions::new()
             .read(true)
@@ -39,7 +41,7 @@ mod tests {
         let error = Lock::acquire(Some(runtime.path())).err().unwrap();
         assert!(error.contains("another ClamShell session already uses"));
         drop(first);
-        assert!(runtime.path().join("clamshell/session.lock").is_file(), "a stale file is harmless and keeps a single lock inode");
+        assert!(runtime.path().join("session.lock").is_file(), "a stale file is harmless and keeps a single lock inode");
         assert!(Lock::acquire(Some(runtime.path())).is_ok());
     }
 

@@ -71,16 +71,19 @@ impl From<dbus::Error> for Error {
 
 lost_on!(Error: dbus::Error);
 
-/// Sends [`Event::Tray`] at start and after every change; carries out [`TrayCommand`]s.
-pub(crate) fn spawn(sink: impl Sink) -> io::Result<Worker<TrayCommand>> {
+/// Sends [`Event::Tray`] at start and after every change; carries out [`TrayCommand`]s. Icons are looked
+/// up in the data dirs `dirs`.
+pub(crate) fn spawn(dirs: Vec<std::path::PathBuf>, sink: impl Sink) -> io::Result<Worker<TrayCommand>> {
     let bell = worker::Bell::new()?;
-    let mut tray = Tray { sink, bell: bell.clone() };
+    let mut tray = Tray { sink, bell: bell.clone(), dirs };
     Worker::spawn_belled(clamshell_state::Thread::Tray.name(), bell, move |commands| worker::supervise(&mut tray, commands, RETRY))
 }
 
 struct Tray<S> {
     sink: S,
     bell: Bell,
+    /// The data dirs, where icons are looked up.
+    dirs: Vec<std::path::PathBuf>,
 }
 
 /// The watcher's state when we serve it: the registered icons, and those registered since the thread
@@ -131,7 +134,7 @@ impl<S: Sink> Service for Tray<S> {
                 s.came(true)?;
                 let keys = registered(&mut s)?;
                 s.names = keys.iter().map(|k| split(k).0.to_owned()).collect();
-                let (items, menus) = read(&mut s.bus, &keys);
+                let (items, menus) = read(&mut s.bus, &keys, &self.dirs);
                 s.menus = menus;
                 if let Some(items) = last.offer(items) {
                     let names: Vec<String> = items.iter().map(|t| format!("{} ({} entries)", t.title, t.menu.len())).collect();
@@ -309,12 +312,11 @@ fn split(key: &str) -> (&str, &str) {
 }
 
 /// Every icon that can be read, and the paths of their menus.
-fn read(bus: &mut Bus, keys: &[String]) -> (Vec<TrayItem>, HashMap<String, String>) {
-    let dirs = crate::os::xdg::data_dirs();
+fn read(bus: &mut Bus, keys: &[String], dirs: &[std::path::PathBuf]) -> (Vec<TrayItem>, HashMap<String, String>) {
     let mut menus = HashMap::new();
     let items = keys
         .iter()
-        .filter_map(|key| match read_item(bus, key, &dirs) {
+        .filter_map(|key| match read_item(bus, key, dirs) {
             Ok((item, menu)) => {
                 if let Some(menu) = menu {
                     menus.insert(key.clone(), menu);
@@ -472,11 +474,12 @@ fn carry_out(s: &mut Session, command: &TrayCommand) -> Result<(), Error> {
     Ok(())
 }
 
-/// The current tray icons, read once from the watcher (`clamshell --tray`).
-pub fn read_now() -> Result<Vec<TrayItem>, Error> {
+/// The current tray icons, read once from the watcher (`clamshell --tray`), their icons looked up in
+/// `paths`' data dirs.
+pub fn read_now(paths: &crate::paths::Paths) -> Result<Vec<TrayItem>, Error> {
     let mut bus = Bus::session()?.with_timeout(CALL_LIMIT);
     let keys = bus.get::<Vec<String>>(WATCHER, WATCHER_PATH, WATCHER, "RegisteredStatusNotifierItems")?;
-    Ok(read(&mut bus, &keys).0)
+    Ok(read(&mut bus, &keys, &paths.data_dirs).0)
 }
 
 #[cfg(test)]

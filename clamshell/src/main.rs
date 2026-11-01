@@ -81,8 +81,9 @@ fn carry_out(command: Command) -> Result<(), String> {
         }
         Command::WaylandFilter => {
             // ClamShell's files in RAM, where the Android script writes the filter's settings.
-            let settings = paths.runtime.clone().ok_or("wayland filter: no XDG_RUNTIME_DIR, where its settings are")?.join("clamshell");
-            clamshell_system::waydroid::run(settings).map_err(|e| format!("wayland filter: {e}"))
+            let runtime = paths.runtime.clone().ok_or("wayland filter: no XDG_RUNTIME_DIR, where the compositor's socket is")?;
+            let settings = paths.own_runtime.clone().ok_or("wayland filter: no XDG_RUNTIME_DIR, where its settings are")?;
+            clamshell_system::waydroid::run(runtime, settings).map_err(|e| format!("wayland filter: {e}"))
         }
         Command::ClipboardGet => {
             let text = clamshell_system::session::clipboard::get().map_err(|e| format!("clipboard: {e}"))?;
@@ -94,7 +95,7 @@ fn carry_out(command: Command) -> Result<(), String> {
             std::io::Read::read_to_string(&mut std::io::stdin(), &mut text).map_err(|e| format!("clipboard: {e}"))?;
             clamshell_system::session::clipboard::set(text).map_err(|e| format!("clipboard: {e}"))
         }
-        Command::Tray => commands::print_tray(),
+        Command::Tray => commands::print_tray(&paths),
         Command::LaunchEnv(entry) => commands::print_launch_env(&paths, &sources, &entry),
         Command::ReleaseHardware => {
             clamshell_system::release_hardware(env.profile.charge, env.charge_limit.as_deref());

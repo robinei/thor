@@ -112,7 +112,10 @@ impl Handles {
             }
             Effect::Enqueue { key, lines } => {
                 log::info!("effect: {effect:?}");
-                self.processes.send(launcher::ToProcesses::Enqueue { socket: self.paths.socket(key), lines: lines.clone() });
+                match self.paths.socket(key) {
+                    Some(socket) => self.processes.send(launcher::ToProcesses::Enqueue { socket, lines: lines.clone() }),
+                    None => log::warn!("enqueue: no XDG_RUNTIME_DIR, where the control sockets are"),
+                }
             }
             Effect::Browse(command) => {
                 log::info!("effect: {effect:?}");

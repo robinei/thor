@@ -2,12 +2,11 @@
 
 use std::path::{Path, PathBuf};
 
-/// The XDG data dirs, the user's first.
-pub(crate) fn data_dirs() -> Vec<PathBuf> {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    let user = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).or_else(|| home.map(|h| h.join(".local/share")));
-    let system = std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".into());
-    user.into_iter().chain(system.split(':').filter(|d| !d.is_empty()).map(PathBuf::from)).collect()
+/// The XDG data dirs: the user's, `user`, first, then the system's, `system` (XDG_DATA_DIRS, else its
+/// default). Worked out once, in [`crate::paths::Paths`].
+pub(crate) fn data_dirs(user: Option<&Path>, system: Option<&str>) -> Vec<PathBuf> {
+    let system = system.unwrap_or("/usr/local/share:/usr/share");
+    user.map(Path::to_path_buf).into_iter().chain(system.split(':').filter(|d| !d.is_empty()).map(PathBuf::from)).collect()
 }
 
 /// The icon themes to look in, in order. hicolor is the fallback every app installs into.

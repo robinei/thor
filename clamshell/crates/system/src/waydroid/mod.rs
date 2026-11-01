@@ -34,12 +34,12 @@ use wire::{End, relay};
 
 use crate::os::worker;
 
-/// Listens on `<display>-android` beside the compositor's socket (`$XDG_RUNTIME_DIR`, `$WAYLAND_DISPLAY`)
-/// and passes each connection through. `settings` is ClamShell's runtime dir with its `android-*` files.
+/// Listens on `<display>-android` beside the compositor's socket (in `runtime`, `$XDG_RUNTIME_DIR`, named
+/// by `$WAYLAND_DISPLAY`) and passes each connection through. `settings` is ClamShell's runtime folder with
+/// its `android-*` files (both from [`crate::paths::Paths`]).
 /// Returns once the compositor closes a connection (see
 /// [`connect`]), or if it can't listen.
-pub fn run(settings: PathBuf) -> io::Result<()> {
-    let runtime = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).ok_or_else(|| io::Error::other("no XDG_RUNTIME_DIR"))?;
+pub fn run(runtime: PathBuf, settings: PathBuf) -> io::Result<()> {
     let display = std::env::var("WAYLAND_DISPLAY").map_err(|_| io::Error::other("no WAYLAND_DISPLAY"))?;
     let upstream = runtime.join(&display);
     let path = runtime.join(format!("{display}-android"));

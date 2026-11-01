@@ -49,7 +49,7 @@ pub(crate) struct Config {
     pub(crate) watch_later: Vec<PathBuf>,
     pub(crate) fex: Option<PathBuf>,
     /// Where the launches' control sockets go, which a command gets as `{socket}`.
-    pub(crate) sockets: PathBuf,
+    pub(crate) sockets: Option<PathBuf>,
     /// The compositor's displays (`WAYLAND_DISPLAY`, `DISPLAY`), given to every launch after its own
     /// variables.
     pub displays: Vec<(String, String)>,
@@ -147,8 +147,9 @@ fn start(config: &Config, request: &Request) -> Result<(), Error> {
 fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir: Option<PathBuf>) -> Result<(), Error> {
     // `{socket}` is the entry's control socket. See clamshell_state::session::enqueue.
     let argv = if argv.iter().any(|a| a.contains("{socket}")) {
-        std::fs::create_dir_all(&config.sockets)?;
-        let socket = config.sockets.join(LaunchUnit::socket_of(&request.unit.key));
+        let sockets = config.sockets.as_ref().ok_or_else(|| io::Error::other("no XDG_RUNTIME_DIR for its control socket"))?;
+        std::fs::create_dir_all(sockets)?;
+        let socket = sockets.join(LaunchUnit::socket_of(&request.unit.key));
         argv.iter().map(|a| a.replace("{socket}", &socket.to_string_lossy())).collect()
     } else {
         argv
@@ -339,7 +340,7 @@ mod tests {
     use std::time::Duration;
 
     fn config() -> Config {
-        Config { watch_later: Vec::new(), sockets: std::env::temp_dir(), displays: Vec::new(), home: None, fex: None }
+        Config { watch_later: Vec::new(), sockets: Some(std::env::temp_dir()), displays: Vec::new(), home: None, fex: None }
     }
 
     /// Starts a service on this machine's user manager. Run it by hand with `--ignored`.
@@ -460,7 +461,7 @@ mod environment_tests {
         let config = Config {
             fex: Some("/cache/fex".into()),
             watch_later: Vec::new(),
-            sockets: PathBuf::new(),
+            sockets: None,
             home: None,
             displays: vec![("WAYLAND_DISPLAY".into(), "private".into())],
         };

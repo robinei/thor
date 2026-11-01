@@ -8,8 +8,8 @@ use clamshell_system::paths::Paths;
 use clamshell_system::store::Store;
 
 /// `--tray`: prints the tray icons and their menus.
-pub(crate) fn print_tray() -> Result<(), String> {
-    let items = clamshell_system::session::tray::read_now().map_err(|e| format!("tray: {e}"))?;
+pub(crate) fn print_tray(paths: &clamshell_system::paths::Paths) -> Result<(), String> {
+    let items = clamshell_system::session::tray::read_now(paths).map_err(|e| format!("tray: {e}"))?;
     for item in items {
         println!("{} ({}) pid {:?} unit {:?} icon {:?}", item.title, item.id, item.pid, item.unit, item.icon);
         print_tray_menu(&item.menu, 1);
