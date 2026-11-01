@@ -80,10 +80,12 @@ tries a connection (and OpenSSH's own penalties for repeated failures).
 
 sudo asks the password, per terminal, as usual. During a maintenance pass (`thor-maintain`) it is shared:
 the pass asks it once, writes `/etc/sudoers.d/zz-thor-maintenance` (`timestamp_type=global`) so that
-Claude's commands, which have no terminal, use it, keeps it fresh, and removes the file and the
-timestamp when it ends; so while a pass runs, every process of `thor` has sudo without a prompt. A pass
-killed outright (SIGKILL) leaves the file until the next boot, which removes it
-(`tmpfiles.d/thor-maintenance.conf`), and a timestamp for up to 15 minutes.
+Claude's commands, which have no terminal, use it, and keeps it fresh; so while a pass runs, every
+process of `thor` has sudo without a prompt. With the file it starts a root unit
+(`thor-maintenance-end-<pid>`) that waits for the pass's process to end, however it ends (SIGKILL, or
+after the device slept past the timestamp), and removes the file; the pass forgets the timestamp as it
+ends, and one killed outright leaves it for up to 15 minutes. Should that unit be cut off too, the next
+boot removes the file (`tmpfiles.d/thor-maintenance.conf`).
 
 ## The account and the first password
 

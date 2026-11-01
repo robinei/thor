@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 import unittest
 import gzip
 import zlib
@@ -436,6 +437,50 @@ class DevicePacman(unittest.TestCase):
                 sections[name][key] = value
         self.assertEqual(list(sections), ['options', 'thor', 'core'])
         self.assertEqual(sections['thor'], {'SigLevel': 'Required', 'Server': 'https://example/thor'})
+
+
+class MaintenancePass(unittest.TestCase):
+    """thor-maintain's shared sudo timestamp file, with stub sudo, systemd-run and claude."""
+
+    def machine(self):
+        m = Machine()
+        self.addCleanup(m.close)
+        m.file('etc/sudoers.d/.keep')
+        m.file('home/.keep')
+        # sudo runs the command as the test's user; -n fails once the timestamp has expired.
+        m.command('sudo', f'''while :; do
+    case $1 in
+        -n) [ ! -e {m.root}/expired ] || exit 1; shift ;;
+        -S) IFS= read -r _; shift ;;
+        -p) shift 2 ;;
+        -k | -v) exit 0 ;;
+        *) break ;;
+    esac
+done
+exec "$@"''')
+        m.command('visudo')
+        # (The refresher's wait, which would hold the output open.)
+        m.command('sleep', 'exit 1')
+        m.command('systemd-run', 'while [ "${1#-}" != "$1" ]; do shift; done; setsid "$@" > /dev/null 2>&1 < /dev/null &')
+        # The pass: the file is in place while it runs, and the device sleeps past the timestamp.
+        m.command('claude', f'cat {m.root}/etc/sudoers.d/zz-thor-maintenance > {m.root}/during; touch {m.root}/expired')
+        return m
+
+    def test_the_sudoers_file_goes_when_the_pass_ends_though_the_timestamp_expired(self):
+        m = self.machine()
+        source = (REPO / 'packages/thor-session/root/usr/bin/thor-maintain').read_text().replace('/etc/sudoers.d', f'{m.root}/etc/sudoers.d')
+        script = m.file('script', source)
+        env = {**m.env, 'HOME': str(m.root / 'home'), 'XDG_RUNTIME_DIR': str(m.root), 'XDG_DATA_HOME': str(m.root / 'home')}
+        result = subprocess.run(['bash', script], input='password\n\n', env=env, capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((m.root / 'during').read_text(), 'Defaults:%wheel timestamp_type=global\n')
+        file = m.root / 'etc/sudoers.d/zz-thor-maintenance'
+        for _ in range(50):
+            if not file.exists():
+                break
+            time.sleep(0.1)
+        self.assertFalse(file.exists())
+        self.assertEqual([p.name for p in (m.root / 'etc/sudoers.d').iterdir()], ['.keep'])
 
 
 if __name__ == '__main__':

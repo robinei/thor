@@ -18,13 +18,13 @@ if ! command -v claude > /dev/null; then
 fi
 # sudo for the pass: the password asked here, once, and Claude's commands (which have no terminal of
 # their own) use it: for the pass only, sudoers' timestamp is the user's across processes (a file of its
-# own, /etc/sudoers.d/zz-thor-maintenance, removed after; at boot too, if a pass was cut off:
-# tmpfiles.d/thor-maintenance.conf); outside a pass, sudo asks in each terminal as usual. Kept fresh
-# while the pass runs, forgotten after.
+# own, /etc/sudoers.d/zz-thor-maintenance); outside a pass, sudo asks in each terminal as usual. Kept
+# fresh while the pass runs, forgotten after. The file is removed by root, not by the pass: a unit started
+# with it waits for this script to end, however it ends, so the file goes even when the timestamp has
+# expired (the device slept); at boot too, if that unit was cut off (tmpfiles.d/thor-maintenance.conf).
 GLOBAL=/etc/sudoers.d/zz-thor-maintenance
 done_pass() {
     [ -n "${fresh:-}" ] && kill "$fresh" 2> /dev/null
-    sudo -n rm -f "$GLOBAL" 2> /dev/null
     sudo -k
 }
 trap done_pass EXIT
@@ -32,11 +32,14 @@ trap 'exit 1' INT TERM HUP
 echo "Maintenance needs the account's password (set in ClamShell: Tools, Device)."
 read -rsp "Password: " password
 echo
-# (The file written to a hidden name first, which sudo skips, checked, then moved into place.)
+# (The file written to a hidden name first, which sudo skips, checked, then moved into place, and its
+# removal started: $1 the file, $2 this script's process.)
 if ! printf '%s\n' "$password" | sudo -S -p '' sh -c 'umask 077
     f=$(mktemp /etc/sudoers.d/.thor-maintenance.XXXXXX) || exit 1
     printf "Defaults:%%wheel timestamp_type=global\n" > "$f" && chmod 0440 "$f" && visudo -qcf "$f" \
-        && mv "$f" '"$GLOBAL"' || { rm -f "$f"; exit 1; }' 2> /dev/null \
+        && mv "$f" "$1" \
+        && systemd-run -q --collect --unit="thor-maintenance-end-$2" sh -c "tail --pid=$2 -f /dev/null; rm -f $1" \
+        || { rm -f "$f" "$1"; exit 1; }' sh "$GLOBAL" "$$" 2> /dev/null \
     || ! printf '%s\n' "$password" | sudo -S -p '' -v 2> /dev/null; then
     unset password
     echo "No sudo: is a password set, and was it typed right?"
