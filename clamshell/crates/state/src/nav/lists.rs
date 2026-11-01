@@ -12,7 +12,7 @@
 
 use std::sync::Arc;
 
-use crate::id::{AudioId, DockId, Id, LibraryViewId};
+use crate::id::{AudioId, BatteryId, DockId, Id, LibraryViewId};
 use crate::keymap::screens::Keymapping;
 use crate::kit::list::{EMPTY, ItemKey, RowsOf, Scroll};
 use crate::library_view::edit::EditId;
@@ -230,6 +230,7 @@ impl<'a> Lists<'a> {
             Id::Dock(DockId::Entry(i)) => self.dock.items().get(at(i)).map(|e| ItemKey::name(&e.id)),
             Id::LibraryView(LibraryViewId::Collection(i)) => self.library_view.library().collections.get(at(i)).map(|c| ItemKey::name(&c.name)),
             Id::Audio(AudioId::Output(i)) => self.levels.audio().outputs.get(at(i)).map(|o| ItemKey::Number(o.id)),
+            Id::Battery(BatteryId::Spender(i)) => self.sys.battery().spenders.get(at(i)).map(|p| ItemKey::of(&p.group)),
             _ => None,
         }
     }
@@ -245,6 +246,9 @@ impl<'a> Lists<'a> {
             (Id::LibraryView(LibraryViewId::Collection(_)), ItemKey::Name(_)) => {
                 index(self.library_view.library().collections.iter().position(|x| ItemKey::name(&x.name) == *key))
                     .map(|i| Id::LibraryView(LibraryViewId::Collection(i)))
+            }
+            (Id::Battery(BatteryId::Spender(_)), ItemKey::Name(_)) => {
+                index(self.sys.battery().spenders.iter().position(|p| ItemKey::of(&p.group) == *key)).map(|i| Id::Battery(BatteryId::Spender(i)))
             }
             (Id::Audio(AudioId::Output(_)), ItemKey::Number(n)) => {
                 index(self.levels.audio().outputs.iter().position(|x| x.id == *n)).map(|i| Id::Audio(AudioId::Output(i)))

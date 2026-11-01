@@ -125,6 +125,31 @@ mod tests {
         assert_eq!(tap(&mut s, second), [], "gone");
     }
 
+    /// A row of the battery tab, which re-ranks at every reading, opens the menu of the program it showed
+    /// when the finger came down, and nothing once that program is gone.
+    #[test]
+    fn a_battery_row_press_opens_the_program_it_came_down_on() {
+        use crate::id::BatteryId;
+        use crate::status::battery::{Battery, Group, Spender};
+        let mut s = state();
+        let spender = |name: &str, cpu| Spender { group: Group::Process(name.into()), cpu, gpu: 0.0, memory: 0, pids: vec![1], endable: true };
+        let reading = |spenders| Reading::Battery(Battery { spenders, ..Battery::default() });
+        read(&mut s, reading(vec![spender("firefox", 0.5), spender("foot", 0.1)]));
+        let first = Id::Battery(BatteryId::Spender(0));
+        let drawn = s.lists().item_key(&first);
+        // Busiest first: foot goes up before the finger comes down where firefox was drawn.
+        read(&mut s, reading(vec![spender("foot", 0.9), spender("firefox", 0.5)]));
+        s.applied(PointerEvent::Down(first.clone(), drawn).into());
+        tap(&mut s, first.clone());
+        assert_eq!(s.sys().spender_menu(), Some(&Group::Process("firefox".into())));
+        s.applied(PointerEvent::Activate(Id::Battery(BatteryId::Back)).into());
+        let drawn = s.lists().item_key(&first);
+        read(&mut s, reading(vec![spender("firefox", 0.5)]));
+        s.applied(PointerEvent::Down(first.clone(), drawn).into());
+        tap(&mut s, first);
+        assert_eq!(s.sys().spender_menu(), None, "foot gone");
+    }
+
     #[test]
     fn a_level_drag_stays_on_its_app() {
         let mut s = state();

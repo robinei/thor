@@ -11,7 +11,7 @@ use crate::{BatteryId, Effect, EntryAct, Event, Library, Running, Session};
 /// Who a spender is. It is a launch of ours, an app or a game, known by its unit. Or an
 /// app run in another program's processes, known by its app id, such as an Android app in Waydroid's
 /// container. Or another of the user's programs, known by process name. Or everything the system runs.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Group {
     Launch(LaunchUnit),
     App(String),

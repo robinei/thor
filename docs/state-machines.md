@@ -654,7 +654,8 @@ anchored lists on their item and every list within its ends; Focus scrolls just 
 `rows_under_the_view_stay_when_the_list_changes`, `a_list_changed_by_any_event_stays_within_its_ends`,
 `the_pads_focus_on_a_row_shows_it`. Presses resolve by item key: rows tested; items
 `a_dock_press_acts_on_the_entry_it_came_down_on`, `a_collection_press_acts_on_the_collection_it_came_down_on`,
-`an_output_press_chooses_the_output_it_came_down_on`.
+`an_output_press_chooses_the_output_it_came_down_on`, `a_battery_row_press_opens_the_program_it_came_down_on`
+(the battery tab's rows, keyed by their group, re-rank at every reading).
 
 ## Settings (settings/)
 

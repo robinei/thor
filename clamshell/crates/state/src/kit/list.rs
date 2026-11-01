@@ -18,8 +18,14 @@ pub enum ItemKey {
 impl ItemKey {
     /// The key of the item named `name`.
     pub(crate) fn name(name: &str) -> ItemKey {
+        ItemKey::of(name)
+    }
+
+    /// The key of an item known by `what`, such as the group of processes a row of the battery tab
+    /// shows.
+    pub(crate) fn of(what: &(impl std::hash::Hash + ?Sized)) -> ItemKey {
         let mut hasher = std::hash::DefaultHasher::new();
-        std::hash::Hash::hash(name, &mut hasher);
+        what.hash(&mut hasher);
         ItemKey::Name(std::hash::Hasher::finish(&hasher))
     }
 }
