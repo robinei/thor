@@ -55,6 +55,10 @@ Your notes are `changelog.md` in this folder (the device's own).
    one), then `sudo pacman -Su`. If thor-keyring itself is refused, the key was replaced without that
    overlap (lost or leaked): tell the user (`docs/thor-gameplan.md`, "The repository's key"), and import
    no key yourself.
+   If pacman refuses an update of alsa-ucm-conf because files of thor-ucm's exist
+   (`/usr/share/alsa/ucm2/AYN/Thor/`, `ucm2/conf.d/sm8550/AYN-*.conf`): upstream now has the Thor's
+   profile, and thor-ucm is to be published without the files upstream has. Use no `--overwrite`;
+   update the rest meanwhile (`sudo pacman -Syu --ignore alsa-ucm-conf`) and tell the user.
 
 3. **pacnew/pacsave.** `pacdiff -o`. For each, diff against the live file, merge sensibly (keep this
    device's changes; take upstream's new defaults), install the result, delete the .pacnew. Our own
