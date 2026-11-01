@@ -654,6 +654,14 @@ anchored lists on their item and every list within its ends; Focus scrolls just 
 | Newest launch --package removed or files missing--> warn and use loader defaults; resolve on the launch thread or in the one-shot Steam hook, never the compositor. Settings, controller ignore, user Env, private compositor displays follow in that order | system `package_removal_between_launches_uses_system_without_hiding_user_overrides`, `the_launch_thread_keeps_setting_then_user_then_display_order`; binary integration `launch_env_resolves_the_driver_and_preserves_the_env_override_under_a_session_lock`. Adreno execution and the path through pressure-vessel need the device (steam-android-plan 2.6) |
 | dimming: a `through_launch` tile and the Env tile are dimmed "no effect" where the launch hands its app over (`Panel::handed_over`: Android). x86 emulation is otherwise lit everywhere: whether an entry runs x86 code isn't known (a Steam game may be native arm64, a Heroic or Lutris game runs through Wine, a runner's command may be an x86 program), and its variable does nothing where FEX doesn't run | views `face`; status `an_app_handed_over_is_known_by_its_app_id_and_edited_without_what_it_cant_get` |
 
+Records kept by entry id are never pruned: an entry's overrides and Env text (`Settings`), its own
+keymap, curve and lights (`Profiles`, by owner), and every controller seen (by spec). An entry that
+leaves the library for good, its desktop file uninstalled or its source gone, keeps them in the saved
+files, and they still count among a profile's users in its picker. This is deliberate for now: an entry
+that comes back (a card reinserted, an app reinstalled) finds its settings again, the records are small,
+and pruning would need to tell "gone for good" from "away", which only sources neither browsed nor away
+can.
+
 ## Radios (radios/)
 
 Wi-Fi and Bluetooth readings replace the state whole; the system is the authority.
