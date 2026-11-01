@@ -392,7 +392,9 @@ A player's controllers are merged: a button is down while any holds it, each sti
 is the one furthest from rest (the first controller on a tie), a controller's D-pad buttons are its hat;
 each controller's axes are put in the virtual pad's ranges first, from its own rest and range, after its
 own stick calibration. Rumble on a player's pad goes to that player's controllers with force feedback
-(player 1's only while the game has the pad; its keymap's buzz to player 1's). Programs launched are told
+(player 1's only while the game has the pad; its keymap's buzz to player 1's). A controller's failed
+rumble write is tried again after 1 s, and five in a row leave it without rumble until it is taken again
+(`a_rumble_is_given_up_only_after_failures_in_a_row`). Programs launched are told
 to ignore every controller grabbed (`SDL_GAMECONTROLLER_IGNORE_DEVICES`). Sticks calibration is of the
 controller used last.
 

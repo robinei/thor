@@ -164,7 +164,37 @@ fn scale(v: u16, setting: RumbleStrength) -> u16 {
 /// changed and played as the level changes.
 pub(crate) struct Rumble {
     effect: FFEffect,
+    /// The level the motors were last set to.
     level: (u16, u16),
+    failures: Failures,
+}
+
+/// How long after a failed write the rumble is tried again.
+const RETRY_AFTER: Duration = Duration::from_secs(1);
+/// Failed writes in a row after which a controller's rumble is given up until it is taken again.
+const FAILS_MOST: u8 = 5;
+
+/// A rumble's failed writes: a Bluetooth controller's can fail for a moment, so one is tried again after
+/// [`RETRY_AFTER`], and only [`FAILS_MOST`] in a row give it up.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+struct Failures {
+    count: u8,
+    last: Option<Instant>,
+}
+
+impl Failures {
+    fn may_try(&self, now: Instant) -> bool {
+        self.last.is_none_or(|at| now >= at + RETRY_AFTER)
+    }
+
+    fn failed(&mut self, now: Instant) {
+        self.count = self.count.saturating_add(1);
+        self.last = Some(now);
+    }
+
+    fn given_up(&self) -> bool {
+        self.count >= FAILS_MOST
+    }
 }
 
 /// An effect with both motors at these strengths (0-65535), lasting until changed.
@@ -186,21 +216,42 @@ impl Rumble {
             return Ok(None);
         }
         let effect = real.upload_ff_effect(effect(0, 0))?;
-        Ok(Some(Rumble { effect, level: (0, 0) }))
+        Ok(Some(Rumble { effect, level: (0, 0), failures: Failures::default() }))
     }
 
-    /// Sets the motors to these strengths (0-65535 each). Both at 0 stops them. Only a change reaches the
-    /// device.
-    pub(crate) fn set(&mut self, strong: u16, weak: u16) -> io::Result<()> {
+    /// Sets the motors to these strengths (0-65535 each) at `now`. Both at 0 stops them. Only a change
+    /// reaches the device. After a failed write the level is tried again from [`RETRY_AFTER`] on; see
+    /// [`Rumble::given_up`].
+    pub(crate) fn set(&mut self, strong: u16, weak: u16, now: Instant) -> io::Result<()> {
         if (strong, weak) == self.level {
+            self.failures = Failures::default();
             return Ok(());
         }
-        self.level = (strong, weak);
-        if strong == 0 && weak == 0 {
-            return self.effect.stop();
+        if !self.failures.may_try(now) {
+            return Ok(());
         }
-        self.effect.update(effect(strong, weak))?;
-        self.effect.play(1)
+        let written = if strong == 0 && weak == 0 { self.effect.stop() } else { self.effect.update(effect(strong, weak)).and_then(|()| self.effect.play(1)) };
+        match written {
+            Ok(()) => {
+                self.level = (strong, weak);
+                self.failures = Failures::default();
+                Ok(())
+            }
+            Err(e) => {
+                self.failures.failed(now);
+                Err(e)
+            }
+        }
+    }
+
+    /// When a level that failed is to be tried again, if one is.
+    pub(crate) fn retry_at(&self) -> Option<Instant> {
+        self.failures.last.filter(|_| self.failures.count > 0).map(|at| at + RETRY_AFTER)
+    }
+
+    /// Whether its writes failed too often in a row, so it is left without rumble.
+    pub(crate) fn given_up(&self) -> bool {
+        self.failures.given_up()
     }
 }
 
@@ -252,5 +303,22 @@ mod tests {
         assert_eq!(mix(games, true, Some((40_000, 45_000)), Full), (60_000, 45_000), "the stronger of each");
         assert_eq!(mix(games, true, None, Low), (20_000, 10_000));
         assert_eq!(mix(games, true, Some((9_000, 3_000)), Off), (0, 0));
+    }
+
+    /// A failed write is tried again after a while, and only several in a row give the rumble up. (One
+    /// failure left a controller without rumble until it was taken again.)
+    #[test]
+    fn a_rumble_is_given_up_only_after_failures_in_a_row() {
+        let t0 = Instant::now();
+        let mut f = Failures::default();
+        assert!(f.may_try(t0));
+        f.failed(t0);
+        assert!(!f.may_try(t0 + RETRY_AFTER / 2), "not at once");
+        assert!(f.may_try(t0 + RETRY_AFTER) && !f.given_up(), "but after a while");
+        for i in 1..u32::from(FAILS_MOST) {
+            assert!(!f.given_up());
+            f.failed(t0 + RETRY_AFTER * i);
+        }
+        assert!(f.given_up(), "{FAILS_MOST} in a row");
     }
 }

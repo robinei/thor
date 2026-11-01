@@ -565,7 +565,7 @@ impl<S: Sink> PadThread<S> {
         let mut c = pads.controllers.remove(i);
         log::info!("pad: {} let go: {why}", c.name);
         if let Some(r) = c.rumble.as_mut()
-            && let Err(e) = r.set(0, 0)
+            && let Err(e) = r.set(0, 0, Instant::now())
         {
             log::debug!("pad: stopping the rumble of {}: {e}", c.name);
         }
@@ -775,7 +775,7 @@ impl<S: Sink> Service for PadThread<S> {
         let result = self.route_events(&mut pads, commands);
         for c in &mut pads.controllers {
             if let Some(r) = c.rumble.as_mut()
-                && let Err(e) = r.set(0, 0)
+                && let Err(e) = r.set(0, 0, Instant::now())
             {
                 log::debug!("pad: stopping the rumble of {}: {e}", c.name);
             }
@@ -1107,7 +1107,8 @@ impl<S: Sink> PadThread<S> {
 
     /// Drives each player's controllers' motors with games' rumble on its virtual pad (player 1's while
     /// the game has the pad) and with its keymap's buzzes, at the Rumble setting's strength. A controller
-    /// whose rumble fails is left without. Returns when the next effect or buzz ends.
+    /// whose rumble fails is tried again, and left without after several failures in a row. Returns when
+    /// the next effect or buzz ends, or a failed rumble is tried again.
     fn rumble(&mut self, pads: &mut Pads, now: Instant) -> Option<Instant> {
         self.serve_effects(now);
         let devices = self.devices.as_mut()?;
@@ -1125,11 +1126,16 @@ impl<S: Sink> PadThread<S> {
         for c in &mut pads.controllers {
             let level = pads.merge.player(c.slot).and_then(|p| levels.get(p.index()).copied()).unwrap_or((0, 0));
             if let Some(r) = c.rumble.as_mut()
-                && let Err(e) = r.set(level.0, level.1)
+                && let Err(e) = r.set(level.0, level.1, now)
             {
-                log::warn!("pad: {}: rumble: {e}", c.name);
-                c.rumble = None;
+                if r.given_up() {
+                    log::warn!("pad: {}: rumble: {e}: given up until it is taken again", c.name);
+                    c.rumble = None;
+                } else {
+                    log::warn!("pad: {}: rumble: {e}: tried again", c.name);
+                }
             }
+            next = [next, c.rumble.as_ref().and_then(Rumble::retry_at)].into_iter().flatten().min();
         }
         next
     }
