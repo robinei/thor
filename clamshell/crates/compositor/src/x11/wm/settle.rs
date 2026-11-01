@@ -126,6 +126,8 @@ impl Wm {
                 } else {
                     wire.request(KillClientRequest { resource: w.xid }, 0, false)?;
                 }
+            } else {
+                log::debug!("compositor: X11 window {id} not closed: gone already");
             }
         }
         Ok(())

@@ -38,6 +38,7 @@ impl Transfer {
 impl Imports {
     pub(super) fn start(&mut self, selection: usize, format: Format, pipe: Option<File>, wire: &mut Transport, atoms: &Atoms, now: Instant) -> io::Result<()> {
         if pipe.is_some() && self.transfers.iter().filter(|transfer| transfer.pipe.is_some()).count() >= MAX_TRANSFERS {
+            log::warn!("compositor: a paste from X11 dropped: {MAX_TRANSFERS} already going on");
             return Ok(());
         }
         let Some(window) = self.allocator.as_mut().and_then(|allocator| allocator.generate_id()) else {

@@ -121,9 +121,13 @@ impl Imports {
         for request in server.x11.selections.requests.drain(..) {
             let offer = self.offers.get(request.selection);
             if !offer.published || offer.owner == 0 || offer.origin != request.origin {
+                log::debug!("compositor: a paste from X11 dropped: the selection has changed since");
                 continue;
             }
-            let Some(format) = offer.formats.iter().find(|format| format.mime == request.mime).cloned() else { continue };
+            let Some(format) = offer.formats.iter().find(|format| format.mime == request.mime).cloned() else {
+                log::warn!("compositor: a paste from X11 dropped: {:?} isn't offered", request.mime);
+                continue;
+            };
             self.start(request.selection, format, Some(File::from(request.fd)), wire, atoms, now)?;
         }
         self.pump(wire, atoms, now)
