@@ -349,11 +349,15 @@ impl<'f, 'c> Frame<'f, 'c> {
 
     /// A tab the shoulders step to, after those declared before it: pressing `open` opens it, and the
     /// focus then goes to `focus`. `current` says it is the tab open now. Past [`MAX_TABS`] a tab is left
-    /// out, logged.
+    /// out, logged once: it would be every frame (the views check their count when built).
     pub fn tab_stop(&mut self, open: Id, focus: Id, current: bool) {
+        static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         match self.out.pad.tabs.iter_mut().find(|t| t.is_none()) {
             Some(slot) => *slot = Some(TabStop { open, focus, current }),
-            None => log::warn!("more than {MAX_TABS} tabs declared: {open:?} left out of the shoulders' steps"),
+            None if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) => {
+                log::warn!("more than {MAX_TABS} tabs declared: {open:?} left out of the shoulders' steps (said once)");
+            }
+            None => {}
         }
     }
 

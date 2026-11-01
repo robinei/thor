@@ -31,6 +31,9 @@ const CLOCK_PAD: f32 = 0.5;
 /// The width of the pad mouse switch's tap slot, as a fraction of the bar's height. The tabs share the
 /// room before the clock.
 const SLOT: f32 = 1.15;
+// Every tab is a stop of the shoulders (see `draw`): the frame holds that many.
+const _: () = assert!(Tab::ALL.len() <= clamshell_ui::toolkit::MAX_TABS, "more tabs than the shoulders' stops");
+
 /// The bar's height on `screen`.
 pub(super) fn height(screen: Rect) -> f32 {
     (screen.h * BAR_H).max(20.0)
