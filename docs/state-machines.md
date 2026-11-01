@@ -2031,6 +2031,8 @@ Selected slot A --update--> prepare slot B --complete and synced--> publish B an
 then the roles reverse. Any failure before the entry switch leaves the selected EFI slot intact; a
 failure after it leaves the new complete slot selected. ABL publishes one complete KERNEL independently.
 The inactive slot is replaceable on retry; the selected slot is never overwritten during preparation.
+The slot's, KERNEL's and EFI's renames are synced to the card before the entry's rename (FAT orders no
+metadata writes), so the entry never names a slot the card lacks.
 `tools/tests/package-recovery.py` injects failure before/after each publication rename, validates EFI
 and ABL coherence with the real boot-image packer, and checks retries and repeated slot alternation.
 Physical power interruption on FAT remains a device check.

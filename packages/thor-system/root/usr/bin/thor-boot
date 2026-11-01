@@ -70,7 +70,11 @@ sync
 mv "$stage" "$slot"
 mv "$mnt/KERNEL.new" "$mnt/KERNEL"
 mv "$mnt/EFI/BOOT/BOOTAA64.EFI.new" "$mnt/EFI/BOOT/BOOTAA64.EFI"
+# Order: the renames above on the card before the entry's. FAT orders no metadata writes, so a power cut
+# during one sync could keep the entry's rename and lose the slot's, and the entry would name a slot that
+# isn't there.
+sync -f "$mnt"
 # This is the commit point for EFI: all three paths change together.
 mv "$entry.new" "$entry"
-sync
+sync -f "$mnt"
 echo "thor-boot: done (slot $next; command line: $cmdline)"

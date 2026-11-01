@@ -154,10 +154,11 @@ class BootRecovery(unittest.TestCase):
         m.command('mountpoint', 'exit 0')
         m.command('mount')
         m.command('umount')
-        m.command('sync')
+        m.command('sync', f'echo sync >> {m.root}/events')
         m.command('mkinitcpio', f"printf 'new initramfs.img' > {m.root}/boot/initramfs-thor.img")
         m.command('mv', f'''n=$(cat {m.root}/renames 2>/dev/null || echo 0)
 n=$((n+1)); echo "$n" > {m.root}/renames
+for last; do :; done; echo "mv ${{last#{m.root}/run/thor-esp/}}" >> {m.root}/events
 [ "${{FAIL_BEFORE:-0}}" != "$n" ] || exit 73
 /usr/bin/mv "$@" || exit
 [ "${{FAIL_AFTER:-0}}" != "$n" ] || exit 74''')
@@ -195,6 +196,14 @@ n=$((n+1)); echo "$n" > {m.root}/renames
                     result = self.run_boot(m)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     self.assertEqual((m.root / 'run/thor-esp' / self.coherent(m).lstrip('/')).read_text(), 'new Image')
+
+    def test_the_files_the_entry_names_reach_the_card_before_its_rename(self):
+        m = self.machine()
+        result = self.run_boot(m)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        events = (m.root / 'events').read_text().splitlines()
+        # (FAT orders no metadata writes: only a sync between them orders the renames.)
+        self.assertEqual(events, ['sync', 'mv thor-b', 'mv KERNEL', 'mv EFI/BOOT/BOOTAA64.EFI', 'sync', 'mv loader/entries/thor.conf', 'sync'])
 
     def test_repeated_updates_alternate_slots_without_touching_selected_files(self):
         m = self.machine()
