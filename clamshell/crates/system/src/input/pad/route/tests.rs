@@ -428,6 +428,22 @@ fn a_controller_gone_with_home_held_isnt_a_tap_of_home() {
     assert_eq!(out.events, [Event::HomeHeld(false)], "let go, not a tap");
 }
 
+/// Home and B held, then the controller unplugged: the merge lets B go before Home, and that isn't Home
+/// with B tapped, so no window closes, nor does the program quit.
+#[test]
+fn a_controller_gone_with_home_and_b_held_closes_nothing() {
+    let (mut r, mut out) = router(PadRoute::Game);
+    let now = Instant::now();
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_EAST, Press::Down), now, &mut out);
+    r.controller_gone();
+    event(&mut r, key(KeyCode::BTN_EAST, Press::Up), now, &mut out);
+    event(&mut r, key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
+    assert_eq!(r.tick(now + QUIT_HOLD, &mut out), None);
+    assert!(actions(&out).is_empty(), "{:?}", out.events);
+    assert!(held(&out.pad).is_empty(), "nor B for the game");
+}
+
 /// Home tapped with the right stick at rest leaves it the game's at once: it never left the rest it has
 /// to return to. The merge passes no event for a value that didn't change, so a stick already centred
 /// sends no centred event to give it back.

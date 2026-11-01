@@ -270,11 +270,13 @@ impl PadRouter {
     }
 
     /// One of the player's controllers is gone while Home may be held on it: letting Home go isn't a tap
-    /// of Home.
+    /// of Home, and Home with B neither closes nor quits, since B's release is the controller going, not
+    /// the user letting go.
     pub(crate) fn controller_gone(&mut self) {
         if let Home::Held { combined } = &mut self.home {
             *combined = true;
         }
+        self.closing = None;
     }
 
     fn mapping(&mut self, route: PadRoute) -> Option<&mut dyn Mapping> {

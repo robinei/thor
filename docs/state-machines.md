@@ -421,7 +421,8 @@ Home-held arrow already switched a window; otherwise it shows the Library. Direc
 until it returns, including during remap ticks and gyro samples. A stick at rest on release is the game's at once, since the merge sends no event for a
 value unchanged (`home_tapped_with_the_stick_at_rest_leaves_it_the_games`). Unplugging releases Home for state:
 at the end of a run (`losing_the_controller_releases_home_for_the_state`), and a controller of player 1
-that goes while Home is held on it lets Home go without a tap (`a_controller_gone_with_home_held_isnt_a_tap_of_home`).
+that goes while Home is held on it lets Home go without a tap (`a_controller_gone_with_home_held_isnt_a_tap_of_home`),
+and with Home and B held it neither closes the window nor quits (`a_controller_gone_with_home_and_b_held_closes_nothing`).
 Tests: `home_flicks_once_and_neutralises_the_games_stick_until_it_returns`,
 `losing_the_controller_releases_home_for_the_state`. Away from the game, Home's press gives the mapping
 in force the right stick at rest (`home_away_from_the_game_centres_the_right_stick_for_the_mapping`). The
