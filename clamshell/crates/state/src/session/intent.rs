@@ -7,9 +7,11 @@
 use crate::LaunchUnit;
 
 /// How long a launch started in front waits for its first window, in seconds from when it was asked for:
-/// a game may load for a while before it shows one. A launch the launcher never answers is given up
-/// sooner ([`super::running::LAUNCH_WAIT`]).
-pub(crate) const WINDOW_WAIT: u64 = 120;
+/// a game may load for a while before it shows one (a first Proton start sets up its prefix and compiles
+/// shaders first, for minutes). Waiting long costs little: a new launch or Home replaces the intent, and
+/// windows nobody asked for stay behind meanwhile. A launch the launcher never answers is given up sooner
+/// ([`super::running::LAUNCH_WAIT`]).
+pub(crate) const WINDOW_WAIT: u64 = 600;
 
 /// What is waited for.
 #[derive(Debug, Clone, PartialEq, Eq)]
