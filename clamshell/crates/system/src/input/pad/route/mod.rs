@@ -318,9 +318,9 @@ impl PadRouter {
     }
 
     /// Calibrates the gyro from its next samples, with the device held still. [`Event::GyroCalibrated`]
-    /// says how it went.
-    pub(crate) fn calibrate(&mut self) {
-        self.calibration.ask();
+    /// says how it went, failed if no samples come in time (see [`PadRouter::tick`]).
+    pub(crate) fn calibrate(&mut self, now: Instant) {
+        self.calibration.ask(now);
     }
 
     /// Called when the controller is gone. Whatever the route holds down outside the game's pad is let
@@ -556,18 +556,22 @@ impl PadRouter {
         [AbsoluteAxisCode::ABS_RX, AbsoluteAxisCode::ABS_RY].map(|axis| self.stick_range.centered(self.snapshot.value(axis).unwrap_or(0)))
     }
 
-    /// Ticks the mapping in force, and quits the program in front once Home with B is held long enough.
-    /// Returns when to tick next, if needed.
+    /// Ticks the mapping in force, quits the program in front once Home with B is held long enough, and
+    /// fails a gyro calibration that got no samples in time. Returns when to tick next, if needed.
     pub(crate) fn tick(&mut self, now: Instant, out: &mut Out) -> Option<Instant> {
         if self.closing.is_some_and(|at| now >= at) {
             self.closing = None;
             out.events.push(Event::HardwareKey(HardwareKey::Quit));
         }
+        if self.calibration.expire(now) {
+            log::info!("pad: no gyro samples to calibrate from");
+            out.events.push(Event::GyroCalibrated(false));
+        }
         let next = match self.mapping(self.route) {
             Some(m) => m.tick(now, out),
             None => self.with_game_snapshot(|remap, snapshot| remap.tick(now, snapshot, out)),
         };
-        [next, self.closing].into_iter().flatten().min()
+        [next, self.closing, self.calibration.deadline()].into_iter().flatten().min()
     }
 
     /// The virtual pad's Guide button down or up.

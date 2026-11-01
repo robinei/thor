@@ -11,7 +11,7 @@
 
 use std::io;
 use std::os::fd::{AsFd, BorrowedFd};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use evdev::raw_stream::RawDevice;
 use evdev::{AbsoluteAxisCode, EventType, MiscCode, PropType};
@@ -51,6 +51,9 @@ const STILL_FOR: f32 = 1.5;
 /// `CALIBRATE_SPREAD`.
 const CALIBRATE_FOR: f32 = 1.0;
 const CALIBRATE_SPREAD: f32 = 2.0;
+/// A requested calibration that hasn't ended by this long after it was asked for fails: the gyro sends
+/// no samples (a sensor hub whose service isn't up yet).
+const ASK_WAIT: Duration = Duration::from_secs(3);
 
 /// Samples over a stretch of time: their sum, count and time, and each axis' lowest and highest value.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -95,6 +98,8 @@ pub(crate) struct Calibration {
     bias: Rate,
     still: Option<Run>,
     asked: Asked,
+    /// When a requested calibration fails if it hasn't ended ([`ASK_WAIT`]).
+    asked_until: Option<Instant>,
 }
 
 /// A requested calibration: none, waiting for its first sample, or gathering samples.
@@ -107,9 +112,26 @@ enum Asked {
 }
 
 impl Calibration {
-    /// Calibrates from the next samples. [`Calibration::correct`] says how it went.
-    pub(crate) fn ask(&mut self) {
+    /// Calibrates from the next samples, asked for at `now`. [`Calibration::correct`] says how it went, or
+    /// [`Calibration::expire`] that it failed for want of samples.
+    pub(crate) fn ask(&mut self, now: Instant) {
         self.asked = Asked::First;
+        self.asked_until = Some(now + ASK_WAIT);
+    }
+
+    /// When a requested calibration fails if it hasn't ended.
+    pub(crate) fn deadline(&self) -> Option<Instant> {
+        self.asked_until
+    }
+
+    /// Ends a requested calibration whose time is up at `now`. Returns whether it did: it failed.
+    pub(crate) fn expire(&mut self, now: Instant) -> bool {
+        if self.asked_until.is_none_or(|until| now < until) {
+            return false;
+        }
+        self.asked = Asked::No;
+        self.asked_until = None;
+        true
     }
 
     /// Corrects a sample's rate, `dt` seconds after the last sample, by taking off the offset. When a
@@ -132,6 +154,7 @@ impl Calibration {
                     self.bias = r.mean();
                 }
                 self.asked = Asked::No;
+                self.asked_until = None;
                 self.still = None;
                 done = Some(ok);
             }
@@ -302,7 +325,7 @@ mod tests {
         let (now, _) = c.correct(r(0.8), dt);
         assert!(now.axes().iter().all(|v| v.abs() < 0.01), "{now:?}");
         // On request, the next second held still is taken, and success is reported.
-        c.ask();
+        c.ask(Instant::now());
         let mut done = None;
         for _ in 0..300 {
             done = done.or(c.correct(r(1.5), dt).1);
@@ -310,7 +333,7 @@ mod tests {
         assert_eq!(done, Some(true));
         assert!(c.correct(r(1.5), dt).0.yaw.abs() < 0.01);
         // On request while moving, nothing is taken.
-        c.ask();
+        c.ask(Instant::now());
         let mut done = None;
         for i in 0..300 {
             done = done.or(c.correct(r(if i % 50 < 25 { 10.0 } else { -10.0 }), dt).1);
@@ -320,6 +343,27 @@ mod tests {
     }
 
     use super::*;
+
+    /// A calibration asked for that gets no samples fails once its time is up, and doesn't end later
+    /// when samples come. (It waited for samples for good, and "Gyro calibrated" showed up minutes later.)
+    #[test]
+    fn a_calibration_without_samples_fails_in_time() {
+        let t0 = Instant::now();
+        let mut c = Calibration::default();
+        assert!(!c.expire(t0), "nothing asked");
+        c.ask(t0);
+        assert_eq!(c.deadline(), Some(t0 + ASK_WAIT));
+        assert!(!c.expire(t0 + ASK_WAIT / 2));
+        assert!(c.expire(t0 + ASK_WAIT), "failed");
+        assert!(!c.expire(t0 + ASK_WAIT * 2), "once");
+        let still = Rate { pitch: 0.1, yaw: 0.1, roll: 0.1 };
+        assert!((0..400).all(|_| c.correct(still, 0.004).1.is_none()), "samples later end nothing");
+        // One with samples ends before its time, and has nothing left to fail.
+        c.ask(t0);
+        assert!((0..400).any(|_| c.correct(still, 0.004).1 == Some(true)));
+        assert_eq!(c.deadline(), None);
+        assert!(!c.expire(t0 + ASK_WAIT));
+    }
 
     #[test]
     fn a_motion_sensor_pairs_with_its_controller() {

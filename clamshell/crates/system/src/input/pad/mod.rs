@@ -403,8 +403,14 @@ impl<S: Sink> PadThread<S> {
                 let player = pads.gyro_player()?;
                 pads.players.get_mut(player.index())
             }) {
-                Some(p) => p.router.calibrate(),
-                None => log::info!("pad: no gyro to calibrate"),
+                Some(p) => p.router.calibrate(Instant::now()),
+                // Answered, so the state doesn't wait for it.
+                None => {
+                    log::info!("pad: no gyro to calibrate");
+                    if self.sink.send(Event::GyroCalibrated(false)).is_err() {
+                        log::debug!("pad: the UI is gone");
+                    }
+                }
             },
             // Looking is the run's, and the supervisor tries again after any command while down.
             Command::Look => {}
@@ -1363,6 +1369,19 @@ mod tests {
         );
         assert_eq!(looks, 5, "two for the watch, then three timed, the last finding the thread gone");
         assert_eq!(pauses, [LOOK_UNWATCHED; 3]);
+    }
+
+    /// Calibrating the gyro with no gyro answers at once that it wasn't calibrated.
+    #[test]
+    fn a_gyro_calibration_without_a_gyro_is_answered() {
+        let (mut thread, events) = thread(PadRoute::Ui);
+        let mut pads = Pads::new(Player::ONE, &thread.keymaps, PadRoute::Ui, false);
+        let (commands, received) = std::sync::mpsc::channel();
+        commands.send(Command::CalibrateGyro).unwrap();
+        assert!(thread.take_commands(&mut pads, &received).unwrap());
+        assert_eq!(events.try_recv().ok(), Some(Event::GyroCalibrated(false)));
+        thread.command_while_down(Command::CalibrateGyro).unwrap();
+        assert_eq!(events.try_recv().ok(), Some(Event::GyroCalibrated(false)), "nor while the thread is down");
     }
 
     /// A pad that can't be made leaves the pads there are, and the count made so far stands; only with no
