@@ -150,7 +150,7 @@ entry and steam:// links run `steam -gamepadui %U`, and a Steam game from the Li
 `WAYLAND_DISPLAY` and `DISPLAY` from the game's environment), or handed to the running client; `-silent`
 keeps a cold start from showing the client's window.
 
-    no client --Launch(Steam game)--> the client started as Steam's own launch [the argv above]; the game's unit runs `clamshell --follow-steam ID`
+    no client --Launch(Steam game)--> the client started as Steam's own launch, its unit named with the game's launch's time and counter, so two such starts never share a name (`steam_started_for_a_game_has_a_unit_of_its_own`) [the argv above]; the game's unit runs `clamshell --follow-steam ID`
     client running --Launch(Steam game)--> the request handed to the client; the follower started
 
 Neither way passes the game's environment: the request is handed over, and Steam's own environment

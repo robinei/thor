@@ -90,7 +90,7 @@ pub(super) fn ask_steam(request: &Request, appid: u32) -> Result<(), Error> {
     // With `-silent`, a Steam that isn't running starts without its window, so only the game shows.
     let argv: Vec<String> = ["steam", "-gamepadui", "-silent", "-applaunch", &appid.to_string()].map(String::from).to_vec();
     if !steam_client_running() {
-        let unit = LaunchUnit { key: clamshell_library::key_of(STEAM_ENTRY), secs: crate::time::clock::unix_secs(), n: 0 };
+        let unit = steam_unit(&request.unit);
         let displays = env.iter().filter(|(k, _)| k == "WAYLAND_DISPLAY" || k == "DISPLAY").cloned().collect();
         let job = Job {
             unit: unit.name(),
@@ -127,6 +127,15 @@ pub(super) fn gather(marker: &str, unit: &str, slice: Option<&str>, launchers: &
 /// Steam's desktop entry. A Steam started for a game is one of its launches.
 const STEAM_ENTRY: &str = "desktop:steam";
 
+/// The launch of Steam's entry that starts Steam for the game launched as `game`. It takes the game's
+/// start time and counter: the state gives each launch a counter of its own (whatever the entry), so no
+/// launch of the state's, Steam's own among them, and no other game's Steam start has the same name.
+/// (A unit named for the second, with a counter of 0, made a second Steam game launched in the same
+/// second fail.)
+fn steam_unit(game: &LaunchUnit) -> LaunchUnit {
+    LaunchUnit { key: clamshell_library::key_of(STEAM_ENTRY), secs: game.secs, n: game.n }
+}
+
 /// Whether Steam's client, or its starter script, is running.
 pub(super) fn steam_client_running() -> bool {
     sys::processes().any(|(_, dir)| sys::text(dir.join("comm")).is_some_and(|c| c.trim() == "steam"))
@@ -149,4 +158,21 @@ pub(super) fn steam_launchers(marker: &str) -> Vec<u32> {
         })
         .map(|(pid, _)| pid)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Two Steam games launched in the same second start Steam in units of their own, and neither is a
+    /// unit the state gives a launch of Steam's entry.
+    #[test]
+    fn steam_started_for_a_game_has_a_unit_of_its_own() {
+        let game = |key: &str, n| LaunchUnit { key: clamshell_library::key_of(key), secs: 100, n };
+        let (first, second) = (steam_unit(&game("steam:10", 4)), steam_unit(&game("steam:20", 5)));
+        assert_ne!(first.name(), second.name());
+        assert_eq!(first.key, clamshell_library::key_of(STEAM_ENTRY), "a launch of Steam's entry, so Steam is on the dock");
+        let states = LaunchUnit { key: clamshell_library::key_of(STEAM_ENTRY), secs: 100, n: 6 };
+        assert!(first.name() != states.name() && second.name() != states.name());
+    }
 }
