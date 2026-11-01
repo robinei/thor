@@ -56,7 +56,7 @@ From the inventory of 2026-10-24 (paths under `clamshell/` unless noted), with w
 | The stick lights' LEDs (`multi-led{l,r}{1-4}`) and their channel order (blue, green, red, from ROCKNIX's `analog_sticks_ledcontrol`) | new with the Lights setting (2026-10-29) |
 | The gyro: Qualcomm sensor hub, QMI service 400, 200 Hz, axis matrix | `crates/system/src/input/pad/sensor_hub/mod.rs` |
 | The keymap screen's control layout and labels | `crates/views/src/keymaps/pad.rs`, `words.rs:76-91` |
-| The fan: hwmon `pwmfan`, its curves | `crates/fan/src/main.rs:26`, `curve.rs` |
+| The fan: hwmon `pwmfan`, its curves, the thermal zones it answers to (`zones`) | `crates/fan/src/main.rs:26`, `curve.rs` |
 | The charge switches (`retroid_*`) and the default hold method | `crates/system/src/power/tuning.rs` |
 | Refresh choices from announced modes; frame-cap convenience values are UI policy, and upscale choices are relative sizes | `crates/state/src/settings/mod.rs:313-318` |
 | The nested window's and snapshots' screen sizes (the Thor's, halved for nested) | `src/session.rs:75-77`, `src/dev/snapshot.rs:47-53`, `crates/compositor/src/server.rs` |

@@ -27,11 +27,11 @@ fn find_fan(root: &Path, fan: &Fan) -> Option<PathBuf> {
     entries(&root.join("sys/class/hwmon")).into_iter().find(|chip| text(&chip.join("name")).as_deref() == Some(fan.hwmon_name) && chip.join("pwm1").exists())
 }
 
-/// The readings of the CPU and GPU thermal zones, in °C.
-fn readings(root: &Path) -> Vec<f32> {
+/// The readings of the thermal zones the fan answers to (the profile's `zones`), in °C.
+fn readings(root: &Path, fan: &Fan) -> Vec<f32> {
     entries(&root.join("sys/class/thermal"))
         .into_iter()
-        .filter(|zone| text(&zone.join("type")).is_some_and(|t| t.starts_with("cpu") || t.starts_with("gpu")))
+        .filter(|zone| text(&zone.join("type")).is_some_and(|t| fan.zones.iter().any(|z| t.starts_with(z))))
         .filter_map(|zone| text(&zone.join("temp"))?.parse::<i32>().ok())
         .map(|millideg| millideg as f32 / 1000.0)
         .collect()
@@ -95,7 +95,7 @@ fn tick(root: &Path, fan: &Fan, d: &mut Daemon) -> Option<String> {
         problem.get_or_insert(format!("{}: pwm1: {e}", dir.display()));
     }
     let now = read.as_ref().ok().copied().or(d.written).unwrap_or(fan.safe_duty);
-    d.temp = curve::smooth(d.temp, curve::temperature(readings(root)));
+    d.temp = curve::smooth(d.temp, curve::temperature(readings(root, fan)));
     let duty = curve::next(fan, mode, d.temp, now);
     if duty != now || read.is_err() {
         if let Err(e) = fs::write(dir.join("pwm1"), duty.to_string()) {
@@ -206,7 +206,9 @@ mod tests {
     fn the_cpu_and_gpu_sensors_only() {
         let tmp = machine();
         let root = tmp.path();
-        assert_eq!(readings(root), vec![72.0, 61.0], "the PMIC's zone isn't the CPU's or the GPU's");
+        assert_eq!(readings(root, &Fan::thor()), vec![72.0, 61.0], "the PMIC's zone isn't the CPU's or the GPU's");
+        let other = Fan { zones: &["pm8550"], ..Fan::thor() };
+        assert_eq!(readings(root, &other).len(), 1, "the zones are the profile's");
     }
 
     #[test]

@@ -2,6 +2,8 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Fan {
     pub hwmon_name: &'static str,
+    /// The thermal zones the fan answers to: those whose `type` starts with one of these.
+    pub zones: &'static [&'static str],
     pub auto: &'static [(u16, u8)],
     pub quiet: &'static [(u16, u8)],
     pub emergency_celsius: u16,
@@ -15,6 +17,9 @@ impl Fan {
     pub const fn thor() -> Self {
         Self {
             hwmon_name: "pwmfan",
+            // The SoC's CPU clusters' and GPU's zones (`cpuss0`, `gpuss-0`, ...), not the PMIC's or
+            // the battery's.
+            zones: &["cpu", "gpu"],
             auto: &[(55, 51), (72, 77), (78, 102), (84, 153), (90, 204), (96, 255)],
             quiet: &[(60, 51), (78, 77), (85, 102), (90, 153), (95, 204)],
             emergency_celsius: 95,
