@@ -176,7 +176,8 @@ in the way, worth contributing upstream:
    they read the game's buffer as it is, an ordinary texture or an external one, copying it only when its
    client turned it; SMAA's picture is in bytes for SDR and half floats for HDR; in the VM it nearly triples
    the share of in-between tones across vkcube's edges), in that order. A window whose passes fail is shown
-   without them, logged once. Not yet tried: an external buffer through SMAA (none in the VM). SMAA's blending
+   without them, logged once; one whose pass's program couldn't be made takes no textures
+   (`a_window_whose_pass_failed_takes_no_textures`). Not yet tried: an external buffer through SMAA (none in the VM). SMAA's blending
    in the final pass (done) when shown one to one or Nearest and unsharpened: in the VM vkcube's edges
    have 56 to 59 % in-between tones, 49 % at 960×540 Nearest counted on game pixels. FXAA
    (done): in the final pass when the window is shown one to one and not sharpened after it, else one pass

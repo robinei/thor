@@ -404,7 +404,9 @@ impl Pipeline {
             chained.iter().find(|(chained, ..)| chained == id).map(|(id, surface, aa, upscale, fused)| {
                 let hdr = server.colour.surfaces.get(id).is_some_and(|colour| colour.hdr());
                 let linear = server.colour.surfaces.get(id).is_some_and(|colour| colour.transfer == TransferFunction::Linear);
-                super::chain::Want { surface, smaa: *aa == AntiAliasing::Smaa, fxaa: *aa == AntiAliasing::Fxaa, upscale: *upscale, hdr, linear, fuse: *fused }
+                let passes =
+                    super::chain::Passes { smaa: *aa == AntiAliasing::Smaa, fxaa: *aa == AntiAliasing::Fxaa, upscale: *upscale, hdr, linear, fuse: *fused };
+                super::chain::Want { surface, passes }
             })
         })?;
         scene.converted.clear();
@@ -1147,14 +1149,14 @@ mod tests {
 }
 
 #[cfg(test)]
-mod direct_tests {
+pub(super) mod direct_tests {
     #![allow(clippy::unwrap_used, clippy::indexing_slicing, unsafe_code)]
     use super::*;
     use clamshell_state::colour::ColourPrimaries;
     use smithay::backend::renderer::{ExportMem, ImportMem};
 
     /// A GLES renderer on the machine's render node.
-    fn renderer() -> GlesRenderer {
+    pub(crate) fn renderer() -> GlesRenderer {
         let file = std::fs::OpenOptions::new().read(true).write(true).open("/dev/dri/renderD128").unwrap();
         let gbm = smithay::backend::allocator::gbm::GbmDevice::new(smithay::utils::DeviceFd::from(std::os::fd::OwnedFd::from(file))).unwrap();
         // SAFETY: the GBM device lives as long as the display, which the context and renderer keep.

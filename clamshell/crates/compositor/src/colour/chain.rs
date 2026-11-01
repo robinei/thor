@@ -63,7 +63,7 @@ enum Read {
 #[derive(Default)]
 pub(crate) struct Chains {
     chains: HashMap<Id, Chain>,
-    /// The passes' programs, for a signal and for linear light (see [`Want::linear`]).
+    /// The passes' programs, for a signal and for linear light (see [`Passes::linear`]).
     easu: (Program, Program),
     fxaa: (Program, Program),
     /// SMAA's programs once made, or why they couldn't be, which isn't tried again.
@@ -77,9 +77,16 @@ pub(crate) struct Chains {
 }
 
 /// What a window's surface element needs for its passes: the surface, whose buffer's texture they read,
-/// whether it is anti-aliased, whether it is upscaled to be sharpened, and whether its content is HDR.
+/// and the passes.
 pub(crate) struct Want<'a> {
     pub surface: &'a WlSurface,
+    pub passes: Passes,
+}
+
+/// A window's passes: whether it is anti-aliased, whether it is upscaled to be sharpened, and whether its
+/// content is HDR.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Passes {
     pub smaa: bool,
     pub fxaa: bool,
     pub upscale: bool,
@@ -146,7 +153,7 @@ impl Chains {
             let flipped = read != Read::Copy && source.is_y_inverted();
             // A window whose passes fail is shown without them, as its buffer is; the failure is logged
             // once, and again only after they have worked.
-            if let Err(error) = self.prepare(renderer, &mut chain, &want, &source, read, flipped, shown, commit) {
+            if let Err(error) = self.prepare(renderer, &mut chain, want.passes, &source, read, flipped, shown, commit) {
                 if self.failed.insert(id.clone()) {
                     log::warn!("compositor: a window's picture passes failed, shown without them: {error}");
                 }
@@ -196,20 +203,40 @@ impl Chains {
         Ok(&self.chained)
     }
 
+    /// The programs `want` takes, made the first time each is needed; an error if one of them couldn't be
+    /// (which isn't tried again).
+    fn programs(&mut self, renderer: &mut GlesRenderer, want: Passes) -> Result<(), Error> {
+        if want.smaa {
+            let smaa = self.smaa.get_or_insert_with(|| super::smaa::Smaa::new(renderer).map_err(|e| e.to_string()));
+            smaa.as_ref().map_err(|error| Error::from(error.clone()))?;
+        }
+        for (wanted, pair, call, glsl) in
+            [(want.fxaa, &mut self.fxaa, "fxaa(v_coords)", super::shaders::FXAA), (want.upscale, &mut self.easu, "easu()", super::shaders::EASU)]
+        {
+            if wanted {
+                let program = side(pair, want.linear).get_or_insert_with(|| pass_program(renderer, call, glsl, want.linear).map_err(|e| e.to_string()));
+                program.as_ref().map_err(|error| Error::from(error.clone()))?;
+            }
+        }
+        Ok(())
+    }
+
     /// Makes a window's textures as its settings and sizes need them now, and draws its passes when they
-    /// changed or its buffer did.
+    /// changed or its buffer did. Order: its programs first, so that a window whose program failed takes
+    /// no textures, made and dropped again at each frame.
     #[allow(clippy::too_many_arguments)]
     fn prepare(
         &mut self,
         renderer: &mut GlesRenderer,
         chain: &mut Chain,
-        want: &Want<'_>,
+        want: Passes,
         source: &GlesTexture,
         read: Read,
         flipped: bool,
         shown: Size<i32, Buffer>,
         commit: CommitCounter,
     ) -> Result<(), Error> {
+        self.programs(renderer, want)?;
         let source_size = source.size();
         let fuse = want.fuse && read != Read::Copy;
         let smaa_now = chain.smaa.as_ref().map(|t| (t.size, t.hdr, t.copy.is_some(), t.out.is_none()));
@@ -245,9 +272,6 @@ impl Chains {
         let mut input = source.clone();
         let mut input_turn = Transform::Normal;
         if let Some(t) = &mut chain.smaa {
-            if self.smaa.is_none() {
-                self.smaa = Some(super::smaa::Smaa::new(renderer).map_err(|e| e.to_string()));
-            }
             let color = match &mut t.copy {
                 Some(copy) => {
                     render(renderer, copy, source, None, Transform::Normal)?;
@@ -258,7 +282,7 @@ impl Chains {
             match &mut self.smaa {
                 Some(Ok(smaa)) => smaa.run(renderer, (&color, read == Read::External, linear), [&t.edges, &t.blend], t.out.as_ref(), (t.size.w, t.size.h))?,
                 Some(Err(error)) => return Err(error.clone().into()),
-                None => {}
+                None => return Err("SMAA's programs not made".into()),
             }
             if let Some(out) = &t.out {
                 input = out.clone();
@@ -268,14 +292,10 @@ impl Chains {
             }
         }
         if let Some(target) = &mut chain.fxaa {
-            let fxaa = side(&mut self.fxaa, linear);
-            if fxaa.is_none() {
-                *fxaa = Some(pass_program(renderer, "fxaa(v_coords)", super::shaders::FXAA, linear).map_err(|e| e.to_string()));
-            }
-            let program = match fxaa {
+            let program = match side(&mut self.fxaa, linear) {
                 Some(Ok(program)) => program.clone(),
                 Some(Err(error)) => return Err(error.clone().into()),
-                None => return Ok(()),
+                None => return Err("FXAA's program not made".into()),
             };
             // Drawn as Smithay draws the buffer, so the right way up whatever the buffer is.
             let texel = [1.0 / source.size().w as f32, 1.0 / source.size().h as f32];
@@ -283,14 +303,10 @@ impl Chains {
             input = target.clone();
         }
         if let Some(target) = &mut chain.upscaled {
-            let easu = side(&mut self.easu, linear);
-            if easu.is_none() {
-                *easu = Some(pass_program(renderer, "easu()", super::shaders::EASU, linear).map_err(|e| e.to_string()));
-            }
-            let program = match easu {
+            let program = match side(&mut self.easu, linear) {
                 Some(Ok(program)) => program.clone(),
                 Some(Err(error)) => return Err(error.clone().into()),
-                None => return Ok(()),
+                None => return Err("EASU's program not made".into()),
             };
             let texel = [1.0 / input.size().w as f32, 1.0 / input.size().h as f32];
             render(renderer, target, &input, Some((&program, [Uniform::new("clarity", [texel[0], texel[1], 0.0, 2.0])])), input_turn)?;
@@ -372,4 +388,29 @@ pub(super) fn side<T>(pair: &mut (T, T), second: bool) -> &mut T {
 pub(super) fn pass_program(renderer: &mut GlesRenderer, call: &str, glsl: &str, linear: bool) -> Result<GlesTexProgram, Error> {
     let source = super::shaders::pass(call, glsl, linear);
     Ok(renderer.compile_custom_texture_shader(source, &[UniformName::new("clarity", UniformType::_4f)])?)
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+
+    /// A window whose pass's program couldn't be made takes no textures: they would be made and dropped
+    /// again at every frame (about 24 MB at 1080p with SMAA).
+    #[test]
+    fn a_window_whose_pass_failed_takes_no_textures() {
+        let mut renderer = super::super::render::direct_tests::renderer();
+        let source: GlesTexture = renderer.create_buffer(Fourcc::Abgr8888, (64, 64).into()).unwrap();
+        let none = Passes { smaa: false, fxaa: false, upscale: false, hdr: false, linear: false, fuse: false };
+        let refused: Program = Some(Err("refused".to_owned()));
+        let mut chains = Chains { smaa: Some(Err("refused".to_owned())), fxaa: (refused.clone(), None), easu: (refused, None), ..Default::default() };
+        for passes in [Passes { smaa: true, ..none }, Passes { fxaa: true, ..none }, Passes { upscale: true, ..none }] {
+            let mut chain = Chain { smaa: None, fxaa: None, upscaled: None, size: (64, 64).into(), commit: None, damage: DamageBag::default() };
+            for _ in 0..2 {
+                let prepared = chains.prepare(&mut renderer, &mut chain, passes, &source, Read::Ordinary, false, (128, 128).into(), CommitCounter::default());
+                assert!(prepared.is_err());
+                assert!(chain.smaa.is_none() && chain.fxaa.is_none() && chain.upscaled.is_none(), "{passes:?}: no textures");
+            }
+        }
+    }
 }
