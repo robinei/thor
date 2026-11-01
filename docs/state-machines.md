@@ -1015,7 +1015,10 @@ too), and the randomized test (window fact changes include colour); in the compo
 `an_invalid_colour_request_disconnects_its_client_without_ending_the_server`,
 `each_screen_is_described_as_its_panel_and_the_top_is_preferred`,
 `clients_are_told_the_hosts_headroom_not_the_contents_volume`, and the conversion tests in
-`colour/math.rs`. `tests/nested-compositor.py` checks that a surface's colour reaches the window's facts in
+`colour/math.rs`. A description reaches the final pass as uniforms, its program chosen by its kind of
+transfer function alone: a client setting a new description at each commit compiles nothing
+(`clients_descriptions_share_a_program_per_kind_of_transfer`; `a_surface_drawn_straight_is_the_final_pass`
+checks the uniforms' arithmetic on the GPU against the CPU's, for exponents, primaries and luminances). `tests/nested-compositor.py` checks that a surface's colour reaches the window's facts in
 the exported event ring, and PQ, linear and SDR pixels from an EGL client.
 
 ### A client's failure (server.rs, render.rs, clients.rs)

@@ -85,18 +85,19 @@ void main() {{
     Ok(source)
 }
 
-/// A transfer function, as GLSL on `v`: `description`'s decoding (`input`) or its encoding.
+/// A transfer function, as GLSL on `v`: `description`'s decoding (`input`), whose exponent or reference
+/// white are the surface's uniforms (`decode_k`, see `render::decode_uniforms`), or a screen's encoding.
 fn transfer(description: ColourDescription, input: bool) -> Result<String, Error> {
     let reference = f64::from(description.luminances().reference);
     Ok(match (input, description.transfer) {
         (true, TransferFunction::Srgb) => "mix(v/12.92,pow(max((v+0.055)/1.055,vec3(0.0)),vec3(2.4)),step(vec3(0.04045),v))".into(),
         (false, TransferFunction::Srgb) => "mix(v*12.92,1.055*pow(max(v,vec3(0.0)),vec3(1.0/2.4))-0.055,step(vec3(0.0031308),v))".into(),
-        (true, TransferFunction::Gamma(exponent)) => format!("pow(max(v,vec3(0.0)),vec3({:.12}))", f64::from(exponent) / 10000.0),
+        (true, TransferFunction::Gamma(_)) => "pow(max(v,vec3(0.0)),vec3(decode_k.y))".into(),
         (false, TransferFunction::Gamma(exponent)) => format!("pow(max(v,vec3(0.0)),vec3({:.12}))", 10000.0 / f64::from(exponent)),
         (_, TransferFunction::Linear) => "v".into(),
-        (true, TransferFunction::Pq) => format!(
-            "pow(max(pow(max(v,vec3(0.0)),vec3(32.0/2523.0))-3424.0/4096.0,vec3(0.0))/max(vec3(2413.0/128.0)-2392.0/128.0*pow(max(v,vec3(0.0)),vec3(32.0/2523.0)),vec3(0.000000001)),vec3(16384.0/2610.0))*(10000.0/{reference:.12})"
-        ),
+        (true, TransferFunction::Pq) => {
+            "pow(max(pow(max(v,vec3(0.0)),vec3(32.0/2523.0))-3424.0/4096.0,vec3(0.0))/max(vec3(2413.0/128.0)-2392.0/128.0*pow(max(v,vec3(0.0)),vec3(32.0/2523.0)),vec3(0.000000001)),vec3(16384.0/2610.0))*decode_k.z".into()
+        }
         (false, TransferFunction::Pq) => format!(
             "pow((vec3(3424.0/4096.0)+2413.0/128.0*pow(max(v,vec3(0.0))*({reference:.12}/10000.0),vec3(2610.0/16384.0)))/(vec3(1.0)+2392.0/128.0*pow(max(v,vec3(0.0))*({reference:.12}/10000.0),vec3(2610.0/16384.0))),vec3(2523.0/32.0))"
         ),
@@ -109,23 +110,22 @@ fn mat3([[a, b, c], [d, e, f], [g, h, i]]: [[f64; 3]; 3]) -> String {
     format!("mat3({a:.12},{d:.12},{g:.12},{b:.12},{e:.12},{h:.12},{c:.12},{f:.12},{i:.12})")
 }
 
-/// The decoding of a surface of `description` into linear light with its curve, worked in BT.2020, then
-/// taken to `scene`'s primaries where it is stored in a scene: its GLSL functions (`convert`, `matrix`,
-/// `to_scene`) and the statements on `v`.
+/// The decoding of a surface with `description`'s kind of transfer function into linear light with its
+/// curve, worked in BT.2020, then taken to `scene`'s primaries where it is stored in a scene: its GLSL
+/// functions (`convert`, `to_scene`) and the statements on `v`. What else of a surface's description it
+/// takes is its uniforms (see `render::decode_uniforms`): the matrix to BT.2020 (`decode_m0` to `2`, its
+/// columns), and its scaling, exponent and PQ factor (`decode_k`). So the program is one for every surface
+/// with that kind of transfer function, whatever its client describes.
 fn decoding(description: ColourDescription, scene: Option<ColourPrimaries>) -> Result<(String, String), Error> {
-    let matrix = super::math::matrix(description.primaries, ColourPrimaries::Bt2020).ok_or("unsupported colour primary matrix")?;
     let expression = transfer(description, true)?;
-    let reference = f64::from(description.luminances().reference);
-    let scaling = if description.transfer == TransferFunction::Pq { 1.0 } else { f64::from(description.luminances().max) / reference };
     // An SDR surface's HDR curve, as clamshell_state::curve::Curve::map_on does it: on the signal, the
     // black point and contrast; on the light, highlights expanded on luminance within the screen's peak
     // (curve_b.z) and saturation around it.
     let conversion = if super::render::sdr(description) {
-        format!(
-            "bool on = curve_b.w > 0.5;
-    if (on) {{ v = pow(clamp((v - curve_a.x) / max(1.0 - curve_a.x, 0.000001), 0.0, 1.0), vec3(curve_a.y)); }}
-    v = convert(v) * {scaling:.12};
-    if (on) {{
+        "bool on = curve_b.w > 0.5;
+    if (on) { v = pow(clamp((v - curve_a.x) / max(1.0 - curve_a.x, 0.000001), 0.0, 1.0), vec3(curve_a.y)); }
+    v = convert(v) * decode_k.x;
+    if (on) {
         float white = min(curve_b.x, curve_b.z);
         float p = max(min(curve_a.w, curve_b.z / white), 1.0);
         float y = dot(v, vec3(0.2126, 0.7152, 0.0722));
@@ -134,41 +134,42 @@ fn decoding(description: ColourDescription, scene: Option<ColourPrimaries>) -> R
         float e = (y > s && s < 1.0) ? s + (1.0 - s) * t + (p - 1.0) * t * t : y;
         vec3 c = y > 0.0 ? v * (e / y) : vec3(0.0);
         v = max(vec3(e) + (c - vec3(e)) * curve_b.y, vec3(0.0)) * white;
-    }}
-    v = matrix * v;"
-        )
+    }
+    v = mat3(decode_m0, decode_m1, decode_m2) * v;"
+            .to_owned()
     } else if super::render::hdr(description) {
         // An HDR surface, as clamshell_state::curve::map_hdr does it, in BT.2020: with a curve, the black
         // point and contrast on each channel's light below white, and the white; with or without one, the
         // highlights above the knee compressed into the screen's peak when its own peak (curve_a.w) is
         // beyond.
-        format!(
-            "v = convert(v) * {scaling:.12};
-    v = matrix * v;
+        "v = convert(v) * decode_k.x;
+    v = mat3(decode_m0, decode_m1, decode_m2) * v;
     bool on = curve_b.w > 0.5;
     float white = on ? min(curve_b.x, curve_b.z) : min(1.0, curve_b.z);
-    if (on) {{
+    if (on) {
         vec3 g = pow(clamp(v, 0.0, 1.0), vec3(1.0 / 2.2));
         g = pow(pow(clamp((g - curve_a.x) / max(1.0 - curve_a.x, 0.000001), 0.0, 1.0), vec3(curve_a.y)), vec3(2.2));
         v = mix(g, v, step(vec3(1.0), v));
-    }} else {{
+    } else {
         v = max(v, vec3(0.0));
-    }}
+    }
     float y = dot(v, vec3(0.2627, 0.6780, 0.0593));
     float room = curve_b.z / white;
     float k = min(on ? curve_a.z : 1.0, 0.75 * room);
     float e = y;
-    if (curve_a.w > room && y > k) {{
+    if (curve_a.w > room && y > k) {
         float x = y - k;
         e = min(k + x / (1.0 + x * (1.0 / (room - k) - 1.0 / (curve_a.w - k))), room);
-    }}
+    }
     vec3 c = y > 0.0 ? v * (e / y) : vec3(0.0);
     v = max(vec3(e) + (c - vec3(e)) * (on ? curve_b.y : 1.0), vec3(0.0)) * white;"
-        )
+            .to_owned()
     } else {
-        format!("v = convert(v) * {scaling:.12}; v = matrix * v;")
+        "v = convert(v) * decode_k.x; v = mat3(decode_m0, decode_m1, decode_m2) * v;".to_owned()
     };
-    let mut functions = format!("vec3 convert(vec3 v) {{ return {expression}; }}\nconst mat3 matrix = {};", mat3(matrix));
+    let mut functions = format!(
+        "uniform vec3 decode_m0;\nuniform vec3 decode_m1;\nuniform vec3 decode_m2;\nuniform vec4 decode_k;\nvec3 convert(vec3 v) {{ return {expression}; }}"
+    );
     let mut conversion = conversion;
     if let Some(scene) = scene {
         let to_scene = super::math::matrix(ColourPrimaries::Bt2020, scene).ok_or("unsupported colour primary matrix")?;

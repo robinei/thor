@@ -32,9 +32,11 @@ use smithay::{
 pub(crate) struct Pipeline {
     /// The top screen's scene and the second's.
     scenes: [Scene; 2],
-    /// The shaders decoding a surface into a scene, by its colour and the scene's primaries.
+    /// The shaders decoding a surface into a scene, by its kind of colour (see [`program_colour`]) and the
+    /// scene's primaries.
     shaders: Vec<((ColourDescription, ColourPrimaries), GlesTexProgram)>,
-    /// The shaders decoding a surface and encoding it for a screen in one pass, by the two colours.
+    /// The shaders decoding a surface and encoding it for a screen in one pass, by its kind of colour and the
+    /// screen's.
     direct_shaders: Vec<((ColourDescription, ColourDescription), GlesTexProgram)>,
     revision: u64,
     /// The surfaces whose pictures take passes before the scene this frame, kept so that composing
@@ -157,6 +159,8 @@ struct Converted {
     /// For an SDR or HDR surface's shader: its curve's uniforms (see [`curve_uniforms`]) and its clarity's
     /// (see [`clarity_uniform`]).
     curve: Option<[[f32; 4]; 3]>,
+    /// Its colour's uniforms (see [`decode_uniforms`]).
+    decode: Decode,
     /// SMAA's blending weights, when its blending is done in this pass: bound to the second texture unit
     /// while the element is drawn, as Smithay's programs take one texture (`docs/picture.md`).
     smaa_blend: Option<GlesTexture>,
@@ -221,6 +225,7 @@ impl RenderElement<GlesRenderer> for Converted {
             // texture, it would be a GL error at the draw.
             let second = smithay::backend::renderer::gles::UniformValue::_1i(1);
             uniforms.extend([Uniform::new("curve_a", a), Uniform::new("curve_b", b), Uniform::new("clarity", c), Uniform::new("smaa_blend_tex", second)]);
+            self.decode.push(&mut uniforms);
         }
         if let Some(weights) = &self.smaa_blend {
             bind_second(frame, Some(weights.tex_id()))?;
@@ -423,18 +428,22 @@ impl Pipeline {
                 };
                 [a, b, clarity]
             });
+            let decode = decode_uniforms(colour)?;
+            // Order: the program after its uniforms, which refuse what it couldn't draw (primaries without a
+            // matrix to BT.2020).
+            let kind = program_colour(colour);
             let program = if direct {
                 let output = scene.output.0;
-                cached(direct_shaders, (colour, output), || direct_shader(renderer, colour, output))?
+                cached(direct_shaders, (kind, output), || direct_shader(renderer, kind, output))?
             } else {
                 let primaries = scene.output.0.primaries;
-                cached(shaders, (colour, primaries), || decode_shader(renderer, colour, primaries))?
+                cached(shaders, (kind, primaries), || decode_shader(renderer, kind, primaries))?
             };
             let smaa_blend = match replaced.iter().find(|(id, _)| id == inner.id()).map(|(_, chained)| chained) {
                 Some(super::chain::Chained::Weights(weights)) => Some(weights.clone()),
                 _ => None,
             };
-            let converted = Converted { inner, offset: part.loc, shader: program, curve, smaa_blend, uniforms: scene.uniforms.clone() };
+            let converted = Converted { inner, offset: part.loc, shader: program, curve, decode, smaa_blend, uniforms: scene.uniforms.clone() };
             if direct {
                 scene.direct = Some(converted);
             } else {
@@ -752,6 +761,45 @@ pub(crate) fn curve_uniforms(curve: Option<&Curve>, headroom: f32, hdr_peak: Opt
     ]
 }
 
+/// The description a final pass's program is made for, standing for all with the same kind of transfer
+/// function: what else a surface's description holds (its primaries, luminances, a power law's exponent),
+/// which its client chooses freely, is given to the program as uniforms ([`decode_uniforms`]). So the
+/// programs are a few, and no client's new description compiles one on the compositor's thread.
+pub(crate) fn program_colour(colour: ColourDescription) -> ColourDescription {
+    let transfer = match colour.transfer {
+        TransferFunction::Gamma(_) => TransferFunction::Gamma(22000),
+        transfer => transfer,
+    };
+    ColourDescription { primaries: ColourPrimaries::Bt2020, transfer, luminance: None, target: None }
+}
+
+/// A surface's colour as its final pass's uniforms: the matrix from its primaries to BT.2020 (its columns,
+/// `decode_m0` to `decode_m2`), and `decode_k`: the scaling of its decoded light to units of its reference
+/// white, its power law's exponent, and PQ's nits over its reference white (see `shaders::decoding`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Decode {
+    columns: [[f32; 3]; 3],
+    k: [f32; 4],
+}
+impl Decode {
+    fn push(&self, uniforms: &mut Vec<Uniform<'static>>) {
+        let [m0, m1, m2] = self.columns;
+        uniforms.extend([Uniform::new("decode_m0", m0), Uniform::new("decode_m1", m1), Uniform::new("decode_m2", m2), Uniform::new("decode_k", self.k)]);
+    }
+}
+
+/// The uniforms (see [`Decode`]) of a surface of `colour`; an error for primaries with no matrix to
+/// BT.2020 (a white point other than D65).
+pub(crate) fn decode_uniforms(colour: ColourDescription) -> Result<Decode, Error> {
+    let [[a, b, c], [d, e, f], [g, h, i]] = super::math::matrix(colour.primaries, ColourPrimaries::Bt2020).ok_or("unsupported colour primary matrix")?;
+    let luminances = colour.luminances();
+    let reference = f64::from(luminances.reference.max(1));
+    let scaling = if colour.transfer == TransferFunction::Pq { 1.0 } else { f64::from(luminances.max) / reference };
+    let exponent = if let TransferFunction::Gamma(exponent) = colour.transfer { f64::from(exponent) / 10000.0 } else { 1.0 };
+    let columns = [[a, d, g], [b, e, h], [c, f, i]].map(|column| column.map(|v| v as f32));
+    Ok(Decode { columns, k: [scaling as f32, exponent as f32, (10000.0 / reference) as f32, 0.0] })
+}
+
 /// The shader drawing a surface of `colour` straight onto a screen of `output` (see [`Pipeline::compose`]).
 fn direct_shader(renderer: &mut GlesRenderer, colour: ColourDescription, output: ColourDescription) -> Result<GlesTexProgram, Error> {
     final_shader(renderer, colour, |curved| super::shaders::direct(colour, output, curved))
@@ -771,6 +819,10 @@ fn final_shader(renderer: &mut GlesRenderer, colour: ColourDescription, source: 
         UniformName::new("curve_b", UniformType::_4f),
         UniformName::new("clarity", UniformType::_4f),
         UniformName::new("smaa_blend_tex", UniformType::_1i),
+        UniformName::new("decode_m0", UniformType::_3f),
+        UniformName::new("decode_m1", UniformType::_3f),
+        UniformName::new("decode_m2", UniformType::_3f),
+        UniformName::new("decode_k", UniformType::_4f),
     ];
     Ok(renderer.compile_custom_texture_shader(source(curved)?, if curved { &names } else { &[] })?)
 }
@@ -800,6 +852,31 @@ fn encode_shader(renderer: &mut GlesRenderer, scene: ColourPrimaries, output: Co
 mod tests {
     #![allow(clippy::indexing_slicing)]
     use super::*;
+
+    /// Descriptions differing in all a client chooses freely (luminances, primaries, a power law's exponent,
+    /// target metadata) take one program per kind of transfer function: a client setting a new description
+    /// at each commit compiles nothing.
+    #[test]
+    fn clients_descriptions_share_a_program_per_kind_of_transfer() {
+        use clamshell_state::colour::{ColourLuminance, ColourTarget};
+        let mut kinds = Vec::new();
+        for i in 0..200u32 {
+            for transfer in [TransferFunction::Srgb, TransferFunction::Gamma(18000 + i), TransferFunction::Linear, TransferFunction::Pq] {
+                let primaries = if i % 2 == 0 {
+                    ColourPrimaries::Custom([(640000 + i as i32, 330000), (300000, 600000), (150000, 60000), (312700, 329000)])
+                } else {
+                    ColourPrimaries::DisplayP3
+                };
+                let luminance = Some(ColourLuminance { min: i, max: 80 + i, reference: 80 + i / 2 });
+                let target = Some(ColourTarget { max_cll: Some(100 + i), ..ColourTarget::default() });
+                let kind = program_colour(ColourDescription { primaries, transfer, luminance, target });
+                if !kinds.contains(&kind) {
+                    kinds.push(kind);
+                }
+            }
+        }
+        assert_eq!(kinds.len(), 4);
+    }
 
     /// The SDR input shader's arithmetic for an sRGB surface, as `shaders` writes it in GLSL.
     fn shaded(rgb: [f64; 3], [a, b]: [[f32; 4]; 2]) -> [f64; 3] {
@@ -1181,20 +1258,27 @@ mod direct_tests {
         let pq = ColourDescription { primaries: ColourPrimaries::Bt2020, transfer: TransferFunction::Pq, ..ColourDescription::default() };
         let panel = ColourDescription::from(clamshell_device::colour::PanelColour::srgb());
         let thor = ColourDescription::from(clamshell_device::DeviceProfile::thor().top.colour);
-        for (surface, output) in [(srgb, panel), (srgb, thor), (pq, thor)] {
+        // What clients choose freely, which reaches the programs as uniforms (see `program_colour`): a power
+        // law's exponent, the primaries, the luminances.
+        let gamma = ColourDescription { primaries: ColourPrimaries::DisplayP3, transfer: TransferFunction::Gamma(26000), ..ColourDescription::default() };
+        let luminance = clamshell_state::colour::ColourLuminance { min: 0, max: 120, reference: 100 };
+        let brighter = ColourDescription { luminance: Some(luminance), ..ColourDescription::default() };
+        let pq_bright = ColourDescription { luminance: Some(clamshell_state::colour::ColourLuminance { min: 50, max: 10000, reference: 300 }), ..pq };
+        for (surface, output) in [(srgb, panel), (srgb, thor), (pq, thor), (gamma, thor), (brighter, panel), (pq_bright, thor)] {
             let curve = curve_uniforms(None, output.headroom() as f32, hdr_peak(surface, 0));
             let [a, b] = curve;
-            let uniforms = [
+            let mut uniforms = vec![
                 Uniform::new("curve_a", a),
                 Uniform::new("curve_b", b),
                 Uniform::new("clarity", [0.0f32; 4]),
                 Uniform::new("smaa_blend_tex", smithay::backend::renderer::gles::UniformValue::_1i(1)),
             ];
+            decode_uniforms(surface).unwrap().push(&mut uniforms);
             let transform = super::super::scanout::Transform::new(surface, curve, output).unwrap();
             // Straight onto the screen, and through its scene in half floats.
-            let program = direct_shader(&mut renderer, surface, output).unwrap();
+            let program = direct_shader(&mut renderer, program_colour(surface), output).unwrap();
             let straight = draw(&mut renderer, &texture, &program, &uniforms, Fourcc::Abgr8888);
-            let decode = decode_shader(&mut renderer, surface, output.primaries).unwrap();
+            let decode = decode_shader(&mut renderer, program_colour(surface), output.primaries).unwrap();
             let encode = encode_shader(&mut renderer, output.primaries, output).unwrap();
             let scene = draw(&mut renderer, &texture, &decode, &uniforms, Fourcc::Abgr16161616f);
             let through = draw(&mut renderer, &scene, &encode, &[], Fourcc::Abgr8888);

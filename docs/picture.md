@@ -115,8 +115,11 @@ texture unit around Smithay's draw (see Smithay below), and the window is then d
 its buffer changes, as the blending reaches past what the client damaged. A stage switched off costs nothing: no pass, no texture. Intermediate textures
 exist only for windows that need them, kept between frames, sized to the game's buffer.
 
-**Shaders:** a variant is compiled for what changes the structure (the surface's colour description, how
-the final pass samples, and whether it sharpens); everything a slider moves is a uniform, so moving one never compiles.
+**Shaders:** a variant is compiled for what changes the structure (the kind of the surface's transfer
+function, how the final pass samples, and whether it sharpens); everything a slider moves is a uniform, so
+moving one never compiles. What a client chooses freely in its colour description (its primaries, its
+luminances, a power law's exponent) is a uniform too (`render::decode_uniforms`), so the final pass has a
+few programs whatever clients describe, and no client can make the compositor compile one per commit.
 Branches on uniforms are fine (every pixel takes the same one). Shader compiles stutter on the Adreno,
 so variants are compiled when a window maps or a profile changes, never during play, and cached.
 
