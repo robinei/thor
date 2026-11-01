@@ -82,48 +82,7 @@ impl Server {
         // a window), placed again if it changed.
         self.place();
         match event {
-            InputEvent::Keyboard { event, .. } => {
-                if let Some(keyboard) = self.seat.get_keyboard() {
-                    keyboard.input::<(), _>(self, event.key_code(), event.state(), SERIAL_COUNTER.next_serial(), event.time(), |server, _, key| {
-                        let sym = key.modified_sym();
-                        let down = event.state() == KeyState::Pressed;
-                        // On a desktop, F12 stands for the Home button.
-                        if host.desktop_keys && sym == Keysym::F12 {
-                            if down != server.keyboard_home {
-                                server.keyboard_home = down;
-                                server.core.handle(StateEvent::HomeHeld(down));
-                                if !down {
-                                    server.core.handle(StateEvent::HomeTap);
-                                }
-                            }
-                            return FilterResult::Intercept(());
-                        }
-                        // The keymap gives these for Ctrl+Alt+F1..F12.
-                        if (Keysym::XF86_Switch_VT_1.raw()..=Keysym::XF86_Switch_VT_12.raw()).contains(&sym.raw()) {
-                            if down {
-                                server.vt_switch = Some((sym.raw() - Keysym::XF86_Switch_VT_1.raw() + 1) as i32);
-                            }
-                            return FilterResult::Intercept(());
-                        }
-                        let action = match sym {
-                            Keysym::F11 if host.desktop_keys => Some(StateEvent::HardwareKey(HardwareKey::WindowDown)),
-                            Keysym::F10 if host.desktop_keys => Some(StateEvent::HardwareKey(HardwareKey::WindowUp)),
-                            _ => None,
-                        };
-                        if let Some(action) = action {
-                            if down {
-                                server.core.handle(action);
-                            }
-                            FilterResult::Intercept(())
-                        } else if server.core.state().session().keyboard_focus().is_none() {
-                            server.core.key(sym, down);
-                            FilterResult::Intercept(())
-                        } else {
-                            FilterResult::Forward
-                        }
-                    });
-                }
-            }
+            InputEvent::Keyboard { event, .. } => self.key::<B>(&event, host),
             InputEvent::PointerMotion { event } => {
                 self.validate_capture();
                 let delta = PointerMotionEvent::<B>::delta(&event);
@@ -145,91 +104,8 @@ impl Server {
                     self.pointer_absolute(at, event.time());
                 }
             }
-            InputEvent::PointerButton { event, .. } => {
-                log::debug!("compositor: button {:#x} {:?} at {:?}", event.button_code(), event.state(), self.pointer.location);
-                if event.button_code() == 0x110 && self.pointer.overlay_pressed {
-                    if event.state() == ButtonState::Released {
-                        self.pointer.overlay_pressed = false;
-                    }
-                    return;
-                }
-                if event.state() == ButtonState::Pressed {
-                    if self.pointer.buttons.is_empty() {
-                        let hit = self.hit(self.pointer.location);
-                        self.dismiss_menu_outside(hit.as_ref().map(|hit| hit.window));
-                        self.dismiss_x11_menus_outside(hit.as_ref().map(|hit| &hit.surface));
-                        let (screen, position) = self.screen_position(self.pointer.location);
-                        if event.button_code() == 0x110 && self.core.press_overlay(screen, position) {
-                            self.pointer.overlay_pressed = true;
-                            // Order: what the press changed (the keyboard's focus) before its button reaches a client.
-                            self.sync_windows();
-                            return;
-                        }
-                        let hit = self.hit(self.pointer.location);
-                        self.pointer.window = hit.as_ref().map(|hit| hit.window);
-                        if let Some(hit) = hit {
-                            self.core.handle(WindowEvent::Activate(hit.window).into());
-                        } else if let Some((screen, position)) = self.ui_under() {
-                            if screen == Screen::Top {
-                                self.core.handle(WindowEvent::KeyboardFocus(None).into());
-                            }
-                            if event.button_code() == 0x110 {
-                                self.core.press(Source::Mouse, screen, position, event.time().millis());
-                            } else if event.button_code() == 0x111 && screen == Screen::Bottom {
-                                // A right click on the second screen pastes into the field open there, as
-                                // Ctrl+V does.
-                                self.core.handle(StateEvent::Paste);
-                            }
-                        }
-                    }
-                    if !self.pointer.buttons.contains(&event.button_code()) {
-                        self.pointer.buttons.push(event.button_code());
-                    }
-                    // Order: the window pressed is activated and given the keyboard before the button reaches
-                    // it, so that it gets the press with its focus.
-                    self.sync_windows();
-                } else if event.button_code() == 0x110 {
-                    let at = self.core.at(event.time().millis());
-                    self.core.up(Source::Mouse, End::Release, at);
-                }
-                self.move_pointer(event.time());
-                if let Some(pointer) = self.seat.get_pointer() {
-                    pointer.button(
-                        self,
-                        &ButtonEvent { button: event.button_code(), state: event.state(), serial: SERIAL_COUNTER.next_serial(), time: event.time() },
-                    );
-                    pointer.frame(self);
-                }
-                if event.state() == ButtonState::Released {
-                    self.pointer.buttons.retain(|code| *code != event.button_code());
-                    if self.pointer.buttons.is_empty() {
-                        self.pointer.window = None;
-                    }
-                }
-            }
-
-            InputEvent::PointerAxis { event, .. } => {
-                let amount = |axis| event.amount(axis).unwrap_or_else(|| event.amount_v120(axis).unwrap_or_default() / 8.0);
-                let vertical = amount(Axis::Vertical);
-                if self.hit(self.pointer.location).is_some() {
-                    if let Some(pointer) = self.seat.get_pointer() {
-                        // Both axes, with the wheel's steps where it has them.
-                        let mut frame = AxisFrame::new(event.time()).source(event.source());
-                        for axis in [Axis::Vertical, Axis::Horizontal] {
-                            if event.amount(axis).is_some() || event.amount_v120(axis).is_some() {
-                                frame = frame.value(axis, amount(axis));
-                            }
-                            if let Some(v120) = event.amount_v120(axis) {
-                                frame = frame.v120(axis, v120 as i32);
-                            }
-                        }
-                        pointer.axis(self, frame);
-                        pointer.frame(self);
-                    }
-                } else if let Some((screen, position)) = self.ui_under() {
-                    self.core.wheel(screen, position, vertical.signum() as i32);
-                }
-            }
+            InputEvent::PointerButton { event, .. } => self.button::<B>(&event),
+            InputEvent::PointerAxis { event, .. } => self.axis::<B>(&event),
             // Positions are within the device's area of the scene. Winit sends no frame events, so each
             // of its touch events ends a frame.
             InputEvent::TouchDown { event } => {
@@ -253,6 +129,138 @@ impl Server {
             InputEvent::TouchCancel { .. } => self.touch_cancel(),
             InputEvent::TouchFrame { .. } => self.touch_frame(),
             _ => {}
+        }
+    }
+
+    /// A key from a keyboard, through the compositor's filter (see [`Self::input`]): Home's stand-in and the
+    /// window keys on a desktop, VT switches, ClamShell's own keys when no window has the keyboard; the rest
+    /// to the focused client.
+    fn key<B: InputBackend>(&mut self, event: &B::KeyboardKeyEvent, host: Host) {
+        if let Some(keyboard) = self.seat.get_keyboard() {
+            keyboard.input::<(), _>(self, event.key_code(), event.state(), SERIAL_COUNTER.next_serial(), event.time(), |server, _, key| {
+                let sym = key.modified_sym();
+                let down = event.state() == KeyState::Pressed;
+                // On a desktop, F12 stands for the Home button.
+                if host.desktop_keys && sym == Keysym::F12 {
+                    if down != server.keyboard_home {
+                        server.keyboard_home = down;
+                        server.core.handle(StateEvent::HomeHeld(down));
+                        if !down {
+                            server.core.handle(StateEvent::HomeTap);
+                        }
+                    }
+                    return FilterResult::Intercept(());
+                }
+                // The keymap gives these for Ctrl+Alt+F1..F12.
+                if (Keysym::XF86_Switch_VT_1.raw()..=Keysym::XF86_Switch_VT_12.raw()).contains(&sym.raw()) {
+                    if down {
+                        server.vt_switch = Some((sym.raw() - Keysym::XF86_Switch_VT_1.raw() + 1) as i32);
+                    }
+                    return FilterResult::Intercept(());
+                }
+                let action = match sym {
+                    Keysym::F11 if host.desktop_keys => Some(StateEvent::HardwareKey(HardwareKey::WindowDown)),
+                    Keysym::F10 if host.desktop_keys => Some(StateEvent::HardwareKey(HardwareKey::WindowUp)),
+                    _ => None,
+                };
+                if let Some(action) = action {
+                    if down {
+                        server.core.handle(action);
+                    }
+                    FilterResult::Intercept(())
+                } else if server.core.state().session().keyboard_focus().is_none() {
+                    server.core.key(sym, down);
+                    FilterResult::Intercept(())
+                } else {
+                    FilterResult::Forward
+                }
+            });
+        }
+    }
+
+    /// A pointer button: a press on ClamShell's overlay or second screen is ClamShell's, one on a window
+    /// activates it first; the button then goes to the client under the pointer.
+    fn button<B: InputBackend>(&mut self, event: &B::PointerButtonEvent) {
+        log::debug!("compositor: button {:#x} {:?} at {:?}", event.button_code(), event.state(), self.pointer.location);
+        if event.button_code() == 0x110 && self.pointer.overlay_pressed {
+            if event.state() == ButtonState::Released {
+                self.pointer.overlay_pressed = false;
+            }
+            return;
+        }
+        if event.state() == ButtonState::Pressed {
+            if self.pointer.buttons.is_empty() {
+                let hit = self.hit(self.pointer.location);
+                self.dismiss_menu_outside(hit.as_ref().map(|hit| hit.window));
+                self.dismiss_x11_menus_outside(hit.as_ref().map(|hit| &hit.surface));
+                let (screen, position) = self.screen_position(self.pointer.location);
+                if event.button_code() == 0x110 && self.core.press_overlay(screen, position) {
+                    self.pointer.overlay_pressed = true;
+                    // Order: what the press changed (the keyboard's focus) before its button reaches a client.
+                    self.sync_windows();
+                    return;
+                }
+                let hit = self.hit(self.pointer.location);
+                self.pointer.window = hit.as_ref().map(|hit| hit.window);
+                if let Some(hit) = hit {
+                    self.core.handle(WindowEvent::Activate(hit.window).into());
+                } else if let Some((screen, position)) = self.ui_under() {
+                    if screen == Screen::Top {
+                        self.core.handle(WindowEvent::KeyboardFocus(None).into());
+                    }
+                    if event.button_code() == 0x110 {
+                        self.core.press(Source::Mouse, screen, position, event.time().millis());
+                    } else if event.button_code() == 0x111 && screen == Screen::Bottom {
+                        // A right click on the second screen pastes into the field open there, as
+                        // Ctrl+V does.
+                        self.core.handle(StateEvent::Paste);
+                    }
+                }
+            }
+            if !self.pointer.buttons.contains(&event.button_code()) {
+                self.pointer.buttons.push(event.button_code());
+            }
+            // Order: the window pressed is activated and given the keyboard before the button reaches
+            // it, so that it gets the press with its focus.
+            self.sync_windows();
+        } else if event.button_code() == 0x110 {
+            let at = self.core.at(event.time().millis());
+            self.core.up(Source::Mouse, End::Release, at);
+        }
+        self.move_pointer(event.time());
+        if let Some(pointer) = self.seat.get_pointer() {
+            pointer.button(self, &ButtonEvent { button: event.button_code(), state: event.state(), serial: SERIAL_COUNTER.next_serial(), time: event.time() });
+            pointer.frame(self);
+        }
+        if event.state() == ButtonState::Released {
+            self.pointer.buttons.retain(|code| *code != event.button_code());
+            if self.pointer.buttons.is_empty() {
+                self.pointer.window = None;
+            }
+        }
+    }
+
+    /// A wheel or scroll: to the window under the pointer, both axes, else to ClamShell's view there.
+    fn axis<B: InputBackend>(&mut self, event: &B::PointerAxisEvent) {
+        let amount = |axis| event.amount(axis).unwrap_or_else(|| event.amount_v120(axis).unwrap_or_default() / 8.0);
+        let vertical = amount(Axis::Vertical);
+        if self.hit(self.pointer.location).is_some() {
+            if let Some(pointer) = self.seat.get_pointer() {
+                // Both axes, with the wheel's steps where it has them.
+                let mut frame = AxisFrame::new(event.time()).source(event.source());
+                for axis in [Axis::Vertical, Axis::Horizontal] {
+                    if event.amount(axis).is_some() || event.amount_v120(axis).is_some() {
+                        frame = frame.value(axis, amount(axis));
+                    }
+                    if let Some(v120) = event.amount_v120(axis) {
+                        frame = frame.v120(axis, v120 as i32);
+                    }
+                }
+                pointer.axis(self, frame);
+                pointer.frame(self);
+            }
+        } else if let Some((screen, position)) = self.ui_under() {
+            self.core.wheel(screen, position, vertical.signum() as i32);
         }
     }
 

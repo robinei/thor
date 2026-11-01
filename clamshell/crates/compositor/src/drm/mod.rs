@@ -484,7 +484,6 @@ pub fn run(
     server.describe_screens(panels);
     log::info!("drm: panels' colour: top {:?}, second {:?}", panels[0], panels[1]);
 
-    let renderer_formats = renderer.dmabuf_formats();
     let mut screens = Vec::new();
     let shown = [Some((ScreenRole::Top, &top, 0)), bottom.as_ref().map(|b| (ScreenRole::Bottom, b, top_size.w))];
     for (role, chosen, x) in shown.into_iter().flatten() {
@@ -495,57 +494,9 @@ pub fn run(
         let transform = transform(profile.screen(role).rotation);
         screens.push(Screen::new(role, chosen.connector, chosen.crtc, surface, chosen.mode, chosen.modes.clone(), part, transform, None));
     }
-    // With CLAMSHELL_SCANOUT=1, each screen's own buffers, for while it shows only ClamShell.
+    // With CLAMSHELL_SCANOUT=1, each screen's own buffers, a window's and the planes.
     if scanout {
-        for (screen, panel) in screens.iter_mut().zip(panels) {
-            let layer = ui_screen(screen.role);
-            let ((w, h), scale) = server.core.size(layer);
-            // Turned as the composed frame turns it: a quarter clockwise in Smithay's projection for
-            // `Transform::_90`, a screen pixel (x, y) landing in column h - 1 - y, row x.
-            let quarter = profile.screen(screen.role).rotation == Rotation::Clockwise90;
-            let mode = screen.surface.pending_mode().size();
-            let formats = &screen.surface.surface().plane_info().formats;
-            match UiScanout::new(drm.device_fd(), screen.crtc, mode, formats, (w * scale, h * scale), quarter, panel) {
-                Ok(ui) => {
-                    log::info!("ui scanout: the {:?} screen can show ClamShell alone from its own buffers", screen.role);
-                    screen.ui = Some(ui);
-                }
-                Err(error) => log::warn!("ui scanout: the {:?} screen is composed: {error}", screen.role),
-            }
-        }
-        // And each screen's means to show a window from its own buffer, with the feedback a window alone on
-        // it gets: the plane's formats the renderer takes too (to compose them if refused), preferred.
-        let main = crate::dmabuf::render_device(&renderer);
-        let node = smithay::backend::drm::DrmNode::from_file(drm.device_fd());
-        for screen in &mut screens {
-            let formats = screen.surface.surface().plane_info().formats.clone();
-            let preferred: Vec<_> = formats.iter().copied().filter(|f| renderer_formats.contains(f)).collect();
-            let feedback = match (main, &node) {
-                (Some(main), Ok(node)) => smithay::wayland::dmabuf::DmabufFeedbackBuilder::new(main, renderer_formats.iter().copied())
-                    .add_preference_tranche(
-                        node.dev_id(),
-                        smithay::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags::Scanout,
-                        preferred,
-                        4..=u32::MAX,
-                    )
-                    .build()
-                    .map_err(|e| e.to_string()),
-                (None, _) => Err("no render device".into()),
-                (_, Err(e)) => Err(format!("the display device: {e}")),
-            };
-            let feedback =
-                feedback.inspect_err(|error| log::warn!("window scanout: the {:?} screen tells no window the plane's formats: {error}", screen.role)).ok();
-            let plane = screen.surface.surface().plane();
-            screen.window = Some(WindowScanout::new(drm.device_fd(), &gbm, plane, formats, feedback));
-        }
-        // And each screen's overlay and cursor planes, each plane for one screen only.
-        let mut taken = Vec::new();
-        for screen in &mut screens {
-            let ((w, h), scale) = server.core.size(ui_screen(screen.role));
-            let quarter = profile.screen(screen.role).rotation == Rotation::Clockwise90;
-            let role = format!("{:?}", screen.role);
-            screen.layers = Some(PlaneLayers::new(&drm, screen.crtc, (w * scale, h * scale), quarter, &mut taken, &role));
-        }
+        scanout_ways(&mut screens, server, &drm, &gbm, &renderer, &profile, panels);
     }
 
     // The top screen's rates, for the refresh setting.
@@ -577,24 +528,36 @@ pub fn run(
         failed: Vec::new(),
     }));
     let on_capture = Rc::new(RefCell::new(on_capture));
+    let handle = base.event_loop.handle();
+    watch_connectors(&handle, &drawing, probed_connectors, &seat, &mut base.server)?;
+    watch_flips(&handle, &drawing, &on_capture, drm_notifier)?;
+    let libinput = watch_input(&handle, &session, &seat, Areas { profile, top: top_size, bottom: bottom_size })?;
+    watch_seat(&handle, &drawing, &on_capture, notifier, libinput)?;
+    base.run(start, move |server, now| step(&mut drawing.borrow_mut(), server, &mut *on_capture.borrow_mut(), now))
+}
 
-    // Connectors plugged and unplugged: an external display (see `external`), connected already or later,
-    // probed off this thread.
+/// Connectors plugged and unplugged: an external display (see `external`), connected already or later,
+/// probed off this thread, answering through `probed_connectors`.
+fn watch_connectors(
+    handle: &smithay::reexports::calloop::LoopHandle<'static, Server>,
+    drawing: &Rc<RefCell<Drawing>>,
+    probed_connectors: smithay::reexports::calloop::channel::Channel<Probed>,
+    seat: &str,
+    server: &mut Server,
+) -> Result<(), Error> {
     let answers = drawing.clone();
-    base.event_loop
-        .handle()
+    handle
         .insert_source(probed_connectors, move |event, _, server| {
             if let smithay::reexports::calloop::channel::Event::Msg(answer) = event {
                 probed(&mut answers.borrow_mut(), server, answer);
             }
         })
         .map_err(|e| e.error)?;
-    connectors_changed(&mut drawing.borrow_mut(), &mut base.server);
-    match smithay::backend::udev::UdevBackend::new(&seat) {
+    connectors_changed(&mut drawing.borrow_mut(), server);
+    match smithay::backend::udev::UdevBackend::new(seat) {
         Ok(udev) => {
             let plugs = drawing.clone();
-            base.event_loop
-                .handle()
+            handle
                 .insert_source(udev, move |event, _, server| {
                     if let smithay::backend::udev::UdevEvent::Changed { .. } = event {
                         connectors_changed(&mut plugs.borrow_mut(), server);
@@ -604,12 +567,19 @@ pub fn run(
         }
         Err(error) => log::warn!("drm: no udev monitor ({error}): an external display is seen only at start and when the seat is back"),
     }
+    Ok(())
+}
 
-    // Page flips: the frame shown, its time to the clients, and the next frame.
+/// Page flips: the frame shown, its time to the clients, and the next frame.
+fn watch_flips<C: FnMut(Result<clamshell_state::ScreenshotPixels, String>) + 'static>(
+    handle: &smithay::reexports::calloop::LoopHandle<'static, Server>,
+    drawing: &Rc<RefCell<Drawing>>,
+    on_capture: &Rc<RefCell<C>>,
+    drm_notifier: smithay::backend::drm::DrmDeviceNotifier,
+) -> Result<(), Error> {
     let flips = drawing.clone();
     let capture = on_capture.clone();
-    base.event_loop
-        .handle()
+    handle
         .insert_source(drm_notifier, move |event, metadata, server| match event {
             DrmEvent::VBlank(crtc) => {
                 let drawing = &mut *flips.borrow_mut();
@@ -622,15 +592,21 @@ pub fn run(
             DrmEvent::Error(error) => log::warn!("drm: {error}"),
         })
         .map_err(|e| e.error)?;
+    Ok(())
+}
 
-    // Input, each absolute device placed on its screen by the profile.
+/// Input through libinput on `seat`, each absolute device placed on its screen by `areas`; Ctrl+Alt+Fn
+/// switches the VT. Returns libinput, which the seat suspends and resumes.
+fn watch_input(
+    handle: &smithay::reexports::calloop::LoopHandle<'static, Server>,
+    session: &LibSeatSession,
+    seat: &str,
+    areas: Areas,
+) -> Result<Libinput, Error> {
     let mut libinput = Libinput::new_with_udev::<LibinputSessionInterface<LibSeatSession>>(session.clone().into());
-    libinput.udev_assign_seat(&seat).map_err(|()| format!("drm: libinput on seat {seat}"))?;
-    let areas = Areas { profile, top: top_size, bottom: bottom_size };
-    let switcher = Rc::new(RefCell::new(session.clone()));
-    let vt = switcher.clone();
-    base.event_loop
-        .handle()
+    libinput.udev_assign_seat(seat).map_err(|()| format!("drm: libinput on seat {seat}"))?;
+    let vt = session.clone();
+    handle
         .insert_source(LibinputInputBackend::new(libinput.clone()), move |event, _, server| {
             if let InputEvent::DeviceAdded { device } = &event {
                 log::info!("drm: input {} ({}) on the {:?} screen", device.name(), identifier(device), areas.role(device));
@@ -640,19 +616,27 @@ pub fn run(
             }
             server.input(event, crate::input::Host { absolute_cursor: false, touch_frames: true, desktop_keys: false }, |device| areas.of(device));
             if let Some(n) = server.vt_switch.take()
-                && let Err(error) = vt.borrow_mut().change_vt(n)
+                && let Err(error) = vt.clone().change_vt(n)
             {
                 log::warn!("drm: switching to VT {n}: {error}");
             }
         })
         .map_err(|e| e.error)?;
+    Ok(libinput)
+}
 
-    // The seat: paused when another VT is shown, resumed when this one is back.
+/// The seat: paused when another VT is shown, resumed when this one is back.
+fn watch_seat<C: FnMut(Result<clamshell_state::ScreenshotPixels, String>) + 'static>(
+    handle: &smithay::reexports::calloop::LoopHandle<'static, Server>,
+    drawing: &Rc<RefCell<Drawing>>,
+    on_capture: &Rc<RefCell<C>>,
+    notifier: smithay::backend::session::libseat::LibSeatSessionNotifier,
+    mut libinput: Libinput,
+) -> Result<(), Error> {
     let resumed = drawing.clone();
     let paused = drawing.clone();
     let capture = on_capture.clone();
-    base.event_loop
-        .handle()
+    handle
         .insert_source(notifier, move |event, _, server| match event {
             SessionEvent::PauseSession => {
                 log::info!("drm: seat paused");
@@ -689,9 +673,71 @@ pub fn run(
             }
         })
         .map_err(|e| e.error)?;
+    Ok(())
+}
 
-    drop(switcher);
-    base.run(start, move |server, now| step(&mut drawing.borrow_mut(), server, &mut *on_capture.borrow_mut(), now))
+/// With direct scanout on (CLAMSHELL_SCANOUT=1), each screen's ways of showing without composing: its own
+/// buffers, for while it shows only ClamShell; a window from the window's buffer, with the feedback a window
+/// alone on it gets; and its overlay and cursor planes, each plane for one screen only.
+fn scanout_ways(
+    screens: &mut [Screen],
+    server: &Server,
+    drm: &DrmDevice,
+    gbm: &GbmDevice<DrmDeviceFd>,
+    renderer: &GlesRenderer,
+    profile: &DeviceProfile,
+    panels: [ColourDescription; 2],
+) {
+    let renderer_formats = renderer.dmabuf_formats();
+    for (screen, panel) in screens.iter_mut().zip(panels) {
+        let layer = ui_screen(screen.role);
+        let ((w, h), scale) = server.core.size(layer);
+        // Turned as the composed frame turns it: a quarter clockwise in Smithay's projection for
+        // `Transform::_90`, a screen pixel (x, y) landing in column h - 1 - y, row x.
+        let quarter = profile.screen(screen.role).rotation == Rotation::Clockwise90;
+        let mode = screen.surface.pending_mode().size();
+        let formats = &screen.surface.surface().plane_info().formats;
+        match UiScanout::new(drm.device_fd(), screen.crtc, mode, formats, (w * scale, h * scale), quarter, panel) {
+            Ok(ui) => {
+                log::info!("ui scanout: the {:?} screen can show ClamShell alone from its own buffers", screen.role);
+                screen.ui = Some(ui);
+            }
+            Err(error) => log::warn!("ui scanout: the {:?} screen is composed: {error}", screen.role),
+        }
+    }
+    // And each screen's means to show a window from its own buffer, with the feedback a window alone on
+    // it gets: the plane's formats the renderer takes too (to compose them if refused), preferred.
+    let main = crate::dmabuf::render_device(renderer);
+    let node = smithay::backend::drm::DrmNode::from_file(drm.device_fd());
+    for screen in screens.iter_mut() {
+        let formats = screen.surface.surface().plane_info().formats.clone();
+        let preferred: Vec<_> = formats.iter().copied().filter(|f| renderer_formats.contains(f)).collect();
+        let feedback = match (main, &node) {
+            (Some(main), Ok(node)) => smithay::wayland::dmabuf::DmabufFeedbackBuilder::new(main, renderer_formats.iter().copied())
+                .add_preference_tranche(
+                    node.dev_id(),
+                    smithay::reexports::wayland_protocols::wp::linux_dmabuf::zv1::server::zwp_linux_dmabuf_feedback_v1::TrancheFlags::Scanout,
+                    preferred,
+                    4..=u32::MAX,
+                )
+                .build()
+                .map_err(|e| e.to_string()),
+            (None, _) => Err("no render device".into()),
+            (_, Err(e)) => Err(format!("the display device: {e}")),
+        };
+        let feedback =
+            feedback.inspect_err(|error| log::warn!("window scanout: the {:?} screen tells no window the plane's formats: {error}", screen.role)).ok();
+        let plane = screen.surface.surface().plane();
+        screen.window = Some(WindowScanout::new(drm.device_fd(), gbm, plane, formats, feedback));
+    }
+    // And each screen's overlay and cursor planes, each plane for one screen only.
+    let mut taken = Vec::new();
+    for screen in screens.iter_mut() {
+        let ((w, h), scale) = server.core.size(ui_screen(screen.role));
+        let quarter = profile.screen(screen.role).rotation == Rotation::Clockwise90;
+        let role = format!("{:?}", screen.role);
+        screen.layers = Some(PlaneLayers::new(drm, screen.crtc, (w * scale, h * scale), quarter, &mut taken, &role));
+    }
 }
 
 /// The UI's screen for `role`.
