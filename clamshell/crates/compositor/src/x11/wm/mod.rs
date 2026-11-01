@@ -679,6 +679,33 @@ mod tests {
         assert_eq!((server.scene.placements, server.configures), counts, "an idle turn");
     }
 
+    /// What the window manager asks for in a turn is written in that turn, not at the next wake.
+    #[test]
+    fn requests_of_a_turn_are_written_in_it() {
+        use std::io::Read;
+        let (_display, mut server) = crate::tests::ServerBuilder::new().started();
+        let (socket, mut peer) = UnixStream::pair().unwrap();
+        let now = Instant::now();
+        let mut wire = Transport::new(socket, now).unwrap();
+        wire.turn(now).unwrap();
+        peer.read_exact(&mut [0; 12]).unwrap();
+        let mut wm = Wm { root: 1, owner: 2, atoms: Atoms(NAMES.iter().enumerate().map(|(i, name)| (*name, 100 + i as u32)).collect()), ..Wm::default() };
+        wm.discover(10, Rectangle::from_size((400, 300).into()), false, &mut wire, &mut server).unwrap();
+        (wm.windows[0].outstanding, wm.windows[0].wants_map) = (0, true);
+        super::super::exchange(&mut wire, &mut wm, &mut server, now).unwrap();
+        assert!(!wire.writing(), "nothing left for the next wake");
+        peer.set_nonblocking(true).unwrap();
+        let mut bytes = [0; 4096];
+        let sent = peer.read(&mut bytes).unwrap();
+        let mut packets = &bytes[..sent];
+        let mut requests = Vec::new();
+        while !packets.is_empty() {
+            requests.push(packets[0]);
+            packets = &packets[usize::from(u16::from_ne_bytes([packets[2], packets[3]])) * 4..];
+        }
+        assert!(requests.contains(&CONFIGURE_WINDOW_REQUEST) && requests.contains(&MAP_WINDOW_REQUEST), "{requests:?}");
+    }
+
     /// A window manager with one X11 window (see [`placed`]): the window's id, Xwayland's end of the
     /// connection, and the requests sent so far.
     struct Placed {

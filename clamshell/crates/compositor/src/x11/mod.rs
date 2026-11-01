@@ -393,8 +393,7 @@ impl Running {
                 return Err(io::Error::other("display number exceeds limit"));
             }
         }
-        self.transport.turn(now)?;
-        self.wm.turn(&mut self.transport, server, now)?;
+        exchange(&mut self.transport, &mut self.wm, server, now)?;
         self.wm.sync_selection_sources(handle, &mut self.selection_sources)?;
         self.update_writing(handle)?;
         if self.wm.ready && self.display.is_some() && !self.ready_logged {
@@ -437,6 +436,15 @@ impl Running {
             handle.remove(token);
         }
     }
+}
+/// One exchange with Xwayland: what came read, the window manager's turn, and what it asked for written in
+/// the same turn rather than at the next wake.
+fn exchange(transport: &mut Transport, wm: &mut wm::Wm, server: &mut Server, now: Instant) -> io::Result<()> {
+    transport.turn(now)?;
+    wm.turn(transport, server, now)?;
+    // Order: after the window manager's turn, so that its requests (a focus, a configure, a selection's
+    // answer) go out now; the socket is watched for writing only for what it didn't take.
+    transport.flush(now)
 }
 impl Drop for Supervisor {
     fn drop(&mut self) {

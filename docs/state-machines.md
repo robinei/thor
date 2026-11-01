@@ -1543,8 +1543,9 @@ idle Xwayland is stopped": an idle Xwayland under SIGSTOP is not restarted).
 ### The X11 transport (x11/transport.rs)
 
 The WM's connection is a non-blocking socket; x11rb supplies the wire types and sequence tracking, never
-I/O. Readiness of the socket, the display pipe, the listener and the pidfd are event loop sources; write
-interest is there only while bytes wait. Each turn does at most 64 writes, 64 setup reads, 64 packet reads
+I/O. Readiness of the socket, the display pipe, the listener and the pidfd are event loop sources; what
+the window manager asks for in a turn is written at the end of it (wm `requests_of_a_turn_are_written_in_it`),
+and write interest is there only while bytes the socket didn't take wait. Each turn does at most 64 writes, 64 setup reads, 64 packet reads
 of up to 4096 bytes and 64 events. Packets and the outgoing queue are capped at 1 MiB, a packet's length
 checked before its payload is read. Partial setup, packets and writes keep their bytes. Deadlines, each
 `HUNG` (30 s, as a game loading can hold the X server for seconds): setup; a queue that started waiting

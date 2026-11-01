@@ -64,6 +64,17 @@ impl Transport {
         if self.handshake.is_some() && now >= self.setup_deadline {
             return Err(io::Error::new(io::ErrorKind::TimedOut, "X11 setup timed out"));
         }
+        self.flush(now)?;
+        self.read()?;
+        // Order: after reading, so that an answer that came at the last moment counts.
+        if self.owed.front().is_some_and(|(_, at)| now >= *at + crate::x11::HUNG) {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "X11 reply timed out"));
+        }
+        Ok(())
+    }
+
+    /// Writes what waits to be written, as much as the socket takes.
+    pub fn flush(&mut self, now: Instant) -> io::Result<()> {
         if self.write_deadline.is_some_and(|at| now >= at) && self.writing() {
             return Err(io::Error::new(io::ErrorKind::TimedOut, "X11 write timed out"));
         }
@@ -85,6 +96,11 @@ impl Transport {
         if !self.writing() {
             self.write_deadline = None;
         }
+        Ok(())
+    }
+
+    /// Reads what came: setup, then packets.
+    fn read(&mut self) -> io::Result<()> {
         if let Some(handshake) = self.handshake.as_mut() {
             for _ in 0..BUDGET {
                 match self.stream.read(handshake.buffer()) {
@@ -133,10 +149,6 @@ impl Transport {
                 self.wire.enqueue_packet(packet);
                 self.packet_size = 32;
             }
-        }
-        // Order: after reading, so that an answer that came at the last moment counts.
-        if self.owed.front().is_some_and(|(_, at)| now >= *at + crate::x11::HUNG) {
-            return Err(io::Error::new(io::ErrorKind::TimedOut, "X11 reply timed out"));
         }
         Ok(())
     }
