@@ -120,6 +120,10 @@ pub(crate) fn checked(config: &[Runner], installed: &dyn Fn(&str) -> bool) -> (V
                 problems.push(format!("{name}: enqueue needs {{socket}} in its launch command"));
                 runners.push(Runner { id, name, enqueue: None, ..r.clone() });
             }
+            (false, None, Some(_)) if r.enqueue.as_deref().is_some_and(|e| !json_with_path(e)) => {
+                problems.push(format!("{name}: enqueue must be mpv's JSON form, {{path}} inside a string"));
+                runners.push(Runner { id, name, enqueue: None, ..r.clone() });
+            }
             (false, None, Some(program)) if !program.contains('/') && !installed(program) => {
                 problems.push(format!("{name}: {program} isn't installed"));
                 runners.push(Runner { id, name, ..r.clone() });
@@ -128,6 +132,13 @@ pub(crate) fn checked(config: &[Runner], installed: &dyn Fn(&str) -> bool) -> (V
         }
     }
     (runners, problems)
+}
+
+/// Whether an `enqueue` is JSON with `{path}` only inside its strings, as mpv's JSON commands are: the
+/// file's name goes in as a JSON string's contents, so it stays one argument. mpv also takes text
+/// commands, where `;` starts another and `run` starts a program: a file named `a; run ...` would run it.
+fn json_with_path(enqueue: &str) -> bool {
+    enqueue.contains("{path}") && serde_json::from_str::<serde_json::Value>(&enqueue.replace("{path}", "x")).is_ok_and(|v| v.is_object())
 }
 
 /// Whether `program` is on the PATH.
@@ -201,11 +212,28 @@ mod tests {
         assert_eq!(args(runner(&["~/.local/bin/a", "{id}"]).wrap("x", &exec, Some(home))), ["/home/thor/.local/bin/a", "x"], "~/ the home dir");
     }
 
+    /// An `enqueue` in mpv's text form, or with `{path}` outside a string, would let a file's name add
+    /// commands: it is a problem, and the runner is kept without it.
+    #[test]
+    fn enqueue_must_be_json_with_the_path_in_a_string() {
+        assert!(json_with_path(r#"{"command": ["loadfile", "{path}", "append-play"]}"#));
+        for text in ["loadfile {path}", r#"{"command": ["loadfile", {path}]}"#, r#"["loadfile", "{path}"]"#, r#"{"command": ["playlist-next"]}"#] {
+            assert!(!json_with_path(text), "{text}");
+        }
+        let config: Vec<Runner> = serde_json::from_str(
+            r#"[{ "name": "Video", "match": ["*.mkv"], "launch": ["mpv", "--input-ipc-server={socket}", "{paths}"], "enqueue": "loadfile {path}" }]"#,
+        )
+        .unwrap();
+        let (runners, problems) = checked(&config, &|_| true);
+        assert_eq!(problems, ["Video: enqueue must be mpv's JSON form, {path} inside a string"]);
+        assert!(runners.iter().all(|r| r.of(None).enqueue.is_none()), "kept, without it");
+    }
+
     #[test]
     fn enqueue_needs_a_socket_to_write_to() {
         let config: Vec<Runner> = serde_json::from_str(
-            r#"[{ "name": "Music", "match": ["*.mp3"], "launch": ["mpv", "{paths}"], "enqueue": "loadfile {path}" },
-                { "name": "Video", "match": ["*.mkv"], "launch": ["mpv", "--input-ipc-server={socket}", "{paths}"], "enqueue": "loadfile {path}" }]"#,
+            r#"[{ "name": "Music", "match": ["*.mp3"], "launch": ["mpv", "{paths}"], "enqueue": "{\"command\": [\"loadfile\", \"{path}\"]}" },
+                { "name": "Video", "match": ["*.mkv"], "launch": ["mpv", "--input-ipc-server={socket}", "{paths}"], "enqueue": "{\"command\": [\"loadfile\", \"{path}\"]}" }]"#,
         )
         .unwrap();
         let (runners, problems) = checked(&config, &|_| true);

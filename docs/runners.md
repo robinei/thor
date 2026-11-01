@@ -34,7 +34,9 @@ The first runner whose patterns match a file's name opens it. A runner has:
 - `keymap`: a keymap of ClamShell's it comes with; `item_settings` (on unless `false`): whether its items
   have settings of their own.
 - `enqueue`: what to write to the control socket to add a file to a launch while it runs (`{path}` the
-  file, as a JSON string's contents); its items then have Enqueue (below). It needs `{socket}` in `launch`.
+  file, as a JSON string's contents); its items then have Enqueue (below). It needs `{socket}` in `launch`,
+  and must be mpv's JSON form with `{path}` inside a string: in its text form a file named `a; run ...`
+  would run a program (otherwise a problem, and the runner has no Enqueue).
 - `pause`, `resume`: commands that pause and resume all its entries at once, for entries sharing one
   container (Waydroid's); used when its In the background setting is Pauses hidden (see
   process-control.md).
