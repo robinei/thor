@@ -136,6 +136,6 @@ pub(super) fn draw(f: &mut Frame) {
             }
         }
     } else {
-        c.text(r.x, r.y + r.h * VALUE_Y, r.h * VALUE, Tone::Normal, "–");
+        c.text(r.x, r.y + r.h * VALUE_Y, r.h * VALUE, Tone::High, "–");
     }
 }

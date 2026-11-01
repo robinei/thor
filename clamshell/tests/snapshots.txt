@@ -3,7 +3,7 @@
 bar-window-below.png 247012784e5f9f16
 battery.png bf4021fc85050808
 bluetooth.png a6af7addc019f415
-bottom.png 94cb4059c08bd1d2
+bottom.png aff8054665f381b7
 brightness.png 5736a060f1cb0503
 curve-edit-hdr.png 048380a15dcf2498
 curve-edit-histogram.png 62489d84a4cf63f0
@@ -75,7 +75,7 @@ library-pick.png f5675574ae216b69
 lights-edit-unlinked.png 386d8461886edee3
 lights-edit.png a2b431b96e9e78a6
 lights.png d3ac79cee8876db4
-notice-long.png 6ccc2e235a6699c3
+notice-long.png e71d3c1f05c6116e
 portal-replace.png 7dc20c67a3a6f51e
 portal-save.png 829355a7ee610113
 settings-env.png 141480d50601cd5a

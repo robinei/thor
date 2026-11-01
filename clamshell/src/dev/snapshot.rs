@@ -366,7 +366,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                         .chain(taps(Setting::ChargeLimit, 2))
                         .collect(),
                 ),
-                // With Scaling's longest value, Nearest+Integer, and Resolution at 1/2 (2x).
+                // With Scaling at FSR, and Resolution at half the screen's size, 960×540 (2×).
                 shot(
                     "settings.png",
                     Bottom,

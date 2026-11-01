@@ -57,8 +57,6 @@ const SHOT_H: f32 = 0.45;
 /// fits within it. Landscape art is this wide, with the screenshot under it.
 const COVER_W: f32 = 0.55;
 
-/// Draws the Library over `screen` and returns how many list rows fit. The state keeps the selection within
-/// them.
 /// What the pad's moves do on the Library's list (see `clamshell_ui::toolkit::PadOut::moves`). Up and down
 /// step through the games, scrolling it, counted from the focused game, which isn't the selected one when
 /// the focus came up from the second screen; down past the last goes on by direction, to the second
@@ -107,6 +105,8 @@ pub(super) fn app(f: &mut Frame, screen: Rect) {
     }
 }
 
+/// Draws the Library over `screen` and returns how many list rows fit. The state keeps the selection within
+/// them.
 pub(super) fn draw(f: &mut Frame, screen: Rect) -> usize {
     let s = f.s;
     let (w, h) = (screen.w, screen.h);
