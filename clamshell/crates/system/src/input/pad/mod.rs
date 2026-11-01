@@ -840,14 +840,16 @@ fn read_controller(c: &mut Controller, controls: clamshell_device::input::Contro
 /// players' virtual pads.
 const MOST_FDS: usize = 1 + MOST_CONTROLLERS + 2 + Player::MOST;
 
-/// Waits, up to `timeout` if given, for events from the controllers, the gyro, the AYN button or the
-/// virtual pads' rumble, or for a command through the bell. Nothing is allocated.
-fn wait(pads: &Pads, virtual_pads: &[VirtualPad], bell: &Bell, timeout: Option<Duration>) -> io::Result<()> {
+/// Waits, up to `timeout` if given, for events from the controllers, the gyro and the AYN button of a
+/// run, if there is one, or the virtual pads' rumble, or for a command through the bell. Nothing is
+/// allocated.
+fn wait(pads: Option<&Pads>, virtual_pads: &[VirtualPad], bell: &Bell, timeout: Option<Duration>) -> io::Result<()> {
     let timeout = timeout.map(crate::os::sys::timespec);
     let mut fds: [PollFd; MOST_FDS] = std::array::from_fn(|_| PollFd::from_borrowed_fd(bell.fd(), PollFlags::IN));
-    let controllers = pads.controllers.iter().map(|c| c.grabbed.device().as_fd());
-    let ayn = pads.controllers.iter().filter_map(|c| c.ayn.as_ref()).map(|a| a.device().as_fd());
-    let motion = pads.motion.as_ref().map(|(m, _)| m.fd());
+    let controllers = pads.iter().flat_map(|p| &p.controllers);
+    let ayn = controllers.clone().filter_map(|c| c.ayn.as_ref()).map(|a| a.device().as_fd());
+    let motion = pads.and_then(|p| p.motion.as_ref()).map(|(m, _)| m.fd());
+    let controllers = controllers.map(|c| c.grabbed.device().as_fd());
     let virtual_pads = virtual_pads.iter().map(|p| p.device.as_fd());
     let mut n = 1;
     let all = controllers.take(MOST_CONTROLLERS).chain(ayn.take(1)).chain(motion).chain(virtual_pads);
@@ -868,7 +870,6 @@ impl<S: Sink> PadThread<S> {
     /// Routes the controllers' and the gyro's events until the virtual devices fail, or the program is
     /// gone.
     fn route_events(&mut self, pads: &mut Pads, commands: &Receiver<Command>) -> Result<(), Ended<io::Error>> {
-        let mut wake = None;
         pads.next_look = self.look_every.map(|every| Instant::now() + every);
         loop {
             if !self.take_commands(pads, commands)? {
@@ -881,48 +882,57 @@ impl<S: Sink> PadThread<S> {
             if std::mem::take(&mut pads.look_due) {
                 self.look(pads);
             }
-            self.route_merged(pads, Instant::now());
+            // Order: the turn comes after the commands as well as after input, so what a command changes
+            // (the route, the Rumble setting, a keymap, a calibration asked for) moves the motors and the
+            // wake time at once rather than at the next input.
+            let wake = self.turn(pads, Instant::now())?;
             self.emit(pads)?;
-            // Wake for events, commands, when a mapping wants a tick, and to look for controllers.
+            // Wake for events, commands, when a mapping, a calibration or a rumble wants it, and to look
+            // for controllers.
             let wait_for = [wake, pads.next_look].into_iter().flatten().min().map(|at: Instant| at.saturating_duration_since(Instant::now()));
             let virtual_pads = self.devices.as_ref().map_or(&[][..], |d| d.pads.as_slice());
-            wait(pads, virtual_pads, &self.bell, wait_for)?;
+            wait(Some(pads), virtual_pads, &self.bell, wait_for)?;
             let now = Instant::now();
             self.read(pads, now);
             if pads.next_look.is_some_and(|at| now >= at) {
                 pads.look_due = true;
                 pads.next_look = self.look_every.map(|every| now + every);
             }
-            self.route_merged(pads, now);
-            let gyro = pads.gyro_player();
-            match gyro.and_then(|p| pads.players.get_mut(p.index())) {
-                Some(p) => {
-                    for sample in pads.samples.drain(..) {
-                        p.router.motion(sample, &mut p.out);
-                    }
-                }
-                None => pads.samples.clear(),
-            }
-            let mut next = None;
-            for p in &mut pads.players {
-                next = [next, p.router.tick(now, &mut p.out)].into_iter().flatten().min();
-            }
-            // A calibration in progress is fed, its progress and end are sent, and it is looked at again
-            // soon.
-            for i in 0..pads.controllers.len() {
-                let Some(c) = pads.controllers.get_mut(i) else { continue };
-                let (said, again) = c.sticks.step(now);
-                if said.is_some() {
-                    let name = c.name.clone();
-                    self.calibration_said(said, &name)?;
-                }
-                next = [next, again].into_iter().flatten().min();
-            }
-            // Games' rumble goes to each player's controllers, along with the keymaps' buzzes.
-            let ends = self.rumble(pads, now);
-            wake = [next, ends].into_iter().flatten().min();
-            self.emit(pads)?;
         }
+    }
+
+    /// One turn of the run, after the commands and the input read since the last: the controllers' events
+    /// and the gyro's samples go to the routers, the routers are ticked, the stick calibrations fed and the
+    /// motors set. Returns when the next turn is due without input, if one is.
+    fn turn(&mut self, pads: &mut Pads, now: Instant) -> Result<Option<Instant>, Closed> {
+        self.route_merged(pads, now);
+        let gyro = pads.gyro_player();
+        match gyro.and_then(|p| pads.players.get_mut(p.index())) {
+            Some(p) => {
+                for sample in pads.samples.drain(..) {
+                    p.router.motion(sample, &mut p.out);
+                }
+            }
+            None => pads.samples.clear(),
+        }
+        let mut next = None;
+        for p in &mut pads.players {
+            next = [next, p.router.tick(now, &mut p.out)].into_iter().flatten().min();
+        }
+        // A calibration in progress is fed, its progress and end are sent, and it is looked at again
+        // soon.
+        for i in 0..pads.controllers.len() {
+            let Some(c) = pads.controllers.get_mut(i) else { continue };
+            let (said, again) = c.sticks.step(now);
+            if said.is_some() {
+                let name = c.name.clone();
+                self.calibration_said(said, &name)?;
+            }
+            next = [next, again].into_iter().flatten().min();
+        }
+        // Games' rumble goes to each player's controllers, along with the keymaps' buzzes.
+        let ends = self.rumble(pads, now);
+        Ok([next, ends].into_iter().flatten().min())
     }
 
     /// Reads every controller and the gyro. A controller that fails is let go, and controllers are to be
@@ -1174,20 +1184,17 @@ mod tests {
         assert_eq!(l[0], (0, 0), "the setting off");
     }
 
-    /// Looks that come together are looked for once: each Look is only noted, the other commands are
-    /// carried out meanwhile, and the run looks once for all of them. (A look per Look, each opening every
-    /// input device, kept the controllers unread for seconds after a device was plugged in or out.)
-    #[test]
-    fn looks_that_come_together_are_one_look() {
-        let (sink, _events) = std::sync::mpsc::channel();
-        let mut thread = PadThread {
+    /// A pad thread with no virtual devices and no controllers, the pad on `route`.
+    fn thread(route: PadRoute) -> (PadThread<std::sync::mpsc::Sender<Event>>, std::sync::mpsc::Receiver<Event>) {
+        let (sink, events) = std::sync::mpsc::channel();
+        let thread = PadThread {
             bell: Bell::new().unwrap(),
             spec: DeviceSpec::Path("/nonexistent/event0".into()),
             controls: clamshell_device::input::Controls::generic(),
             sensor_hub: None,
             taken: Taken::default(),
             sink,
-            route: PadRoute::Ui,
+            route,
             watch_activity: false,
             keymaps: Default::default(),
             devices: None,
@@ -1197,6 +1204,15 @@ mod tests {
             told: Vec::new(),
             look_every: None,
         };
+        (thread, events)
+    }
+
+    /// Looks that come together are looked for once: each Look is only noted, the other commands are
+    /// carried out meanwhile, and the run looks once for all of them. (A look per Look, each opening every
+    /// input device, kept the controllers unread for seconds after a device was plugged in or out.)
+    #[test]
+    fn looks_that_come_together_are_one_look() {
+        let (mut thread, _events) = thread(PadRoute::Ui);
         let mut pads = Pads::new(Player::ONE, &thread.keymaps, PadRoute::Ui, false);
         let (commands, received) = std::sync::mpsc::channel();
         for command in [Command::Look, Command::Route(PadRoute::Game), Command::Look, Command::Look] {
@@ -1206,6 +1222,31 @@ mod tests {
         assert!(pads.look_due, "noted, to look once");
         assert_eq!(thread.route, PadRoute::Game, "the other commands carried out meanwhile");
         assert!(received.try_recv().is_err(), "every command taken");
+    }
+
+    /// A command's effect on time is seen in the turn that follows it, not only after the next input: a
+    /// keymap with turbo on a button held wants its beat at once. (The wake time and the motors were
+    /// worked out only after input, so an endless rumble kept playing after Home until the pad was
+    /// touched.)
+    #[test]
+    fn the_turn_after_a_command_works_out_the_wake_time() {
+        let (mut thread, _events) = thread(PadRoute::Game);
+        let mut pads = Pads::new(Player::ONE, &thread.keymaps, PadRoute::Game, false);
+        pads.merge.add(1, Player::ONE, Inputs::default(), &mut pads.merged);
+        for raw in [key(KeyCode::BTN_SOUTH, true), Raw::REPORT] {
+            pads.merge.event(1, raw, &mut pads.merged);
+        }
+        let now = Instant::now();
+        assert_eq!(thread.turn(&mut pads, now).unwrap(), None, "A held: nothing waits for time");
+        let mut turbo = Keymap::new(1, "turbo");
+        let mut b = Binding::to(Output::Pad(clamshell_state::keymap::PadOut::Button(Button::A)));
+        b.turbo = 10;
+        assert!(turbo.set(Input::Button(Button::A), Some(b)));
+        let (commands, received) = std::sync::mpsc::channel();
+        commands.send(Command::Keymap(Player::ONE, Box::new(turbo))).unwrap();
+        assert!(thread.take_commands(&mut pads, &received).unwrap());
+        let wake = thread.turn(&mut pads, now).unwrap();
+        assert!(wake.is_some_and(|at| at > now && at <= Instant::now() + Duration::from_millis(50)), "the turbo's next beat: {wake:?}");
     }
 
     /// Launched programs are told to ignore every controller grabbed, but not ones with the virtual pad's

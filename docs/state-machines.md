@@ -381,6 +381,12 @@ the virtual devices outlive runs and controllers.
     run --a virtual device fails--> no run: the devices made again, the controllers said gone
     run --panic--> no run: pads at rest, HomeHeld(false), the controllers said gone; found again at once
 
+Each turn of a run takes the commands waiting, then routes the input read since the last turn, ticks the
+routers, feeds the stick calibrations and sets the motors, and works out when the next turn is due
+without input; then it waits. So a command that changes what time does or what the motors play (the
+route, Rumble, a keymap, a calibration) takes effect at once, not at the next input
+(`the_turn_after_a_command_works_out_the_wake_time`).
+
 A player's controllers are merged: a button is down while any holds it, each stick, trigger and hat axis
 is the one furthest from rest (the first controller on a tie), a controller's D-pad buttons are its hat;
 each controller's axes are put in the virtual pad's ranges first, from its own rest and range, after its
