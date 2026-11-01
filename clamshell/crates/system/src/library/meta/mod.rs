@@ -41,6 +41,7 @@ mod tmdb;
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use clamshell_state::{Event, Meta};
 
@@ -213,7 +214,7 @@ impl Queue {
             (Some(s), Some(keys)) if s.keys == keys && s.art == art => s.clone(),
             (_, keys) => {
                 let keys = keys.or_else(|| shared.as_ref().map(|s| s.keys.clone())).unwrap_or_default();
-                let made = Arc::new(Shared { keys, art, listings: Mutex::new(HashMap::new()), databases: Mutex::new(HashMap::new()) });
+                let made = Arc::new(Shared { keys, art, listings: Lists::new(LIST_RETRY), databases: Lists::new(LIST_RETRY) });
                 *shared = Some(made.clone());
                 made
             }
@@ -302,9 +303,57 @@ fn fetch_all(queue: &Queue, mut fetch_one: impl FnMut(&Wanted) -> Result<(), cra
 struct Shared {
     keys: Keys,
     art: PathBuf,
-    listings: Mutex<HashMap<String, Option<Arc<Vec<Name>>>>>,
-    /// libretro's database of each system, fetched once.
-    databases: Mutex<HashMap<String, Arc<Database>>>,
+    /// libretro's thumbnail listings, by system and kind.
+    listings: Lists<Option<Arc<Vec<Name>>>>,
+    /// libretro's database of each system.
+    databases: Lists<Arc<Database>>,
+}
+
+/// How long a list that couldn't be fetched for the network is used as it came (empty, or an older copy)
+/// before it is fetched again.
+const LIST_RETRY: Duration = Duration::from_secs(10 * 60);
+
+/// Lists fetched once and shared by the fetching threads, each by its id. One whose fetch failed on the
+/// way (offline, a timeout) is kept for [`LIST_RETRY`] only, and each use of it counts as a network failure
+/// on the thread using it, so what isn't found in it isn't kept as a miss. Each list is fetched by one
+/// thread at a time, the others for it waiting, while lists of other ids are fetched side by side.
+pub(super) struct Lists<T> {
+    slots: Mutex<HashMap<String, Slot<T>>>,
+    retry: Duration,
+}
+
+/// A list's place, locked while it is fetched.
+type Slot<T> = Arc<Mutex<Option<Kept<T>>>>;
+
+struct Kept<T> {
+    value: T,
+    /// When its fetch failed on the way, if it did.
+    failed: Option<Instant>,
+}
+
+impl<T: Clone> Lists<T> {
+    pub(super) fn new(retry: Duration) -> Lists<T> {
+        Lists { slots: Mutex::new(HashMap::new()), retry }
+    }
+
+    /// The list `id`, fetched by `fetch` if it isn't kept.
+    pub(super) fn get(&self, id: &str, fetch: impl FnOnce() -> T) -> T {
+        let slot = crate::os::lock(&self.slots).entry(id.to_owned()).or_default().clone();
+        let mut slot = crate::os::lock(&slot);
+        match slot.as_ref() {
+            Some(Kept { value, failed: None }) => return value.clone(),
+            Some(Kept { value, failed: Some(at) }) if at.elapsed() < self.retry => {
+                http::network_failed();
+                return value.clone();
+            }
+            _ => {}
+        }
+        let before = http::network_failures();
+        let value = fetch();
+        let failed = (http::network_failures() != before).then(Instant::now);
+        *slot = Some(Kept { value: value.clone(), failed });
+        value
+    }
 }
 
 impl Shared {
@@ -351,6 +400,36 @@ mod tests {
     use super::libretro::hrefs;
     use super::titles::{entities, title_and_year, year_in};
     use super::*;
+
+    /// A list that couldn't be fetched for the network isn't kept for the session: each use of it
+    /// counts as a network failure, so entries not found in it aren't kept as misses, and it is fetched
+    /// again later. One fetched, or answered not found, is kept.
+    #[test]
+    fn a_list_failed_on_the_way_counts_as_a_network_failure_until_fetched_again() {
+        let lists: Lists<u32> = Lists::new(Duration::from_secs(3600));
+        let fetches = std::cell::Cell::new(0);
+        let failing = || {
+            fetches.set(fetches.get() + 1);
+            http::network_failed();
+            0
+        };
+        assert_eq!(lists.get("snes", failing), 0);
+        let before = http::network_failures();
+        assert_eq!(lists.get("snes", failing), 0);
+        assert_eq!(http::network_failures(), before + 1, "its use counted as a network failure");
+        assert_eq!(fetches.get(), 1, "not fetched again within the wait");
+        let missing = || {
+            fetches.set(fetches.get() + 1);
+            7
+        };
+        assert_eq!(lists.get("nes", missing), 7);
+        let before = http::network_failures();
+        assert_eq!(lists.get("nes", missing), 7);
+        assert_eq!((http::network_failures(), fetches.get()), (before, 2), "kept, and no failure");
+        let again: Lists<u32> = Lists::new(Duration::ZERO);
+        assert_eq!(again.get("snes", failing), 0);
+        assert_eq!(again.get("snes", missing), 7, "fetched again once the wait is over");
+    }
 
     #[test]
     fn what_library_view_shows_comes_first() {

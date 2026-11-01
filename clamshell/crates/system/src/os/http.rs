@@ -39,7 +39,9 @@ std::thread_local! {
     static NETWORK_FAILURES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
-fn network_failed() {
+/// Counts a GET on this thread as failed on the way (see [`network_failures`]), also for a list whose
+/// fetch failed so, used again.
+pub(crate) fn network_failed() {
     NETWORK_FAILURES.with(|n| n.set(n.get() + 1));
 }
 

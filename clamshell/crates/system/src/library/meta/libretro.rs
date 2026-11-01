@@ -44,52 +44,46 @@ impl Shared {
     }
 
     /// libretro's database of `system`: the names from its No-Intro list, and the developers and years, by
-    /// checksum. It is fetched once, and parts that couldn't be fetched are empty.
+    /// checksum. It is fetched once (see [`super::Lists`]), and parts that couldn't be fetched are empty.
     pub(super) fn database(&self, system: &str) -> Arc<Database> {
-        let mut databases = crate::os::lock(&self.databases);
-        if let Some(d) = databases.get(system) {
-            return d.clone();
-        }
-        let dat = |dir: &str| {
-            let url = format!("{DATABASE}/{dir}/{}.dat", text::percent_encode(system));
-            self.list(&format!("{dir} - {system}.dat"), &url).unwrap_or_default()
-        };
-        let mut d = Database::default();
-        for (crc, fields) in dat_games(&dat("no-intro")) {
-            if let Some(name) = fields.get("name") {
-                d.names.insert(crc, name.clone());
+        self.databases.get(system, || {
+            let dat = |dir: &str| {
+                let url = format!("{DATABASE}/{dir}/{}.dat", text::percent_encode(system));
+                self.list(&format!("{dir} - {system}.dat"), &url).unwrap_or_default()
+            };
+            let mut d = Database::default();
+            for (crc, fields) in dat_games(&dat("no-intro")) {
+                if let Some(name) = fields.get("name") {
+                    d.names.insert(crc, name.clone());
+                }
             }
-        }
-        for (crc, fields) in dat_games(&dat("developer")) {
-            if let Some(dev) = fields.get("developer").map(|d| developer(d)).filter(|d| !d.is_empty()) {
-                d.developers.insert(crc, dev);
+            for (crc, fields) in dat_games(&dat("developer")) {
+                if let Some(dev) = fields.get("developer").map(|d| developer(d)).filter(|d| !d.is_empty()) {
+                    d.developers.insert(crc, dev);
+                }
             }
-        }
-        for (crc, fields) in dat_games(&dat("releaseyear")) {
-            if let Some(year) = fields.get("releaseyear").and_then(|y| y.parse().ok()) {
-                d.years.insert(crc, year);
+            for (crc, fields) in dat_games(&dat("releaseyear")) {
+                if let Some(year) = fields.get("releaseyear").and_then(|y| y.parse().ok()) {
+                    d.years.insert(crc, year);
+                }
             }
-        }
-        log::info!("meta: libretro's database of {system}: {} games", d.names.len());
-        let d = Arc::new(d);
-        databases.insert(system.to_owned(), d.clone());
-        d
+            log::info!("meta: libretro's database of {system}: {} games", d.names.len());
+            Arc::new(d)
+        })
     }
 
-    /// The names, without `.png`, in a system's folder of thumbnails of a kind. Fetched once.
+    /// The names, without `.png`, in a system's folder of thumbnails of a kind. Fetched once (see
+    /// [`super::Lists`]).
     pub(super) fn listing(&self, system: &str, kind: &str) -> Option<Arc<Vec<Name>>> {
         let id = format!("{system}/{kind}");
-        let mut listings = crate::os::lock(&self.listings);
-        if let Some(l) = listings.get(&id) {
-            return l.clone();
-        }
-        let page = self.list(&format!("{kind} - {system}.html"), &format!("{LIBRETRO}/{}/{kind}/", text::percent_encode(system)));
-        let names = page.map(|p| Arc::new(hrefs(&p).filter_map(|h| h.strip_suffix(".png").map(Name::new)).collect::<Vec<_>>()));
-        if names.is_none() {
-            log::warn!("meta: libretro has no {id}");
-        }
-        listings.insert(id, names.clone());
-        names
+        self.listings.get(&id, || {
+            let page = self.list(&format!("{kind} - {system}.html"), &format!("{LIBRETRO}/{}/{kind}/", text::percent_encode(system)));
+            let names = page.map(|p| Arc::new(hrefs(&p).filter_map(|h| h.strip_suffix(".png").map(Name::new)).collect::<Vec<_>>()));
+            if names.is_none() {
+                log::warn!("meta: libretro has no {id}");
+            }
+            names
+        })
     }
 }
 
