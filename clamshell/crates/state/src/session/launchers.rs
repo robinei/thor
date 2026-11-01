@@ -30,12 +30,16 @@ pub(crate) struct Launcher {
     /// The arguments its command takes before a game's URL to start the game without its window, if
     /// the game is to be launched that way (see the module's doc).
     headless: Option<&'static [&'static str]>,
+    /// Whether its games get their own launch-time settings: Steam's, by the launch hook Steam runs for
+    /// each (docs/runners.md). Another launcher's game runs in the launcher's processes, which a running
+    /// launcher started with its own settings and environment, so the game's never reach it.
+    hooked: bool,
 }
 
-const STEAM_LAUNCHER: Launcher = Launcher { name: "Steam", desktop: &["steam"], headless: None };
+const STEAM_LAUNCHER: Launcher = Launcher { name: "Steam", desktop: &["steam"], headless: None, hooked: true };
 const HEROIC_LAUNCHER: Launcher =
-    Launcher { name: "Heroic", desktop: &["com.heroicgameslauncher.hgl", "heroic"], headless: Some(&["--no-gui", "--no-sandbox"]) };
-const LUTRIS_LAUNCHER: Launcher = Launcher { name: "Lutris", desktop: &["net.lutris.Lutris", "lutris"], headless: None };
+    Launcher { name: "Heroic", desktop: &["com.heroicgameslauncher.hgl", "heroic"], headless: Some(&["--no-gui", "--no-sandbox"]), hooked: false };
+const LUTRIS_LAUNCHER: Launcher = Launcher { name: "Lutris", desktop: &["net.lutris.Lutris", "lutris"], headless: None, hooked: false };
 
 /// The launcher entry `g`'s game runs in, if any.
 pub(crate) fn launcher_of(g: &Entry) -> Option<&'static Launcher> {
@@ -45,6 +49,12 @@ pub(crate) fn launcher_of(g: &Entry) -> Option<&'static Launcher> {
         Launch::Program { .. } if is_lutris(g) => Some(&LUTRIS_LAUNCHER),
         _ => None,
     }
+}
+
+/// Whether entry `g` is a launcher's game whose own launch-time settings don't reach it (see
+/// [`Launcher::hooked`]): as for an app handed over, the settings panel dims them.
+pub(crate) fn without_launch_settings(g: &Entry) -> bool {
+    launcher_of(g).is_some_and(|l| !l.hooked)
 }
 
 impl Launcher {

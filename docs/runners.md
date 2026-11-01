@@ -203,8 +203,11 @@ which every FEX reads (Armada's way): Proton's own (nothing set), Fast (TSO off,
 reduced precision, multiblock) or Safe (TSO with vector and memcpy TSO, full x87 precision, no
 multiblock), Armada's two presets. ClamShell writes them to `~/.cache/clamshell/fex/` at its start, since
 Valve's container replaces `/usr` but shares the home. The tile is lit wherever the launch's environment
-reaches the program: whether an entry runs x86 code isn't known (a Steam game may be native arm64, a
-Heroic game runs through Wine), and the variable does nothing where FEX doesn't run. Single FEX options
+reaches the program: whether an entry runs x86 code isn't known (a Steam game may be native arm64), and
+the variable does nothing where FEX doesn't run. A Heroic or Lutris game runs in its launcher's
+processes, with the launcher's launch-time settings and environment, so for the game's own level this
+tile, the cap's, the Vulkan driver's and the Env tile are dimmed, as for an app handed over; the
+launcher's own entry is where they are set. Steam's games get theirs from Steam's launch hook. Single FEX options
 (`FEX_SMCCHECKS=full`, ...) go in the Env tile.
 
 ### Vulkan driver

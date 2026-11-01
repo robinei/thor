@@ -621,6 +621,29 @@ fn launchers() -> State {
     State::new(Init { library: Some(library), ..init() })
 }
 
+/// A Heroic or Lutris game runs in its launcher's processes with the launcher's launch-time settings
+/// and environment, so the panel dims the tiles that go through the launch for the game's own level, as
+/// for an app handed over. Its launcher, Steam's games (which have their hook) and other entries keep
+/// them.
+#[test]
+fn a_launchers_game_other_than_steams_is_edited_as_handed_over() {
+    let mut s = launchers();
+    s.ui_up();
+    // The panel at an item's own level (an entry with no runner has only that one).
+    tap(&mut s, crate::id::Id::Settings(crate::id::SettingsId::Scope(crate::settings::panel::SettingsLevel::Runner)));
+    let handed_over = |s: &State, id: &str| {
+        let count = s.device_view().controllers().count();
+        crate::Panel::new(Some(id.into()), s.session(), s.library_view(), s.prefs(), s.kinds(), count).handed_over()
+    };
+    assert!(handed_over(&s, "desktop:Pattern Game"), "Heroic's game");
+    assert!(handed_over(&s, "desktop:net.lutris.cave-1"), "Lutris's game");
+    assert!(!handed_over(&s, "desktop:com.heroicgameslauncher.hgl"), "Heroic itself");
+    assert!(!handed_over(&s, "zelda-lttp"));
+    let mut s = steam_ff6();
+    tap(&mut s, crate::id::Id::Settings(crate::id::SettingsId::Scope(crate::settings::panel::SettingsLevel::Runner)));
+    assert!(!handed_over(&s, "ff6"), "a Steam game, which has its hook");
+}
+
 /// A Heroic game launched from the Library is launched as a launch of Heroic's entry, which starts Heroic
 /// without its window and hands it the game: Heroic and the game are entries of their own. The game runs by
 /// its window, which Heroic's mark makes the game's though it is in Heroic's unit; it comes in front, its

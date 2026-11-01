@@ -231,7 +231,10 @@ impl<'a> Panel<'a> {
             [runner, own] => own.as_ref().or(runner.as_ref()).map(|(_, p)| p.clone()),
         };
         let runner = editing.as_ref().and_then(|p| entry_of(&p.id)).and_then(|g| g.runner.as_ref()).map(|r| &*r.key);
-        let handover = editing.is_some() && entry.and_then(|g| g.runner.as_ref()).is_some_and(|r| r.handover);
+        // A launcher's game is handed over at its own level only; its runner's other items aren't.
+        let own = editing.as_ref().zip(context.as_ref()).is_some_and(|(e, c)| e.id == c.id);
+        let runner_hands_over = entry.and_then(|g| g.runner.as_ref()).is_some_and(|r| r.handover);
+        let handover = editing.is_some() && (runner_hands_over || (own && entry.is_some_and(crate::session::launchers::without_launch_settings)));
         Panel { prefs, kinds, context, levels, editing, runner, handover, players }
     }
 
@@ -287,9 +290,10 @@ impl<'a> Panel<'a> {
     }
 
     /// Whether the panel edits a runner whose launches hand their app over to another program, or an item
-    /// of such a runner. Android is one: Waydroid's session runs its apps. Anything that works through
-    /// the launch's process, such as [`Setting::through_launch`] settings and the environment, has no
-    /// effect there.
+    /// of such a runner, or a launcher's game other than Steam's (Heroic's, Lutris's), which runs in the
+    /// launcher's processes. Android is one: Waydroid's session runs its apps. Anything that works
+    /// through the launch's process, such as [`Setting::through_launch`] settings and the environment,
+    /// has no effect there.
     pub fn handed_over(&self) -> bool {
         self.handover
     }
