@@ -70,7 +70,8 @@ and the rules the code follows are in `docs/architecture.md`. What it has:
   running programs), the on-screen keyboard, the touchpad, system information, volume, brightness,
   Bluetooth, Wi-Fi, the battery, the time, and the windows moved down to it.
 - Settings at three levels (all, a runner, one entry): the power profile, CPU and GPU caps, the big
-  cores, the fan, an FPS cap, the refresh rate, a HUD; the game's picture (its resolution, scaling with
+  cores, the fan, an FPS cap, the refresh rate, a HUD; x86 emulation's preset (FEX inside Proton) and
+  the Vulkan driver (the system's Mesa or the newest Turnip, `turnip-devel`); the game's picture (its resolution, scaling with
   FSR among the choices, the size of windows, anti-aliasing, sharpening, a tone curve and HDR content's
   peak: `docs/picture.md`); the keymap per player, the pad mouse, rumble and the stick lights; what a
   program does in the background; and for the device as a whole the charge limit (or bypass, the

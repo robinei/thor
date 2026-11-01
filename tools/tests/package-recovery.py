@@ -17,6 +17,7 @@ import threading
 import time
 import unittest
 import gzip
+import tarfile
 import zipfile
 import zlib
 
@@ -836,14 +837,23 @@ class Publish(unittest.TestCase):
     """repo.sh publish with a stub gh: only what the release lacks or has at another size is uploaded, each
     signature before its file, the database last."""
 
-    def machine(self, released):
+    # The database's entries: each package's name and what it depends on.
+    PACKAGES = {'thor': ['thor-system>=1', 'turnip-devel', 'glibc'], 'thor-system': ['bash'], 'turnip-devel': []}
+
+    def machine(self, released, packages=PACKAGES):
         m = Machine()
         self.addCleanup(m.close)
         repo = m.root / 'cache/thor-vm/repo/thor'
         for name, text in [('a-1-1-any.pkg.tar.zst', 'same'), ('a-1-1-any.pkg.tar.zst.sig', 's'), ('b-2-1-any.pkg.tar.zst', 'new'),
-                           ('b-2-1-any.pkg.tar.zst.sig', 's'), ('thor.db', 'database2'), ('thor.db.sig', 'sig2'),
+                           ('b-2-1-any.pkg.tar.zst.sig', 's'), ('thor.db.sig', 'sig2'),
                            ('thor.files', 'files'), ('thor.files.sig', 'f')]:
             m.file(f'cache/thor-vm/repo/thor/{name}', text)
+        with tarfile.open(repo / 'thor.db', 'w:gz') as db:
+            for name, depends in packages.items():
+                desc = f'%NAME%\n{name}\n\n' + (f'%DEPENDS%\n' + ''.join(f'{d}\n' for d in depends) + '\n' if depends else '')
+                info = tarfile.TarInfo(f'{name}-1-1/desc')
+                info.size = len(desc.encode())
+                db.addfile(info, io.BytesIO(desc.encode()))
         (repo / 'thor.db.tar.zst').symlink_to('thor.db')
         m.file('released', ''.join(f'{name} {size}\n' for name, size in released))
         m.command('gpg')
@@ -870,6 +880,14 @@ esac''')
             'upload thor.db',
             'delete old-1-1-any.pkg.tar.zst',
         ])
+
+    def test_a_repository_lacking_a_package_of_ours_another_depends_on_is_not_published(self):
+        packages = {name: depends for name, depends in self.PACKAGES.items() if name != 'turnip-devel'}
+        m = self.machine([], packages)
+        result = self.publish(m)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('lacks packages of ours that others depend on: turnip-devel', result.stdout)
+        self.assertFalse((m.root / 'calls').exists(), 'nothing uploaded')
 
 class SteamSetup(unittest.TestCase):
     """steam-setup's client install with stub downloads: taken as installed only once complete."""

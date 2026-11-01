@@ -23,6 +23,8 @@ export GNUPGHOME=${THOR_GNUPGHOME:-$HOME/.config/thor-repo/gnupg}
 KEY=6C4C5B7FB11D609B739FDAC30BB252FF8CA9B43F
 GITHUB=robinei/thor
 RELEASE=packages
+# Our packages, by their folders here.
+PACKAGES=$(cd "$(dirname "$0")/../../packages" && pwd)
 
 # The signing key is here.
 signing() { gpg --list-secret-keys "$KEY" > /dev/null 2>&1; }
@@ -77,6 +79,11 @@ publish() {
     cd "$REPO/thor"
     [ -f thor.db ] || { echo "no repository yet: repo.sh index"; exit 1; }
     signing && [ -f thor.db.sig ] || { echo "the repository isn't signed (no signing key here): not published"; exit 1; }
+    # A package of ours that another depends on and the repository lacks (a partial build indexed) would
+    # leave every device unable to update: refused.
+    local lacking
+    lacking=$(lacking)
+    [ -z "$lacking" ] || { echo "the repository lacks packages of ours that others depend on: $lacking (tools/repo/build.sh them): not published"; exit 1; }
     gh release view "$RELEASE" -R "$GITHUB" > /dev/null 2>&1 \
         || gh release create "$RELEASE" -R "$GITHUB" --title "Packages" --latest=false \
             --notes "The Thor's pacman repository (not a release): [thor] Server = https://github.com/$GITHUB/releases/download/$RELEASE"
@@ -116,6 +123,18 @@ publish() {
     done
     printf '%s\n' "${files[@]}" "${db[@]}" > "$kept"
     echo "published: https://github.com/$GITHUB/releases/tag/$RELEASE"
+}
+
+# The packages of ours (a folder in packages/) that a package in thor.db depends on and thor.db lacks.
+lacking() {
+    local ours
+    ours=" $(cd "$PACKAGES" && echo *) "
+    bsdtar -xOf thor.db '*/desc' | awk -v ours="$ours" '
+        /^%.*%$/ { section = $0; next }
+        /^$/ { next }
+        section == "%NAME%" { have[$0] = 1 }
+        section == "%DEPENDS%" { sub(/[<>=].*/, ""); wanted[$0] = 1 }
+        END { for (name in wanted) if (!(name in have) && index(ours, " " name " ")) print name }' | sort | tr '\n' ' ' | sed 's/ $//'
 }
 
 case ${1:-} in
