@@ -989,6 +989,19 @@ class AndroidRunner(unittest.TestCase):
         self.assertEqual(ran.returncode, 0, ran.stderr)
         self.assertIn('am force-stop org.example_app', log.read_text())
 
+    def test_the_clipboard_stand_in_never_raises(self):
+        spec = importlib.util.spec_from_file_location('pyclip', REPO / 'clamshell/android/pyclip.py')
+        pyclip = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(pyclip)
+        m, _ = self.machine()
+        m.command('hung', 'exec sleep 5')
+        pyclip._TIMEOUT = 0.2
+        for program in [str(m.root / 'bin/hung'), str(m.root / 'missing')]:
+            pyclip._CLAMSHELL = program
+            pyclip.copy('text')
+            self.assertEqual(pyclip.paste(), '')
+            self.assertEqual(pyclip.paste(text=False), b'')
+
 
 if __name__ == '__main__':
     unittest.main()
