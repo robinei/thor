@@ -299,8 +299,16 @@ mod tests {
             { "type": "dir", "id": "sd", "dir": "roms", "place": "games", "match": ["*"], "on": { "label": "NO SUCH CARD" } }
           ] }"#;
         std::fs::write(root.join("library.json"), config).unwrap();
-        let loaded =
-            load(&Sources { config: Some(root.join("library.json")), data_dirs: vec![root.join("data")], steam: Some(steam.clone()), ..Sources::default() });
+        // The card's favourites are kept while it is out; those of entries gone aren't.
+        std::fs::create_dir_all(root.join("state")).unwrap();
+        std::fs::write(root.join("state/favourites.json"), r#"["sd:zelda", "gone:x", "sd:mario"]"#).unwrap();
+        let loaded = load(&Sources {
+            config: Some(root.join("library.json")),
+            data_dirs: vec![root.join("data")],
+            steam: Some(steam.clone()),
+            state: Some(root.join("state")),
+            ..Sources::default()
+        });
         let lib = &loaded.library;
         let runner = |title: &str| lib.entries().iter().find(|g| g.title == title).and_then(|g| g.runner.as_ref()).map(|r| r.key.to_string());
         assert_eq!(runner("Celeste").as_deref(), Some("runner:desktop-games"), "the runner it names");
@@ -309,6 +317,7 @@ mod tests {
         assert!(loaded.wanted.iter().any(|w| w.how == How::Steam(10)), "Steam's store, as it says");
         assert!(!loaded.wanted.iter().any(|w| w.how == How::SteamGridDb), "not without the key");
         assert!(lib.problems.iter().any(|p| p == "sd: its card or stick isn't in") && lib.away.contains(&"sd:".to_owned()), "away, not gone");
+        assert_eq!(lib.away_favourites, vec!["sd:mario".to_owned(), "sd:zelda".to_owned()]);
     }
 
     #[test]

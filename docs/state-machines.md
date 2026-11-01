@@ -527,6 +527,7 @@ test taps the lights' screens, slides their parameters and reads charging.
 | long press on the selected entry, by touch or pad: its actions open, the focus ring on the first | `a_held_on_the_selected_entry_opens_its_actions` |
 | typing filters; Enter activates; Clear | `typing_with_builtin_in_front_finds_entries_by_their_titles_start` |
 | favourite on/off: relayout by name and id, `Save(Favourites)`; a focus in the list follows the selection | `a_favourite_shows_in_its_collection_…`, `a_favourite_removed_moves_the_focus_with_the_selection`, `the_favourites_tab_goes_with_its_last_entry` |
+| favourite on/off with a source away (an SD card out): `Save(Favourites)` keeps the away entries' saved favourites (`Library::away_favourites`, read with the library) | `a_favourite_saved_keeps_those_of_away_sources`; the loading in `sources_name_their_runner_and_metadata_and_wait_for_their_card` |
 | a play recorded: relayout (a focus in the list follows the selection), `RecordPlay`, `ReadPosition` for videos | tests `a_launchs_start_and_end…`, `a_video_ended_asks_where_it_was_left`; the Library `a_play_recorded_keeps_library_views_place_and_focus` |
 | a relayout closes a group no longer in its collection (Recent, Favourites) | `a_group_that_leaves_its_collection_is_closed_there` |
 | a group launched from elsewhere: its collection's places reset, the path opened, `Show(Library)` | `a_group_started_from_elsewhere_opens_in_library_view` |
@@ -780,7 +781,9 @@ then go nowhere, logged once (system crate, `a_thread_that_keeps_panicking_soon_
   `a_restarted_brightness_thread_is_sent_the_level_clamshell_set`)
 - `--Restarted(Lights)--> [Lights]` (tested `the_lights_in_force_are_sent_when_they_change`)
 - `--Restarted(Touchpad)--> [SizeTouchpad]` (tested `a_restarted_touchpad_thread_is_sent_the_second_screens_layout`)
-- `--Restarted(Store)--> [Save of everything saved]` (tested `a_restarted_store_is_sent_everything_saved`)
+- `--Restarted(Store)--> [Save of everything saved]` (tested `a_restarted_store_is_sent_everything_saved`);
+  the favourites only once the library is read, as before it they would be none (tested
+  `a_restarted_store_saves_the_favourites_only_once_the_library_is_read`)
 - `files running --Restarted(Files)--> the oldest operation done, failed [notice]`; the rest run (tested
   `a_restarted_files_thread_fails_the_operation_it_had_and_browse_lists_again`)
 - `--Restarted(Browse)--> [Browse(Open), Browse(InUse)]` (same test)

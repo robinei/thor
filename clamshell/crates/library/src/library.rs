@@ -47,6 +47,9 @@ pub struct Library {
     /// The id prefixes (`<source id>:`) of sources whose dir is missing, such as an SD card that isn't
     /// inserted. Their entries are away, not gone.
     pub away: Vec<String>,
+    /// The saved favourites of away sources' entries, kept so that saving the favourites doesn't forget
+    /// them while their card is out.
+    pub away_favourites: Vec<String>,
     /// Slots in `entries` free for the next listing to use. They were held by entries that left a
     /// listing, and by everything inside those.
     pub free: Vec<usize>,
@@ -201,9 +204,9 @@ impl Library {
         self.collections.sort_by_key(|c| order.iter().position(|n| *n == c.name).unwrap_or(usize::MAX));
     }
 
-    /// The ids of the favourite entries, for saving.
+    /// The ids of the favourite entries, for saving: those loaded, and those of away sources.
     pub fn favourite_ids(&self) -> impl Iterator<Item = &str> {
-        self.entries.iter().filter(|g| g.favourite).map(|g| &*g.id)
+        self.entries.iter().filter(|g| g.favourite).map(|g| &*g.id).chain(self.away_favourites.iter().map(String::as_str))
     }
 
     /// Applies what was fetched about entry `i`. The cover is used if the entry has no art of its own, and

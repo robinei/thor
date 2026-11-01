@@ -77,7 +77,6 @@ impl State {
             self.keymapping.save_effect(),
             self.curving.save_effect(),
             self.lighting.save_effect(),
-            Effect::Save(Save::Favourites(self.library_view.library().favourite_ids().map(str::to_owned).collect())),
             Effect::Save(Save::Resume(self.resume())),
             self.levels.brightness_save(),
             self.session.window_rules_save(),
@@ -87,6 +86,10 @@ impl State {
             Effect::Save(Save::Sticks(self.device_view.calibrations().clone())),
             self.device_view.controllers_save(),
         ]);
+        // The favourites are derived from the library: before it is read they would be none.
+        if self.library_view.read() {
+            out.effects.push(Effect::Save(Save::Favourites(self.library_view.library().favourite_ids().map(str::to_owned).collect())));
+        }
         if !self.setup.first_start() {
             out.effects.push(Effect::Save(Save::FirstStartDone));
         }
@@ -99,7 +102,7 @@ mod tests {
     use crate::idle::Stage;
     use crate::sync::Resend;
     use crate::testkit::*;
-    use crate::{Effect, Event, Id, Save, Tab, Thread, Watch};
+    use crate::{Effect, Event, Id, Init, Save, Tab, Thread, Watch};
 
     #[test]
     fn a_restarted_pad_is_sent_its_keymap_route_and_settings() {
@@ -228,6 +231,20 @@ mod tests {
             }
         }
         assert_eq!(sent, [true; 14], "{fx:?}");
+    }
+
+    /// Before the library is read its favourites would be none: a store restarted then saves none of
+    /// them, so that favourites.json isn't emptied. Once it is read, they are saved again.
+    #[test]
+    fn a_restarted_store_saves_the_favourites_only_once_the_library_is_read() {
+        let mut s = started(Init { library: None, ..init() });
+        let favourites = |fx: &[Effect]| fx.iter().any(|e| matches!(e, Effect::Save(Save::Favourites(_))));
+        let fx = s.applied(Event::Restarted(Thread::Store));
+        assert!(!favourites(&fx), "{fx:?}");
+        assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Resume(_)))), "the rest is saved: {fx:?}");
+        s.applied(Event::Library(Box::new(clamshell_library::demo::library())));
+        let fx = s.applied(Event::Restarted(Thread::Store));
+        assert!(favourites(&fx), "{fx:?}");
     }
 
     #[test]

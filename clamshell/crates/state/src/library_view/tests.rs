@@ -54,6 +54,20 @@ fn a_favourite_shows_in_its_collection_and_is_saved() {
     assert_eq!(s.library_view().selected().map(|g| &**g), Some("mk-ds"), "so does the selection");
 }
 
+/// With the SD card out, its entries aren't loaded, but their favourites are saved with the others.
+#[test]
+fn a_favourite_saved_keeps_those_of_away_sources() {
+    let mut library = clamshell_library::demo::library();
+    library.away.push("sd:".into());
+    library.away_favourites.push("sd:zelda".into());
+    let mut s = state_with(library);
+    s.applied(LibraryViewEvent::ListStep(2).into());
+    let fx = s.applied(LibraryViewEvent::ToggleFavourite.into());
+    assert_eq!(fx, vec![Effect::Save(Save::Favourites(vec!["mk-ds".into(), "sd:zelda".into()]))]);
+    let fx = s.applied(LibraryViewEvent::ToggleFavourite.into());
+    assert_eq!(fx, vec![Effect::Save(Save::Favourites(vec!["sd:zelda".into()]))]);
+}
+
 #[test]
 fn a_favourite_removed_moves_the_focus_with_the_selection() {
     let mut s = state();

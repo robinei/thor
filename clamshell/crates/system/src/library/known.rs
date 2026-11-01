@@ -23,6 +23,9 @@ pub(super) fn known(library: &mut Library, hows: Vec<(usize, How)>, sources: &So
             }
             g.favourite = favourites.contains(&*g.id);
         }
+        let mut away: Vec<String> = favourites.into_iter().filter(|id| library.away.iter().any(|p| id.starts_with(p.as_str()))).collect();
+        away.sort();
+        library.away_favourites = away;
     }
     let now = crate::time::clock::unix_secs();
     let mut wanted = Vec::new();
