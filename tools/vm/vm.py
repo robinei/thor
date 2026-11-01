@@ -2,8 +2,9 @@
 """A virtual Thor: a QEMU machine with the device's session around ClamShell, for testing what
 doesn't need the real hardware. Two displays at the Thor's sizes (ClamShell's compositor on real DRM
 outputs), a touchscreen and a mouse-driven absolute pointer on the bottom one, a fake battery and Wi-Fi,
-uinput for our virtual devices, ClamShell as the session's user service, and this repository shared
-read-only.
+ClamShell as the session's user service, and this repository shared read-only. The system and the
+session around ClamShell are the device's own: thor-system and thor-session, built from this checkout
+(its working tree) and installed with pacman (see `PACKAGED`).
 
   tools/vm/vm.py image          make a fresh machine (downloads its system first)
   tools/vm/vm.py run            start the machine (the first start provisions it)
@@ -13,7 +14,8 @@ read-only.
   tools/vm/vm.py build          build ClamShell in the machine (aarch64: there is no host build)
   tools/vm/vm.py restart        start the machine's session again (after a build)
   tools/vm/vm.py wake           wake the machine from sleep
-  tools/vm/vm.py sync           write this script's session and system files (login, service, rules) into the machine
+  tools/vm/vm.py sync           install thor-system and thor-session as this checkout has them, and write this
+                                script's own files (the service with this build, the test networks) into the machine
   tools/vm/vm.py touch tap|hold|down|move|up|slide ...   the bottom screen's touchscreen, in its pixels
   tools/vm/vm.py pointer X Y [--head 0|1] [--click left]  the absolute pointer on a screen
   tools/vm/vm.py key a shift+b ret                        keys (QEMU's names)
@@ -33,6 +35,7 @@ library only.
 """
 
 import argparse
+import base64
 import hashlib
 import http.server
 import json
@@ -164,15 +167,6 @@ def ssh_key():
     sys.exit("no ssh key in ~/.ssh (ssh-keygen -t ed25519)")
 
 
-def bash_profile():
-    """The session on the first console as the device starts it (thor-session's profile.d script), with
-    the repository's thor-session rather than the image's."""
-    script = (REPO / "packages/thor-session/root/etc/profile.d/thor-session.sh").read_text()
-    if "/usr/bin/thor-session" not in script:
-        sys.exit("thor-session.sh doesn't run /usr/bin/thor-session: vm.py can't put the repository's in")
-    return script.replace("/usr/bin/thor-session", "/mnt/thor/packages/thor-session/root/usr/bin/thor-session")
-
-
 # Where a program built on the host runs from in the machine: a copy on its disk. Run from the 9p mount
 # itself, a program hangs after the machine wakes from sleep as soon as it reaches a page of its binary not
 # read before, 9p over virtio not coming back from a suspend.
@@ -204,31 +198,19 @@ def service():
 
 
 def session_files():
-    return [
-        (f"/home/{USER}/.bash_profile", bash_profile()),
-        (f"/home/{USER}/.config/systemd/user/clamshell.service", service()),
-        (f"/home/{USER}/.config/systemd/user/session.slice.d/thor.conf",
-         (REPO / "packages/thor-session/root/usr/lib/systemd/user/session.slice.d/thor.conf").read_text()),
-        (f"/home/{USER}/.config/foot/foot.ini", (REPO / "packages/thor-session/root/usr/share/thor/xdg/foot/foot.ini").read_text()),
-    ]
+    """The user's own files: the service with this machine's build (see `service`)."""
+    return [(f"/home/{USER}/.config/systemd/user/clamshell.service", service())]
 
 
 def system_files():
-    """The same system setup on both: autologin, modules, uinput for the input group."""
+    """What the machine has besides the packages: the modules for its fake devices, its sleep, and its test
+    networks."""
     return [
-        ("/etc/systemd/system/getty@tty1.service.d/autologin.conf",
-         f"[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin {USER} --noclear %I $TERM\n"),
         ("/etc/modules-load.d/thor-vm.conf", "uinput\ntest_power\nmac80211_hwsim\n"),
+        # Suspend to RAM ("deep"), not the Thor's s2idle (thor-system's sleep.conf.d/thor.conf; drop-ins
+        # apply in their names' order, so this one's comes after): QEMU wakes the machine from it (`wake`).
+        ("/etc/systemd/sleep.conf.d/zz-thor-vm.conf", "[Sleep]\nMemorySleepMode=deep\n"),
         ("/etc/modprobe.d/thor-vm.conf", "options mac80211_hwsim radios=3\n"),
-        ("/etc/udev/rules.d/70-thor-vm.rules",
-         'KERNEL=="uinput", GROUP="input", MODE="0660"\n'),
-        # Apps' file choosers are ClamShell's (as on the device).
-        ("/usr/share/xdg-desktop-portal/clamshell-portals.conf",
-         (REPO / "packages/thor-session/root/usr/share/xdg-desktop-portal/clamshell-portals.conf").read_text()),
-        ("/usr/share/xdg-desktop-portal/portals/clamshell.portal",
-         (REPO / "packages/thor-session/root/usr/share/xdg-desktop-portal/portals/clamshell.portal").read_text()),
-        # The time tab sets the time zone (as on the device).
-        ("/etc/polkit-1/rules.d/50-thor.rules", (REPO / "packages/thor-system/root/usr/share/polkit-1/rules.d/50-thor.rules").read_text()),
         # NetworkManager has the device's radio only: the wired link (ssh) stays as it is, the access
         # points' radios are hostapd's.
         ("/etc/NetworkManager/conf.d/thor-vm.conf",
@@ -276,6 +258,86 @@ WantedBy=thor-test-ap.service
 FSTAB_9P = "thor /mnt/thor 9p trans=virtio,version=9p2000.L,ro,nofail 0 0"
 
 
+# --- the device's system and session: its packages
+
+# Built from this checkout's working tree (makepkg on the host: they are architecture-independent) and
+# installed with pacman, their install scripts and hooks run, as on the device. What differs, and why:
+#
+# - The clamshell package isn't installed: the machine runs the host's build (see `service`). Its
+#   dependencies and thor-system's are installed from Arch's repositories (`depends`), its power group
+#   (its sysusers.d) is made here, and pacman installs our two without checking dependencies (-dd): the
+#   session's programs are `PACKAGES`, not thor-session's whole list (Firefox, RetroArch, ...).
+# - thor-firstboot.service is disabled: growing the root and making the swap file is the card's first
+#   boot, tried on the image's machine (`thor-image`).
+# - The user keeps sudo without a password (cloud-init's): the checks drive the machine with sudo.
+#   thor-maintain's sudo with a password has its fixture (tools/tests/package-recovery.py).
+# - sshd is on from the start (the checks' way in), and stays reachable while the checks turn Remote
+#   login off and on (see vm-checks.py `account`).
+# - Suspend is to RAM, not the Thor's s2idle, which QEMU doesn't wake from (see `system_files`).
+PACKAGED = ["thor-system", "thor-session"]
+PACKAGES_DIR = "/var/tmp/thor-vm-packages"
+MAKEPKG_CONF = """CARCH=x86_64
+CHOST=x86_64-pc-linux-gnu
+BUILDENV=(!distcc color !ccache !check !sign)
+OPTIONS=(!strip docs !libtool !staticlibs emptydirs zipman purge !debug !lto)
+INTEGRITY_CHECK=(sha256)
+PKGEXT='.pkg.tar.zst'
+SRCEXT='.src.tar.gz'
+COMPRESSZST=(zstd -c -T0 -)
+"""
+
+
+def packaged():
+    """thor-system and thor-session built from this checkout's working tree: their files' paths."""
+    need("makepkg", "fakeroot")
+    out = CACHE / "vm-packages"
+    shutil.rmtree(out, ignore_errors=True)
+    out.mkdir(parents=True)
+    (out / "makepkg.conf").write_text(MAKEPKG_CONF)
+    for name in PACKAGED:
+        # (A copy: makepkg writes the version into the PKGBUILD.)
+        shutil.copytree(REPO / "packages" / name, out / "src" / name, symlinks=True)
+        env = dict(os.environ, THOR_REPO=str(REPO), PKGDEST=str(out), BUILDDIR=str(out / "build"))
+        result = subprocess.run(["makepkg", "-f", "--nodeps", "--noconfirm", "--config", out / "makepkg.conf"],
+                                cwd=out / "src" / name, env=env, capture_output=True, text=True)
+        if result.returncode != 0:
+            sys.exit(f"building {name} failed:\n{result.stdout[-2000:]}{result.stderr[-2000:]}")
+    return sorted(out.glob("*.pkg.tar.zst"))
+
+
+def depends(*names):
+    """What the packages `names` depend on (their PKGBUILDs' depends), less our own packages."""
+    out = subprocess.run(["bash", "-c", 'for p; do (cd "$p" && source ./PKGBUILD && printf "%s\\n" "${depends[@]}"); done', "-", *names],
+                         cwd=REPO / "packages", capture_output=True, text=True, check=True).stdout.split()
+    ours = {path.name for path in (REPO / "packages").iterdir()}
+    return sorted({d for d in out if d not in ours})
+
+
+def install():
+    """As root, with the packages in PACKAGES_DIR. (The rm: files earlier versions of this script wrote by
+    hand, which the packages now bring.)"""
+    return f"""set -e
+# (Those missing only: installing one already there at a newer version would be a partial upgrade.)
+missing=$(pacman -T {' '.join(depends("clamshell", "thor-system"))} || true)
+[ -z "$missing" ] || pacman -S --noconfirm $missing
+groupadd -rf power
+pacman -U -dd --noconfirm --overwrite '/usr/share/xdg-desktop-portal/*' {PACKAGES_DIR}/*.pkg.tar.zst
+usermod -aG power {USER}
+systemctl disable --quiet thor-firstboot.service
+loginctl disable-linger {USER}
+# (A user manager started before the user was in the power group: started again, with it. The session
+# goes with it, and the console's autologin starts it again.)
+uid=$(id -u {USER})
+pid=$(systemctl show -P MainPID user@$uid.service)
+if [ "$pid" != 0 ] && ! ps -o supgrp= -p "$pid" | tr ',' '\\n' | grep -qx power; then
+    systemctl restart user@$uid.service
+fi
+rm -f /etc/systemd/system/getty@tty1.service.d/autologin.conf /etc/udev/rules.d/70-thor-vm.rules \
+    /etc/polkit-1/rules.d/50-thor.rules /home/{USER}/.bash_profile /home/{USER}/.config/foot/foot.ini \
+    /home/{USER}/.config/systemd/user/session.slice.d/thor.conf
+"""
+
+
 # --- x86_64: the cloud image and cloud-init
 
 SET_KERNEL_VIDEO = (
@@ -287,6 +349,8 @@ SET_KERNEL_VIDEO = (
 
 def user_data():
     files = [(p, c, "root") for p, c in system_files()] + [(p, c, USER) for p, c in session_files()]
+    packages = [{"path": f"{PACKAGES_DIR}/{f.name}", "encoding": "b64", "content": base64.b64encode(f.read_bytes()).decode()}
+                for f in packaged()]
     config = {
         "users": [{
             "name": USER,
@@ -301,11 +365,11 @@ def user_data():
         "write_files": [
             {"path": path, "content": content, "owner": f"{owner}:{owner}", "defer": owner != "root"}
             for path, content, owner in files
-        ],
+        ] + packages,
         "runcmd": [
             ["mkdir", "-p", "/mnt/thor"],
             ["chown", "-R", f"{USER}:{USER}", f"/home/{USER}"],
-            ["loginctl", "enable-linger", USER],
+            ["bash", "-c", install()],
             ["systemctl", "enable", "NetworkManager", "thor-test-ap", "thor-test-dhcp"],
             ["sh", "-c", SET_KERNEL_VIDEO],
         ],
@@ -354,11 +418,11 @@ echo '{ssh_key()}' > /home/{USER}/.ssh/authorized_keys
 {home_files}
 chown -R {USER}:{USER} /home/{USER}
 chmod 600 /home/{USER}/.ssh/authorized_keys
-loginctl enable-linger {USER}
+{install()}
 systemctl enable NetworkManager thor-test-ap thor-test-dhcp
 mkdir -p /mnt/thor
 grep -q /mnt/thor /etc/fstab || echo '{FSTAB_9P}' >> /etc/fstab
-touch /var/lib/thor-firstboot
+touch /var/lib/thor-vm-provisioned
 systemctl reboot
 """
 
@@ -368,11 +432,11 @@ FIRSTBOOT_UNIT = """\
 Description=The virtual Thor's first boot: packages, user, session
 Wants=network-online.target
 After=network-online.target
-ConditionPathExists=!/var/lib/thor-firstboot
+ConditionPathExists=!/var/lib/thor-vm-provisioned
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/thor-firstboot
+ExecStart=/usr/local/bin/thor-vm-provision
 StandardOutput=journal+console
 
 [Install]
@@ -386,9 +450,12 @@ def arm_image():
     need("fakeroot", "mkfs.ext4", "tar")
     with tempfile.TemporaryDirectory(dir=A.state) as work:
         extra = Path(work) / "extra"
+        (extra / PACKAGES_DIR.lstrip("/")).mkdir(parents=True)
+        for package in packaged():
+            shutil.copy(package, extra / PACKAGES_DIR.lstrip("/"))
         for path, content in system_files() + [
-            ("/usr/local/bin/thor-firstboot", firstboot_script()),
-            ("/etc/systemd/system/thor-firstboot.service", FIRSTBOOT_UNIT),
+            ("/usr/local/bin/thor-vm-provision", firstboot_script()),
+            ("/etc/systemd/system/thor-vm-provision.service", FIRSTBOOT_UNIT),
         ]:
             target = extra / path.lstrip("/")
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -399,8 +466,8 @@ def arm_image():
 tar -xpf '{A.base}' -C '{root}' --warning=no-unknown-keyword
 cp -r '{extra}'/. '{root}'/
 chown -R 0:0 '{root}/etc/systemd/system' '{root}/usr/local/bin' '{root}/etc/modules-load.d' '{root}/etc/udev/rules.d'
-chmod 755 '{root}/usr/local/bin/thor-firstboot'
-ln -sf /etc/systemd/system/thor-firstboot.service '{root}/etc/systemd/system/multi-user.target.wants/thor-firstboot.service'
+chmod 755 '{root}/usr/local/bin/thor-vm-provision'
+ln -sf /etc/systemd/system/thor-vm-provision.service '{root}/etc/systemd/system/multi-user.target.wants/thor-vm-provision.service'
 mkfs.ext4 -q -F -L root -d '{root}' '{A.disk}' {DISK_SIZE}
 """
         print("making the disk image (fakeroot)", flush=True)
@@ -528,7 +595,7 @@ def start(args):
 
 
 def arm_firstboot_done():
-    out = subprocess.run(["debugfs", "-R", "stat /var/lib/thor-firstboot", str(A.disk)], capture_output=True, text=True)
+    out = subprocess.run(["debugfs", "-R", "stat /var/lib/thor-vm-provisioned", str(A.disk)], capture_output=True, text=True)
     return "Inode:" in out.stdout
 
 
@@ -596,6 +663,12 @@ def thor_image(args):
 
 
 def sync(_args):
+    packages = packaged()
+    subprocess.run(ssh_args([f"sudo rm -rf {PACKAGES_DIR} && sudo install -d -o {USER} {PACKAGES_DIR}"]), check=True)
+    for package in packages:
+        subprocess.run(ssh_args([f"cat > {PACKAGES_DIR}/{package.name}"]), input=package.read_bytes(), check=True)
+    subprocess.run(ssh_args(["sudo bash -s"]), input=install(), text=True, check=True)
+    print(f"installed {', '.join(p.name for p in packages)}")
     for path, content in session_files():
         subprocess.run(ssh_args(["mkdir -p $(dirname " + path + ") && cat > " + path]), input=content, text=True, check=True)
         print(f"wrote {path}")
@@ -841,7 +914,11 @@ fi
 # bluetoothd keeps the first controller only (the second is the test device's).
 grep -q '^MaxControllers=1' /etc/bluetooth/main.conf || sed -i 's/^#\\?MaxControllers *=.*/MaxControllers=1/' /etc/bluetooth/main.conf
 modprobe hci_vhci
-for unit in bluetooth thor-bt-device thor-btvirt; do systemctl stop $unit 2>/dev/null || true; done
+# bluetoothd started only once the test device listens (its SDP server would take the device's ports):
+# masked meanwhile, as bluetooth.service is enabled as on the device, and a controller's coming, or a
+# program's call on the bus, would start it again.
+systemctl mask --runtime --now --quiet bluetooth.service
+for unit in thor-bt-device thor-btvirt; do systemctl stop $unit 2>/dev/null || true; done
 # Nothing left of earlier runs: the device unknown again.
 rm -rf /var/lib/bluetooth/*/{BT_DEVICE} /var/lib/bluetooth/*/cache/{BT_DEVICE}
 systemd-run --quiet --collect --unit=thor-btvirt /usr/local/bin/btvirt -l2
@@ -849,6 +926,7 @@ for i in $(seq 50); do btmgmt --index 1 info >/dev/null 2>&1 && break; sleep 0.1
 rm -f /run/thor-bt-device
 systemd-run --quiet --collect --unit=thor-bt-device python3 /mnt/thor/tools/vm/vm-bt-device.py
 for i in $(seq 50); do grep -q waiting /run/thor-bt-device 2>/dev/null && break; sleep 0.1; done
+systemctl unmask --runtime --quiet bluetooth.service
 systemctl start bluetooth
 for i in $(seq 100); do grep -q ready /run/thor-bt-device 2>/dev/null && break; sleep 0.1; done
 journalctl -u thor-bt-device -b -o cat | tail -1

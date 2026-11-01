@@ -161,6 +161,11 @@ mod tests {
         assert_eq!(parse("tap tray-entry 6"), Ok(activate(Id::Dock(DockId::TrayEntry(6)))));
         assert_eq!(parse("tap dock-step right"), Ok(activate(Id::Dock(DockId::Step(clamshell_state::keymap::Dir::Right)))));
         assert_eq!(parse("tap launch"), Ok(activate(Id::LibraryView(LibraryViewId::Launch))));
+        assert_eq!(parse("tap setup-password"), Ok(activate(Id::Setup(clamshell_state::SetupId::Password))));
+        assert_eq!(parse("tap setup-next"), Ok(activate(Id::Setup(clamshell_state::SetupId::Next))));
+        assert_eq!(parse("tap account-password"), Ok(activate(Id::Device(clamshell_state::DeviceId::Password))));
+        assert_eq!(parse("tap remote-login"), Ok(activate(Id::Device(clamshell_state::DeviceId::Ssh))));
+        assert_eq!(parse("tap device-close"), Ok(activate(Id::Device(clamshell_state::DeviceId::Close))));
         assert_eq!(parse("tap collection 1"), Ok(activate(Id::LibraryView(LibraryViewId::Collection(1)))));
         assert_eq!(parse("tap up"), Ok(activate(Id::LibraryView(LibraryViewId::Up))));
         assert_eq!(

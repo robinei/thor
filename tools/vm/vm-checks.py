@@ -41,6 +41,12 @@ CONFIG = f"{CHECKS_DIR}/config/clamshell"
 DATA = f"{CHECKS_DIR}/data/clamshell"
 BACKLIGHT = f"{CHECKS_DIR}/backlight/panel"
 DROP_IN = "$XDG_RUNTIME_DIR/systemd/user/clamshell.service.d/thor-checks.conf"
+# The account's password while the checks run (thor-system's thor-account: without one ClamShell holds
+# every launch), and the helper's status read as root, as pkexec runs it for the session.
+CHECKS_PASSWORD = "thor-checks-1"
+ACCOUNT = "sudo env PKEXEC_UID=$(id -u) /usr/lib/thor/thor-account"
+# What ClamShell logged at its start in `setup` of not reading the account, if anything.
+AT_START = []
 # PipeWire's null sink, the machine having no audio device, if it isn't there, at half volume.
 NULL_SINK = """wpctl status | grep -q thor-checks-sink || wpctl status | grep -q 'Test sink' || pw-cli create-node adapter \\
     '{ factory.name=support.null-audio-sink node.name=thor-checks-sink node.description="Test sink" media.class=Audio/Sink object.linger=true audio.position=[FL FR] }' > /dev/null 2>&1
@@ -464,8 +470,9 @@ mkdir -p {CONFIG} {DATA} {CHECKS_DIR}/games {BACKLIGHT}
 systemctl --user stop clamshell
 rm -rf {DATA} && mkdir -p {DATA}
 echo '["desktop:foot"]' > {DATA}/dock.json
-# (Set up: not a first start, which would show Setup over the Library.)
+# (Set up: not a first start, which would show Setup over the Library; and a password, as Setup sets.)
 echo '{{"done": true}}' > {DATA}/first-start.json
+{ACCOUNT} status | grep -qx 'password set' || echo 'thor:{CHECKS_PASSWORD}' | sudo chpasswd
 cat > {CONFIG}/library.json <<'EOF'
 {LIBRARY}EOF
 touch {CHECKS_DIR}/games/test.game {CHECKS_DIR}/games/zeta.game {" ".join(f"{CHECKS_DIR}/games/zulu{i:02}.game" for i in range(1, 15))}
@@ -488,6 +495,20 @@ systemctl --user restart clamshell
     if not until(lambda: sh("systemctl --user is-active clamshell").strip() == "active" and front() == "the Library", 15):
         sys.exit("ClamShell didn't start")
     time.sleep(1)
+    # ClamShell, a user service outside any login session, is polkit's "active local session" through
+    # logind's session for the user: when that isn't the console's (seen while the console's login was
+    # being replaced, ssh sessions open), pkexec is refused, and the account unread shows Setup and holds
+    # every launch until it is read again. Said by session_units, and ClamShell started again so that
+    # the other checks can run.
+    global AT_START
+    lines = journal(since).splitlines()
+    last = max((i for i, line in enumerate(lines) if "Starting ClamShell" in line), default=0)
+    AT_START = [line for line in lines[last:] if "account: " in line]
+    if AT_START:
+        print(f"  (ClamShell started without reading the account, started again: {AT_START[-1]})")
+        sh("systemctl --user restart clamshell")
+        until(lambda: sh("systemctl --user is-active clamshell").strip() == "active", 15)
+        time.sleep(2)
     return since
 
 
@@ -1565,6 +1586,86 @@ class Checks:
         self.check("  its process moved into a scope of ours", until(lambda: f"clamshell-run-{FOOT_KEY}-" in cgroup(), 5), f"{cgroup()!r}; {adopt(since)}")
         sh("pkill -x foot || true")
 
+    # the device's account and system (thor-system's helper, polkit rule and udev rule, as installed)
+
+    def _open_device_view(self):
+        """The Device view, from the Library's Tools tab (its builtin:device entry)."""
+        for place in range(8):
+            control(f"tap collection {place}")
+            if until(lambda: collection() == "Tools", 3):
+                break
+        control("list -1000")
+        for _ in range(10):
+            if selection() == "builtin:device":
+                control("tap launch")
+                return True
+            control("list 1")
+        return self.check("the Library: the Device view's entry selected", False, f"collection {collection()!r}, selection {selection()!r}")
+
+    def account(self):
+        """The account as on the device, through thor-system's helper (pkexec, its polkit rule) and
+        ClamShell's Setup and Device view. A locked account (the image's) holds the user's launches; the
+        password typed twice in Setup is set, and then they run; Remote login is turned off and on again
+        (sshd, the checks' way in, is started again by a timer meanwhile). And the power group (thor-system's
+        udev rule) writes a CPU's online, as ClamShell does the device's caps."""
+        try:
+            self._account()
+        finally:
+            # (The Library as the other checks expect it: the Test tab, its first game selected.)
+            control("tap device-close")
+            self._select_test_game()
+
+    def _account(self):
+        status = lambda: sh(f"{ACCOUNT} status").split()
+        sh("sudo usermod -p '!' thor")
+        self.check("account: locked, the helper reads no password", status()[:2] == ["password", "none"], " ".join(status()))
+        sh("systemctl --user restart clamshell")
+        until(lambda: sh("systemctl --user is-active clamshell").strip() == "active", 15)
+        time.sleep(2)
+        before = units("run-")
+        control("tap launch")
+        time.sleep(2)
+        self.check("  nothing of the user's is launched meanwhile", units("run-") == before, f"{before} -> {units('run-')}")
+        since = now()
+        for line in ("tap setup-password", f"type {CHECKS_PASSWORD}", "tap save", f"type {CHECKS_PASSWORD}", "tap save"):
+            control(line)
+        self.check("  Setup's password set through pkexec and the helper", until(lambda: status()[:2] == ["password", "set"], 15),
+                   " ".join(status()) + " " + journal(since)[-600:])
+        typed_ok = sh(f"printf '%s\\0' {CHECKS_PASSWORD} | sudo runuser -u thor -- /usr/bin/unix_chkpwd thor nonull && echo ok").strip()
+        self.check("  the account's password is the one typed", typed_ok == "ok", typed_ok)
+        control("tap setup-next")
+        control("tap setup-next")
+        self.check("  then a launch runs", self._launch_test_game() is not None, f"units {units('run-')}")
+        sh("systemctl --user stop 'clamshell-run-*' 'app-graphical-clamshell-run-*' 2>/dev/null || true")
+        until(lambda: front() == "the Library", 5)
+
+        ssh_state = lambda: sh("systemctl is-enabled sshd; systemctl is-active sshd").split()
+        self.check("Remote login: on, as the checks reach the machine", ssh_state() == ["enabled", "active"], " ".join(ssh_state()))
+        if self._open_device_view() is not True:
+            return
+        time.sleep(1)
+        since = now()
+        # (The checks' way in back in 20 s, as Remote login off stops sshd.)
+        sh("sudo systemd-run --quiet --collect --unit=thor-checks-sshd --on-active=20 systemctl start sshd")
+        control("tap remote-login")
+        time.sleep(22)
+        until(lambda: subprocess.run(vm.ssh_args(["true"], quiet=True), capture_output=True).returncode == 0, 60, 2)
+        self.check("  off from the Device view: sshd disabled", ssh_state()[:1] == ["disabled"],
+                   " ".join(ssh_state()) + " " + journal(since)[-400:])
+        control("tap remote-login")
+        self.check("  and on again: sshd enabled and running", until(lambda: ssh_state() == ["enabled", "active"], 15),
+                   " ".join(ssh_state()) + " " + journal(since)[-400:])
+
+        online = "/sys/devices/system/cpu/cpu1/online"
+        sh("sudo udevadm trigger --action=change --subsystem-match=cpu --settle")
+        mode = sh(f"stat -c '%G %A' {online}").split()
+        self.check("power group: udev's rule gives it a CPU's online", len(mode) == 2 and mode[0] == "power" and mode[1][5] == "w", " ".join(mode))
+        wrote = sh(f"echo 1 > {online} && echo ok").strip()
+        self.check("  the session's user writes it", wrote == "ok", wrote)
+        groups = sh("grep '^Groups:' /proc/$(systemctl --user show -P MainPID clamshell)/status").split()[1:]
+        power = sh("getent group power | cut -d: -f3").strip()
+        self.check("  and ClamShell runs in the group", power in groups, f"power {power}, ClamShell's groups {groups}")
+
     def session_units(self):
         """The session as systemd sees it: the displays given to the user manager for its services, the
         status line, and the compositor's own tapping on ClamShell's touchpad."""
@@ -1574,6 +1675,8 @@ class Checks:
         status = sh("systemctl --user show -P StatusText clamshell").strip()
         self.check("  systemctl status says what runs", "running" in status and "windows" in status, repr(status))
         self.check("  the compositor taps and drags on ClamShell's touchpad", "ClamShell's touchpad taps and drags" in sh("journalctl --user -b -u clamshell -o cat --no-pager"))
+        self.check("  the account read at its start (pkexec, thor-system's polkit rule)", not AT_START,
+                   " ".join(AT_START)[-300:])
 
     def tray_program(self):
         """A program with a tray icon, started outside ClamShell (an app scope): an entry found by it, its
@@ -1826,7 +1929,7 @@ GLib.MainLoop().run()
 CHECKS = ["session_units", "library_view_scroll", "bar_tap", "time_zone", "volume_hold", "volume_slide", "brightness_slide", "two_fingers", "wifi_forget", "wifi_scroll", "touchpad", "keyboard_points", "window_rules", "ui_scanout", "screen_changes", "frame_schedule", "external_display", "pad_windows",
           "pad_library_view", "pad_view", "pad_mouse", "pad_typing", "pad_held_key", "pad_unplug", "pad_guide", "keymaps", "keymap_layers",
           "keymap_actuations", "rumble", "launch_and_quit", "pause_hidden", "found_window", "tray_program", "clipboard", "portal",
-          "bluetooth", "gyro_sleep"]
+          "bluetooth", "account", "gyro_sleep"]
 # Checks run only when named.
 OPT_IN = ["soak", "faults"]
 

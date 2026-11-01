@@ -9,8 +9,8 @@ use clamshell_state::levels::Level;
 use clamshell_state::profiles::picker::{Kind, ProfileId};
 use clamshell_state::settings::Setting;
 use clamshell_state::{
-    BtId, DockId, EditorId, Event, Id, KeymapId, LevelEvent, LibraryViewEvent, LibraryViewId, ListId, PadInput, PointerEvent, RowPart, SettingsId, Slide, Tab,
-    Target, WifiId,
+    BtId, DeviceId, DockId, EditorId, Event, Id, KeymapId, LevelEvent, LibraryViewEvent, LibraryViewId, ListId, PadInput, PointerEvent, RowPart, SettingsId,
+    SetupId, Slide, Tab, Target, WifiId,
 };
 use clamshell_state::{ClockField, SettingsLevel, TimeId};
 
@@ -145,6 +145,11 @@ pub const TARGETS: &[Form<Id>] = &[
     }),
     form("dock-done", "moving a dock entry: done", |_| Ok(Id::Dock(DockId::Done))),
     form("launch", "the Library's launch", |_| Ok(Id::LibraryView(LibraryViewId::Launch))),
+    form("setup-password", "Setup's password: its editor on the keyboard", |_| Ok(Id::Setup(SetupId::Password))),
+    form("setup-next", "Setup's Next (Done on its last step)", |_| Ok(Id::Setup(SetupId::Next))),
+    form("account-password", "the Device view's Password: its editor (the current password first, when there is one)", |_| Ok(Id::Device(DeviceId::Password))),
+    form("remote-login", "the Device view's Remote login switch", |_| Ok(Id::Device(DeviceId::Ssh))),
+    form("device-close", "the Device view's way back to the Library", |_| Ok(Id::Device(DeviceId::Close))),
     form("enqueue", "the Library's Enqueue (added to what its runner plays, else played)", |_| Ok(Id::LibraryView(LibraryViewId::Enqueue))),
     form("up", "out of the Library's open group", |_| Ok(Id::LibraryView(LibraryViewId::Up))),
     form("choose", "a pick's Choose, on the Library's selection", |_| Ok(Id::LibraryView(LibraryViewId::Choose))),

@@ -761,7 +761,9 @@ From the review of 2026-10-21 (what Armada, ROCKNIX, Thorch and Kettle do, taken
 - [ ] ClamShell runs as a user service, in no logind session of its own: polkit's and logind's "the user's
       active session" has to resolve to tty1's autologin for these to work: the Device view setting a
       password (pkexec, polkit's `subject.active`), the brightness slider (logind's SetBrightness), sleep
-      from its menu (logind's Suspend). Try each.
+      from its menu (logind's Suspend). Try each. (The VM's `account` check passes the password and
+      Remote login through pkexec this way; there, a ClamShell started while the console's login was
+      being replaced, ssh sessions open, had pkexec refused: see the VM's `session_units`.)
 - [ ] The first device installed from an image made before thor-system had 10-thor-keep-modules.hook
       (none so far): its first kernel update can't keep the running kernel's modules (pacman reads
       pre-transaction hooks before installing the package that brings them): reboot right after it.

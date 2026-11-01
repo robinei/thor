@@ -233,8 +233,9 @@ rules and launch context.
 - `tools/vm/vm-test.sh`: the VM suite end to end, about twenty minutes, for what nothing else can check.
   The virtual Thor is `tools/vm/vm.py` (QEMU/KVM, both screens, a fake controller with a gyro and rumble,
   simulated Wi-Fi and Bluetooth; `tools/vm/vm.py --help`), and its checks `tools/vm/vm-checks.py`
-  (`--list`). Its session is the device's, `clamshell.service` (the VM's build, `CLAMSHELL_DEVICE=vm`)
-  started by the repository's thor-session: `vm.py restart` ends it for the autologin to start again, and
+  (`--list`). Its system and session are the device's: thor-system and thor-session, built from the working
+  tree and installed with pacman (what differs, and why: `PACKAGED` in vm.py), around `clamshell.service`
+  (the VM's build, `CLAMSHELL_DEVICE=vm`) started by thor-session: `vm.py restart` ends it for the autologin to start again, and
   as the device's session it sleeps when idle (`vm.py wake`). Each run's output and the machine's log are
   kept in `~/.local/state/thor/vm-runs/`.
 
