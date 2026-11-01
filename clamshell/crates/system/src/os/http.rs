@@ -9,18 +9,29 @@ use crate::os::{command, fs};
 
 /// The body of a GET of `url`, following redirects, if the answer is 2xx. The URL and the headers go to
 /// curl on its stdin as a config (`-K -`), because they may hold an API key and anyone can read a command
-/// line in /proc.
+/// line in /proc. Only HTTPS is fetched, redirects included: image URLs come in the services' answers, and
+/// one naming `file://` or another protocol curl knows would read a local file into the art cache or
+/// reach a service on the network.
 pub(crate) fn get(url: &str, headers: &[&str]) -> Option<Vec<u8>> {
+    if !url.starts_with("https://") {
+        log::warn!("{}: not an HTTPS address: not fetched", shown(url));
+        return None;
+    }
     let mut config = format!("url = {}\n", quoted(url));
     for h in headers {
         config.push_str(&format!("header = {}\n", quoted(h)));
     }
-    let out = command::run("curl", &["-sfL", "--max-time", "30", "--max-filesize", "64M", "-A", "ClamShell", "-K", "-"], Some(config.as_bytes()), CURL_LIMIT)
-        .inspect_err(|e| {
-            log::warn!("{}: {e}", shown(url));
-            network_failed();
-        })
-        .ok()?;
+    let out = command::run(
+        "curl",
+        &["-sfL", "--proto", "=https", "--proto-redir", "=https", "--max-time", "30", "--max-filesize", "64M", "-A", "ClamShell", "-K", "-"],
+        Some(config.as_bytes()),
+        CURL_LIMIT,
+    )
+    .inspect_err(|e| {
+        log::warn!("{}: {e}", shown(url));
+        network_failed();
+    })
+    .ok()?;
     if !out.status.success() {
         log::debug!("{}: curl {}", shown(url), out.status);
         // 22: the server answered with an error, such as not found. Anything else is the way there.
@@ -129,8 +140,19 @@ mod tests {
     #[test]
     fn a_get_that_cant_connect_is_a_network_failure() {
         let before = network_failures();
-        assert_eq!(get("http://127.0.0.1:9/", &[]), None);
+        assert_eq!(get("https://127.0.0.1:9/", &[]), None);
         assert_eq!(network_failures(), before + 1);
+    }
+
+    /// Only HTTPS is fetched: an address from a service's answer naming a file or another protocol is
+    /// refused, and isn't a network failure.
+    #[test]
+    fn only_https_is_fetched() {
+        let before = network_failures();
+        for url in ["file:///etc/hostname", "http://127.0.0.1:9/", "gopher://127.0.0.1/", "dict://127.0.0.1/"] {
+            assert_eq!(get(url, &[]), None, "{url}");
+        }
+        assert_eq!(network_failures(), before);
     }
 
     #[test]
