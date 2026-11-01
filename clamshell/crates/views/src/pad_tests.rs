@@ -440,3 +440,24 @@ fn the_pad_reaches_notifications_and_not_what_they_cover() {
     let below = core.state().pointer().focus().cloned();
     assert!(matches!(below, Some(Id::Settings(SettingsId::Tile(_)))), "a tile, not the scope tabs the notification covers: {below:?}");
 }
+
+/// The Device view at the Thor's size: its rows end inside the screen, clear of its edge, and the two
+/// columns keep a gap between them.
+#[test]
+fn the_device_view_fits_the_screen() {
+    use clamshell_state::DeviceId;
+    let account = clamshell_state::setup::account::Account::NoHelper;
+    let mut s = State::new(Init { library: Some(clamshell_library::demo::library()), account, ..Init::default() });
+    s.apply(Event::Entry("builtin:device".into(), clamshell_state::EntryAct::Play), &mut Vec::new());
+    let (w, h) = (1920.0, 1080.0);
+    let drawn = clamshell_ui::PadFrames::new(crate::VIEWS, (1920, 1080), (1240, 1080)).record(&s).drawn(Screen::Top);
+    let rect = |id: DeviceId| drawn.iter().find(|t| t.id == Id::Device(id)).map(|t| t.rect).expect("drawn");
+    for t in &drawn {
+        let [x, y, tw, th] = t.rect;
+        assert!(x >= 0.0 && y >= 0.0 && x + tw <= w && y + th <= h, "{:?} within the screen: {:?}", t.id, t.rect);
+    }
+    let close = rect(DeviceId::Close);
+    assert!(close[1] + close[3] <= h - 20.0, "Close clear of the screen's edge: {close:?}");
+    let (left, players) = (rect(DeviceId::Zone), rect(DeviceId::Players));
+    assert!(left[0] + left[2] + 10.0 <= players[0], "a gutter between the columns: {left:?}, {players:?}");
+}

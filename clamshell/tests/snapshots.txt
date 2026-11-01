@@ -13,11 +13,11 @@ curve-edit-slider.png 29f09258ad1e9a1a
 curve-edit.png 9d61a32d0849cbd8
 curves-reset.png 39ecce4355e50e2e
 curves.png 56a8a5c36e131bea
-device-controllers.png b7d8bdd0ca2b306f
+device-controllers.png 62fdd4def1fee553
 device-password.png f2099c1709c24a7a
-device-sticks.png e346e711a2db8089
-device-unavailable.png 34542f4e5177e22a
-device.png 45352a1558a31f05
+device-sticks.png dad79e33b9c10294
+device-unavailable.png 16390380417095b2
+device.png a20edc3a67a63a65
 dock-menu.png 6618bd0c09a9017e
 keyboard-back.png b4f19cea39f5673c
 keyboard-caps.png db65fb51c99f4de9

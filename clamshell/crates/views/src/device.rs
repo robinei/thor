@@ -24,10 +24,14 @@ use clamshell_ui::toolkit::style::{self, Look, SURFACE_HI, Text, Tone};
 use clamshell_ui::toolkit::widgets;
 use clamshell_ui::toolkit::{Frame, PadMove, PadUse};
 
-/// A row's height as a fraction of the screen's height, and the rows' column width as a fraction of its
-/// width.
+/// A row's height as a fraction of the screen's height, at most, and the rows' column width as a fraction
+/// of its width. The left column's rows, with the gaps between their groups, count [`ROWS`] rows; they
+/// are made smaller when that many don't fit.
 const ROW_H: f32 = 0.085;
 const ROWS_W: f32 = 0.5;
+const ROWS: f32 = 9.0 + 3.0 * GAP;
+/// The gap between groups of rows, as a fraction of a row.
+const GAP: f32 = 0.3;
 /// A stick's circle as a fraction of the right half's width, and the dot's radius as a fraction of the
 /// circle's.
 const STICK: f32 = 0.36;
@@ -44,8 +48,11 @@ pub(super) fn app(f: &mut Frame, screen: Rect) {
     f.c.text_fit(area.top_line(heading), heading, Tone::Normal, "Device", Keep::Start);
     let top = heading * 1.5 + small * 2.2;
     let mut right = Rect::new(area.x, area.y + top, area.w, area.h - top);
-    let rows = right.take_left(area.w * ROWS_W);
-    let row_h = screen.h * ROW_H;
+    let mut rows = right.take_left(area.w * ROWS_W);
+    // A gutter between the two columns, as the settings have, so their texts don't run together.
+    rows.take_right(pad);
+    right.take_left(pad);
+    let row_h = (screen.h * ROW_H).min(rows.h / ROWS);
     let mut col = Column::new(rows);
 
     // Wi-Fi: the joined network, by name once the Wi-Fi tab has read it.
@@ -83,7 +90,7 @@ pub(super) fn app(f: &mut Frame, screen: Rect) {
     }
 
     // The controller and the screen.
-    col.skip(row_h * 0.3);
+    col.skip(row_h * GAP);
     let sticks = col.take(row_h);
     let value = match (device.sticks(), device.sticks_failed(), device.calibrations().is_empty()) {
         (Some(_), _, _) => "Calibrating",
@@ -105,11 +112,11 @@ pub(super) fn app(f: &mut Frame, screen: Rect) {
     f.button(Id::Device(DeviceId::Refresh), refresh, Look::ROW, |f| widgets::value_row(f, refresh, size, "Top screen's refresh", &value, ok));
 
     // The library's tabs, folders, sources and runners, edited in the Library.
-    col.skip(row_h * 0.3);
+    col.skip(row_h * GAP);
     let library = col.take(row_h);
     f.button(Id::Device(DeviceId::EditLibrary), library, Look::ROW, |f| widgets::value_row(f, library, size, "Library", "Edit", true));
 
-    col.skip(row_h * 0.3);
+    col.skip(row_h * GAP);
     let end = col.take(row_h);
     let inner = Rect::new(end.x + size * 0.4, end.y, end.w - size * 0.8, end.h);
     f.back(Id::Device(DeviceId::Close));
