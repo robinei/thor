@@ -6,7 +6,7 @@ use std::io::{self, Write};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
-use super::ops::{free_name, name_of};
+use super::ops::{move_to_free, name_of};
 use crate::os::fs::stays_below;
 use crate::os::{sys, text};
 
@@ -114,8 +114,7 @@ pub(super) fn restore(path: &Path) -> Result<PathBuf, String> {
     }
     let parent = to.parent().ok_or_else(|| format!("{name}: no folder to go back to"))?.to_path_buf();
     fs::create_dir_all(&parent).map_err(|e| format!("{}: {e}", parent.display()))?;
-    let to = free_name(&parent, &name_of(&to));
-    fs::rename(path, &to).map_err(|e| format!("Restoring {name}: {e}"))?;
+    let to = move_to_free(path, &parent, &name_of(&to)).map_err(|e| format!("Restoring {name}: {e}"))?;
     if let Err(e) = fs::remove_file(&info) {
         log::warn!("trash: removing {}: {e}", info.display());
     }

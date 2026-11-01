@@ -48,11 +48,11 @@ fn run(op: &FileOp, data_home: Option<&Path>, sink: &impl Sink) -> Result<String
     match op {
         FileOp::Rename { path, name } => {
             let to = path.with_file_name(name);
-            if to.symlink_metadata().is_ok() {
-                return Err(format!("{name} is there already"));
+            match rename_new(path, &to) {
+                Ok(()) => Ok(format!("Renamed to {name}")),
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Err(format!("{name} is there already")),
+                Err(e) => Err(failed("Renaming", path, &e)),
             }
-            fs::rename(path, &to).map_err(|e| failed("Renaming", path, &e))?;
-            Ok(format!("Renamed to {name}"))
         }
         FileOp::NewFolder { dir, name } => {
             fs::create_dir(dir.join(name)).map_err(|e| failed("Making", &dir.join(name), &e))?;
@@ -142,6 +142,39 @@ pub(super) fn free_name(dir: &Path, name: &str) -> PathBuf {
     path
 }
 
+/// Renames `from` to `to`, which must not exist: one that appears meanwhile, made by another program, is
+/// never replaced (`AlreadyExists`). A filesystem that can't rename so (some FUSE ones) gets a plain
+/// rename after a look.
+fn rename_new(from: &Path, to: &Path) -> io::Result<()> {
+    use rustix::fs::{CWD, RenameFlags, renameat_with};
+    match renameat_with(CWD, from, CWD, to, RenameFlags::NOREPLACE) {
+        Ok(()) => Ok(()),
+        Err(rustix::io::Errno::INVAL | rustix::io::Errno::NOSYS) => {
+            log::debug!("files: {}: no rename without replacing here: renamed after a look", to.display());
+            if to.symlink_metadata().is_ok() {
+                return Err(io::ErrorKind::AlreadyExists.into());
+            }
+            fs::rename(from, to)
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Moves `from` into `dir` under a free name for `name` ([`free_name`]), never replacing what appears
+/// meanwhile: the next free name is taken then. Returns where it went.
+pub(super) fn move_to_free(from: &Path, dir: &Path, name: &str) -> io::Result<PathBuf> {
+    // A bound, in case the folder keeps filling as fast.
+    for _ in 0..100 {
+        let to = free_name(dir, name);
+        match rename_new(from, &to) {
+            Ok(()) => return Ok(to),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Err(io::ErrorKind::AlreadyExists.into())
+}
+
 /// Copies `path` into `into`, or moves it if `cut`, under a free name. A copy's progress is sent.
 fn paste(path: &Path, into: &Path, cut: bool, sink: &impl Sink) -> Result<String, String> {
     let name = name_of(path);
@@ -154,17 +187,17 @@ fn paste(path: &Path, into: &Path, cut: bool, sink: &impl Sink) -> Result<String
     if cut && path.parent() == Some(into) {
         return Ok(format!("{name} is there already"));
     }
-    let to = free_name(into, &name);
     if cut {
         // Across filesystems a move is a copy, then the original removed; any other failure is the move's.
-        match fs::rename(path, &to) {
-            Ok(()) => return Ok(format!("Moved {name}")),
+        match move_to_free(path, into, &name) {
+            Ok(_) => return Ok(format!("Moved {name}")),
             Err(e) if e.kind() == io::ErrorKind::CrossesDevices => {
-                log::debug!("files: renaming {} to {}: {e}: copying it", path.display(), to.display());
+                log::debug!("files: moving {} into {}: {e}: copying it", path.display(), into.display());
             }
             Err(e) => return Err(format!("Moving {name}: {e}")),
         }
     }
+    let to = free_name(into, &name);
     let mut progress =
         Progress { what: format!("{} {name}", if cut { "Moving" } else { "Copying" }), total: size(path).max(1), done: 0, last: Instant::now(), sink };
     if let Err(e) = copy(path, &to, &mut progress) {
@@ -392,6 +425,26 @@ mod tests {
         fs::create_dir(dir.join("to")).unwrap();
         assert_eq!(paste(&dir.join("games"), &dir.join("to"), false, &tx).unwrap(), "Copied games");
         assert!(dir.join("to/games/sub").is_dir() && dir.join("to/games/pipe").symlink_metadata().is_err());
+    }
+
+    /// A rename or a move never replaces what is there, also what appeared after the name was looked at:
+    /// a rename is refused, a move takes the next free name.
+    #[test]
+    fn renames_and_moves_never_replace() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("a.txt"), "a").unwrap();
+        fs::write(dir.join("b.txt"), "b").unwrap();
+        assert_eq!(rename_new(&dir.join("a.txt"), &dir.join("b.txt")).unwrap_err().kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read_to_string(dir.join("b.txt")).unwrap(), "b", "kept");
+        fs::create_dir(dir.join("to")).unwrap();
+        fs::write(dir.join("to/a.txt"), "there").unwrap();
+        assert_eq!(move_to_free(&dir.join("a.txt"), &dir.join("to"), "a.txt").unwrap(), dir.join("to/a (2).txt"));
+        assert_eq!(fs::read_to_string(dir.join("to/a.txt")).unwrap(), "there");
+        let (tx, _rx) = mpsc::channel();
+        fs::write(dir.join("c.txt"), "c").unwrap();
+        assert_eq!(run(&FileOp::Rename { path: dir.join("b.txt"), name: "c.txt".into() }, None, &tx), Err("c.txt is there already".into()));
+        assert_eq!(fs::read_to_string(dir.join("c.txt")).unwrap(), "c");
     }
 
     #[test]
