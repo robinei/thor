@@ -157,7 +157,7 @@ impl Screen {
             part,
             size: Size::from((i32::from(w), i32::from(h))),
             transform,
-            interval: Duration::from_micros(1_000_000 / u64::from(mode.vrefresh().max(1))),
+            interval: period(&mode),
             dirty: true,
             answered: 0,
             drawn_commits: 0,
@@ -276,6 +276,76 @@ fn next_shown(flipped: Option<Duration>, interval: Duration, pending: bool, now:
     if pending { next + interval } else { next }
 }
 
+/// A mode's timing, from which its refresh is worked out.
+#[derive(Debug, Clone, Copy)]
+struct ModeTiming {
+    /// The pixel clock, in kHz.
+    clock: u32,
+    /// Pixels a line and lines a frame, blanking included.
+    htotal: u16,
+    vtotal: u16,
+    interlaced: bool,
+    doublescan: bool,
+    /// Times each line is scanned (0 or 1: once).
+    vscan: u16,
+}
+
+impl ModeTiming {
+    fn of(mode: &smithay::reexports::drm::control::Mode) -> ModeTiming {
+        use smithay::reexports::drm::control::ModeFlags;
+        ModeTiming {
+            clock: mode.clock(),
+            htotal: mode.hsync().2,
+            vtotal: mode.vsync().2,
+            interlaced: mode.flags().contains(ModeFlags::INTERLACE),
+            doublescan: mode.flags().contains(ModeFlags::DBLSCAN),
+            vscan: mode.vscan(),
+        }
+    }
+
+    /// Its frame's length in nanoseconds and its pixel clock in Hz, as the kernel works out the refresh
+    /// (`drm_mode_vrefresh`); None for a mode without a clock or a size.
+    fn ratio(self) -> Option<(u64, u64)> {
+        let mut pixels = u64::from(self.htotal) * u64::from(self.vtotal);
+        if self.doublescan {
+            pixels *= 2;
+        }
+        if self.vscan > 1 {
+            pixels *= u64::from(self.vscan);
+        }
+        let hz = u64::from(self.clock) * 1000 * if self.interlaced { 2 } else { 1 };
+        (pixels > 0 && hz > 0).then_some((pixels, hz))
+    }
+
+    /// How long its frame is shown, to the nanosecond: the kernel's whole hertz (`vrefresh`) would take
+    /// 59.94 Hz as 60, a millisecond a second off.
+    fn period(self) -> Option<Duration> {
+        let (pixels, hz) = self.ratio()?;
+        Some(Duration::from_nanos(u64::try_from(u128::from(pixels) * 1_000_000_000 / u128::from(hz)).unwrap_or(u64::MAX)))
+    }
+
+    /// Its refresh in mHz, rounded.
+    fn millihertz(self) -> Option<i32> {
+        let (pixels, hz) = self.ratio()?;
+        i32::try_from((u128::from(hz) * 1000 + u128::from(pixels) / 2) / u128::from(pixels)).ok()
+    }
+}
+
+/// How long a frame of `mode` is shown (see [`ModeTiming::period`]); from its whole hertz for a mode without
+/// its timing, which no screen should have.
+fn period(mode: &smithay::reexports::drm::control::Mode) -> Duration {
+    ModeTiming::of(mode).period().unwrap_or_else(|| {
+        log::warn!("drm: a mode without its timing ({mode:?}): its refresh taken as {} Hz", mode.vrefresh());
+        Duration::from_micros(1_000_000 / u64::from(mode.vrefresh().max(1)))
+    })
+}
+
+/// `mode`'s refresh in mHz, as clients are told it (see [`ModeTiming::millihertz`]); from its whole hertz
+/// for a mode without its timing.
+fn millihertz(mode: &smithay::reexports::drm::control::Mode) -> i32 {
+    ModeTiming::of(mode).millihertz().unwrap_or_else(|| i32::try_from(mode.vrefresh()).unwrap_or(60).saturating_mul(1000))
+}
+
 /// What drawing needs, shared by the loop's sources.
 struct Drawing {
     handle: crate::frame_timing::LoopAccess,
@@ -379,7 +449,7 @@ pub fn run(
     log::info!("drm: the screens' millimetres {:?} (connector {:?}, {:?})", server.screens.millimetres, top.millimetres, bottom_millimetres);
     // No host window takes the focus away: pointer capture is always possible.
     server.pointer.host_focused = true;
-    server.screens.refresh = i32::try_from(top.mode.vrefresh()).unwrap_or(60).saturating_mul(1000);
+    server.screens.refresh = millihertz(&top.mode);
     server.resize(server.screens.size);
     server.advertise_dmabuf(&renderer);
     // Explicit sync, where the GPU can wait on a timeline point by an eventfd; without it, clients' buffers
@@ -985,7 +1055,7 @@ fn outputs(drawing: &mut Drawing, server: &mut Server) {
                         screen.hw_clock = false;
                         screen.flipped = None;
                         screen.needs_compose = true;
-                        screen.interval = Duration::from_micros(1_000_000 / u64::from(mode.vrefresh().max(1)));
+                        screen.interval = period(&mode);
                         screen.dirty = true;
                     }
                     Err(error) => log::warn!("drm: top screen at {} Hz: {error}", mode.vrefresh()),
@@ -1323,6 +1393,24 @@ mod tests {
         let (top, bottom) = (Size::from((1920, 1080)), Size::from((1240, 1080)));
         assert_eq!(area(ScreenRole::Top, top, bottom), Rectangle::from_size(Size::from((1920.0, 1080.0))));
         assert_eq!(area(ScreenRole::Bottom, top, bottom), Rectangle::new((1920.0, 0.0).into(), Size::from((1240.0, 1080.0))));
+    }
+
+    /// A mode's refresh to the nanosecond, from its clock and totals, not the kernel's whole hertz: CEA's
+    /// 1080p at 59.94 Hz and at 60, interlaced, scanned twice.
+    #[test]
+    fn a_modes_period_and_refresh_come_from_its_clock_not_its_whole_hertz() {
+        let p1080 = ModeTiming { clock: 148_352, htotal: 2200, vtotal: 1125, interlaced: false, doublescan: false, vscan: 0 };
+        assert_eq!(p1080.period(), Some(Duration::from_nanos(16_683_293)), "59.94 Hz, not 16 667 us");
+        assert_eq!(p1080.millihertz(), Some(59_940));
+        let p60 = ModeTiming { clock: 148_500, ..p1080 };
+        assert_eq!(p60.period(), Some(Duration::from_nanos(16_666_666)));
+        assert_eq!(p60.millihertz(), Some(60_000));
+        assert_eq!(ModeTiming { interlaced: true, ..p60 }.millihertz(), Some(120_000), "a field each half");
+        assert_eq!(ModeTiming { doublescan: true, ..p60 }.millihertz(), Some(30_000));
+        assert_eq!(ModeTiming { vscan: 2, ..p60 }.millihertz(), Some(30_000));
+        assert_eq!(ModeTiming { vscan: 1, ..p60 }.millihertz(), Some(60_000), "once");
+        assert_eq!(ModeTiming { clock: 0, ..p60 }.period(), None);
+        assert_eq!(ModeTiming { vtotal: 0, ..p60 }.millihertz(), None);
     }
 
     #[test]

@@ -124,7 +124,7 @@ pub(super) fn panel_hz(wanted: u16, mirror: Option<u32>, mut rates: impl Iterato
 /// Tells clients the refresh of the screen pacing the top screen's windows, when it changes.
 pub(super) fn tell_refresh(drawing: &Drawing, server: &mut Server) {
     let Some(pacer) = drawing.screens.iter().find(|screen| screen.paces && !screen.down()) else { return };
-    let refresh = i32::try_from(pacer.surface.pending_mode().vrefresh()).unwrap_or(60).saturating_mul(1000);
+    let refresh = millihertz(&pacer.surface.pending_mode());
     if refresh != server.screens.refresh {
         server.screens.refresh = refresh;
         server.resize(server.screens.size);

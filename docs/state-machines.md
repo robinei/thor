@@ -1380,7 +1380,9 @@ the compositor paces (`a_windows_fps_cap_is_the_one_set_for_its_program`,
 
 A frame is shown, on DRM, at the next refresh after the last flip of the screen pacing it, a refresh later
 if a frame is already queued (`a_frame_is_shown_at_the_next_refresh_after_the_last_flip`); nested, a host
-refresh from now.
+refresh from now. A DRM screen's refresh, and the refresh clients are told, is its mode's pixel clock over
+its totals, not the kernel's whole hertz, so that 59.94 Hz isn't taken as 60
+(`a_modes_period_and_refresh_come_from_its_clock_not_its_whole_hertz`).
 
 Which screen paces a part of the scene's windows is one choice (`drm/external.rs` `pacer`): an external
 display showing it while one is connected, else its panel. Only the pacing screen composes that part's
