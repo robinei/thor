@@ -337,7 +337,7 @@ impl Running {
             transport,
             wm: wm::Wm::default(),
             ready_logged: false,
-            deadline: now + Duration::from_secs(5),
+            deadline: now + HUNG,
             stopping: false,
             sources: Vec::new(),
             ready_source: None,
