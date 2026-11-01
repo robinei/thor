@@ -44,11 +44,16 @@ fn to_xyz(primaries: ColourPrimaries) -> Option<Matrix> {
     }
     Some([[rx * r, gx * g, bx * b], [ry * r, gy * g, by * b], [rz * r, gz * g, bz * b]])
 }
-/// Both spaces currently use their declared white directly. Non-D65 white requires adaptation.
+/// How far apart, in millionths of x and of y, two white points can be and still be taken as one: 5e-4, so
+/// that D65 written at another precision (an EDID's ten bits, a host's rounding) is D65.
+const SAME_WHITE: i32 = 500;
+
+/// The matrix from `from`'s primaries to `to`'s. Both spaces use their declared white directly, so their
+/// whites must be the same (within [`SAME_WHITE`]); another white would need adaptation, and gives none.
 pub(crate) fn matrix(from: ColourPrimaries, to: ColourPrimaries) -> Option<Matrix> {
-    let [_, _, _, from_white] = coordinates(from);
-    let [_, _, _, to_white] = coordinates(to);
-    if from_white != to_white {
+    let [_, _, _, (fx, fy)] = coordinates(from);
+    let [_, _, _, (tx, ty)] = coordinates(to);
+    if fx.abs_diff(tx) > SAME_WHITE.unsigned_abs() || fy.abs_diff(ty) > SAME_WHITE.unsigned_abs() {
         return None;
     }
     let inv = inverse(to_xyz(to)?)?;
@@ -145,6 +150,17 @@ mod tests {
             near(value, 1.0);
         }
         assert!(matrix(ColourPrimaries::Custom([(0, 0); 4]), ColourPrimaries::Srgb).is_none());
+    }
+    /// D65 written at another precision (an EDID's ten bits: 0.3125, 0.3291) is D65; another white (D50)
+    /// is refused, as nothing adapts between whites.
+    #[test]
+    fn white_points_match_within_their_precision() {
+        let [r, g, b, _] = ColourPrimaries::Srgb.coordinates();
+        let edid = matrix(ColourPrimaries::Custom([r, g, b, (312500, 329100)]), ColourPrimaries::Bt2020).unwrap();
+        for value in apply(edid, [1.0, 1.0, 1.0]) {
+            assert!((value - 1.0).abs() < 2e-3, "white stays white: {value}");
+        }
+        assert!(matrix(ColourPrimaries::Custom([r, g, b, (345700, 358500)]), ColourPrimaries::Bt2020).is_none());
     }
     #[test]
     fn matching_output_checks_transfer_and_primary_luminance_but_not_mastering_metadata() {
