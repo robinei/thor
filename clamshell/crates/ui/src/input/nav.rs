@@ -34,15 +34,15 @@ const ALONG: f32 = 13.0;
 /// past an edge wins over a wide row further on.
 ///
 /// Up and down may cross to the other screen; left and right stay on the current one. With no current
-/// focus, or a focused item that is no longer drawn, it returns the first target.
-pub fn step(targets: &[NavTarget], current: Option<&Id>, dir: Dir) -> Option<Id> {
-    let Some(from) = current.and_then(|id| targets.iter().find(|t| &t.id == id)) else {
-        return targets.first().map(|t| t.id.clone());
+/// focus, or a focused item that is no longer drawn, it returns the first target. The targets are gone
+/// through twice, so they come as an iterator that can be cloned, and nothing is collected.
+pub fn step(targets: impl Iterator<Item = NavTarget> + Clone, current: Option<&Id>, dir: Dir) -> Option<Id> {
+    let Some(from) = current.and_then(|id| targets.clone().find(|t| &t.id == id)) else {
+        return targets.clone().next().map(|t| t.id);
     };
     let f = from.rect;
     let (fx, fy) = f.center();
     targets
-        .iter()
         .filter(|t| t.id != from.id)
         .filter(|t| matches!(dir, Dir::Up | Dir::Down) || t.screen == from.screen)
         .filter_map(|t| {
@@ -58,8 +58,8 @@ pub fn step(targets: &[NavTarget], current: Option<&Id>, dir: Dir) -> Option<Id>
             beyond.then_some((ALONG * along * along + across * across, t))
         })
         .min_by(|a, b| a.0.total_cmp(&b.0))
-        .map(|(_, t)| t.id.clone())
-        .or_else(|| Some(from.id.clone()))
+        .map(|(_, t)| t.id)
+        .or(Some(from.id))
 }
 
 #[cfg(test)]
@@ -87,31 +87,37 @@ mod tests {
     #[test]
     fn down_walks_the_list_then_crosses_to_the_bottom_screen() {
         let l = layout();
-        let b = step(&l, Some(&Id::LibraryView(LibraryViewId::Entry("a".into()))), Dir::Down);
+        let b = step(l.iter().cloned(), Some(&Id::LibraryView(LibraryViewId::Entry("a".into()))), Dir::Down);
         assert_eq!(b, Some(Id::LibraryView(LibraryViewId::Entry("b".into()))));
-        let bar = step(&l, b.as_ref(), Dir::Down);
+        let bar = step(l.iter().cloned(), b.as_ref(), Dir::Down);
         assert_eq!(bar, Some(Id::Tab(Tab::Settings)));
-        assert_eq!(step(&l, bar.as_ref(), Dir::Down), Some(Id::Settings(SettingsId::Tile(Setting::Power))));
-        assert_eq!(step(&l, bar.as_ref(), Dir::Up), Some(Id::LibraryView(LibraryViewId::Entry("b".into()))));
+        assert_eq!(step(l.iter().cloned(), bar.as_ref(), Dir::Down), Some(Id::Settings(SettingsId::Tile(Setting::Power))));
+        assert_eq!(step(l.iter().cloned(), bar.as_ref(), Dir::Up), Some(Id::LibraryView(LibraryViewId::Entry("b".into()))));
     }
 
     #[test]
     fn sideways_stays_on_the_screen() {
         let l = layout();
-        assert_eq!(step(&l, Some(&Id::LibraryView(LibraryViewId::Entry("a".into()))), Dir::Right), Some(Id::LibraryView(LibraryViewId::Entry("a".into()))));
-        assert_eq!(step(&l, Some(&Id::Tab(Tab::Settings)), Dir::Right), Some(Id::Tab(Tab::Keyboard)));
+        assert_eq!(
+            step(l.iter().cloned(), Some(&Id::LibraryView(LibraryViewId::Entry("a".into()))), Dir::Right),
+            Some(Id::LibraryView(LibraryViewId::Entry("a".into())))
+        );
+        assert_eq!(step(l.iter().cloned(), Some(&Id::Tab(Tab::Settings)), Dir::Right), Some(Id::Tab(Tab::Keyboard)));
     }
 
     #[test]
     fn lost_focus_goes_to_the_first_target() {
-        assert_eq!(step(&layout(), Some(&Id::LibraryView(LibraryViewId::Launch)), Dir::Down), Some(Id::LibraryView(LibraryViewId::Entry("a".into()))));
+        assert_eq!(
+            step(layout().into_iter(), Some(&Id::LibraryView(LibraryViewId::Launch)), Dir::Down),
+            Some(Id::LibraryView(LibraryViewId::Entry("a".into())))
+        );
     }
 
     #[test]
     fn right_goes_to_the_next_in_the_row_not_one_alongside_far_above() {
         use clamshell_state::DockId;
         let r = |x: f32, y: f32, w: f32, h: f32, id: Id| NavTarget { screen: Screen::Bottom, rect: Rect::new(x, y, w, h), id };
-        let l = vec![
+        let l = [
             // The bar: tabs along the top, one just right of the dock icon's left edge.
             r(0.10, 1.0, 0.08, 0.07, Id::Tab(Tab::Settings)),
             r(0.18, 1.0, 0.08, 0.07, Id::Tab(Tab::Dock)),
@@ -119,6 +125,6 @@ mod tests {
             r(0.05, 1.4, 0.12, 0.15, Id::Dock(DockId::Entry(0))),
             r(0.19, 1.4, 0.12, 0.15, Id::Dock(DockId::Entry(1))),
         ];
-        assert_eq!(step(&l, Some(&Id::Dock(DockId::Entry(0))), Dir::Right), Some(Id::Dock(DockId::Entry(1))));
+        assert_eq!(step(l.iter().cloned(), Some(&Id::Dock(DockId::Entry(0))), Dir::Right), Some(Id::Dock(DockId::Entry(1))));
     }
 }

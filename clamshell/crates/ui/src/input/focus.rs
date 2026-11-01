@@ -82,7 +82,7 @@ fn on_overlay(d: &impl Drawn, id: &Id) -> bool {
 
 /// The targets on `screen` the pad may reach: the overlay's, then the screen's that no overlay target
 /// covers (by their middle).
-fn reachable(d: &impl Drawn, screen: Screen) -> impl Iterator<Item = &Target> {
+fn reachable(d: &impl Drawn, screen: Screen) -> impl Iterator<Item = &Target> + Clone {
     let over = d.overlay(screen);
     let covered = move |t: &&Target| over.iter().any(|o| o.rect.contains(t.rect.x + t.rect.w / 2.0, t.rect.y + t.rect.h / 2.0));
     over.iter().chain(d.targets(screen).iter().filter(move |t| !covered(t)))
@@ -130,12 +130,12 @@ pub fn switch_screen(s: &State, d: &impl Drawn, memory: &mut Screens<Option<Id>>
 /// The targets the pad may move between, each with its screen, as the views marked them (see [`PadUse`]).
 /// On targets reached by holding A, they are those on their screen alone. Otherwise they are the targets
 /// it moves to on the screens the pad may use.
-pub fn candidates<'d>(s: &State, d: &'d impl Drawn) -> Vec<(Screen, &'d Target)> {
+pub fn candidates<'d>(s: &State, d: &'d impl Drawn) -> impl Iterator<Item = (Screen, &'d Target)> + Clone {
     let held = on_held(s, d);
     let pad = if held.is_some() { PadUse::Held } else { PadUse::Moves };
-    let on = |screen: &Screen| held.map_or(usable(s, *screen), |h| h == *screen);
-    let reached = |t: &Target| t.pad == pad || (pad == PadUse::Moves && t.pad == PadUse::List);
-    Screen::BOTH.into_iter().filter(on).flat_map(|screen| reachable(d, screen).map(move |t| (screen, t))).filter(|(_, t)| reached(t)).collect()
+    let on = move |screen: &Screen| held.map_or(usable(s, *screen), |h| h == *screen);
+    let reached = move |t: &Target| t.pad == pad || (pad == PadUse::Moves && t.pad == PadUse::List);
+    Screen::BOTH.into_iter().filter(on).flat_map(move |screen| reachable(d, screen).map(move |t| (screen, t))).filter(move |(_, t)| reached(t))
 }
 
 /// `t` on `screen` placed in the plane [`nav::step`] works in.
@@ -154,9 +154,9 @@ fn placed(d: &impl Drawn, screen: Screen, t: &Target) -> NavTarget {
 pub fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, dir: Dir) -> Option<Event> {
     // On targets reached by holding A, up and down move through them only.
     if on_held(s, d).is_some() {
-        let rows: Vec<NavTarget> = candidates(s, d).into_iter().map(|(screen, t)| placed(d, screen, t)).collect();
+        let rows = candidates(s, d).map(|(screen, t)| placed(d, screen, t));
         return match dir {
-            Dir::Up | Dir::Down => nav::step(&rows, s.pointer().focus(), dir).map(|id| PointerEvent::Focus(id).into()),
+            Dir::Up | Dir::Down => nav::step(rows, s.pointer().focus(), dir).map(|id| PointerEvent::Focus(id).into()),
             Dir::Left | Dir::Right => None,
         };
     }
@@ -198,8 +198,8 @@ pub fn navigate(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>, dir: Di
             return Some(PointerEvent::Focus(id).into());
         }
     }
-    let all: Vec<NavTarget> = candidates(s, d).into_iter().map(|(screen, t)| placed(d, screen, t)).collect();
-    nav::step(&all, s.pointer().focus(), dir).map(|id| PointerEvent::Focus(id).into())
+    let all = candidates(s, d).map(|(screen, t)| placed(d, screen, t));
+    nav::step(all, s.pointer().focus(), dir).map(|id| PointerEvent::Focus(id).into())
 }
 
 /// What the pad's A, or Enter, does. It presses the focused target if that is drawn where the pad may
@@ -227,26 +227,33 @@ pub fn press(s: &State, d: &impl Drawn, memory: &Screens<Option<Id>>) -> Option<
 /// The shoulders. On a screen whose view's list pages, they move a page through it. Elsewhere they step
 /// through the tabs the second screen declared (see [`PadOut::tabs`]), from the open one, opening and
 /// focusing each.
-pub fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
+pub fn shoulder(s: &State, d: &impl Drawn, step: i32) -> Events {
     // On targets reached by holding A, what they act on stays where it is.
     if on_held(s, d).is_some() {
-        return vec![];
+        return events(None, None);
     }
     // On a screen with a list that pages, a page.
     if let Some(taken) = list_moves(s, d, PadMove::Page(step)) {
-        return taken.into_iter().collect();
+        return events(taken, None);
     }
     let tabs = &d.pad(Screen::Bottom).tabs;
     let n = tabs.iter().flatten().count() as i32;
     if n == 0 {
-        return vec![];
+        return events(None, None);
     }
     let at = tabs.iter().flatten().position(|t| t.current).unwrap_or(0) as i32;
     let next = (at + step).rem_euclid(n) as usize;
     match tabs.iter().flatten().nth(next) {
-        Some(tab) => vec![PointerEvent::Activate(tab.open.clone()).into(), PointerEvent::Focus(tab.focus.clone()).into()],
-        None => vec![],
+        Some(tab) => events(Some(PointerEvent::Activate(tab.open.clone()).into()), Some(PointerEvent::Focus(tab.focus.clone()).into())),
+        None => events(None, None),
     }
+}
+
+/// Up to two events, in order, without a list.
+pub type Events = std::iter::Flatten<std::array::IntoIter<Option<Event>, 2>>;
+
+fn events(first: Option<Event>, second: Option<Event>) -> Events {
+    [first, second].into_iter().flatten()
 }
 
 /// What the list of the screen the pad is on (see [`pad_screen`]) does with `m`, if it takes it.
@@ -255,27 +262,24 @@ fn list_moves(s: &State, d: &impl Drawn, m: PadMove) -> Option<Option<Event>> {
 }
 
 /// L2 and R2 go to the first or last row of the list of the screen the pad is on, if it takes them.
-pub fn trigger(s: &State, d: &impl Drawn, step: i32) -> Vec<Event> {
+pub fn trigger(s: &State, d: &impl Drawn, step: i32) -> Option<Event> {
     if on_held(s, d).is_some() {
-        return vec![];
+        return None;
     }
-    if let Some(taken) = list_moves(s, d, PadMove::End(step)) {
-        return taken.into_iter().collect();
-    }
-    vec![]
+    list_moves(s, d, PadMove::End(step)).flatten()
 }
 
 /// Y, X and Start press what their badges show on the screen the pad is on (see [`pad_screen`]), as the
 /// screen declared them (see [`PadOut::keys`]). Elsewhere they do nothing.
-pub fn shortcut(s: &State, d: &impl Drawn, button: PadInput) -> Vec<Event> {
+pub fn shortcut(s: &State, d: &impl Drawn, button: PadInput) -> Option<Event> {
     let i = match button {
         PadInput::Y => 0,
         PadInput::X => 1,
         PadInput::Start => 2,
-        _ => return vec![],
+        _ => return None,
     };
     let keys = &d.pad(pad_screen(s, d)).keys;
-    keys.get(i).cloned().flatten().map(|id| PointerEvent::Activate(id).into()).into_iter().collect()
+    keys.get(i).cloned().flatten().map(|id| PointerEvent::Activate(id).into())
 }
 
 /// B, and the Back button, go back as the screens declared (see [`PadOut::back`]): a back over the whole
@@ -475,8 +479,8 @@ mod tests {
         assert!(!s.pad().on_top(), "a game is in front");
         let memory = Screens::default();
         assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(PointerEvent::Focus(Id::Tab(s.bottom().tab())).into()));
-        assert!(candidates(&s, &d).iter().all(|(screen, _)| *screen == Screen::Bottom));
-        assert!(!shoulder(&s, &d, 1).is_empty(), "the shoulders step the tabs");
+        assert!(candidates(&s, &d).all(|(screen, _)| screen == Screen::Bottom));
+        assert!(shoulder(&s, &d, 1).next().is_some(), "the shoulders step the tabs");
     }
 
     #[test]
@@ -511,7 +515,7 @@ mod tests {
         let at = Tab::ALL.iter().position(|t| *t == open).unwrap_or(0);
         let next = Tab::ALL[(at + 1) % Tab::ALL.len()];
         assert_eq!(
-            shoulder(&s, &d, 1),
+            shoulder(&s, &d, 1).collect::<Vec<_>>(),
             vec![PointerEvent::Activate(Id::Tab(next)).into(), PointerEvent::Focus(Id::Tab(next)).into()],
             "its button, as declared"
         );
@@ -534,7 +538,7 @@ mod tests {
         assert_eq!(in_list(&s, &d), Some(Screen::Top));
         assert_eq!(navigate(&s, &d, &memory, Dir::Up), Some(Event::Home), "taken");
         assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(PointerEvent::Focus(entry(&s, 1)).into()), "declined: by direction");
-        assert_eq!((shoulder(&s, &d, 1), trigger(&s, &d, 1)), (vec![Event::HomeTap], vec![Event::HomeTap]));
+        assert_eq!((shoulder(&s, &d, 1).collect::<Vec<_>>(), trigger(&s, &d, 1)), (vec![Event::HomeTap], Some(Event::HomeTap)));
     }
 
     /// A list on the second screen takes the pad's moves as one on the main screen does, and the shoulders
@@ -553,7 +557,7 @@ mod tests {
         let memory = Screens::default();
         assert_eq!(in_list(&s, &d), Some(Screen::Bottom));
         assert_eq!(navigate(&s, &d, &memory, Dir::Up), Some(Event::Home), "taken");
-        assert_eq!((shoulder(&s, &d, 1), trigger(&s, &d, 1)), (vec![Event::HomeTap], vec![Event::HomeTap]));
+        assert_eq!((shoulder(&s, &d, 1).collect::<Vec<_>>(), trigger(&s, &d, 1)), (vec![Event::HomeTap], Some(Event::HomeTap)));
         // Off the list, the directions go by direction.
         focus(&mut s, Id::Tab(Tab::Sysinfo));
         assert_eq!(in_list(&s, &d), None);
@@ -580,7 +584,7 @@ mod tests {
             Some(PointerEvent::Focus(Id::LibraryView(LibraryViewId::Pin)).into()),
             "not down to the second screen"
         );
-        assert_eq!(shoulder(&s, &d, 1), vec![]);
+        assert_eq!(shoulder(&s, &d, 1).next(), None);
     }
 
     #[test]

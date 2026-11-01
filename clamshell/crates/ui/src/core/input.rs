@@ -30,12 +30,11 @@ impl Core {
             return;
         }
         let now = self.clock.at(time);
-        let actions = match source {
+        self.with_input(|input, _, out| match source {
             // While the screen is pointing, a finger put down where it may point points too.
-            Source::Touch(_) if pointing && points && found.as_ref().is_none_or(|t| t.drag.is_none()) => self.input.point(source, (x, y), now),
-            _ => self.input.touch(source, found.as_ref(), points, (x, y), now),
-        };
-        self.run_actions(actions);
+            Source::Touch(_) if pointing && points && found.as_ref().is_none_or(|t| t.drag.is_none()) => input.point(source, (x, y), now, out),
+            _ => input.touch(source, found.as_ref(), points, (x, y), now, out),
+        });
     }
 
     /// A finger or button comes down at `position` on `screen`: it presses the target of the screen's
@@ -70,19 +69,16 @@ impl Core {
 
     pub fn moved(&mut self, source: Source, (x, y): (f64, f64), time: u32) {
         let now = self.clock.at(time);
-        let actions = self.input.moved(source, (x as f32, y as f32), now);
-        self.run_actions(actions);
+        self.with_input(|input, _, out| input.moved(source, (x as f32, y as f32), now, out));
     }
 
     /// A press ends at `now`. For a finger or the mouse, `now` is its event time from [`Core::at`].
     pub fn up(&mut self, source: Source, end: End, now: std::time::Instant) {
-        let actions = self.input.up(source, end, &self.state, now);
-        self.run_actions(actions);
+        self.with_input(|input, state, out| input.up(source, end, state, now, out));
     }
 
     pub fn cancel_touches(&mut self) {
-        let actions = self.input.cancel_touches(&self.state);
-        self.run_actions(actions);
+        self.with_input(|input, state, out| input.cancel_touches(state, out));
     }
 
     /// The pad on ClamShell's screens (see `focus`), unless a dock entry is being moved or the overview of
@@ -159,8 +155,7 @@ impl Core {
     fn press_focus(&mut self, source: Source) {
         match focus::press(&self.state, &self.layers(), &self.focus_memory) {
             Some(PadPress::Press(id, hold)) => {
-                let actions = self.input.press(source, id, hold, std::time::Instant::now());
-                self.run_actions(actions);
+                self.with_input(|input, _, out| input.press(source, id, hold, std::time::Instant::now(), out));
             }
             // An overlay's target acts as it is pressed, as a touch on it does.
             Some(PadPress::Act(id)) => self.handle(PointerEvent::Act(id).into()),

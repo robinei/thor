@@ -225,7 +225,7 @@ impl PadView {
 
     /// The targets the pad may move between in `state`.
     pub fn focusable(&self, state: &State) -> Vec<PadTarget> {
-        input::focus::candidates(state, self).into_iter().map(|(screen, t)| PadTarget::of(screen, t)).collect()
+        input::focus::candidates(state, self).map(|(screen, t)| PadTarget::of(screen, t)).collect()
     }
 
     /// What moving the pad in `dir` does, with nothing remembered of where the focus was on each screen.

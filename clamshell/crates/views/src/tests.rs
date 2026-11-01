@@ -339,9 +339,9 @@ fn down_from_the_bar_reaches_the_tabs_first_line() {
                 id: t.id.clone(),
             })
             .collect();
-        let down = step(&all, Some(&(tabs::view(tab).button)(&state).id), Dir::Down);
+        let down = step(all.iter().cloned(), Some(&(tabs::view(tab).button)(&state).id), Dir::Down);
         assert_eq!(down.as_ref(), Some(&first), "{tab:?}");
-        assert_eq!(step(&all, down.as_ref(), Dir::Down).as_ref(), Some(&second), "{tab:?}: then the list");
+        assert_eq!(step(all.iter().cloned(), down.as_ref(), Dir::Down).as_ref(), Some(&second), "{tab:?}: then the list");
     }
 }
 
@@ -362,8 +362,9 @@ fn a_tap_acts_on_the_item_drawn_under_it() {
     // The pad connects and sorts first before the finger comes down where the buds were drawn.
     state.apply(bt(vec![device("pad", true), device("buds", false)]), &mut Vec::new());
     let (mut input, now) = (Input::default(), std::time::Instant::now());
-    let mut actions = input.touch(Source::Touch(1), Some(first), true, (first.rect.x + 1.0, first.rect.y + 1.0), now);
-    actions.extend(input.up(Source::Touch(1), End::Release, &state, now));
+    let mut actions = Vec::new();
+    input.touch(Source::Touch(1), Some(first), true, (first.rect.x + 1.0, first.rect.y + 1.0), now, &mut actions);
+    input.up(Source::Touch(1), End::Release, &state, now, &mut actions);
     let mut effects = Vec::new();
     for action in actions {
         if let clamshell_ui::input::Action::Emit(e) = action {

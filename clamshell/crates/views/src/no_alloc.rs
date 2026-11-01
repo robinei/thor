@@ -591,3 +591,130 @@ fn warm_frames_do_not_allocate() {
         last = state;
     }
 }
+
+/// Input on a warm core allocates nothing either: a finger tapping a tab, sliding the volume in the bar,
+/// and swiping the Wi-Fi list; the pad moving the focus; and a held key repeating on its timer.
+#[test]
+fn warm_input_does_not_allocate() {
+    use clamshell_state::PadInput;
+    use clamshell_ui::input::{End, Source};
+    let state = State::new(Init { library: Some(clamshell_library::demo::library()), account: account(), ..Init::default() });
+    let mut core = clamshell_ui::Core::new(state, crate::VIEWS, || {}).expect("a core");
+    let (top_size, bottom_size) = ((1920, 1080), (1240, 1080));
+    core.resize(Screen::Top, top_size, 1);
+    core.resize(Screen::Bottom, bottom_size, 1);
+    core.handle(Event::tick(1_760_000_000));
+    core.handle(wifi_reading());
+    core.handle(Event::Reading(Reading::Status(Status { volume: Some(40), brightness: Some(70), wifi: Some(60), ..Default::default() })));
+    core.handle(tap(Id::Tab(Tab::Wifi)));
+    let mut frames = clamshell_ui::PadFrames::new(crate::VIEWS, top_size, bottom_size);
+    let layers = [
+        clamshell_ui::Layer::Screen(Screen::Top),
+        clamshell_ui::Layer::Screen(Screen::Bottom),
+        clamshell_ui::Layer::Overlay(Screen::Top),
+        clamshell_ui::Layer::Overlay(Screen::Bottom),
+    ];
+    let draw = |core: &mut clamshell_ui::Core| {
+        for layer in layers {
+            core.record(layer, false);
+        }
+        core.frames_done();
+        while core.next_effect().is_some() {}
+    };
+    draw(&mut core);
+    let centre = |id: &Id, core: &clamshell_ui::Core, frames: &mut clamshell_ui::PadFrames| {
+        let drawn = frames.record(core.state()).drawn(Screen::Bottom);
+        let r = drawn.iter().find(|t| t.id == *id).map(|t| t.rect).expect("drawn");
+        (f64::from(r[0] + r[2] / 2.0), f64::from(r[1] + r[3] / 2.0))
+    };
+    let wifi_tab = centre(&Id::Tab(Tab::Wifi), &core, &mut frames);
+    let volume = centre(&Id::Control(Control::Volume), &core, &mut frames);
+    let row = centre(&ListId::Wifi.row(1), &core, &mut frames);
+    let finger = Source::Touch(1);
+    let mut t = 1000u32;
+    type Case = Box<dyn FnMut(&mut clamshell_ui::Core)>;
+    let mut cases: Vec<(&str, Case)> = vec![
+        (
+            "a tap on a tab",
+            Box::new(move |core| {
+                core.press(finger, Screen::Bottom, wifi_tab, t);
+                let now = core.at(t);
+                core.up(finger, End::Release, now);
+            }),
+        ),
+        (
+            "the volume slid",
+            Box::new(move |core| {
+                t += 100;
+                core.press(finger, Screen::Bottom, volume, t);
+                for i in 1..=6 {
+                    core.moved(finger, (volume.0 + 20.0 * f64::from(i), volume.1), t + 8 * i);
+                }
+                let now = core.at(t + 60);
+                core.up(finger, End::Release, now);
+            }),
+        ),
+        (
+            "a list swiped",
+            Box::new(move |core| {
+                t += 100;
+                core.press(finger, Screen::Bottom, row, t);
+                for i in 1..=6 {
+                    core.moved(finger, (row.0, row.1 + 10.0 * f64::from(i)), t + 8 * i);
+                }
+                let now = core.at(t + 300);
+                core.up(finger, End::Cancel, now);
+            }),
+        ),
+        (
+            "the pad's focus moved",
+            Box::new(|core| {
+                core.handle(Event::Pad(PadInput::Down));
+                core.handle(Event::Pad(PadInput::Up));
+            }),
+        ),
+        (
+            "the pad's A on a tab",
+            Box::new(|core| {
+                core.handle(PointerEvent::Focus(Id::Tab(Tab::Wifi)).into());
+                core.handle(Event::Pad(PadInput::A(true)));
+                core.handle(Event::Pad(PadInput::A(false)));
+            }),
+        ),
+        (
+            "the shoulders",
+            Box::new(|core| {
+                core.handle(Event::Pad(PadInput::Shoulder(1)));
+                core.handle(Event::Pad(PadInput::Shoulder(-1)));
+            }),
+        ),
+        (
+            "a held press on its timer",
+            Box::new(move |core| {
+                t += 1000;
+                core.press(finger, Screen::Bottom, wifi_tab, t);
+                if let Some(at) = core.deadline() {
+                    core.run(at);
+                }
+                let now = core.at(t + 600);
+                core.up(finger, End::Release, now);
+            }),
+        ),
+    ];
+    let mut failed = Vec::new();
+    for (name, case) in &mut cases {
+        for _ in 0..3 {
+            case(&mut core);
+            draw(&mut core);
+        }
+        let before = allocs();
+        case(&mut core);
+        let n = allocs() - before;
+        draw(&mut core);
+        eprintln!("{name}: {n}");
+        if n > 0 {
+            failed.push(*name);
+        }
+    }
+    assert!(failed.is_empty(), "allocated: {failed:?}");
+}

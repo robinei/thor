@@ -32,7 +32,7 @@ fn b_on_library_views_actions_goes_back_to_the_entry() {
     focus(&mut s, Id::LibraryView(LibraryViewId::Launch));
     let g = entry(&s, s.library_view().cursor().index);
     assert_eq!(back(&s, &frames(&s)), Some(PointerEvent::Focus(g).into()));
-    assert_eq!(shortcut(&s, &frames(&s), PadInput::Y), vec![], "the badges faded: nothing");
+    assert_eq!(shortcut(&s, &frames(&s), PadInput::Y), None, "the badges faded: nothing");
 }
 
 #[test]
@@ -41,17 +41,17 @@ fn y_x_and_start_act_on_library_view_only_while_the_pad_is_there() {
     let g = entry(&s, 0);
     focus(&mut s, g);
     let favourite = Id::LibraryView(LibraryViewId::Favourite);
-    assert_eq!(shortcut(&s, &frames(&s), PadInput::Y), vec![PointerEvent::Activate(favourite).into()]);
+    assert_eq!(shortcut(&s, &frames(&s), PadInput::Y), Some(PointerEvent::Activate(favourite).into()));
     focus(&mut s, Id::Tab(Tab::Sysinfo));
-    assert_eq!(shortcut(&s, &frames(&s), PadInput::Y), vec![], "the second screen: not the Library's");
-    assert_eq!(shortcut(&s, &frames(&s), PadInput::X), vec![]);
+    assert_eq!(shortcut(&s, &frames(&s), PadInput::Y), None, "the second screen: not the Library's");
+    assert_eq!(shortcut(&s, &frames(&s), PadInput::X), None);
     // Typing with the pad: X is Backspace.
     s.apply(PointerEvent::Activate(Id::Tab(Tab::Keyboard)).into(), &mut Vec::new());
     focus(&mut s, Id::Tab(Tab::Keyboard));
     let backspace = clamshell_state::bottom::keyboard::find(clamshell_state::bottom::keyboard::Key::Named(clamshell_state::bottom::keyboard::Named::Backspace));
     let d = frames(&s);
-    assert_eq!(shortcut(&s, &d, PadInput::X), backspace.map(|b| PointerEvent::Activate(Id::Key(b)).into()).into_iter().collect::<Vec<_>>());
-    assert_eq!(shortcut(&s, &d, PadInput::Y), vec![]);
+    assert_eq!(shortcut(&s, &d, PadInput::X), backspace.map(|b| PointerEvent::Activate(Id::Key(b)).into()));
+    assert_eq!(shortcut(&s, &d, PadInput::Y), None);
 }
 
 /// B goes back on the screen the pad is on, as it shows: a keymap's screen left open on the settings
@@ -147,9 +147,9 @@ fn the_librarys_list_takes_the_pads_moves() {
     assert_eq!(navigate(&s, &d, &memory, Dir::Down), Some(LibraryViewEvent::ListStep(1).into()));
     assert_eq!(navigate(&s, &d, &memory, Dir::Right), Some(LibraryViewEvent::CollectionStep(1).into()));
     let page = s.library_view().rows() as i32;
-    assert_eq!(clamshell_ui::input::focus::shoulder(&s, &d, -1), vec![LibraryViewEvent::ListStep(-page).into()], "a page");
+    assert_eq!(clamshell_ui::input::focus::shoulder(&s, &d, -1).collect::<Vec<_>>(), vec![LibraryViewEvent::ListStep(-page).into()], "a page");
     let len = s.library_view().list().len() as i32;
-    assert_eq!(clamshell_ui::input::focus::trigger(&s, &d, 1), vec![LibraryViewEvent::ListStep(len).into()], "the last entry");
+    assert_eq!(clamshell_ui::input::focus::trigger(&s, &d, 1), Some(LibraryViewEvent::ListStep(len).into()), "the last entry");
     // The focus came up from the second screen onto entry 1, while entry 0 is selected.
     let g = entry(&s, 1);
     focus(&mut s, g);
@@ -207,8 +207,10 @@ fn a_held_on_a_key_repeats_and_on_a_modifier_long_presses() {
         let Some(PadPress::Press(pressed, hold)) = pressed else { continue };
         let mut input = Input::default();
         let now = std::time::Instant::now();
-        input.press(Source::PadA, pressed, hold, now);
-        let held = input.timer(Source::PadA, Timer::Hold, &s, now);
+        let mut held = Vec::new();
+        input.press(Source::PadA, pressed, hold, now, &mut held);
+        held.clear();
+        input.timer(Source::PadA, Timer::Hold, &s, now, &mut held);
         let expected = if repeats { PointerEvent::Activate(id) } else { PointerEvent::LongPress(id) };
         assert!(held.contains(&Action::Emit(expected.into())), "{key:?}: {held:?}");
     }

@@ -232,8 +232,9 @@ listed, and ClamShell can be restarted without losing track.
   on unchanged to the system's dispatcher.
 - **No silent failures:** a failure handled by falling back is logged, at `warn` or, when expected or
   repeating, at `debug`.
-- **No allocation on the hot paths:** applying a steady-state event, drawing a frame and remapping a
-  controller report in the game allocate nothing, enforced by tests with a counting allocator.
+- **No allocation on the hot paths:** applying a steady-state event, the UI's input (touches, the pad,
+  its timers), drawing a frame and remapping a controller report in the game allocate nothing, enforced
+  by tests with a counting allocator. The input machines append what they ask to a list the core keeps.
 - **No compatibility code:** nobody depends on old formats yet, so formats change outright.
 
 ## What checks it

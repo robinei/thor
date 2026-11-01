@@ -1,6 +1,7 @@
 //! Presses from touch, the mouse, the pad's A and, on a desktop, Enter, each from its own source. This is
 //! a pure state machine. It is told what happens (down, moved, up, a timer fired) and answers with what to
-//! do: events for the state, and timers to arm or disarm, which the caller runs on its event loop.
+//! do: events for the state, and timers to arm or disarm, which the caller runs on its event loop. It
+//! appends them to a list the caller keeps, so that input allocates nothing once that list has room.
 //!
 //! A press is a tap until its hold timer fires. A tap acts on release, if the release is still on its
 //! target. Once the timer fires, the press is held: it repeats or gets one long press, as its target's
@@ -240,22 +241,22 @@ impl Input {
     }
 
     /// The pad's A or Enter on the focused target, which is a plain press; `hold` is the target's.
-    pub fn press(&mut self, source: Source, id: Id, hold: Hold, now: Instant) -> Vec<Action> {
+    pub fn press(&mut self, source: Source, id: Id, hold: Hold, now: Instant, out: &mut Vec<Action>) {
         if self.pressed(source) {
-            return vec![];
+            return;
         }
         self.presses.push((source, Press::of_pad(id.clone(), hold, now)));
-        vec![Action::Emit(PointerEvent::Down(id, None).into()), Action::Arm(source, Timer::Hold, LONG_PRESS)]
+        out.extend([Action::Emit(PointerEvent::Down(id, None).into()), Action::Arm(source, Timer::Hold, LONG_PRESS)]);
     }
 
     /// A finger or the mouse comes down on `target`, or on nothing (where the screen's view says a press
     /// on nothing counts), at (`x`, `y`). With `points`, it came down where the screen lets fingers point.
     /// Touch hides the pad's focus ring and stops a fling.
-    pub fn touch(&mut self, source: Source, target: Option<&Target>, points: bool, (x, y): (f32, f32), now: Instant) -> Vec<Action> {
+    pub fn touch(&mut self, source: Source, target: Option<&Target>, points: bool, (x, y): (f32, f32), now: Instant, out: &mut Vec<Action>) {
         if self.pressed(source) {
-            return vec![];
+            return;
         }
-        let mut actions = self.stop_fling();
+        self.stop_fling(out);
         let (gesture, at_once) = match target.and_then(|t| t.drag) {
             Some(Drag::Slide { control, track, at_once }) if !self.sliding() => {
                 let at = track.along(x);
@@ -268,72 +269,69 @@ impl Input {
         let press = Press::of_touch(target, points, gesture, (x, y), now);
         let down = PointerEvent::Down(press.id.clone(), target.and_then(|t| t.item));
         self.presses.push((source, press));
-        actions.extend([Action::Emit(PointerEvent::HideFocus.into()), Action::Emit(down.into())]);
+        out.extend([Action::Emit(PointerEvent::HideFocus.into()), Action::Emit(down.into())]);
         match gesture {
             // A row with nothing to tap slides at once from where the finger came down. A touch without
             // moving changes nothing.
             Gesture::PendingSlide { .. } if at_once => {
                 if let Some((_, press)) = self.presses.last_mut() {
-                    actions.extend(Self::start_slide(press));
+                    Self::start_slide(press, out);
                 }
             }
             Gesture::PendingSlide { .. } => {
-                actions.push(Action::Arm(source, Timer::Hold, LONG_PRESS));
-                actions.push(Action::Arm(source, Timer::Slide, SLIDE_AFTER));
+                out.push(Action::Arm(source, Timer::Hold, LONG_PRESS));
+                out.push(Action::Arm(source, Timer::Slide, SLIDE_AFTER));
             }
-            Gesture::LevelDrag { level, track } => actions.push(Action::Emit(LevelEvent::Set(level, track.value_at(x)).into())),
-            _ => actions.push(Action::Arm(source, Timer::Hold, LONG_PRESS)),
+            Gesture::LevelDrag { level, track } => out.push(Action::Emit(LevelEvent::Set(level, track.value_at(x)).into())),
+            _ => out.push(Action::Arm(source, Timer::Hold, LONG_PRESS)),
         }
-        actions
     }
 
     /// A finger comes down at `at` where the screen lets fingers point, while it points, on a target
     /// without a drag or on nothing. The finger points too, and its target isn't pressed.
-    pub fn point(&mut self, source: Source, at: (f32, f32), now: Instant) -> Vec<Action> {
+    pub fn point(&mut self, source: Source, at: (f32, f32), now: Instant, out: &mut Vec<Action>) {
         if self.pressed(source) {
-            return vec![];
+            return;
         }
-        let mut actions = self.stop_fling();
-        actions.extend(self.idle.take().map(|s| Action::Disarm(s, Timer::Pointing)));
+        self.stop_fling(out);
+        out.extend(self.idle.take().map(|s| Action::Disarm(s, Timer::Pointing)));
         self.presses.push((source, Press::of_touch(None, true, Gesture::Pointing, at, now)));
-        actions.push(Action::Point(source, ContactPhase::Down, at));
-        actions
+        out.push(Action::Point(source, ContactPhase::Down, at));
     }
 
     /// The fingers tapping keys start pointing, because one moved far enough. Each is let go without
     /// typing and comes down on the touchpad where it is.
-    fn start_pointing(&mut self) -> Vec<Action> {
-        let mut actions: Vec<Action> = self.idle.take().map(|s| Action::Disarm(s, Timer::Pointing)).into_iter().collect();
+    fn start_pointing(&mut self, out: &mut Vec<Action>) {
+        out.extend(self.idle.take().map(|s| Action::Disarm(s, Timer::Pointing)));
         for (source, press) in self.presses.iter_mut().filter(|(s, p)| p.may_point(*s)) {
             press.gesture = Gesture::Pointing;
-            actions.push(Action::Disarm(*source, Timer::Hold));
-            actions.push(Action::Emit(PointerEvent::Up(press.id.clone()).into()));
-            actions.push(Action::Point(*source, ContactPhase::Down, press.at));
+            out.push(Action::Disarm(*source, Timer::Hold));
+            out.push(Action::Emit(PointerEvent::Up(press.id.clone()).into()));
+            out.push(Action::Point(*source, ContactPhase::Down, press.at));
         }
-        actions
     }
 
     /// Starts a pending slide. The target is let go, as a list's row is when the list is dragged, and the
     /// slider comes up under the finger.
-    fn start_slide(press: &mut Press) -> Vec<Action> {
+    fn start_slide(press: &mut Press, out: &mut Vec<Action>) {
         let Gesture::PendingSlide { control, x, track, .. } = press.gesture else {
-            return vec![];
+            return;
         };
         press.gesture = Gesture::Sliding { track };
-        vec![Action::Emit(PointerEvent::Up(press.id.clone()).into()), Action::Emit(Slide::Start { control, x, width: track.w }.into())]
+        out.extend([Action::Emit(PointerEvent::Up(press.id.clone()).into()), Action::Emit(Slide::Start { control, x, width: track.w }.into())]);
     }
 
     /// Ends a fling, if one is on.
-    fn stop_fling(&mut self) -> Vec<Action> {
-        self.fling.take().map(|(source, _)| Action::Disarm(source, Timer::Fling)).into_iter().collect()
+    fn stop_fling(&mut self, out: &mut Vec<Action>) {
+        out.extend(self.fling.take().map(|(source, _)| Action::Disarm(source, Timer::Fling)));
     }
 
     /// A finger or the mouse moved to (`x`, `y`). A pending slide may start, and the slider or a level
     /// row follows. A tap on a list that moves far enough up or down becomes a drag, which the list
     /// follows.
-    pub fn moved(&mut self, source: Source, (x, y): (f32, f32), now: Instant) -> Vec<Action> {
+    pub fn moved(&mut self, source: Source, (x, y): (f32, f32), now: Instant, out: &mut Vec<Action>) {
         let Some(press) = self.get(source) else {
-            return vec![];
+            return;
         };
         press.trail.follow(now, y);
         press.at = (x, y);
@@ -344,70 +342,69 @@ impl Input {
             && dx > dy
         {
             press.gesture = Gesture::LevelDrag { level, track };
-            return vec![Action::Emit(LevelEvent::Set(level, track.value_at(x)).into())];
+            return out.push(Action::Emit(LevelEvent::Set(level, track.value_at(x)).into()));
         }
         if let (Gesture::Tap | Gesture::PendingLevel { .. }, Some(list)) = (press.gesture, press.list)
             && dy >= DRAG_START
         {
             press.gesture = Gesture::Dragging { list, y };
             let rows = -(y - press.down.1) / list.row_h;
-            return vec![
+            return out.extend([
                 Action::Disarm(source, Timer::Hold),
                 Action::Emit(PointerEvent::Up(press.id.clone()).into()),
                 Action::Emit(ListEvent::Scroll(list.list, rows).into()),
-            ];
+            ]);
         }
         // Pointing is checked last, after the gestures that move something of their own.
         let start = if press.blank { BLANK_POINT_START } else { POINT_START };
         if press.may_point(source) && (x - press.down.0).hypot(y - press.down.1) >= start {
-            return self.start_pointing();
+            return self.start_pointing(out);
         }
         match &mut press.gesture {
             Gesture::Dragging { list, y: last } => {
                 let rows = -(y - *last) / list.row_h;
                 *last = y;
-                vec![Action::Emit(ListEvent::Scroll(list.list, rows).into())]
+                out.push(Action::Emit(ListEvent::Scroll(list.list, rows).into()));
             }
             Gesture::PendingSlide { down_x, x: at, track, .. } => {
                 *at = track.along(x);
-                if (*at - *down_x).abs() < SLIDE_MOVE {
-                    return vec![];
+                if (*at - *down_x).abs() >= SLIDE_MOVE {
+                    out.push(Action::Disarm(source, Timer::Slide));
+                    Self::start_slide(press, out);
                 }
-                let mut actions = vec![Action::Disarm(source, Timer::Slide)];
-                actions.extend(Self::start_slide(press));
-                actions
             }
-            Gesture::Sliding { track } => vec![Action::Emit(Slide::To { x: track.along(x) }.into())],
-            Gesture::LevelDrag { level, track } => vec![Action::Emit(LevelEvent::Set(*level, track.value_at(x)).into())],
-            Gesture::Pointing => vec![Action::Point(source, ContactPhase::Move, (x, y))],
-            Gesture::Tap | Gesture::Held | Gesture::PendingLevel { .. } => vec![],
+            Gesture::Sliding { track } => out.push(Action::Emit(Slide::To { x: track.along(x) }.into())),
+            Gesture::LevelDrag { level, track } => out.push(Action::Emit(LevelEvent::Set(*level, track.value_at(x)).into())),
+            Gesture::Pointing => out.push(Action::Point(source, ContactPhase::Move, (x, y))),
+            Gesture::Tap | Gesture::Held | Gesture::PendingLevel { .. } => {}
         }
     }
 
     /// The source's `timer` fired at `now`. A hold repeats or long-presses, as the target's hold says. The slide timer starts the slide, and the fling timer steps a fling.
-    pub fn timer(&mut self, source: Source, timer: Timer, state: &State, now: Instant) -> Vec<Action> {
+    pub fn timer(&mut self, source: Source, timer: Timer, state: &State, now: Instant, out: &mut Vec<Action>) {
         if timer == Timer::Fling {
-            return self.fling_step(state, now);
+            return self.fling_step(state, now, out);
         }
         if timer == Timer::Pointing {
             self.idle = None;
-            let pointing = self.presses.iter().any(|(_, p)| p.gesture == Gesture::Pointing);
-            return if pointing { vec![] } else { vec![Action::Emit(Pointing::Idle.into())] };
+            if !self.presses.iter().any(|(_, p)| p.gesture == Gesture::Pointing) {
+                out.push(Action::Emit(Pointing::Idle.into()));
+            }
+            return;
         }
         let Some(press) = self.get(source) else {
-            return vec![];
+            return;
         };
-        let mut actions = vec![];
         match timer {
-            Timer::Slide => return Self::start_slide(press),
-            Timer::Fling | Timer::Pointing => return actions,
+            Timer::Slide => return Self::start_slide(press, out),
+            Timer::Fling | Timer::Pointing => return,
             // The slide's timer is the shorter one, so the hold comes first only if that one couldn't run.
             Timer::Hold if matches!(press.gesture, Gesture::PendingSlide { .. }) => {
-                actions.push(Action::Disarm(source, Timer::Slide));
-                actions.extend(Self::start_slide(press));
+                out.push(Action::Disarm(source, Timer::Slide));
+                Self::start_slide(press, out);
             }
             Timer::Hold if matches!(press.gesture, Gesture::LevelDrag { .. } | Gesture::PendingLevel { .. } | Gesture::Dragging { .. } | Gesture::Pointing) => {
-                return actions;
+                return;
             }
             Timer::Hold => {}
         }
@@ -416,63 +413,61 @@ impl Input {
         }
         match press.hold {
             Hold::Repeat => {
-                actions.push(Action::Emit(PointerEvent::Activate(press.id.clone()).into()));
-                actions.push(Action::Arm(source, Timer::Hold, REPEAT));
+                out.push(Action::Emit(PointerEvent::Activate(press.id.clone()).into()));
+                out.push(Action::Arm(source, Timer::Hold, REPEAT));
             }
-            Hold::Long => actions.push(Action::Emit(PointerEvent::LongPress(press.id.clone()).into())),
+            Hold::Long => out.push(Action::Emit(PointerEvent::LongPress(press.id.clone()).into())),
         }
-        actions
     }
 
     /// A fling's step (see [`Fling::step`]).
-    fn fling_step(&mut self, state: &State, now: Instant) -> Vec<Action> {
+    fn fling_step(&mut self, state: &State, now: Instant, out: &mut Vec<Action>) {
         let Some((source, fling)) = self.fling.as_mut() else {
-            return vec![];
+            return;
         };
         let (rows, goes_on) = fling.step(state, now);
-        let mut actions = vec![Action::Emit(ListEvent::Scroll(fling.list, rows).into())];
+        out.push(Action::Emit(ListEvent::Scroll(fling.list, rows).into()));
         if goes_on {
-            actions.push(Action::Arm(*source, Timer::Fling, FLING_EVERY));
+            out.push(Action::Arm(*source, Timer::Fling, FLING_EVERY));
         } else {
             self.fling = None;
         }
-        actions
     }
 
     /// A press ends at `now`. A tap activates unless it was cancelled, a hold has already acted, a slide
     /// ends, and a drag let go while moving flings on.
-    pub fn up(&mut self, source: Source, end: End, state: &State, now: Instant) -> Vec<Action> {
+    pub fn up(&mut self, source: Source, end: End, state: &State, now: Instant, out: &mut Vec<Action>) {
         let Some(at) = self.presses.iter().position(|(s, _)| *s == source) else {
-            return vec![];
+            return;
         };
         let (_, press) = self.presses.remove(at);
-        let mut actions = vec![Action::Disarm(source, Timer::Hold)];
+        out.push(Action::Disarm(source, Timer::Hold));
         // The key was let go when it began pointing. Once the last finger is off, pointing goes idle
         // after a while.
         if press.gesture == Gesture::Pointing {
-            actions.push(Action::Point(source, ContactPhase::Up, press.at));
+            out.push(Action::Point(source, ContactPhase::Up, press.at));
             if !self.presses.iter().any(|(_, p)| p.gesture == Gesture::Pointing) {
                 self.idle = Some(source);
-                actions.push(Action::Arm(source, Timer::Pointing, POINT_IDLE));
+                out.push(Action::Arm(source, Timer::Pointing, POINT_IDLE));
             }
-            return actions;
+            return;
         }
         if let Gesture::Dragging { list, .. } = press.gesture {
             // The row was let go when the drag began.
             if let Some(fling) = Fling::after_drag(list, &press.trail, end == End::Release, state, now) {
                 self.fling = Some((source, fling));
-                actions.push(Action::Arm(source, Timer::Fling, FLING_EVERY));
+                out.push(Action::Arm(source, Timer::Fling, FLING_EVERY));
             }
-            return actions;
+            return;
         }
         // The target was let go when the slide began.
         if let Gesture::Sliding { .. } = press.gesture {
-            actions.push(Action::Emit(Slide::End.into()));
-            return actions;
+            out.push(Action::Emit(Slide::End.into()));
+            return;
         }
         let activates = match press.gesture {
             Gesture::PendingSlide { .. } => {
-                actions.push(Action::Disarm(source, Timer::Slide));
+                out.push(Action::Disarm(source, Timer::Slide));
                 true
             }
             // A tap let go off its target doesn't count.
@@ -480,30 +475,32 @@ impl Input {
             Gesture::LevelDrag { .. } => true,
             // Not moved: a tap on the level row sets it where the finger came down.
             Gesture::PendingLevel { level, track } => {
-                actions.push(Action::Emit(LevelEvent::Set(level, track.value_at(press.down.0)).into()));
+                out.push(Action::Emit(LevelEvent::Set(level, track.value_at(press.down.0)).into()));
                 true
             }
             Gesture::Held | Gesture::Sliding { .. } | Gesture::Dragging { .. } | Gesture::Pointing => false,
         };
         if activates && end == End::Release {
-            actions.push(Action::Emit(PointerEvent::Activate(press.id.clone()).into()));
+            out.push(Action::Emit(PointerEvent::Activate(press.id.clone()).into()));
         }
-        actions.push(Action::Emit(PointerEvent::Up(press.id).into()));
-        actions
+        out.push(Action::Emit(PointerEvent::Up(press.id).into()));
     }
 
     /// All touch points gone without a tap (cancelled, or the touch device went away).
-    pub fn cancel_touches(&mut self, state: &State) -> Vec<Action> {
-        let touches: Vec<Source> = self.presses.iter().map(|(s, _)| *s).filter(|s| matches!(s, Source::Touch(_))).collect();
+    pub fn cancel_touches(&mut self, state: &State, out: &mut Vec<Action>) {
         let now = Instant::now();
-        touches.into_iter().flat_map(|source| self.up(source, End::Cancel, state, now)).collect()
+        while let Some(source) = self.presses.iter().map(|(s, _)| *s).find(|s| matches!(s, Source::Touch(_))) {
+            self.up(source, End::Cancel, state, now, out);
+        }
     }
 
     /// The pad was routed to `route`. If that is away from ClamShell's screens while A is held on a
     /// target, A's release won't come here, so the press ends now. Otherwise the target would stay
     /// pressed, and a key would keep repeating.
-    pub fn pad_route(&mut self, route: PadRoute, state: &State) -> Vec<Action> {
-        if route != PadRoute::Ui && self.pressed(Source::PadA) { self.up(Source::PadA, End::Cancel, state, Instant::now()) } else { vec![] }
+    pub fn pad_route(&mut self, route: PadRoute, state: &State, out: &mut Vec<Action>) {
+        if route != PadRoute::Ui && self.pressed(Source::PadA) {
+            self.up(Source::PadA, End::Cancel, state, Instant::now(), out);
+        }
     }
 }
 

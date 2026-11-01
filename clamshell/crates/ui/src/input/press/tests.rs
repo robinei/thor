@@ -29,6 +29,13 @@ fn level() -> Target {
     target(Id::Level(Level::Volume), Some(Drag::Level(Level::Volume, Track { x0: 100.0, w: 200.0 })))
 }
 
+/// What the input side asks in `tell`, as a list of its own.
+fn act(tell: impl FnOnce(&mut Vec<Action>)) -> Vec<Action> {
+    let mut out = Vec::new();
+    tell(&mut out);
+    out
+}
+
 fn events(actions: &[Action]) -> Vec<Event> {
     actions.iter().filter_map(|a| if let Action::Emit(e) = a { Some(e.clone()) } else { None }).collect()
 }
@@ -41,20 +48,20 @@ fn key() -> Id {
 fn a_tap_activates_on_release_and_a_hold_does_not() {
     let state = State::new(Init::default());
     let mut input = Input::default();
-    let down = input.touch(Source::Touch(1), Some(&tab()), true, (5.0, 0.0), t0());
+    let down = act(|o| input.touch(Source::Touch(1), Some(&tab()), true, (5.0, 0.0), t0(), o));
     assert_eq!(events(&down), vec![PointerEvent::HideFocus.into(), PointerEvent::Down(Id::Tab(Tab::Wifi), None).into()]);
     assert!(down.contains(&Action::Arm(Source::Touch(1), Timer::Hold, LONG_PRESS)));
-    let up = input.up(Source::Touch(1), End::Release, &blank(), t0());
+    let up = act(|o| input.up(Source::Touch(1), End::Release, &blank(), t0(), o));
     assert_eq!(up[0], Action::Disarm(Source::Touch(1), Timer::Hold));
     assert_eq!(events(&up), vec![PointerEvent::Activate(Id::Tab(Tab::Wifi)).into(), PointerEvent::Up(Id::Tab(Tab::Wifi)).into()]);
 
-    input.touch(Source::Touch(1), Some(&tab()), true, (5.0, 0.0), t0());
-    let held = input.timer(Source::Touch(1), Timer::Hold, &state, t0());
+    act(|o| input.touch(Source::Touch(1), Some(&tab()), true, (5.0, 0.0), t0(), o));
+    let held = act(|o| input.timer(Source::Touch(1), Timer::Hold, &state, t0(), o));
     assert_eq!(events(&held), vec![PointerEvent::LongPress(Id::Tab(Tab::Wifi)).into()]);
-    assert_eq!(events(&input.up(Source::Touch(1), End::Release, &blank(), t0())), vec![PointerEvent::Up(Id::Tab(Tab::Wifi)).into()]);
+    assert_eq!(events(&act(|o| input.up(Source::Touch(1), End::Release, &blank(), t0(), o))), vec![PointerEvent::Up(Id::Tab(Tab::Wifi)).into()]);
     // Cancelled: no tap.
-    input.touch(Source::Touch(1), Some(&tab()), true, (5.0, 0.0), t0());
-    assert_eq!(events(&input.up(Source::Touch(1), End::Cancel, &blank(), t0())), vec![PointerEvent::Up(Id::Tab(Tab::Wifi)).into()]);
+    act(|o| input.touch(Source::Touch(1), Some(&tab()), true, (5.0, 0.0), t0(), o));
+    assert_eq!(events(&act(|o| input.up(Source::Touch(1), End::Cancel, &blank(), t0(), o))), vec![PointerEvent::Up(Id::Tab(Tab::Wifi)).into()]);
 }
 
 /// A state with `n` networks, of which the Wi-Fi list shows 5.
@@ -94,20 +101,23 @@ fn a_still_finger_on_a_list_taps_and_one_moving_drags() {
     let mut input = Input::default();
     let t = t0();
     let wifi = row(ListId::Wifi, 2);
-    input.touch(Source::Touch(1), Some(&wifi), true, (5.0, 300.0), t);
-    assert!(input.moved(Source::Touch(1), (8.0, 300.0 - DRAG_START + 1.0), t).is_empty(), "a little jitter: still a tap");
-    let up = input.up(Source::Touch(1), End::Release, &state, t);
+    act(|o| input.touch(Source::Touch(1), Some(&wifi), true, (5.0, 300.0), t, o));
+    assert!(act(|o| input.moved(Source::Touch(1), (8.0, 300.0 - DRAG_START + 1.0), t, o)).is_empty(), "a little jitter: still a tap");
+    let up = act(|o| input.up(Source::Touch(1), End::Release, &state, t, o));
     assert!(events(&up).contains(&PointerEvent::Activate(wifi.id.clone()).into()));
     // Moved past the threshold, the row is let go without a tap and the list follows the finger 1:1
     // in rows.
-    input.touch(Source::Touch(1), Some(&wifi), true, (5.0, 300.0), t);
-    let moved = input.moved(Source::Touch(1), (5.0, 275.0), t + Duration::from_millis(500));
+    act(|o| input.touch(Source::Touch(1), Some(&wifi), true, (5.0, 300.0), t, o));
+    let moved = act(|o| input.moved(Source::Touch(1), (5.0, 275.0), t + Duration::from_millis(500), o));
     assert_eq!(moved[0], Action::Disarm(Source::Touch(1), Timer::Hold));
     assert_eq!(events(&moved), vec![PointerEvent::Up(wifi.id.clone()).into(), ListEvent::Scroll(ListId::Wifi, 0.5).into()]);
-    assert_eq!(events(&input.moved(Source::Touch(1), (5.0, 325.0), t + Duration::from_millis(600))), vec![ListEvent::Scroll(ListId::Wifi, -1.0).into()]);
-    assert!(input.timer(Source::Touch(1), Timer::Hold, &state, t).is_empty(), "no long press while dragging");
+    assert_eq!(
+        events(&act(|o| input.moved(Source::Touch(1), (5.0, 325.0), t + Duration::from_millis(600), o))),
+        vec![ListEvent::Scroll(ListId::Wifi, -1.0).into()]
+    );
+    assert!(act(|o| input.timer(Source::Touch(1), Timer::Hold, &state, t, o)).is_empty(), "no long press while dragging");
     // Let go slowly, there is no tap and no fling.
-    let up = input.up(Source::Touch(1), End::Release, &state, t + Duration::from_secs(2));
+    let up = act(|o| input.up(Source::Touch(1), End::Release, &state, t + Duration::from_secs(2), o));
     assert!(events(&up).is_empty() && !up.iter().any(|a| matches!(a, Action::Arm(..))), "{up:?}");
 }
 
@@ -118,11 +128,11 @@ fn a_fling_slows_down_and_stops_at_the_end() {
     let t = t0();
     let ms = |n| t + Duration::from_millis(n);
     let wifi = row(ListId::Wifi, 0);
-    input.touch(Source::Touch(1), Some(&wifi), true, (5.0, 400.0), t);
-    let mut fx = input.moved(Source::Touch(1), (5.0, 380.0), ms(10));
-    fx.extend(input.moved(Source::Touch(1), (5.0, 300.0), ms(30)));
+    act(|o| input.touch(Source::Touch(1), Some(&wifi), true, (5.0, 400.0), t, o));
+    let mut fx = act(|o| input.moved(Source::Touch(1), (5.0, 380.0), ms(10), o));
+    fx.extend(act(|o| input.moved(Source::Touch(1), (5.0, 300.0), ms(30), o)));
     run(&mut state, &fx);
-    let up = input.up(Source::Touch(1), End::Release, &state, ms(35));
+    let up = act(|o| input.up(Source::Touch(1), End::Release, &state, ms(35), o));
     assert!(up.contains(&Action::Arm(Source::Touch(1), Timer::Fling, FLING_EVERY)), "{up:?}");
     let mut at = 35;
     let mut steps = 0;
@@ -131,7 +141,7 @@ fn a_fling_slows_down_and_stops_at_the_end() {
     loop {
         at += 16;
         steps += 1;
-        let fx = input.timer(Source::Touch(1), Timer::Fling, &state, ms(at));
+        let fx = act(|o| input.timer(Source::Touch(1), Timer::Fling, &state, ms(at), o));
         let more = run(&mut state, &fx);
         let now = state.lists().scroll(ListId::Wifi).offset();
         gaps.push(now - last);
@@ -144,13 +154,13 @@ fn a_fling_slows_down_and_stops_at_the_end() {
     assert!(gaps.windows(2).take(10).all(|w| w[1] <= w[0] + 1e-4), "slowing down: {gaps:?}");
     assert_eq!(state.lists().scroll(ListId::Wifi).offset(), 15.0, "at the end: {gaps:?}");
     // A touch stops a fling.
-    input.touch(Source::Touch(1), Some(&wifi), true, (5.0, 400.0), ms(at));
-    let fx = input.moved(Source::Touch(1), (5.0, 500.0), ms(at + 10));
+    act(|o| input.touch(Source::Touch(1), Some(&wifi), true, (5.0, 400.0), ms(at), o));
+    let fx = act(|o| input.moved(Source::Touch(1), (5.0, 500.0), ms(at + 10), o));
     run(&mut state, &fx);
-    input.up(Source::Touch(1), End::Release, &state, ms(at + 12));
-    let stop = input.touch(Source::Touch(2), Some(&wifi), true, (5.0, 100.0), ms(at + 20));
+    act(|o| input.up(Source::Touch(1), End::Release, &state, ms(at + 12), o));
+    let stop = act(|o| input.touch(Source::Touch(2), Some(&wifi), true, (5.0, 100.0), ms(at + 20), o));
     assert!(stop.contains(&Action::Disarm(Source::Touch(1), Timer::Fling)), "{stop:?}");
-    assert!(input.timer(Source::Touch(1), Timer::Fling, &state, ms(at + 40)).is_empty());
+    assert!(act(|o| input.timer(Source::Touch(1), Timer::Fling, &state, ms(at + 40), o)).is_empty());
 }
 
 #[test]
@@ -161,15 +171,15 @@ fn library_view_settles_on_a_whole_row() {
     let t = t0();
     let ms = |n| t + Duration::from_millis(n);
     let entry = Target { list: Some(InList { list: ListId::LibraryView, row_h: 100.0 }), ..row(ListId::LibraryView, 0) };
-    input.touch(Source::Touch(1), Some(&entry), true, (5.0, 400.0), t);
-    let fx = input.moved(Source::Touch(1), (5.0, 260.0), ms(500));
+    act(|o| input.touch(Source::Touch(1), Some(&entry), true, (5.0, 400.0), t, o));
+    let fx = act(|o| input.moved(Source::Touch(1), (5.0, 260.0), ms(500), o));
     run(&mut state, &fx);
     assert_eq!(state.lists().scroll(ListId::LibraryView).offset(), 1.4);
-    let up = input.up(Source::Touch(1), End::Release, &state, ms(2000));
+    let up = act(|o| input.up(Source::Touch(1), End::Release, &state, ms(2000), o));
     assert!(run(&mut state, &up), "settling");
     let mut at = 2000;
     loop {
-        let fx = input.timer(Source::Touch(1), Timer::Fling, &state, ms(at));
+        let fx = act(|o| input.timer(Source::Touch(1), Timer::Fling, &state, ms(at), o));
         if !run(&mut state, &fx) || at > 10_000 {
             break;
         }
@@ -183,37 +193,40 @@ fn library_view_settles_on_a_whole_row() {
 fn a_held_key_repeats() {
     let state = State::new(Init::default());
     let mut input = Input::default();
-    input.press(Source::PadA, key(), Hold::Repeat, t0());
-    let held = input.timer(Source::PadA, Timer::Hold, &state, t0());
+    act(|o| input.press(Source::PadA, key(), Hold::Repeat, t0(), o));
+    let held = act(|o| input.timer(Source::PadA, Timer::Hold, &state, t0(), o));
     assert_eq!(held, vec![Action::Emit(PointerEvent::Activate(key()).into()), Action::Arm(Source::PadA, Timer::Hold, REPEAT)]);
-    assert_eq!(events(&input.up(Source::PadA, End::Release, &blank(), t0())), vec![PointerEvent::Up(key()).into()]);
+    assert_eq!(events(&act(|o| input.up(Source::PadA, End::Release, &blank(), t0(), o))), vec![PointerEvent::Up(key()).into()]);
 }
 
 #[test]
 fn a_slide_starts_when_moved_far_enough_or_held() {
     let state = State::new(Init::default());
     let mut input = Input::default();
-    let down = input.touch(Source::Touch(1), Some(&volume()), true, (300.0, 0.0), t0());
+    let down = act(|o| input.touch(Source::Touch(1), Some(&volume()), true, (300.0, 0.0), t0(), o));
     assert!(down.contains(&Action::Arm(Source::Touch(1), Timer::Slide, SLIDE_AFTER)));
     // Not far enough yet: nothing.
-    assert!(input.moved(Source::Touch(1), (300.0 + SLIDE_MOVE - 1.0, 0.0), t0()).is_empty());
-    let moved = input.moved(Source::Touch(1), (300.0 + SLIDE_MOVE, 0.0), t0());
+    assert!(act(|o| input.moved(Source::Touch(1), (300.0 + SLIDE_MOVE - 1.0, 0.0), t0(), o)).is_empty());
+    let moved = act(|o| input.moved(Source::Touch(1), (300.0 + SLIDE_MOVE, 0.0), t0(), o));
     assert_eq!(moved[0], Action::Disarm(Source::Touch(1), Timer::Slide));
     // The control is let go as the slider comes up, so it isn't shown pressed under it.
     let start = Slide::Start { control: Control::Volume, x: 290.0 + SLIDE_MOVE, width: 600.0 };
     assert_eq!(events(&moved), vec![PointerEvent::Up(Id::Control(Control::Volume)).into(), start.into()]);
-    assert_eq!(events(&input.moved(Source::Touch(1), (400.0, 0.0), t0())), vec![Slide::To { x: 390.0 }.into()]);
-    let up = input.up(Source::Touch(1), End::Release, &blank(), t0());
+    assert_eq!(events(&act(|o| input.moved(Source::Touch(1), (400.0, 0.0), t0(), o))), vec![Slide::To { x: 390.0 }.into()]);
+    let up = act(|o| input.up(Source::Touch(1), End::Release, &blank(), t0(), o));
     assert_eq!(events(&up), vec![Slide::End.into()]);
 
     // Held still: the timer starts it.
-    input.touch(Source::Mouse, Some(&volume()), true, (300.0, 0.0), t0());
+    act(|o| input.touch(Source::Mouse, Some(&volume()), true, (300.0, 0.0), t0(), o));
     let start = Slide::Start { control: Control::Volume, x: 290.0, width: 600.0 };
-    assert_eq!(events(&input.timer(Source::Mouse, Timer::Slide, &state, t0())), vec![PointerEvent::Up(Id::Control(Control::Volume)).into(), start.into()]);
+    assert_eq!(
+        events(&act(|o| input.timer(Source::Mouse, Timer::Slide, &state, t0(), o))),
+        vec![PointerEvent::Up(Id::Control(Control::Volume)).into(), start.into()]
+    );
     // Lifted before either, it is a tap, which opens the tab.
-    input.up(Source::Mouse, End::Release, &blank(), t0());
-    input.touch(Source::Mouse, Some(&volume()), true, (300.0, 0.0), t0());
-    let up = input.up(Source::Mouse, End::Release, &blank(), t0());
+    act(|o| input.up(Source::Mouse, End::Release, &blank(), t0(), o));
+    act(|o| input.touch(Source::Mouse, Some(&volume()), true, (300.0, 0.0), t0(), o));
+    let up = act(|o| input.up(Source::Mouse, End::Release, &blank(), t0(), o));
     assert!(up.contains(&Action::Disarm(Source::Mouse, Timer::Slide)));
     assert!(events(&up).contains(&PointerEvent::Activate(Id::Control(Control::Volume)).into()));
 }
@@ -225,11 +238,11 @@ fn a_keymap_parameter_slides_at_once() {
     let track = Track { x0: 10.0, w: 600.0 };
     let row = Target { id: Id::Control(control), drag: Some(Drag::Slide { control, track, at_once: true }), ..volume() };
     let mut input = Input::default();
-    let down = input.touch(Source::Touch(1), Some(&row), true, (300.0, 0.0), t0());
+    let down = act(|o| input.touch(Source::Touch(1), Some(&row), true, (300.0, 0.0), t0(), o));
     assert_eq!(events(&down)[2..], [PointerEvent::Up(Id::Control(control)).into(), Slide::Start { control, x: 290.0, width: 600.0 }.into()], "no wait");
     assert!(!down.iter().any(|a| matches!(a, Action::Arm(..))), "no timers: {down:?}");
-    assert_eq!(events(&input.moved(Source::Touch(1), (310.0, 0.0), t0())), vec![Slide::To { x: 300.0 }.into()]);
-    let up = input.up(Source::Touch(1), End::Release, &blank(), t0());
+    assert_eq!(events(&act(|o| input.moved(Source::Touch(1), (310.0, 0.0), t0(), o))), vec![Slide::To { x: 300.0 }.into()]);
+    let up = act(|o| input.up(Source::Touch(1), End::Release, &blank(), t0(), o));
     assert_eq!(events(&up), vec![Slide::End.into()]);
     assert!(!events(&up).contains(&PointerEvent::Activate(Id::Control(control)).into()), "not a tap");
 }
@@ -237,46 +250,46 @@ fn a_keymap_parameter_slides_at_once() {
 #[test]
 fn a_second_finger_on_a_control_meanwhile_is_a_tap() {
     let mut input = Input::default();
-    input.touch(Source::Touch(1), Some(&volume()), true, (300.0, 0.0), t0());
-    let second = input.touch(Source::Touch(2), Some(&volume()), true, (100.0, 0.0), t0());
+    act(|o| input.touch(Source::Touch(1), Some(&volume()), true, (300.0, 0.0), t0(), o));
+    let second = act(|o| input.touch(Source::Touch(2), Some(&volume()), true, (100.0, 0.0), t0(), o));
     assert!(!second.iter().any(|a| matches!(a, Action::Arm(_, Timer::Slide, _))));
-    assert!(input.moved(Source::Touch(2), (200.0, 0.0), t0()).is_empty());
+    assert!(act(|o| input.moved(Source::Touch(2), (200.0, 0.0), t0(), o)).is_empty());
     // The same source again is ignored until it lifts.
-    assert!(input.touch(Source::Touch(1), Some(&tab()), true, (0.0, 0.0), t0()).is_empty());
+    assert!(act(|o| input.touch(Source::Touch(1), Some(&tab()), true, (0.0, 0.0), t0(), o)).is_empty());
 }
 
 #[test]
 fn a_level_row_follows_the_finger_and_the_release_focuses_it() {
     let state = State::new(Init::default());
     let mut input = Input::default();
-    let down = input.touch(Source::Touch(1), Some(&level()), true, (200.0, 0.0), t0());
+    let down = act(|o| input.touch(Source::Touch(1), Some(&level()), true, (200.0, 0.0), t0(), o));
     assert!(events(&down).contains(&LevelEvent::Set(Level::Volume, 50).into()));
     assert!(!down.iter().any(|a| matches!(a, Action::Arm(..))));
-    assert_eq!(events(&input.moved(Source::Touch(1), (350.0, 0.0), t0())), vec![LevelEvent::Set(Level::Volume, 100).into()]);
-    assert!(input.timer(Source::Touch(1), Timer::Hold, &state, t0()).is_empty());
-    let up = input.up(Source::Touch(1), End::Release, &blank(), t0());
+    assert_eq!(events(&act(|o| input.moved(Source::Touch(1), (350.0, 0.0), t0(), o))), vec![LevelEvent::Set(Level::Volume, 100).into()]);
+    assert!(act(|o| input.timer(Source::Touch(1), Timer::Hold, &state, t0(), o)).is_empty());
+    let up = act(|o| input.up(Source::Touch(1), End::Release, &blank(), t0(), o));
     assert_eq!(events(&up), vec![PointerEvent::Activate(Id::Level(Level::Volume)).into(), PointerEvent::Up(Id::Level(Level::Volume)).into()]);
-    assert!(input.moved(Source::Touch(1), (100.0, 0.0), t0()).is_empty());
+    assert!(act(|o| input.moved(Source::Touch(1), (100.0, 0.0), t0(), o)).is_empty());
 }
 
 #[test]
 fn pad_a_is_released_when_the_pad_leaves_the_screens() {
     let mut input = Input::default();
-    input.press(Source::PadA, Id::Tab(Tab::Wifi), Hold::Long, t0());
-    assert!(input.pad_route(PadRoute::Ui, &blank()).is_empty());
-    let released = input.pad_route(PadRoute::Game, &blank());
+    act(|o| input.press(Source::PadA, Id::Tab(Tab::Wifi), Hold::Long, t0(), o));
+    assert!(act(|o| input.pad_route(PadRoute::Ui, &blank(), o)).is_empty());
+    let released = act(|o| input.pad_route(PadRoute::Game, &blank(), o));
     assert_eq!(events(&released), vec![PointerEvent::Up(Id::Tab(Tab::Wifi)).into()]);
     assert!(!input.pressed(Source::PadA));
-    assert!(input.pad_route(PadRoute::Game, &blank()).is_empty());
+    assert!(act(|o| input.pad_route(PadRoute::Game, &blank(), o)).is_empty());
 }
 
 #[test]
 fn cancelled_touches_end_without_a_tap() {
     let mut input = Input::default();
-    input.touch(Source::Touch(1), Some(&tab()), true, (0.0, 0.0), t0());
-    input.touch(Source::Touch(2), Some(&volume()), true, (300.0, 0.0), t0());
-    input.touch(Source::Mouse, Some(&tab()), true, (0.0, 0.0), t0());
-    let cancelled = input.cancel_touches(&blank());
+    act(|o| input.touch(Source::Touch(1), Some(&tab()), true, (0.0, 0.0), t0(), o));
+    act(|o| input.touch(Source::Touch(2), Some(&volume()), true, (300.0, 0.0), t0(), o));
+    act(|o| input.touch(Source::Mouse, Some(&tab()), true, (0.0, 0.0), t0(), o));
+    let cancelled = act(|o| input.cancel_touches(&blank(), o));
     assert!(!events(&cancelled).iter().any(|e| matches!(e, Event::Pointer(PointerEvent::Activate(_)))));
     assert!(input.pressed(Source::Mouse) && !input.pressed(Source::Touch(1)) && !input.pressed(Source::Touch(2)));
 }
@@ -292,33 +305,33 @@ fn a_finger_moving_on_a_key_points_and_takes_the_other_tapping_fingers_along() {
     let (a, ctrl, held) = (Source::Touch(1), Source::Touch(2), Source::Touch(3));
     let key_at = |k| target(Id::Key(keyboard::find(k).unwrap_or(KeyPos { row: 0, col: 0 })), None);
     // A little jitter still types.
-    input.touch(a, Some(&key_at(Key::Char('a'))), true, (10.0, 10.0), t0());
-    assert!(input.moved(a, (10.0 + POINT_START - 1.0, 10.0), t0()).is_empty());
-    assert!(events(&input.up(a, End::Release, &state, t0())).contains(&PointerEvent::Activate(key()).into()));
+    act(|o| input.touch(a, Some(&key_at(Key::Char('a'))), true, (10.0, 10.0), t0(), o));
+    assert!(act(|o| input.moved(a, (10.0 + POINT_START - 1.0, 10.0), t0(), o)).is_empty());
+    assert!(events(&act(|o| input.up(a, End::Release, &state, t0(), o))).contains(&PointerEvent::Activate(key()).into()));
     // Ctrl tapping, a key held and repeating, and a finger moving: Ctrl and the moving finger point,
     // and the held key stays a key.
-    input.touch(ctrl, Some(&key_at(Key::Mod(keyboard::Modifier::Ctrl))), true, (0.0, 50.0), t0());
-    input.touch(held, Some(&key_at(Key::Named(keyboard::Named::Backspace))), true, (90.0, 30.0), t0());
-    input.timer(held, Timer::Hold, &state, t0());
-    input.touch(a, Some(&key_at(Key::Char('a'))), true, (10.0, 10.0), t0());
-    let moved = input.moved(a, (10.0, 10.0 + POINT_START), t0());
+    act(|o| input.touch(ctrl, Some(&key_at(Key::Mod(keyboard::Modifier::Ctrl))), true, (0.0, 50.0), t0(), o));
+    act(|o| input.touch(held, Some(&key_at(Key::Named(keyboard::Named::Backspace))), true, (90.0, 30.0), t0(), o));
+    act(|o| input.timer(held, Timer::Hold, &state, t0(), o));
+    act(|o| input.touch(a, Some(&key_at(Key::Char('a'))), true, (10.0, 10.0), t0(), o));
+    let moved = act(|o| input.moved(a, (10.0, 10.0 + POINT_START), t0(), o));
     assert_eq!(points(&moved).len(), 2, "{moved:?}");
     assert!(points(&moved).iter().all(|(s, phase)| *s != held && *phase == ContactPhase::Down));
     assert!(!events(&moved).iter().any(|e| matches!(e, Event::Pointer(PointerEvent::Activate(_)))), "let go without typing");
-    assert_eq!(points(&input.moved(a, (20.0, 40.0), t0())), vec![(a, ContactPhase::Move)]);
-    assert!(points(&input.moved(held, (0.0, 0.0), t0())).is_empty(), "held: a key wherever it goes");
+    assert_eq!(points(&act(|o| input.moved(a, (20.0, 40.0), t0(), o))), vec![(a, ContactPhase::Move)]);
+    assert!(points(&act(|o| input.moved(held, (0.0, 0.0), t0(), o))).is_empty(), "held: a key wherever it goes");
     // Lifting the last pointing finger arms the idle timer.
-    let up = input.up(ctrl, End::Release, &state, t0());
+    let up = act(|o| input.up(ctrl, End::Release, &state, t0(), o));
     assert_eq!((points(&up), up.iter().any(|a| matches!(a, Action::Arm(_, Timer::Pointing, _)))), (vec![(ctrl, ContactPhase::Up)], false));
-    let up = input.up(a, End::Release, &state, t0());
+    let up = act(|o| input.up(a, End::Release, &state, t0(), o));
     assert!(up.contains(&Action::Arm(a, Timer::Pointing, POINT_IDLE)) && events(&up).is_empty(), "{up:?}");
     // A finger down meanwhile points at once and stops the idle.
     let b = Source::Touch(4);
-    let again = input.point(b, (5.0, 5.0), t0());
+    let again = act(|o| input.point(b, (5.0, 5.0), t0(), o));
     assert!(again.contains(&Action::Disarm(a, Timer::Pointing)) && points(&again) == vec![(b, ContactPhase::Down)], "{again:?}");
-    let up = input.up(b, End::Release, &state, t0());
+    let up = act(|o| input.up(b, End::Release, &state, t0(), o));
     assert!(up.contains(&Action::Arm(b, Timer::Pointing, POINT_IDLE)));
-    assert_eq!(events(&input.timer(b, Timer::Pointing, &state, t0())), vec![Pointing::Idle.into()], "idle: typing is back");
+    assert_eq!(events(&act(|o| input.timer(b, Timer::Pointing, &state, t0(), o))), vec![Pointing::Idle.into()], "idle: typing is back");
 }
 
 #[test]
@@ -328,25 +341,25 @@ fn on_a_list_up_and_down_scrolls_and_only_sideways_points() {
     let (t, finger) = (t0(), Source::Touch(1));
     let wifi = row(ListId::Wifi, 2);
     // Moving diagonally, the list takes it at 12 up before pointing could at 24 along.
-    input.touch(finger, Some(&wifi), true, (5.0, 300.0), t);
-    let moved = input.moved(finger, (5.0 + 20.0, 300.0 - DRAG_START), t);
+    act(|o| input.touch(finger, Some(&wifi), true, (5.0, 300.0), t, o));
+    let moved = act(|o| input.moved(finger, (5.0 + 20.0, 300.0 - DRAG_START), t, o));
     assert!(points(&moved).is_empty() && events(&moved).iter().any(|e| matches!(e, Event::List(ListEvent::Scroll(..)))), "{moved:?}");
-    assert!(points(&input.moved(finger, (5.0 + 60.0, 300.0 - DRAG_START), t)).is_empty(), "dragging: a list's");
-    input.up(finger, End::Release, &state, t);
+    assert!(points(&act(|o| input.moved(finger, (5.0 + 60.0, 300.0 - DRAG_START), t, o))).is_empty(), "dragging: a list's");
+    act(|o| input.up(finger, End::Release, &state, t, o));
     // Moving sideways, it points.
-    input.touch(finger, Some(&wifi), true, (5.0, 300.0), t);
-    let moved = input.moved(finger, (5.0 + POINT_START, 300.0 - DRAG_START + 1.0), t);
+    act(|o| input.touch(finger, Some(&wifi), true, (5.0, 300.0), t, o));
+    let moved = act(|o| input.moved(finger, (5.0 + POINT_START, 300.0 - DRAG_START + 1.0), t, o));
     assert_eq!(points(&moved), vec![(finger, ContactPhase::Down)]);
-    input.up(finger, End::Release, &state, t);
+    act(|o| input.up(finger, End::Release, &state, t, o));
     // No pointing outside the screen's point area, such as on the Library on the main screen or a tab on
     // the bar, nor with the mouse.
     for (i, outside) in [target(Id::LibraryView(clamshell_state::LibraryViewId::Entry("g".into())), None), tab()].iter().enumerate() {
         let finger = Source::Touch(2 + i as i32);
-        input.touch(finger, Some(outside), false, (0.0, 0.0), t);
-        assert!(points(&input.moved(finger, (100.0, 0.0), t)).is_empty(), "{:?}", outside.id);
+        act(|o| input.touch(finger, Some(outside), false, (0.0, 0.0), t, o));
+        assert!(points(&act(|o| input.moved(finger, (100.0, 0.0), t, o))).is_empty(), "{:?}", outside.id);
     }
-    input.touch(Source::Mouse, None, true, (0.0, 0.0), t);
-    assert!(points(&input.moved(Source::Mouse, (100.0, 0.0), t)).is_empty());
+    act(|o| input.touch(Source::Mouse, None, true, (0.0, 0.0), t, o));
+    assert!(points(&act(|o| input.moved(Source::Mouse, (100.0, 0.0), t, o))).is_empty());
 }
 
 #[test]
@@ -354,14 +367,14 @@ fn on_nothing_a_finger_points_as_soon_as_it_moves() {
     let state = blank();
     let mut input = Input::default();
     let (t, finger) = (t0(), Source::Touch(1));
-    input.touch(finger, None, true, (50.0, 50.0), t);
-    assert!(points(&input.moved(finger, (50.0 + BLANK_POINT_START - 1.0, 50.0), t)).is_empty(), "jitter");
-    assert_eq!(points(&input.moved(finger, (50.0 + BLANK_POINT_START, 50.0), t)), vec![(finger, ContactPhase::Down)]);
-    input.up(finger, End::Release, &state, t);
+    act(|o| input.touch(finger, None, true, (50.0, 50.0), t, o));
+    assert!(points(&act(|o| input.moved(finger, (50.0 + BLANK_POINT_START - 1.0, 50.0), t, o))).is_empty(), "jitter");
+    assert_eq!(points(&act(|o| input.moved(finger, (50.0 + BLANK_POINT_START, 50.0), t, o))), vec![(finger, ContactPhase::Down)]);
+    act(|o| input.up(finger, End::Release, &state, t, o));
     // A key keeps its tap over that distance.
     let key_at = target(key(), None);
-    input.touch(finger, Some(&key_at), true, (50.0, 50.0), t);
-    assert!(points(&input.moved(finger, (50.0 + BLANK_POINT_START, 50.0), t)).is_empty());
+    act(|o| input.touch(finger, Some(&key_at), true, (50.0, 50.0), t, o));
+    assert!(points(&act(|o| input.moved(finger, (50.0 + BLANK_POINT_START, 50.0), t, o))).is_empty());
 }
 
 #[test]
@@ -369,20 +382,20 @@ fn a_tap_let_go_off_its_target_does_nothing() {
     let state = blank();
     let mut input = Input::default();
     let t = t0();
-    input.touch(Source::Mouse, Some(&tab()), true, (5.0, 5.0), t);
-    input.moved(Source::Mouse, (150.0, 5.0), t);
-    let up = input.up(Source::Mouse, End::Release, &state, t);
+    act(|o| input.touch(Source::Mouse, Some(&tab()), true, (5.0, 5.0), t, o));
+    act(|o| input.moved(Source::Mouse, (150.0, 5.0), t, o));
+    let up = act(|o| input.up(Source::Mouse, End::Release, &state, t, o));
     assert_eq!(events(&up), vec![PointerEvent::Up(Id::Tab(Tab::Wifi)).into()], "off it: no tap");
-    input.touch(Source::Mouse, Some(&tab()), true, (5.0, 5.0), t);
-    input.moved(Source::Mouse, (150.0, 5.0), t);
-    input.moved(Source::Mouse, (50.0, 5.0), t);
-    let up = input.up(Source::Mouse, End::Release, &state, t);
+    act(|o| input.touch(Source::Mouse, Some(&tab()), true, (5.0, 5.0), t, o));
+    act(|o| input.moved(Source::Mouse, (150.0, 5.0), t, o));
+    act(|o| input.moved(Source::Mouse, (50.0, 5.0), t, o));
+    let up = act(|o| input.up(Source::Mouse, End::Release, &state, t, o));
     assert!(events(&up).contains(&PointerEvent::Activate(Id::Tab(Tab::Wifi)).into()), "back on it: a tap");
     // A finger may lift a little off it.
     let finger = Source::Touch(1);
-    input.touch(finger, Some(&tab()), true, (95.0, 5.0), t);
-    input.moved(finger, (100.0 + TOUCH_SLACK - 1.0, 5.0), t);
-    assert!(events(&input.up(finger, End::Release, &state, t)).contains(&PointerEvent::Activate(Id::Tab(Tab::Wifi)).into()));
+    act(|o| input.touch(finger, Some(&tab()), true, (95.0, 5.0), t, o));
+    act(|o| input.moved(finger, (100.0 + TOUCH_SLACK - 1.0, 5.0), t, o));
+    assert!(events(&act(|o| input.up(finger, End::Release, &state, t, o))).contains(&PointerEvent::Activate(Id::Tab(Tab::Wifi)).into()));
 }
 
 #[test]
@@ -409,23 +422,27 @@ fn a_level_row_in_a_list_scrolls_with_a_vertical_swipe_and_sets_with_a_sideways_
     let (finger, row) = (Source::Touch(1), level_in_list());
     let set = |v| Event::from(LevelEvent::Set(Level::Stream(0), v));
     let mut input = Input::default();
-    let down = input.touch(finger, Some(&row), true, (150.0, 25.0), t0());
+    let down = act(|o| input.touch(finger, Some(&row), true, (150.0, 25.0), t0(), o));
     assert!(!events(&down).iter().any(|e| matches!(e, Event::Level(_))), "nothing set yet: {down:?}");
-    let swiped = input.moved(finger, (152.0, 25.0 - DRAG_START), t0());
+    let swiped = act(|o| input.moved(finger, (152.0, 25.0 - DRAG_START), t0(), o));
     assert_eq!(events(&swiped), vec![PointerEvent::Up(row.id.clone()).into(), ListEvent::Scroll(ListId::Streams, DRAG_START / 50.0).into()]);
-    assert_eq!(events(&input.moved(finger, (180.0, -75.0), t0())), vec![ListEvent::Scroll(ListId::Streams, (100.0 - DRAG_START) / 50.0).into()]);
-    assert!(!events(&input.up(finger, End::Release, &blank(), t0())).iter().any(|e| matches!(e, Event::Level(_) | Event::Pointer(PointerEvent::Activate(_)))));
+    assert_eq!(events(&act(|o| input.moved(finger, (180.0, -75.0), t0(), o))), vec![ListEvent::Scroll(ListId::Streams, (100.0 - DRAG_START) / 50.0).into()]);
+    assert!(
+        !events(&act(|o| input.up(finger, End::Release, &blank(), t0(), o)))
+            .iter()
+            .any(|e| matches!(e, Event::Level(_) | Event::Pointer(PointerEvent::Activate(_))))
+    );
 
     let mut input = Input::default();
-    input.touch(finger, Some(&row), true, (150.0, 25.0), t0());
-    assert_eq!(events(&input.moved(finger, (150.0 + DRAG_START, 27.0), t0())), vec![set(31)]);
-    assert_eq!(events(&input.moved(finger, (200.0, 60.0), t0())), vec![set(50)], "set, it follows the finger, whatever the height");
-    let up = input.up(finger, End::Release, &blank(), t0());
+    act(|o| input.touch(finger, Some(&row), true, (150.0, 25.0), t0(), o));
+    assert_eq!(events(&act(|o| input.moved(finger, (150.0 + DRAG_START, 27.0), t0(), o))), vec![set(31)]);
+    assert_eq!(events(&act(|o| input.moved(finger, (200.0, 60.0), t0(), o))), vec![set(50)], "set, it follows the finger, whatever the height");
+    let up = act(|o| input.up(finger, End::Release, &blank(), t0(), o));
     assert_eq!(events(&up), vec![PointerEvent::Activate(row.id.clone()).into(), PointerEvent::Up(row.id.clone()).into()]);
 
     let mut input = Input::default();
-    input.touch(finger, Some(&row), true, (150.0, 25.0), t0());
-    assert_eq!(input.timer(finger, Timer::Hold, &blank(), t0()), vec![], "held still, it doesn't long-press");
-    let up = input.up(finger, End::Release, &blank(), t0());
+    act(|o| input.touch(finger, Some(&row), true, (150.0, 25.0), t0(), o));
+    assert_eq!(act(|o| input.timer(finger, Timer::Hold, &blank(), t0(), o)), vec![], "held still, it doesn't long-press");
+    let up = act(|o| input.up(finger, End::Release, &blank(), t0(), o));
     assert_eq!(events(&up), vec![set(25), PointerEvent::Activate(row.id.clone()).into(), PointerEvent::Up(row.id.clone()).into()]);
 }

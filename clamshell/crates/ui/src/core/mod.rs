@@ -128,6 +128,8 @@ pub struct Core {
     outbox: VecDeque<Effect>,
     /// The events waiting while another is handled.
     queue: EventQueue,
+    /// What the input side asked, kept to be reused (see [`Core::with_input`]).
+    actions: Vec<Action>,
     /// What the frames recorded since the last [`Core::frames_done`] report, in order: what views reported
     /// (see [`crate::toolkit::FrameOut::report`]), and the lists' rows.
     reports: Vec<Event>,
@@ -169,6 +171,7 @@ impl Core {
             effects: Vec::new(),
             outbox: VecDeque::new(),
             queue: EventQueue::default(),
+            actions: Vec::new(),
             reports: Vec::new(),
         })
     }
@@ -237,8 +240,8 @@ impl Core {
         self.state_revision = self.state_revision.wrapping_add(1);
         self.changed();
         self.follow_top(top, focus.as_ref(), pressed.as_ref());
-        let released = self.input.pad_route(self.state.pad().route(), &self.state);
-        self.run_actions(released);
+        let route = self.state.pad().route();
+        self.with_input(|input, state, out| input.pad_route(route, state, out));
         self.outbox.extend(self.effects.drain(..));
     }
 
@@ -273,8 +276,7 @@ impl Core {
         }
         while let Some(i) = self.timers.iter().enumerate().filter(|(_, t)| t.2 <= now).min_by_key(|(_, t)| t.2).map(|(i, _)| i) {
             let (source, timer, _) = self.timers.swap_remove(i);
-            let actions = self.input.timer(source, timer, &self.state, now);
-            self.run_actions(actions);
+            self.with_input(|input, state, out| input.timer(source, timer, state, now, out));
         }
         if !self.contacts.is_empty() {
             let contacts = std::mem::take(&mut self.contacts);
@@ -282,9 +284,19 @@ impl Core {
         }
     }
 
+    /// Tells the input side something with `tell`, and carries out what it asks. The list it asks in is
+    /// kept for the next time, so input allocates nothing once that list has room; one told while
+    /// another is carried out starts a list of its own.
+    pub(crate) fn with_input(&mut self, tell: impl FnOnce(&mut Input, &State, &mut Vec<Action>)) {
+        let mut actions = std::mem::take(&mut self.actions);
+        tell(&mut self.input, &self.state, &mut actions);
+        self.run_actions(&mut actions);
+        self.actions = actions;
+    }
+
     /// Carries out what the input side asks: events, and the presses' timers.
-    pub(crate) fn run_actions(&mut self, actions: Vec<Action>) {
-        for action in actions {
+    fn run_actions(&mut self, actions: &mut Vec<Action>) {
+        for action in actions.drain(..) {
             match action {
                 Action::Emit(event) => self.handle(event),
                 Action::Arm(source, timer, after) => {
