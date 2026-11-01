@@ -218,19 +218,46 @@ fn paste(path: &Path, into: &Path, cut: bool, sink: &impl Sink) -> Result<String
         }
     }
     let to = free_name(into, &name);
-    let mut progress =
-        Progress { what: format!("{} {name}", if cut { "Moving" } else { "Copying" }), total: size(path).max(1), done: 0, last: Instant::now(), sink };
-    if let Err(e) = copy(path, &to, &mut progress) {
-        if let Err(e) = remove(&to) {
+    let mut progress = Progress {
+        what: format!("{} {name}", if cut { "Moving" } else { "Copying" }),
+        total: size(path).max(1),
+        done: 0,
+        last: Instant::now(),
+        sink,
+        left_out: 0,
+    };
+    copy_over(path, &to, cut, &mut progress)
+}
+
+/// Copies `path` to `to`, then removes `path` if `cut`. What was copied is on the disk, synced once for
+/// its filesystem, before the original goes. Pipes, sockets and devices can't be copied: a copy says how
+/// many were left out, and a move with any keeps its original, since they would be lost.
+fn copy_over(path: &Path, to: &Path, cut: bool, progress: &mut Progress<impl Sink>) -> Result<String, String> {
+    let name = name_of(path);
+    let copied = copy(path, to, progress).and_then(|()| {
+        let dir = to.parent().unwrap_or(Path::new("/"));
+        Ok(rustix::fs::syncfs(fs::File::open(dir)?)?)
+    });
+    if let Err(e) = copied {
+        if let Err(e) = remove(to) {
             log::warn!("files: removing {}: {e}", to.display());
         }
         return Err(format!("Copying {name}: {e}"));
     }
-    if cut {
-        remove(path).map_err(|e| format!("Moving {name}: copied, but the original stays: {e}"))?;
-        return Ok(format!("Moved {name}"));
+    let left_out = match progress.left_out {
+        0 => String::new(),
+        1 => "1 pipe, socket or device".to_owned(),
+        n => format!("{n} pipes, sockets or devices"),
+    };
+    match (cut, left_out.is_empty()) {
+        (true, true) => {
+            remove(path).map_err(|e| format!("Moving {name}: copied, but the original stays: {e}"))?;
+            Ok(format!("Moved {name}"))
+        }
+        (true, false) => Err(format!("Moving {name}: copied, but the original stays: {left_out} in it can't be moved")),
+        (false, true) => Ok(format!("Copied {name}")),
+        (false, false) => Ok(format!("Copied {name}, without {left_out}")),
     }
-    Ok(format!("Copied {name}"))
 }
 
 /// Extracts `archive` with bsdtar into a new folder `name` beside it, with " (2)" added if the name is
@@ -344,6 +371,8 @@ struct Progress<'a, S> {
     done: u64,
     last: Instant,
     sink: &'a S,
+    /// The pipes, sockets and devices met, which have no contents to copy.
+    left_out: usize,
 }
 
 impl<S: Sink> Progress<'_, S> {
@@ -375,6 +404,7 @@ fn copy(from: &Path, to: &Path, progress: &mut Progress<impl Sink>) -> io::Resul
     // A pipe, socket or device has no contents to copy: opening a pipe would wait for a writer.
     if !meta.is_file() {
         log::info!("files: {}: not a file or folder: not copied", from.display());
+        progress.left_out += 1;
         return Ok(());
     }
     let mut src = fs::File::open(from)?;
@@ -388,7 +418,6 @@ fn copy(from: &Path, to: &Path, progress: &mut Progress<impl Sink>) -> io::Resul
         dst.write_all(buf.get(..n).unwrap_or(&[]))?;
         progress.add(n as u64);
     }
-    dst.sync_all()?;
     fs::set_permissions(to, meta.permissions())
 }
 
@@ -443,7 +472,7 @@ mod tests {
         let fifo = dir.join("games/pipe");
         rustix::fs::mknodat(rustix::fs::CWD, &fifo, rustix::fs::FileType::Fifo, rustix::fs::Mode::from_raw_mode(0o600), 0).unwrap();
         fs::create_dir(dir.join("to")).unwrap();
-        assert_eq!(paste(&dir.join("games"), &dir.join("to"), false, &tx).unwrap(), "Copied games");
+        assert_eq!(paste(&dir.join("games"), &dir.join("to"), false, &tx).unwrap(), "Copied games, without 1 pipe, socket or device");
         assert!(dir.join("to/games/sub").is_dir() && dir.join("to/games/pipe").symlink_metadata().is_err());
     }
 
@@ -490,6 +519,28 @@ mod tests {
         let mut records: Vec<_> = fs::read_dir(trash.join("info")).unwrap().map(|e| e.unwrap().file_name()).collect();
         records.sort();
         assert_eq!(records, ["stuck.trashinfo"], "what stays keeps its record; the rest go");
+    }
+
+    /// A move made by copying (across filesystems) keeps its original when it holds a pipe, a socket or a
+    /// device, which can't be copied and would be lost.
+    #[test]
+    fn a_move_by_copying_keeps_an_original_with_what_cant_be_copied() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        fs::create_dir_all(dir.join("games")).unwrap();
+        fs::write(dir.join("games/save"), "s").unwrap();
+        let fifo = dir.join("games/pipe");
+        rustix::fs::mknodat(rustix::fs::CWD, &fifo, rustix::fs::FileType::Fifo, rustix::fs::Mode::from_raw_mode(0o600), 0).unwrap();
+        let (tx, _rx) = mpsc::channel();
+        let mut progress = Progress { what: String::new(), total: 1, done: 0, last: Instant::now(), sink: &tx, left_out: 0 };
+        let moved = copy_over(&dir.join("games"), &dir.join("copy"), true, &mut progress);
+        assert!(moved.is_err_and(|e| e.contains("the original stays")));
+        assert!(dir.join("games/pipe").symlink_metadata().is_ok(), "kept");
+        assert_eq!(fs::read_to_string(dir.join("copy/save")).unwrap(), "s", "copied all it could");
+        fs::remove_file(&fifo).unwrap();
+        let mut progress = Progress { what: String::new(), total: 1, done: 0, last: Instant::now(), sink: &tx, left_out: 0 };
+        assert_eq!(copy_over(&dir.join("games"), &dir.join("moved"), true, &mut progress).unwrap(), "Moved games");
+        assert!(!dir.join("games").exists());
     }
 
     #[test]
