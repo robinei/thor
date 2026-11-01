@@ -1612,6 +1612,7 @@ the append).
 | stamping | no PropertyNotify within 30 s | stopping | | GAP |
 | stamping | the focus back where X11 has it before t comes | settled | t dropped | GAP |
 | settled | the focused window's WM_HINTS or WM_PROTOCOLS read again | stamping | focus sent again | GAP |
+| any | _NET_ACTIVE_WINDOW for an open window | any | Activate if it is the focused window's process's (X-Resource's PID); else refused, logged. The message's "requestor's active window" isn't trusted: any client can write it, the focused window's id being public | wm `only_the_focused_program_activates_a_window` |
 
 Nested: "active X11 client receives a timestamped focus offer" (the fixture fails on time 0), each focus
 model's policy and key strokes, "no-input clients receive no keys", "Home removes X11 keyboard focus",

@@ -286,7 +286,7 @@ impl Wm {
                     log::debug!("X11 surface serial id={}", window.id);
                 }
                 if event.format == 32 && event.type_ == self.atoms.get("_NET_ACTIVE_WINDOW") {
-                    self.activate(event.window, event.data.as_data32(), server);
+                    self.activate(event.window, server);
                 }
             }
             Some(CONFIGURE_REQUEST_EVENT) => {
@@ -309,25 +309,24 @@ impl Wm {
         }
         Ok(())
     }
-    /// A client asks for `xid` to be in front (`_NET_ACTIVE_WINDOW`; `data` is its source, time and the
-    /// asker's active window). As for a Wayland client's activation, only the program that has the focus
-    /// may move it: the asker's active window is the focused one, or the window is the focused one's
-    /// process's.
-    pub(super) fn activate(&self, xid: u32, data: [u32; 5], server: &mut Server) {
+    /// A client asks for `xid` to be in front (`_NET_ACTIVE_WINDOW`). As for a Wayland client's
+    /// activation, only the program that has the focus may move it. Who asks isn't known (the message's
+    /// "requestor's active window" is any client's to write, the focused window's id being public), so
+    /// only a window of the focused one's process is put in front.
+    pub(super) fn activate(&self, xid: u32, server: &mut Server) {
         let Some(window) = self.windows.iter().find(|w| w.xid == xid && w.opened) else {
             return log::debug!("X11 activation of {xid}: no such window open");
         };
-        let [_, _, asker, ..] = data;
-        if self.may_activate(window, asker) {
+        if self.may_activate(window) {
             server.core.handle(WindowEvent::Activate(window.id).into());
         } else {
             log::info!("X11 activation of window {} refused: its program doesn't have the focus", window.id);
         }
     }
-    /// Whether `window` may be put in front at the ask of a client whose active window is `asker`.
-    pub(super) fn may_activate(&self, window: &Window, asker: u32) -> bool {
+    /// Whether `window` may be put in front: it is the focused window's process's (by X-Resource's PID).
+    pub(super) fn may_activate(&self, window: &Window) -> bool {
         let focused = self.focus.and_then(|focus| self.windows.iter().find(|w| w.xid == focus));
-        focused.is_some_and(|f| f.xid == asker || (f.pid.is_some() && f.pid == window.pid))
+        focused.is_some_and(|f| f.pid.is_some() && f.pid == window.pid)
     }
     pub(super) fn forget(&mut self, id: i64, server: &mut Server) {
         self.windows.retain(|w| w.id != id);

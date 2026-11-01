@@ -389,7 +389,7 @@ mod tests {
         reparent(&mut wm, 50);
         assert!(wm.windows.is_empty());
     }
-    /// A client may put a window in front only while its program has the focus.
+    /// A client may put a window in front only while its program has the focus, and only its program's.
     #[test]
     fn only_the_focused_program_activates_a_window() {
         let (_display, mut server) = crate::tests::ServerBuilder::new().build();
@@ -402,11 +402,12 @@ mod tests {
             w.pid = Some(pid);
             w.opened = true;
         }
-        assert!(!wm.may_activate(&wm.windows[1], 10), "nothing focused");
+        assert!(!wm.may_activate(&wm.windows[1]), "nothing focused");
         wm.focus = Some(10);
-        assert!(wm.may_activate(&wm.windows[1], 0), "the focused program's own window");
-        assert!(wm.may_activate(&wm.windows[2], 10), "asked by the focused window");
-        assert!(!wm.may_activate(&wm.windows[2], 30), "another program's");
+        assert!(wm.may_activate(&wm.windows[1]), "the focused program's own window");
+        // Another program's, whatever the message names as the asker's active window: that is the
+        // asker's to write, and the focused window's id is public.
+        assert!(!wm.may_activate(&wm.windows[2]), "another program's");
     }
     /// A window opens only once its process is identified, off the compositor's thread, so its facts carry
     /// its unit and processes; a window gone before the answer is forgotten with it, and one whose client
