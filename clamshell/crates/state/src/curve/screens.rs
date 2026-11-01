@@ -176,15 +176,15 @@ mod tests {
         tap(&mut s, row(3));
         picker(&mut s);
         let fx = tap(&mut s, row(0));
-        // The own curve copies Punchy, opens on its edit screen and is chosen; the settings are saved before
-        // the curves.
+        // The own curve copies Punchy, opens on its edit screen and is chosen; the curves are saved before
+        // the settings that choose it (see `State::profile_event`).
         let own = s.curving().curves().own_of("zelda-lttp").map(|p| p.id).unwrap();
         assert_eq!(s.curving().screen(), Some(CurveScreen::Edit(own)));
         assert_eq!(chosen(&s), Some(own));
         assert_eq!(s.curving().in_force(own), s.curving().in_force(2));
         let settings = fx.iter().position(|e| matches!(e, Effect::Save(Save::Settings(_)))).unwrap();
         let curves = fx.iter().position(|e| matches!(e, Effect::Save(Save::Curves(_)))).unwrap();
-        assert!(settings < curves, "{fx:?}");
+        assert!(curves < settings, "{fx:?}");
         assert_eq!(s.curving().name(own), "Own curve");
     }
 

@@ -687,8 +687,8 @@ Pointer(Activate(Row { list: Keymaps, i: 3, part: Edit }))
   PadRoute Listen
 -- keymap-edit-shared.png
 Pointer(Activate(Keymap(MakeOwn)))
-  Save Settings
   Save Keymaps
+  Save Settings
   Apply settings of ff6
 Pointer(Activate(Profile(Keymap, Back)))
   PadRoute Ui

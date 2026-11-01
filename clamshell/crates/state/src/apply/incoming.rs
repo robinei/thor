@@ -159,6 +159,8 @@ impl State {
                 adopted = true;
             }
         }
+        // Order: the keymaps before the settings that choose them, as for a profile made own (see
+        // `State::profile_event`).
         if adopted {
             out.effects.push(self.keymapping.save_effect());
             out.effects.push(self.prefs.save_effect());

@@ -119,7 +119,15 @@ fn a_runner_gets_its_keymap_once() {
     library.runner_keymaps = vec![(runner_key("text"), "viewer".into())];
     let mut s = State::new(Init { library: Some(library), ..init() });
     let fx = s.applied(Event::Start);
-    assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Keymaps(_)))), "{fx:?}");
+    let saves: Vec<&str> = fx
+        .iter()
+        .filter_map(|e| match e {
+            Effect::Save(Save::Settings(_)) => Some("settings"),
+            Effect::Save(Save::Keymaps(_)) => Some("keymaps"),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(saves, ["keymaps", "settings"], "the keymaps, then the settings that choose them, as for one made own: {fx:?}");
     let own = s.keymapping().keymaps().own_of("runner:text").map(|k| k.id);
     assert!(own.is_some());
     assert_eq!(s.prefs().settings().overrides_of("runner:text").get(Setting::Keymap), own);

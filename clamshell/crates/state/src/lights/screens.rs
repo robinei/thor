@@ -290,15 +290,15 @@ mod tests {
         tap(&mut s, row(3));
         picker(&mut s);
         let fx = tap(&mut s, row(0));
-        // The own set copies Ice, opens on its edit screen and is chosen; the settings are saved before
-        // the sets.
+        // The own set copies Ice, opens on its edit screen and is chosen; the sets are saved before the
+        // settings that choose it (see `State::profile_event`).
         let own = s.lighting().sets().own_of("zelda-lttp").map(|p| p.id).unwrap();
         assert_eq!(s.lighting().screen(), Some(LightsScreen::Edit(own)));
         assert_eq!(chosen(&s), Some(own));
         assert_eq!(body(&s, own), body(&s, 2));
         let settings = fx.iter().position(|e| matches!(e, Effect::Save(Save::Settings(_)))).unwrap();
         let lights = fx.iter().position(|e| matches!(e, Effect::Save(Save::Lights(_)))).unwrap();
-        assert!(settings < lights, "{fx:?}");
+        assert!(lights < settings, "{fx:?}");
         assert_eq!(s.lighting().name(own), "Own lights");
     }
 

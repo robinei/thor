@@ -615,9 +615,10 @@ fn slide_start(s: &mut State, param: Param) -> Option<Slider> {
     slider
 }
 
-/// Making a game's own keymap saves the settings that choose it, then the keymaps.
+/// Making a game's own keymap saves the keymaps, then the settings that choose it (see
+/// `State::profile_event`).
 #[test]
-fn making_a_games_own_keymap_saves_the_settings_then_the_keymaps() {
+fn making_a_games_own_keymap_saves_the_keymaps_then_the_settings() {
     let mut s = State::new(Init { keymaps: Keymaps::initial(), ..init() });
     picker(&mut s);
     let fx = tap(&mut s, row(0));
@@ -629,7 +630,7 @@ fn making_a_games_own_keymap_saves_the_settings_then_the_keymaps() {
             _ => None,
         })
         .collect();
-    assert_eq!(saves, ["settings", "keymaps"], "{fx:?}");
+    assert_eq!(saves, ["keymaps", "settings"], "{fx:?}");
 }
 
 #[test]
@@ -741,7 +742,7 @@ fn calibrate_on_the_edit_screen_calibrates_the_gyro() {
 }
 
 /// Make own on a shared keymap's edit screen makes the game's own keymap from it, chosen for the game and
-/// open for editing, the settings saved before the keymaps. On the game's own keymap it does nothing.
+/// open for editing, the keymaps saved before the settings. On the game's own keymap it does nothing.
 #[test]
 fn make_own_on_a_shared_keymaps_edit_screen() {
     let mut s = edit_screen();
@@ -759,7 +760,7 @@ fn make_own_on_a_shared_keymaps_edit_screen() {
             _ => None,
         })
         .collect();
-    assert_eq!(saves, ["settings", "keymaps"], "{fx:?}");
+    assert_eq!(saves, ["keymaps", "settings"], "{fx:?}");
     let count = s.keymapping().keymaps().list().len();
     assert_eq!(keymap(&mut s, KeymapId::MakeOwn), vec![]);
     assert_eq!(s.keymapping().keymaps().list().len(), count, "no second own keymap");

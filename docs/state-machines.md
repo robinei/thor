@@ -456,7 +456,7 @@ Screens: the picker's (`profiles::picker`, as for keymaps; Default colours is th
 | Transition | Test |
 |---|---|
 | Curve tile → List; a row → chosen for the level edited; Off → 0 | `the_tile_opens_the_picker_and_a_row_chooses_a_curve_for_the_game` |
-| List: Make own → own curve copied from the one in force, Edit opens, chosen; settings saved before curves | `a_games_own_curve_is_made_from_the_one_in_force_and_opens_on_its_sliders` |
+| List: Make own → own curve copied from the one in force, Edit opens, chosen; curves saved before the settings that choose it (a stop between leaves an unchosen profile, never settings naming one not saved) | `a_games_own_curve_is_made_from_the_one_in_force_and_opens_on_its_sliders` |
 | Edit: slide start/to → the curve changes as it moves (the compositor reads it each frame); end → saved once if moved | `a_slider_changes_the_curve_as_it_moves_and_saves_once_when_lifted` |
 | Edit --Back--> List --Back--> closed | `back_goes_from_the_sliders_to_the_picker_and_out` |
 | Menu: Delete in use → asks; confirmed → removed, its games back on Off | `deleting_a_curve_in_use_asks_and_puts_its_games_back_on_off` |
@@ -509,7 +509,7 @@ thread's restart, it is sent again.
 | Transition | Test |
 |---|---|
 | Lights tile → List; a row → chosen for the level edited; Off → 0 | `the_tile_opens_the_picker_and_a_row_chooses_lights_for_the_game` |
-| List: Make own → own set copied from the one in force, Edit opens, chosen; settings saved before lights | `a_games_own_lights_are_made_from_the_ones_in_force_and_open_on_their_edit_screen` |
+| List: Make own → own set copied from the one in force, Edit opens, chosen; lights saved before the settings that choose them | `a_games_own_lights_are_made_from_the_ones_in_force_and_open_on_their_edit_screen` |
 | Edit, linked: slide start/to → both sticks change as it moves, and the lights follow at once; end → saved once if moved; Back → the lights in force again | `linked_a_slider_sets_both_sticks_and_the_lights_follow_it_live` |
 | Edit: Linked → unlinked (saved); a stick tapped → the sliders set it, from its value, and the other keeps its colour; Linked again → the picked stick's colour copied to the other (saved); the edit screen opens with the left picked | `unlinked_the_picked_stick_is_set_and_linking_copies_it_to_the_other` |
 | Edit: "Charging shows the battery" → saved; charging → the charge's colour, unplugged → the colours; on the edit screen, the colours | `charging_shows_the_battery_when_the_set_says_so` |
@@ -643,7 +643,7 @@ anchored lists on their item and every list within its ends; Focus scrolls just 
 | the levels an item inherits from, in force and in the panel alike (`Session::settings_entry`): a running entry's runner as it started, until it starts again after an edit gave it another; else the library's | `the_panel_and_the_settings_in_force_name_the_same_runner` |
 | A level tab selects the level; Reset drops an item's overrides and env | `the_panel_offers_the_items_levels`, `a_runner_can_leave_its_items_without_settings_…` |
 | Env editor | `the_environment_editor_takes_the_keyboard` |
-| runner keymaps given on Library / Start | `a_runner_gets_its_keymap_once`, `a_runners_keymap_given_while_its_item_runs_is_applied` |
+| runner keymaps given on Library / Start: `Save(Keymaps)` then `Save(Settings)`, as for a keymap made own (`making_a_games_own_keymap_saves_the_keymaps_then_the_settings`) | `a_runner_gets_its_keymap_once`, `a_runners_keymap_given_while_its_item_runs_is_applied` |
 | tiles that act through the launch's process (`Setting::through_launch`, the Env tile) dimmed (`Panel::handed_over`) for a runner that hands its apps over and its items, and for the own level of a launcher's game other than Steam's (Heroic's, Lutris's: it runs in the launcher's processes, with the launcher's settings) | battery `an_app_handed_over_is_known_by_its_app_id_and_edited_without_what_it_cant_get`; running `a_launchers_game_other_than_steams_is_edited_as_handed_over` |
 | a change applies to the program in force (sync's Apply) | tests `a_running_game_takes_changes_at_once`, `a_game_coming_in_front_gets_its_settings_…` |
 | the hardware's settings (sync's Apply, the only route to the tuning thread; `Launch` carries settings for its environment only): the entry whose window is waited for to come in front (`Session::awaited_entry`: a launch in front from when it is asked for, a tray Activate, a launcher's game), else the program in force. A launch in the background (autostart, a launcher started for its game) changes nothing | tests `a_launch_in_front_gets_its_settings_applied_and_one_in_the_background_none`; randomized test, invariant 2 |

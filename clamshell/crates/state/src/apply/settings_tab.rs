@@ -175,14 +175,16 @@ impl State {
     pub(crate) fn profile_event(&mut self, kind: ProfileKind, event: ProfileEvent, out: &mut Out) {
         match event {
             ProfileEvent::Choose(id) => self.choose_profile(kind, id, out),
-            // The settings are saved before the profiles.
+            // Order: the profiles are saved before the settings that choose one, so that a stop between
+            // the two writes leaves an own profile nobody chose rather than settings naming a profile not
+            // saved, whose id a later profile could take (`Profiles::next_id` reuses the highest).
             ProfileEvent::MadeOwn(id) => {
-                self.choose_profile(kind, id, out);
                 out.effects.push(match kind {
                     ProfileKind::Keymap => self.keymapping.save(),
                     ProfileKind::Curve => self.curving.save_effect(),
                     ProfileKind::Lights => self.lighting.save_effect(),
                 });
+                self.choose_profile(kind, id, out);
             }
             ProfileEvent::Deleted(id) => {
                 self.prefs.forget(kind.setting(), id);
