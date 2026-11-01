@@ -224,7 +224,10 @@ State: `Pauses{unused, paused: Hidden | Held}`.
 | Running | set to quit when closed, seen, no windows | Quitting | as Quit | background `quits_closed_ends_once_…` |
 | runner | none shown, launching or starting for 10 s | runner paused | RunnerCommand(pause) | background `a_runner_paused_together…`, `a_runner_isnt_paused_while_a_launch_waits_for_its_unit` |
 
-Freeze and RunnerCommand have no acknowledgement; the state assumes they worked.
+Freeze and RunnerCommand have no acknowledgement; the state assumes they worked. RunnerCommand, EndRun,
+Adopt, EndProcesses and Enqueue are carried out one after another in the order sent, on the processes
+thread, so a runner's pause then resume leaves it resumed (system
+`what_is_done_to_programs_is_done_in_the_order_asked`); a runner's command has 20 s.
 
 ### Tray, autostart, enqueue
 
@@ -358,6 +361,7 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 | Wifi / Zone rows → their tab, its watch | `the_wifi_and_zone_rows_open_their_tabs` |
 | Password → editor for the current, the new, then the new again → `Account(Password)`; the two differing → `AccountChanged(Err)` | `the_password_is_typed_below_the_current_one_first` |
 | Password or Ssh unavailable (no helper, or ssh without a password): the row is drawn dimmed, still tapped and focused, and the tap does nothing; so is the time tab's "Set automatically" without timedated | `the_password_is_typed_below_the_current_one_first` (the tap off the device), views `unavailable_rows_are_still_focusable` |
+| the system's account thread carries out `Account` commands in the order sent, a change followed by its read; a panic answers `AccountChanged(Err)` and a Failed reading | system `the_account_is_read_and_changed_in_the_order_asked`, `a_change_that_panics_is_answered_as_failed` |
 | Ssh with a password → `Account(Ssh)`; further taps do nothing until AccountChanged, at most 30 s | `remote_login_needs_a_password`, `remote_login_waits_for_its_answer_before_another_tap`, `remote_login_is_asked_again_after_30_s_without_an_answer` |
 | the account through the device's own helper: pkexec from ClamShell's user service, thor-system's polkit rule and `thor-account` (the first password from Setup, launches held until then and running after, Remote login off and on), on the packaged system | the VM's `account` check (`tools/vm/vm-checks.py`); the helper's rules alone: `Account` in `tools/tests/package-recovery.py` |
 | Sticks → `CalibrateSticks`; progress; done saves or fails; further taps do nothing until done, or 30 s without progress | `a_sticks_calibration_shows_its_progress_…`, `the_sticks_calibration_waits_for_its_end_before_another_tap`, `the_sticks_calibration_is_asked_again_after_30_s_without_word` |

@@ -195,7 +195,9 @@ impl Sent {
                 | Thread::Rescan
                 | Thread::Notifications
                 | Thread::Portal
-                | Thread::Control => {}
+                | Thread::Control
+                | Thread::Processes
+                | Thread::Account => {}
             },
         }
     }

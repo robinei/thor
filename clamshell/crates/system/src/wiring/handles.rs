@@ -8,7 +8,7 @@ use crate::display::brightness;
 use crate::input::{pad, touchpad};
 use crate::launch::launcher;
 use crate::network::{bluetooth, wifi};
-use crate::os::worker::{self, Shown, Worker};
+use crate::os::worker::{Shown, Worker};
 use crate::paths::Paths;
 use crate::session::notifications::Command as Notifications;
 use crate::session::portal::Command as Portal;
@@ -42,6 +42,8 @@ pub struct Handles {
     /// The controller the pad thread grabbed. Launched SDL programs are told to ignore it.
     pub(crate) pad_taken: pad::Taken,
     pub(crate) launcher: Worker<launcher::Command>,
+    /// Ends, adopts and pauses running programs, in order (see [`launcher::spawn_processes`]).
+    pub(crate) processes: Worker<launcher::ToProcesses>,
     /// Freezes hidden games' slices and thaws them.
     pub(crate) freezer: Worker<crate::launch::freezer::Request>,
     pub(crate) sound: Worker<(clamshell_state::Sound, u64)>,
@@ -110,17 +112,7 @@ impl Handles {
             }
             Effect::Enqueue { key, lines } => {
                 log::info!("effect: {effect:?}");
-                let socket = self.paths.socket(key);
-                let lines = lines.clone();
-                // Off the main thread, so a player slow to read holds nothing up here.
-                let started = worker::detached("enqueue", move || {
-                    if let Err(e) = crate::launch::mpv::enqueue(&socket, &lines) {
-                        log::warn!("enqueue to {}: {e}", socket.display());
-                    }
-                });
-                if let Err(e) = started {
-                    log::warn!("enqueue: {e}");
-                }
+                self.processes.send(launcher::ToProcesses::Enqueue { socket: self.paths.socket(key), lines: lines.clone() });
             }
             Effect::Browse(command) => {
                 log::info!("effect: {effect:?}");
@@ -137,11 +129,11 @@ impl Handles {
                 log::info!("effect: {effect:?}");
                 self.bluetooth.send(bluetooth::Request::Do(command.clone()));
             }
-            Effect::EndRun { key, force } => launcher::end_run(key, *force),
-            Effect::RunnerCommand(argv) => launcher::runner_command(argv),
-            Effect::Adopt { unit, pid } => launcher::adopt(unit.clone(), *pid),
+            Effect::EndRun { key, force } => self.processes.send(launcher::ToProcesses::EndRun { key: key.clone(), force: *force }),
+            Effect::RunnerCommand(argv) => self.processes.send(launcher::ToProcesses::Runner(argv.clone())),
+            Effect::Adopt { unit, pid } => self.processes.send(launcher::ToProcesses::Adopt(unit.clone(), *pid)),
             Effect::FindIcon { entry, app_id } => self.icons.send((entry.clone(), app_id.clone())),
-            Effect::EndProcesses { pids, force } => launcher::end_processes(pids, *force),
+            Effect::EndProcesses { pids, force } => self.processes.send(launcher::ToProcesses::End { pids: pids.clone(), force: *force }),
             Effect::Freeze { slice, frozen } => self.freezer.send((slice.clone(), *frozen)),
             Effect::Tray(command) => self.tray.send(command.clone()),
             Effect::AskAwake(argv) => self.system.send(crate::errands::Command::AskAwake(argv.clone())),

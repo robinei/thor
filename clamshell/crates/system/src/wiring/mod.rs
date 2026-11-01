@@ -209,6 +209,7 @@ pub fn start<S: Sink + Clone>(env: &Config, paths: &Paths, sources: &Sources, gl
         pad,
         pad_taken,
         launcher,
+        processes: started("processes", launcher::spawn_processes()),
         freezer: started("freezer", freezer::spawn()),
         sound: started("sound", sound::spawn(carried)),
         system,

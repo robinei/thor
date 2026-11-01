@@ -376,10 +376,15 @@ pub enum Thread {
     /// The file chooser served to apps (see [`crate::portal`]).
     Portal,
     Control,
+    /// Carries out the effects on running programs in order: ending and adopting them, runners'
+    /// commands, enqueueing.
+    Processes,
+    /// Reads and changes the account, in order.
+    Account,
 }
 
 impl Thread {
-    pub const ALL: [Thread; 31] = [
+    pub const ALL: [Thread; 33] = [
         Thread::Pad,
         Thread::PadDevices,
         Thread::Tuning,
@@ -411,6 +416,8 @@ impl Thread {
         Thread::Notifications,
         Thread::Portal,
         Thread::Control,
+        Thread::Processes,
+        Thread::Account,
     ];
 
     /// The name the thread runs under.
@@ -447,6 +454,8 @@ impl Thread {
             Thread::Notifications => "notifications",
             Thread::Portal => "portal",
             Thread::Control => "control",
+            Thread::Processes => "processes",
+            Thread::Account => "account",
         }
     }
 

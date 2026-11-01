@@ -60,6 +60,12 @@ impl State {
             // asks for again. Its ids come from a counter that outlives it, so it doesn't give out an id
             // the state still holds. A signal it was emitting is lost.
             Thread::Notifications => {}
+            // The effect on a program it was carrying out is lost (an end, an adoption, a runner's pause
+            // or resume, an enqueue); those waiting behind it are carried out.
+            Thread::Processes => {}
+            // A change or read that panics is answered as failed by the thread itself (see Setup), so
+            // nothing waits for it.
+            Thread::Account => {}
             // Its requests' calls are gone with it: none is answered, and a pick for one ends.
             Thread::Portal => self.portal_restarted(),
             // The writes it hadn't read back won't be: what was read shows, and the library is read again.

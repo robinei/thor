@@ -10,9 +10,7 @@
 
 use std::fmt;
 use std::io;
-use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
-use std::process::{Command as Process, Stdio};
 use std::sync::Arc;
 
 use clamshell_state::{Event, Launch, LaunchEvent, LaunchUnit};
@@ -173,94 +171,115 @@ fn start_program(config: &Config, request: &Request, argv: Vec<String>, workdir:
     Ok(job::start(&job)?)
 }
 
-/// Ends an entry's slice with all its launches. Normally the slice is stopped: systemd asks its processes
-/// to end and kills what is left after its timeout. With `force` they are killed at once. This runs on a
-/// thread of its own, because stopping waits for the processes.
-pub(crate) fn end_run(key: &str, force: bool) {
-    let slice = LaunchUnit::slice_of(key);
-    let ended = worker::detached("end", move || {
-        log::info!("{slice}: {}", if force { "force kill" } else { "stop" });
-        if let Err(e) = units::end(&slice, force) {
-            log::warn!("{slice}: {e}");
+/// What is done to running programs, by the processes thread (see [`spawn_processes`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ToProcesses {
+    /// End an entry's slice ([`end_run`]).
+    EndRun { key: String, force: bool },
+    /// Run a runner's `stop`, `pause` or `resume` command ([`runner_command`]).
+    Runner(Vec<String>),
+    /// Move a program found by its tray icon into `unit` ([`adopt`]).
+    Adopt(LaunchUnit, u32),
+    /// Ask processes not started by ClamShell to end, or kill them ([`end_processes`]).
+    End { pids: Vec<u32>, force: bool },
+    /// Give mpv's control socket `socket` these lines ([`crate::launch::mpv::enqueue`]).
+    Enqueue { socket: PathBuf, lines: Vec<String> },
+}
+
+/// Starts the processes thread, which carries out what is done to running programs one after another,
+/// in the order the state asked: a runner's pause and resume, or Waydroid's freeze and thaw, end as the
+/// state last asked, and a program is adopted before it is ended. Each may wait (a stop job, a runner's
+/// script, a player slow to read), which only holds up those behind it.
+pub(crate) fn spawn_processes() -> io::Result<Worker<ToProcesses>> {
+    spawn_processes_with(carry_out)
+}
+
+fn spawn_processes_with(mut carry_out: impl FnMut(ToProcesses) + Send + 'static) -> io::Result<Worker<ToProcesses>> {
+    Worker::spawn(clamshell_state::Thread::Processes.name(), move |commands| {
+        for command in commands {
+            carry_out(command);
         }
-    });
-    if let Err(e) = ended {
-        log::warn!("end: {e}");
+    })
+}
+
+fn carry_out(command: ToProcesses) {
+    match command {
+        ToProcesses::EndRun { key, force } => end_run(&key, force),
+        ToProcesses::Runner(argv) => runner_command(&argv),
+        ToProcesses::Adopt(unit, pid) => adopt(&unit, pid),
+        ToProcesses::End { pids, force } => end_processes(&pids, force),
+        ToProcesses::Enqueue { socket, lines } => {
+            if let Err(e) = crate::launch::mpv::enqueue(&socket, &lines) {
+                log::warn!("enqueue to {}: {e}", socket.display());
+            }
+        }
+    }
+}
+
+/// Ends an entry's slice with all its launches. Normally the slice is stopped: systemd asks its processes
+/// to end and kills what is left after its timeout. With `force` they are killed at once. Either is a job
+/// systemd carries out after answering.
+fn end_run(key: &str, force: bool) {
+    let slice = LaunchUnit::slice_of(key);
+    log::info!("{slice}: {}", if force { "force kill" } else { "stop" });
+    if let Err(e) = units::end(&slice, force) {
+        log::warn!("{slice}: {e}");
     }
 }
 
 /// Adopts a program not started by ClamShell, found by its tray icon. Its process and the processes it
-/// started are moved into `unit`'s scope, in its entry's slice, on a thread of its own. A program run
-/// by a systemd service is left alone, because the service would lose it, and so is one already in a
-/// scope of ours.
-pub(crate) fn adopt(unit: LaunchUnit, pid: u32) {
-    let done = worker::detached("adopt", move || {
-        let scope = unit.scope();
-        if !sys::same_process(pid) {
-            log::info!("adopt: process {pid} is gone (another has its id)");
-            return;
-        }
-        let group = cgroup::unit_of(pid).unwrap_or_default();
-        if LaunchUnit::is_service(&group) || LaunchUnit::from_unit(&group).is_some() {
-            log::info!("adopt: process {pid} stays in {group}");
-            return;
-        }
-        let pids = with_descendants(&[pid], &parents());
-        match units::adopt(&scope, Some(unit.slice().as_str()), &pids) {
-            Ok(()) => log::info!("adopt: process {pid} from {group} in {scope} ({} processes)", pids.len()),
-            Err(e) => log::warn!("adopt: process {pid}: {e}"),
-        }
-    });
-    if let Err(e) = done {
-        log::warn!("adopt: {e}");
+/// started are moved into `unit`'s scope, in its entry's slice. A program run by a systemd service is left
+/// alone, because the service would lose it, and so is one already in a scope of ours.
+fn adopt(unit: &LaunchUnit, pid: u32) {
+    let scope = unit.scope();
+    if !sys::same_process(pid) {
+        log::info!("adopt: process {pid} is gone (another has its id)");
+        return;
+    }
+    let group = cgroup::unit_of(pid).unwrap_or_default();
+    if LaunchUnit::is_service(&group) || LaunchUnit::from_unit(&group).is_some() {
+        log::info!("adopt: process {pid} stays in {group}");
+        return;
+    }
+    let pids = with_descendants(&[pid], &parents());
+    match units::adopt(&scope, Some(unit.slice().as_str()), &pids) {
+        Ok(()) => log::info!("adopt: process {pid} from {group} in {scope} ({} processes)", pids.len()),
+        Err(e) => log::warn!("adopt: process {pid}: {e}"),
     }
 }
 
-/// Asks the processes of a program not started by ClamShell to end (SIGTERM), or kills them.
-pub(crate) fn end_processes(pids: &[u32], force: bool) {
-    let pids = pids.to_vec();
-    // On a thread of its own, as the other effects on processes: it reads each process's facts.
-    let done = worker::detached("end", move || {
-        // Only signal processes that are still the ones seen, since a process that is gone may have left
-        // its id to another.
-        let pids: Vec<u32> = pids.into_iter().filter(|&p| sys::same_process(p)).collect();
-        if pids.is_empty() {
-            return;
+/// Asks the processes of a program not started by ClamShell to end (SIGTERM), or kills them. Only
+/// processes that are still the ones seen are signalled, since a process that is gone may have left its
+/// id to another.
+fn end_processes(pids: &[u32], force: bool) {
+    let pids: Vec<u32> = pids.iter().copied().filter(|&p| sys::same_process(p)).collect();
+    if pids.is_empty() {
+        return;
+    }
+    log::info!("{} processes {pids:?}", if force { "killing" } else { "ending" });
+    let signal = if force { Signal::KILL } else { Signal::TERM };
+    for pid in pids {
+        let Some(pid) = i32::try_from(pid).ok().and_then(Pid::from_raw) else { continue };
+        if let Err(e) = rustix::process::kill_process(pid, signal) {
+            log::warn!("signalling process {pid:?}: {e}");
         }
-        log::info!("{} processes {pids:?}", if force { "killing" } else { "ending" });
-        let signal = if force { Signal::KILL } else { Signal::TERM };
-        for pid in pids {
-            let Some(pid) = i32::try_from(pid).ok().and_then(Pid::from_raw) else { continue };
-            if let Err(e) = rustix::process::kill_process(pid, signal) {
-                log::warn!("signalling process {pid:?}: {e}");
-            }
-        }
-    });
-    if let Err(e) = done {
-        log::warn!("end: {e}");
     }
 }
 
-/// Runs a runner's `stop`, `pause` or `resume` command without waiting for it. Waydroid's runner uses
-/// these to have Android stop an app or freeze it.
-pub(crate) fn runner_command(argv: &[String]) {
-    let argv = argv.to_vec();
-    let done = worker::detached("runner command", move || {
-        let Some((program, args)) = argv.split_first() else {
-            return;
-        };
-        log::info!("runner command: {}", argv.join(" "));
-        match Process::new(program).args(args).stdin(Stdio::null()).process_group(0).spawn() {
-            Ok(mut child) => {
-                if let Err(e) = child.wait() {
-                    log::debug!("runner command: {program}: {e}");
-                }
-            }
-            Err(e) => log::warn!("runner command: {program}: {e}"),
-        }
-    });
-    if let Err(e) = done {
-        log::warn!("runner command: {e}");
+/// How long a runner's command may take.
+const RUNNER_LIMIT: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// Runs a runner's `stop`, `pause` or `resume` command, for at most [`RUNNER_LIMIT`]. Waydroid's runner
+/// uses these to have Android stop an app or freeze it.
+fn runner_command(argv: &[String]) {
+    let Some((program, args)) = argv.split_first() else {
+        return;
+    };
+    log::info!("runner command: {}", argv.join(" "));
+    match crate::os::command::run(program, args, None, RUNNER_LIMIT) {
+        Ok(ran) if ran.status.success() => {}
+        Ok(ran) => log::warn!("runner command: {}: {} {}", argv.join(" "), ran.status, ran.said()),
+        Err(e) => log::warn!("runner command: {e}"),
     }
 }
 
@@ -283,6 +302,30 @@ pub(super) fn with_descendants(pids: &[u32], parents: &[(u32, u32)]) -> Vec<u32>
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    /// What is done to programs is done in the order asked, one at a time, whatever each takes: a
+    /// runner's pause and then resume leave it resumed.
+    #[test]
+    fn what_is_done_to_programs_is_done_in_the_order_asked() {
+        let (done, order) = std::sync::mpsc::channel();
+        let processes = super::spawn_processes_with(move |c| {
+            if c == super::ToProcesses::Runner(vec!["pause".into()]) {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            done.send(c).unwrap();
+        })
+        .unwrap();
+        let asked = [
+            super::ToProcesses::Runner(vec!["pause".into()]),
+            super::ToProcesses::Runner(vec!["resume".into()]),
+            super::ToProcesses::EndRun { key: "k".into(), force: false },
+        ];
+        for c in asked.clone() {
+            processes.send(c);
+        }
+        let got: Vec<_> = (0..asked.len()).map(|_| order.recv_timeout(std::time::Duration::from_secs(2)).unwrap()).collect();
+        assert_eq!(got, asked);
+    }
+
     #[test]
     fn a_process_tree_is_its_pids_and_their_descendants() {
         let parents = [(10, 1), (11, 10), (12, 11), (13, 10), (20, 1), (21, 20)];
@@ -349,6 +392,7 @@ mod tests {
 #[cfg(test)]
 mod live {
     use super::*;
+    use std::process::Command as Process;
     use std::thread;
     use std::time::Duration;
     use std::time::Instant;
@@ -384,7 +428,7 @@ mod live {
         assert!(wait_for(|| group_of(pid).starts_with("app-adopttest")), "{}", group_of(pid));
         assert!(wait_for(|| with_descendants(&[pid], &parents()).len() == 2), "its sleep");
         let unit = LaunchUnit { key: format!("adopttest_{id}"), secs: u64::from(id), n: 0 };
-        adopt(unit.clone(), pid);
+        adopt(&unit, pid);
         let scope = unit.scope();
         assert!(wait_for(|| with_descendants(&[pid], &parents()).iter().all(|p| group_of(*p) == scope)), "moved, the sleep too");
         let _ = Process::new("systemctl").args(["--user", "stop", &unit.slice()]).status();
@@ -397,7 +441,7 @@ mod live {
             .trim()
             .parse()
             .unwrap();
-        adopt(LaunchUnit { key: format!("adopttest_{id}"), secs: u64::from(id), n: 1 }, pid);
+        adopt(&LaunchUnit { key: format!("adopttest_{id}"), secs: u64::from(id), n: 1 }, pid);
         thread::sleep(Duration::from_secs(1));
         assert_eq!(group_of(pid), format!("{service}.service"));
         let _ = Process::new("systemctl").args(["--user", "stop", &service]).status();
