@@ -800,7 +800,7 @@ impl<S: Sink> Service for PadThread<S> {
     type Command = Command;
     type Session = Pads;
     type Error = io::Error;
-    const NAME: &'static str = "pad";
+    const THREAD: clamshell_state::Thread = clamshell_state::Thread::Pad;
 
     /// Makes the virtual devices if they aren't there, and takes the controllers there are.
     fn connect(&mut self) -> io::Result<Pads> {

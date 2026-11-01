@@ -348,8 +348,9 @@ pub(crate) trait Service {
     /// What a connection gives, such as the bus and its proxies or a grabbed device.
     type Session;
     type Error: Display;
-    /// For the log.
-    const NAME: &'static str;
+    /// The thread it runs on: its name for the log, and what the state is told when it is started again,
+    /// so the two can't differ.
+    const THREAD: clamshell_state::Thread;
 
     fn connect(&mut self) -> Result<Self::Session, Self::Error>;
 
@@ -406,11 +407,11 @@ pub(crate) fn supervise<S: Service>(service: &mut S, commands: &Receiver<S::Comm
                 let wait = backoff.after(started.elapsed());
                 service.panicked();
                 let Some(wait) = wait else {
-                    return given_up(S::NAME);
+                    return given_up(S::THREAD.name());
                 };
-                log::error!("{}: panicked; connecting again in {} ms", S::NAME, wait.as_millis());
+                log::error!("{}: panicked; connecting again in {} ms", S::THREAD.name(), wait.as_millis());
                 thread::sleep(wait);
-                tell_restarted(S::NAME);
+                tell_restarted(S::THREAD.name());
                 continue;
             }
         };
@@ -443,16 +444,16 @@ fn run_once<S: Service>(service: &mut S, commands: &Receiver<S::Command>, quiet:
                     if up.elapsed() >= STEADY {
                         quiet.ok();
                     }
-                    quiet.failed(S::NAME, &e);
+                    quiet.failed(S::THREAD.name(), &e);
                     service.lost(&e)
                 }
             }
         }
         Err(e) => {
             if S::expected(&e) {
-                log::debug!("{}: {e}", S::NAME);
+                log::debug!("{}: {e}", S::THREAD.name());
             } else {
-                quiet.failed(S::NAME, &e);
+                quiet.failed(S::THREAD.name(), &e);
             }
             service.unavailable(&e)
         }
@@ -535,7 +536,7 @@ mod tests {
         type Command = ();
         type Session = ();
         type Error = String;
-        const NAME: &'static str = "panicky";
+        const THREAD: clamshell_state::Thread = clamshell_state::Thread::Control;
 
         fn connect(&mut self) -> Result<(), String> {
             self.connects += 1;
@@ -668,7 +669,7 @@ mod tests {
         type Command = &'static str;
         type Session = ();
         type Error = String;
-        const NAME: &'static str = "flaky";
+        const THREAD: clamshell_state::Thread = clamshell_state::Thread::Control;
 
         fn connect(&mut self) -> Result<(), String> {
             self.connects += 1;

@@ -110,7 +110,7 @@ impl<S: Sink + Clone> Service for Server<S> {
     type Command = Command;
     type Session = Bus;
     type Error = Error;
-    const NAME: &'static str = "portal";
+    const THREAD: clamshell_state::Thread = clamshell_state::Thread::Portal;
 
     fn connect(&mut self) -> Result<Bus, Error> {
         // The calls of a connection that failed can't be answered: the pickers of those the state has close.

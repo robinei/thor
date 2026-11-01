@@ -116,7 +116,7 @@ impl<S: Sink> Service for Units<S> {
     type Command = Infallible;
     type Session = Bus;
     type Error = Error;
-    const NAME: &'static str = "units";
+    const THREAD: clamshell_state::Thread = clamshell_state::Thread::Units;
 
     fn connect(&mut self) -> Result<Bus, Error> {
         let mut bus = Bus::session()?;

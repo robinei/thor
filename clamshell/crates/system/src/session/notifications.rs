@@ -84,7 +84,7 @@ impl<S: Sink + Clone> Service for Server<S> {
     type Command = Command;
     type Session = Bus;
     type Error = Error;
-    const NAME: &'static str = "notifications";
+    const THREAD: clamshell_state::Thread = clamshell_state::Thread::Notifications;
 
     fn connect(&mut self) -> Result<Bus, Error> {
         let mut bus = Bus::session()?;

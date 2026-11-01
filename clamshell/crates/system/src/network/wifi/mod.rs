@@ -414,7 +414,7 @@ impl<S: Sink> Service for WifiThread<S> {
     type Command = Request;
     type Session = Session;
     type Error = Error;
-    const NAME: &'static str = "wifi";
+    const THREAD: clamshell_state::Thread = clamshell_state::Thread::Wifi;
 
     fn connect(&mut self) -> Result<Session, Error> {
         Session::connect()

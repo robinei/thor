@@ -304,7 +304,7 @@ impl<S: Sink> Service for BtThread<S> {
     type Command = Request;
     type Session = Session;
     type Error = Error;
-    const NAME: &'static str = "bluetooth";
+    const THREAD: clamshell_state::Thread = clamshell_state::Thread::Bluetooth;
 
     fn connect(&mut self) -> Result<Session, Error> {
         let mut bus = system()?;

@@ -107,7 +107,7 @@ impl<S: Sink> Service for Tray<S> {
     type Command = TrayCommand;
     type Session = Session;
     type Error = Error;
-    const NAME: &'static str = "tray";
+    const THREAD: clamshell_state::Thread = clamshell_state::Thread::Tray;
 
     fn connect(&mut self) -> Result<Session, Error> {
         let mut bus = Bus::session()?.with_timeout(CALL_LIMIT);
