@@ -84,6 +84,14 @@ Start
 Pointer(Activate(Tab(Windows)))
   Watch Metrics off
 -- windows-empty.png
+== group notice-long.png
+Tick 1760000000
+  Keymap 0 "Default"
+  PadRoute Ui
+  Lights(..)
+Start
+  Watch Metrics on
+-- notice-long.png
 == group settings-running.png
 Tick 1760000000
   Keymap 0 "Default"

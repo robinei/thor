@@ -152,8 +152,10 @@ fn draw_notice(f: &mut Frame, what: &NoticeKind, w: f32, bar_h: f32) {
         NoticeKind::Problems(_, n) => (None, Fmt::of(format_args!("{n} problems: see Tools, Rescan library"))),
         NoticeKind::Controller(name, player) => (None, Fmt::of(format_args!("{name}: player {}", player.number()))),
     };
-    let x = (w - widgets::card_width(f, bar_h, icon.is_some(), &text)) / 2.0;
-    widgets::card(f, x, bar_h * 1.3, bar_h, icon, &text);
+    // Half a bar's height kept free on either side; a longer text is cut, keeping its start.
+    let room = w - bar_h;
+    let x = (w - widgets::card_width(f, bar_h, icon.is_some(), &text, room)) / 2.0;
+    widgets::card(f, x, bar_h * 1.3, bar_h, icon, &text, room);
 }
 
 /// The slider over the bar's row (see [`widgets::held_slider`]), with the level as a number below the bar.

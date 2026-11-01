@@ -134,38 +134,40 @@ pub fn held_slider(f: &mut Frame, held: HeldSlider) {
     f.c.rounded(band, band.h / 2.0, SHADE.alpha(SHADE_ALPHA));
     self::track(f.c, track, cy, h * SLIDER_TRACK, thumb, Some(slider.percent()), Tone::High);
 
-    let content_w = card_width(f, h, icon.is_some(), text);
     let side = h * SLIDER_ICON;
     let margin = side * 0.4;
+    let room = within.w - margin * 2.0;
+    let content_w = card_width(f, h, icon.is_some(), text, room);
     let below = cy + h * SLIDER_BELOW;
     let card_y = if below + side * 1.3 <= within.bottom() { below } else { cy - h * SLIDER_BELOW - side };
     let (wx, ww) = (within.x, within.w);
     let away = ww * SLIDER_AWAY;
     let gx = if at < wx + ww / 2.0 { at + away } else { at - away - content_w };
     let gx = gx.clamp(wx + margin, (wx + ww - content_w - margin).max(wx + margin));
-    card(f, gx, card_y, h, icon, text);
+    card(f, gx, card_y, h, icon, text, room);
 }
 
-/// The width of a card's content, an icon and a line of text, at size `h` (see [`card`]).
-pub fn card_width(f: &mut Frame, h: f32, icon: bool, text: &str) -> f32 {
+/// The width of a card's content, an icon and a line of text, at size `h`, at most `room` (see [`card`]).
+pub fn card_width(f: &mut Frame, h: f32, icon: bool, text: &str, room: f32) -> f32 {
     let icon_w = if icon { h * SLIDER_ICON * 1.3 } else { 0.0 };
-    icon_w + f.c.text_width(h * SLIDER_TEXT, text)
+    (icon_w + f.c.text_width(h * SLIDER_TEXT, text)).min(room.max(icon_w))
 }
 
 /// A small shaded card over whatever is under it, with an icon and a line of text. Its content starts at
-/// `x`, `y` and is sized by `h`, the height of the bar or of a panel row. Used for a held slider's value
-/// and for the bar's notices.
-pub fn card(f: &mut Frame, x: f32, y: f32, h: f32, icon: Option<Icon>, text: &str) {
+/// `x`, `y` and is sized by `h`, the height of the bar or of a panel row. Its content is at most `room`
+/// wide: text past that is cut, keeping its start. Used for a held slider's value and for the bar's
+/// notices.
+pub fn card(f: &mut Frame, x: f32, y: f32, h: f32, icon: Option<Icon>, text: &str, room: f32) {
     let side = h * SLIDER_ICON;
     let size = h * SLIDER_TEXT;
     let icon_w = if icon.is_some() { side * 1.3 } else { 0.0 };
-    let text_w = f.c.text_width(size, text);
+    let text_w = card_width(f, h, icon.is_some(), text, room) - icon_w;
     let r = Rect::new(x - side * 0.4, y - side * 0.3, icon_w + text_w + side * 0.8, side * 1.6);
     f.c.rounded(r, side * 0.3, SHADE.alpha(SHADE_ALPHA));
     if let Some(icon) = icon {
         f.c.icon(icon, Rect::new(x, y, side, side), Tone::Normal);
     }
-    f.c.text_in(Rect::new(x + icon_w, y, text_w + 1.0, side), size, Tone::High, text, Align::Start);
+    f.c.text_fit(Rect::new(x + icon_w, y, text_w + 1.0, side), size, Tone::High, text, Keep::Start);
 }
 
 /// A level along `track` at height `cy`, `thick` thick. The line is dim the whole way and lit up to

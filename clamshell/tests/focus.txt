@@ -92,6 +92,9 @@ Tab(Battery): ^"celeste" v- <Tab(Wifi) >Tab(Time)
 == windows-empty.png (bottom; the pad on both screens)
 start Tab(Windows); back -
 -- bar as in bottom.png
+== notice-long.png (bottom; the pad on both screens)
+start "zelda-lttp"; back -
+-- bar as in bottom.png
 == settings-running.png (bottom; the pad on both screens)
 start Tile(Hud); back -
 -- bar as in bottom.png except

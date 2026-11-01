@@ -399,3 +399,26 @@ fn fingers_point_only_below_the_bar() {
     let (_, out) = draw_bottom(&state, (1240, 1080), &mut cache);
     assert_eq!(out.point_area, None, "dark: nowhere");
 }
+
+/// A notice too long for the second screen is cut to it, keeping its start (the file a library problem
+/// is about), rather than running off both edges.
+#[test]
+fn a_long_notice_is_cut_to_the_screen() {
+    let mut state = demo();
+    let mut library = clamshell_library::demo::library();
+    library.problems.push("/home/thor/.config/clamshell/library.json: line 12: unknown field `pictures_from`, expected one of `id`, `dir`".into());
+    state.apply(Event::Library(Box::new(library)), &mut Vec::new());
+    let (w, h) = (1240, 1080);
+    let mut cache = DrawCache::load();
+    let mut rec = Recording::default();
+    let mut targets = Vec::new();
+    let mut canvas = Canvas::new(&mut rec, (w, h), 1.0, &mut cache);
+    let (mut images, mut scratch) = (Images::synchronous(), Scratch::default());
+    let mut f = Frame::new(&mut canvas, &state, &mut images, &mut scratch, &mut targets);
+    bottom(&mut f, Rect::new(0.0, 0.0, w as f32, h as f32));
+    f.finish();
+    let ink = rec.ink();
+    assert!(ink.x0 >= 0 && ink.x1 <= w as i32, "drawn from {} to {} of {w}", ink.x0, ink.x1);
+    let text = String::from_utf8_lossy(rec.all_text()).into_owned();
+    assert!(text.contains("/home/thor/.config/clamshell/library.json: line 12") && text.contains('…'), "{text}");
+}

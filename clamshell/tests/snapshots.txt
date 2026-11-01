@@ -75,6 +75,7 @@ library-pick.png f5675574ae216b69
 lights-edit-unlinked.png 386d8461886edee3
 lights-edit.png a2b431b96e9e78a6
 lights.png d3ac79cee8876db4
+notice-long.png 1b5490ec47aa3b79
 portal-replace.png 7dc20c67a3a6f51e
 portal-save.png 829355a7ee610113
 settings-env.png 141480d50601cd5a

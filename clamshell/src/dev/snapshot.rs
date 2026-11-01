@@ -269,6 +269,13 @@ fn fps_with_layer() -> Result<Vec<Event>, ParseError> {
     .concat())
 }
 
+/// The demo library with a problem in library.json, as a mistyped field gives.
+fn problem_library() -> Library {
+    let mut library = clamshell_library::demo::library();
+    library.problems.push("/home/thor/.config/clamshell/library.json: line 12: unknown field `pictures_from`, expected one of `id`, `dir`".into());
+    library
+}
+
 /// The scenario: groups of shots (see [`Group`]).
 pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
     use Screen::{Bottom, Top};
@@ -333,6 +340,8 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
         group(vec![], vec![shot("bottom.png", Bottom, vec![])]),
         // The windows' tab with nothing moved down: how to move a window there.
         group(vec![], vec![shot("windows-empty.png", Bottom, vec![tab(Tab::Windows)])]),
+        // A notice longer than the screen: a library problem, cut keeping its start.
+        group(vec![], vec![shot("notice-long.png", Bottom, vec![Event::Library(Box::new(problem_library()))])]),
         // The settings while a game runs.
         group(
             vec![ff6(), ff6()],
