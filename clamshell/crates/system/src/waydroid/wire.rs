@@ -83,11 +83,18 @@ pub(super) fn relay(from: &UnixStream, to: &UnixStream, pass: impl FnMut(u32, u1
     }
 }
 
+/// The most file descriptors kept waiting for bytes to go with. A sender's descriptors come with the
+/// bytes of their messages, so only those of messages cut off at the end of a read wait; this many is a
+/// peer sending descriptors without messages.
+const MAX_PENDING_FDS: usize = 4 * MAX_FDS;
+
 /// The relay's work, until an end closes.
 fn pass_on(from: &UnixStream, to: &UnixStream, mut pass: impl FnMut(u32, u16, &[u8], Instant) -> Pass) -> End {
     let mut buf: Vec<u8> = Vec::new();
     let mut chunk = vec![0u8; 16384];
     let mut out = Vec::new();
+    // The descriptors received and not yet sent on.
+    let mut fds: Vec<OwnedFd> = Vec::new();
     loop {
         let mut space = [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(MAX_FDS))];
         let mut ancillary = RecvAncillaryBuffer::new(&mut space);
@@ -107,11 +114,14 @@ fn pass_on(from: &UnixStream, to: &UnixStream, mut pass: impl FnMut(u32, u16, &[
                 return End::From;
             }
         };
-        let mut received: Vec<OwnedFd> = Vec::new();
         for message in ancillary.drain() {
-            if let RecvAncillaryMessage::ScmRights(fds) = message {
-                received.extend(fds);
+            if let RecvAncillaryMessage::ScmRights(received) = message {
+                fds.extend(received);
             }
+        }
+        if fds.len() > MAX_PENDING_FDS {
+            log::warn!("wayland filter: {} file descriptors came without their messages: its connection ends", fds.len());
+            return End::Invalid;
         }
         let now = Instant::now();
         buf.extend_from_slice(chunk.get(..n).unwrap_or_default());
@@ -132,10 +142,12 @@ fn pass_on(from: &UnixStream, to: &UnixStream, mut pass: impl FnMut(u32, u16, &[
             }
         }
         buf.drain(..used);
-        // The descriptors go with the bytes they came with, since the receiver takes them in order, by
-        // message.
-        if (!out.is_empty() || !received.is_empty())
-            && let Err(e) = send(to, &out, &received)
+        // The descriptors go with the next bytes sent, in the order they came, since the receiver takes
+        // them in order, by message. Never without bytes: a send of none carries no descriptors on a
+        // stream socket, and they would be lost. Those of a message cut off at the end of this read wait
+        // for it.
+        if !out.is_empty()
+            && let Err(e) = send(to, &out, &mut fds)
         {
             log::debug!("wayland filter: sending: {e}");
             return End::To;
@@ -143,33 +155,39 @@ fn pass_on(from: &UnixStream, to: &UnixStream, mut pass: impl FnMut(u32, u16, &[
     }
 }
 
-/// Sends all of `bytes`, with `fds` attached to the first part sent.
-pub(super) fn send(to: &UnixStream, bytes: &[u8], fds: &[OwnedFd]) -> io::Result<()> {
-    let borrowed: Vec<BorrowedFd> = fds.iter().map(AsFd::as_fd).collect();
+/// Sends all of `bytes`, with `fds` attached to the first parts sent, at most [`MAX_FDS`] to a part, and
+/// takes those sent out of `fds`. A part carrying descriptors has at least one byte, since a send of none
+/// carries none; with more descriptors than a part holds it is one word, leaving bytes for the rest. Those
+/// left once the bytes are sent stay in `fds`.
+pub(super) fn send(to: &UnixStream, bytes: &[u8], fds: &mut Vec<OwnedFd>) -> io::Result<()> {
     let mut sent = 0;
-    let mut first = true;
-    while sent < bytes.len() || (first && !borrowed.is_empty()) {
-        let mut space = [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(MAX_FDS))];
-        let mut ancillary = SendAncillaryBuffer::new(&mut space);
-        if first && !borrowed.is_empty() {
-            ancillary.push(SendAncillaryMessage::ScmRights(&borrowed));
-        }
+    while sent < bytes.len() {
         let rest = bytes.get(sent..).unwrap_or_default();
-        let n = match rustix::net::sendmsg(to, &[IoSlice::new(rest)], &mut ancillary, SendFlags::NOSIGNAL) {
-            Err(rustix::io::Errno::INTR) => continue,
-            sent => sent?,
+        let part = if fds.len() > MAX_FDS { rest.get(..4).unwrap_or(rest) } else { rest };
+        let attached = fds.len().min(MAX_FDS);
+        let n = {
+            let borrowed: Vec<BorrowedFd> = fds.iter().take(attached).map(AsFd::as_fd).collect();
+            let mut space = [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(MAX_FDS))];
+            let mut ancillary = SendAncillaryBuffer::new(&mut space);
+            if !borrowed.is_empty() {
+                ancillary.push(SendAncillaryMessage::ScmRights(&borrowed));
+            }
+            match rustix::net::sendmsg(to, &[IoSlice::new(part)], &mut ancillary, SendFlags::NOSIGNAL) {
+                Err(rustix::io::Errno::INTR) => continue,
+                sent => sent?,
+            }
         };
-        if n == 0 && rest.is_empty() {
-            break;
+        if n == 0 {
+            return Err(io::ErrorKind::WriteZero.into());
         }
+        fds.drain(..attached);
         sent += n;
-        first = false;
     }
     Ok(())
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
     use std::io::{Read, Write};
@@ -204,7 +222,7 @@ mod tests {
             let relay = std::thread::spawn(move || super::relay(&from, &to, |_, _, _, _| Pass::Keep, |how| done.send(how).unwrap()));
             let mut invalid = 1u32.to_ne_bytes().to_vec();
             invalid.extend((size << 16).to_ne_bytes());
-            send(&writer, &invalid, &[descriptor.into()]).unwrap();
+            send(&writer, &invalid, &mut vec![descriptor.into()]).unwrap();
             assert_eq!(ended.recv_timeout(Duration::from_secs(2)).unwrap(), End::Invalid);
             relay.join().unwrap();
             for socket in [&mut reader, &mut observer] {
@@ -214,6 +232,75 @@ mod tests {
             let mut writer = writer;
             writer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
             assert_eq!(writer.read(&mut [0]).unwrap(), 0, "input socket also closed");
+        }
+    }
+
+    /// Receives what `from` has, with its descriptors, within two seconds.
+    fn receive(from: &UnixStream, want: usize) -> (Vec<u8>, Vec<OwnedFd>) {
+        from.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        let (mut bytes, mut fds) = (Vec::new(), Vec::new());
+        while bytes.len() < want {
+            let mut chunk = [0u8; 256];
+            let mut space = [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(MAX_FDS))];
+            let mut ancillary = RecvAncillaryBuffer::new(&mut space);
+            let r = rustix::net::recvmsg(from, &mut [IoSliceMut::new(&mut chunk)], &mut ancillary, RecvFlags::CMSG_CLOEXEC).unwrap();
+            assert!(r.bytes > 0, "closed after {} bytes", bytes.len());
+            bytes.extend_from_slice(&chunk[..r.bytes]);
+            for m in ancillary.drain() {
+                if let RecvAncillaryMessage::ScmRights(received) = m {
+                    fds.extend(received);
+                }
+            }
+        }
+        (bytes, fds)
+    }
+
+    /// A descriptor that comes with the first part of its message, the rest coming in a later read,
+    /// goes on with the message: a send of no bytes would carry it nowhere.
+    #[test]
+    fn a_descriptor_with_half_a_message_goes_on_with_the_rest() {
+        let (writer, from) = UnixStream::pair().unwrap();
+        let (to, reader) = UnixStream::pair().unwrap();
+        let relay = std::thread::spawn(move || super::relay(&from, &to, |_, _, _, _| Pass::Keep, |_| {}));
+        let (descriptor, mut observer) = UnixStream::pair().unwrap();
+        let keymap = message(3, 0, &ints(&[1, 0, 64]));
+        let (first, rest) = keymap.split_at(6);
+        send(&writer, first, &mut vec![descriptor.into()]).unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        send(&writer, rest, &mut Vec::new()).unwrap();
+        let (bytes, fds) = receive(&reader, keymap.len());
+        assert_eq!(bytes, keymap);
+        assert_eq!(fds.len(), 1, "the descriptor came with its message");
+        let mut passed = UnixStream::from(fds.into_iter().next().unwrap());
+        passed.write_all(b"x").unwrap();
+        observer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        let mut got = [0u8];
+        observer.read_exact(&mut got).unwrap();
+        assert_eq!(&got, b"x", "the same socket");
+        drop(writer);
+        relay.join().unwrap();
+    }
+
+    /// More descriptors than one send holds go in several parts of the bytes, in order.
+    #[test]
+    fn more_descriptors_than_a_send_holds_go_over_several_parts() {
+        let (to, reader) = UnixStream::pair().unwrap();
+        let ends: Vec<(UnixStream, UnixStream)> = (0..MAX_FDS + 3).map(|_| UnixStream::pair().unwrap()).collect();
+        let mut fds: Vec<OwnedFd> = ends.iter().map(|(a, _)| a.try_clone().unwrap().into()).collect();
+        let bytes = message(1, 0, &ints(&[0; 8]));
+        send(&to, &bytes, &mut fds).unwrap();
+        assert!(fds.is_empty());
+        let (got, received) = receive(&reader, bytes.len());
+        assert_eq!(got, bytes);
+        assert_eq!(received.len(), MAX_FDS + 3);
+        for (i, fd) in received.into_iter().enumerate() {
+            let mut passed = UnixStream::from(fd);
+            passed.write_all(&[i as u8]).unwrap();
+            let mut other = &ends[i].1;
+            other.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+            let mut got = [0u8];
+            other.read_exact(&mut got).unwrap();
+            assert_eq!(got[0], i as u8, "in order");
         }
     }
 

@@ -245,7 +245,7 @@ mod tests {
         requests.extend(message(4, GET_XDG_SURFACE, &words(&[10, 9])));
         requests.extend(message(10, GET_TOPLEVEL, &words(&[11])));
         let file = std::fs::File::open("/dev/null").unwrap();
-        send(&client_near, &requests, &[OwnedFd::from(file)]).unwrap();
+        send(&client_near, &requests, &mut vec![OwnedFd::from(file)]).unwrap();
         let mut got = vec![0u8; requests.len()];
         let mut space = [MaybeUninit::uninit(); rustix::cmsg_space!(ScmRights(MAX_FDS))];
         let mut ancillary = RecvAncillaryBuffer::new(&mut space);

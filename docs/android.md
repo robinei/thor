@@ -75,6 +75,10 @@ beside the compositor's (`<display>-android`) that passes everything through but
 the size the window already has. A resize still reaches Waydroid. (The fix belongs in Waydroid: a
 hotplug only when the size changed.)
 
+File descriptors (a keymap, a dmabuf's planes) go on with the next bytes passed, in the order they came:
+those of a message cut off at the end of a read wait for its rest, since a send of no bytes carries none.
+More than 112 waiting ends the connection.
+
 If the compositor ends a connection (it quit, or dropped Waydroid), the filter ends, and the Waydroid
 session with it (bound to the filter's unit): Waydroid can't go on without its display. Tried when the session was sway
 (before 2026-10-26): with sway restarted under a running Android, Android's system crashed when it next drew (`system_server` restarted)
