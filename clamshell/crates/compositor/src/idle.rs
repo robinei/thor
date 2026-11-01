@@ -17,7 +17,9 @@ use smithay::{
 use std::time::{Duration, Instant};
 
 pub(crate) struct Idle {
-    pub inhibitors: Vec<WlSurface>,
+    /// The surfaces inhibiting, once each with how many inhibitors it has: a client can make any number of
+    /// them, and the list is walked at every turn.
+    pub inhibitors: Vec<(WlSurface, u32)>,
     last_input: Instant,
     inhibited: bool,
     pub quiet: Option<bool>,
@@ -44,19 +46,27 @@ impl Idle {
 }
 impl IdleInhibitHandler for Server {
     fn inhibit(&mut self, surface: WlSurface) {
-        self.idle.inhibitors.push(surface);
+        match self.idle.inhibitors.iter_mut().find(|(old, _)| old == &surface) {
+            Some((_, count)) => *count = count.saturating_add(1),
+            None => self.idle.inhibitors.push((surface, 1)),
+        }
     }
     fn uninhibit(&mut self, surface: WlSurface) {
-        if let Some(index) = self.idle.inhibitors.iter().position(|old| old == &surface) {
-            self.idle.inhibitors.remove(index);
+        if let Some(index) = self.idle.inhibitors.iter().position(|(old, _)| old == &surface)
+            && let Some((_, count)) = self.idle.inhibitors.get_mut(index)
+        {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                self.idle.inhibitors.remove(index);
+            }
         }
     }
 }
 impl Server {
     pub(crate) fn update_idle(&mut self, now: Instant) {
         self.place();
-        self.idle.inhibitors.retain(Resource::is_alive);
-        let inhibited = self.idle.inhibitors.iter().any(|surface| {
+        self.idle.inhibitors.retain(|(surface, _)| surface.is_alive());
+        let inhibited = self.idle.inhibitors.iter().any(|(surface, _)| {
             if !with_renderer_surface_state(surface, |state| state.buffer().is_some()).unwrap_or(false) {
                 return false;
             }

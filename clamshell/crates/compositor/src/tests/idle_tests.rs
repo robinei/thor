@@ -10,6 +10,8 @@ delegate_noop!(Client: ignore zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1);
 delegate_noop!(Client: ignore wl_subcompositor::WlSubcompositor);
 delegate_noop!(Client: ignore wl_subsurface::WlSubsurface);
 
+/// Each inhibitor counts, kept once per surface with a count, so that any number on one surface (here 51
+/// on the child) costs one entry to walk at every turn.
 #[test]
 fn inhibitors_count_individually_and_only_mapped_visible_surfaces_keep_idle_off() {
     let (mut display, mut server) = ServerBuilder::new().started();
@@ -27,7 +29,7 @@ fn inhibitors_count_individually_and_only_mapped_visible_surfaces_keep_idle_off(
         let top = xdg.get_toplevel(&qh, ());
         top.set_app_id("video".into());
         let first = manager.create_inhibitor(&surface, &qh, ());
-        let _second = manager.create_inhibitor(&child, &qh, ());
+        let _second: Vec<_> = (0..51).map(|_| manager.create_inhibitor(&child, &qh, ())).collect();
         surface.commit();
         let mut client = Client::default();
         queue.roundtrip(&mut client).unwrap();

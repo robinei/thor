@@ -1156,8 +1156,9 @@ client none; the VM suite's `keyboard_points` types into foot.
 
 The state: the last input's time, whether an inhibitor is in effect, and the last report. An
 idle-inhibit-v1 inhibitor is in effect while its surface has a buffer and its root (through subsurface and
-popup parents) is a mapped, visible window. Each inhibitor counts on its own; those of dead surfaces are
-dropped. It is checked each turn of the loop, and only changes go to the state's idle machine (Idle and
+popup parents) is a mapped, visible window. Each inhibitor counts on its own, kept as one entry per
+surface with a count, so any number of them on a surface costs one entry to walk; those of dead surfaces
+are dropped. It is checked each turn of the loop, and only changes go to the state's idle machine (Idle and
 sleep, above); the loop sets no wake of its own for the 10 s, so quiet is reported at the first turn after
 them.
 
