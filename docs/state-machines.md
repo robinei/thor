@@ -1393,6 +1393,15 @@ while mirrored) shows each frame composed once it is free, and nothing else
 (`a_screen_that_doesnt_pace_only_shows_frames`,
 `an_external_display_paces_the_top_screen_while_connected_else_the_top_panel_does`).
 
+What changed is told per part of the scene, the top screen's and the second's (`drawing_demand::Visuals`,
+`Server::surface_committed`): a surface's commit marks the part its window is shown on (with the window's
+subsurfaces, popups and an X11 window's popups), none for a window not shown, the cursor's for the cursor's
+surface, and both for any other surface or a window added or gone; what is shown, a window's
+presentation and the UI's layers are compared part by part; a colour change marks both. A DRM screen
+composes for its part's changes, for the cursor's on its part unless the cursor is on a plane of its own,
+and when what is on its planes changed since it last composed; so a game drawing on the top screen leaves
+the second screen idle, answering its own windows' commits (`a_commit_or_the_cursor_changes_only_the_part_it_is_drawn_on`).
+
 Each DRM screen, each turn of the loop (`drm/mod.rs` `step`, `drm/turn.rs` `screen_turn`):
 
     pending --any turn--> pending [no callbacks, frame or wake]                     a_queued_frame_waits_for_its_flip_without_turning_the_loop

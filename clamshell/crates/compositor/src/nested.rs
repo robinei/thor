@@ -203,11 +203,11 @@ impl Drawing {
             self.held = server.frame_callbacks(None, interval, now);
         }
         let before = server.core.state_revision();
-        if record_ui(server) {
+        if record_ui(server).contains(&true) {
             self.redraw.changed();
         }
         let reported = server.core.state_revision() != before;
-        if self.visuals.observe(server) || server.screenshot_requested {
+        if self.visuals.observe(server).any() || server.screenshot_requested {
             self.redraw.changed();
         }
         if ready && now >= self.next_frame && self.redraw.pending() {

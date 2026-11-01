@@ -101,7 +101,7 @@ impl CompositorHandler for Server {
     }
     fn commit(&mut self, surface: &WlSurface) {
         // Any surface's commit may change a window's size, picture or mapping, or its popups'.
-        self.windows_changed();
+        self.surface_committed(surface);
         // Before the buffer handler takes it: a new buffer on a window's own surface is a frame.
         let new_buffer = compositor::with_states(surface, |states| {
             matches!(states.cached_state.get::<compositor::SurfaceAttributes>().current().buffer, Some(compositor::BufferAssignment::NewBuffer(_)))
@@ -266,7 +266,8 @@ impl SeatHandler for Server {
     }
     fn cursor_image(&mut self, _: &Seat<Self>, image: smithay::input::pointer::CursorImageStatus) {
         self.pointer.cursor = image;
-        self.windows_changed();
+        // (The cursor is placed at every placing: only its picture changed.)
+        self.committed.cursor = true;
     }
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
         let client = focused.and_then(|s| self.dh.get_client(s.id()).ok());

@@ -127,6 +127,8 @@ struct Screen {
     timing: crate::frame_timing::Monitor,
     schedule: crate::frame_schedule::Schedule,
     needs_compose: bool,
+    /// What was on its planes when it last composed, which the composition left out.
+    composed_planed: Planed,
     hw_clock: bool,
 }
 
@@ -185,6 +187,7 @@ impl Screen {
             timing: Default::default(),
             schedule: Default::default(),
             needs_compose: true,
+            composed_planed: Planed::default(),
             hw_clock: false,
         }
     }
@@ -898,8 +901,14 @@ fn step(
     let reported = before != server.core.state_revision();
     layers_decide(drawing, server);
     shows_decide(drawing, server);
-    if drawing.visuals.observe(server) || ui_changed {
-        for screen in &mut drawing.screens {
+    // Each screen composes for what changed on its part of the scene: the cursor's changes not while the
+    // cursor is on a plane of its own, and whatever goes on or off its planes since it last composed.
+    let changes = drawing.visuals.observe(server);
+    for screen in &mut drawing.screens {
+        let part = screen.scene();
+        let planed = screen.planed();
+        let changed = |parts: [bool; 2]| parts.get(part).copied().unwrap_or(true);
+        if changed(changes.parts) || changed(ui_changed) || (changed(changes.cursor) && !planed.cursor) || planed != screen.composed_planed {
             screen.needs_compose = true;
         }
     }
@@ -1094,6 +1103,7 @@ fn compose(drawing: &mut Drawing, server: &mut Server, index: usize, capture: bo
     };
     let straight = matches!(screen.shows, Shows::Straight(_));
     let Some(states) = states.get_mut(screen.scene()) else { return Ok(None) };
+    screen.composed_planed = screen.planed();
     render::elements(server, frames, cursor, renderer, elements, down, skip, screen.planed())?;
     let changed = pipeline.compose(server, renderer, down, elements, states, straight)?;
     if !changed {

@@ -75,6 +75,8 @@ pub(crate) struct Server {
     /// Counts the changes to the windows as their clients and the window manager left them, which the
     /// scene is placed from (see [`Server::windows_changed`]).
     pub windows_epoch: u64,
+    /// What surfaces committed since the hosts last looked (see [`Server::surface_committed`]).
+    pub committed: crate::scene::Committed,
     /// What the windows were last configured from (see `Server::configure_windows`): the state's
     /// revision, the windows' epoch and the screens' areas for windows.
     pub configured_from: Option<crate::windows::ConfiguredFrom>,
@@ -143,6 +145,7 @@ impl Server {
             identities,
             changed_facts: Vec::new(),
             windows_epoch: 0,
+            committed: Default::default(),
             configured_from: None,
             #[cfg(test)]
             configures: 0,

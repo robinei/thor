@@ -215,3 +215,39 @@ fn placing_again_with_nothing_changed_does_nothing() {
         assert_eq!(server.scene.placements, placements + 1, "a resize");
     });
 }
+
+/// What changed is told per part of the scene, so that a screen composes only for its own: a commit marks
+/// the part its window is shown on, none for a window not shown; a move of the cursor marks the parts it
+/// left and entered, as the cursor's, apart from the rest.
+#[test]
+fn a_commit_or_the_cursor_changes_only_the_part_it_is_drawn_on() {
+    const WINDOWS: [Opened; 3] =
+        [Opened { id: 1, parent: None, size: (960, 540) }, Opened { id: 2, parent: None, size: (960, 540) }, Opened { id: 3, parent: None, size: (960, 540) }];
+    with_windows(&WINDOWS, |server| {
+        server.core.handle(Event::HardwareKey(HardwareKey::WindowDown));
+        server.core.handle(WindowEvent::Activate(2).into());
+        server.place();
+        let place = |server: &Server, id| server.scene.window(id).map(|placed| placed.below);
+        assert_eq!((place(server, 1), place(server, 2), place(server, 3)), (Some(true), Some(false), None), "1 below, 2 on top, 3 not shown");
+        let mut visuals = crate::drawing_demand::Visuals::default();
+        visuals.observe(server);
+        let commit = |server: &mut Server, index: usize| {
+            let root = server.windows[index].window.root().unwrap();
+            smithay::wayland::compositor::CompositorHandler::commit(server, &root);
+        };
+        let changes = |parts, cursor| crate::drawing_demand::Changes { parts, cursor };
+        commit(server, 1);
+        assert_eq!(visuals.observe(server), changes([true, false], [false; 2]), "the top window's commit");
+        commit(server, 0);
+        assert_eq!(visuals.observe(server), changes([false, true], [false; 2]), "the bottom window's");
+        commit(server, 2);
+        assert_eq!(visuals.observe(server), changes([false; 2], [false; 2]), "a window not shown");
+        server.pointer.location = (100.0, 100.0).into();
+        server.pointer.cursor_activity.motion(std::time::Instant::now());
+        assert_eq!(visuals.observe(server), changes([false; 2], [true, false]), "the cursor shown on the top screen");
+        server.pointer.location = (f64::from(server.screens.top_width) + 100.0, 100.0).into();
+        assert_eq!(visuals.observe(server), changes([false; 2], [true, true]), "moved to the second screen");
+        server.windows_changed();
+        assert_eq!(visuals.observe(server), changes([true; 2], [false; 2]), "a window added or gone: both");
+    });
+}

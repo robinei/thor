@@ -221,16 +221,27 @@ pub(crate) fn clients_fault(error: &smithay::backend::renderer::gles::GlesError)
 
 pub(crate) const LAYERS: [Layer; 4] = [Layer::Screen(Screen::Top), Layer::Screen(Screen::Bottom), Layer::Overlay(Screen::Top), Layer::Overlay(Screen::Bottom)];
 
-/// Record stale visible layers to discover real UI damage without a GPU draw.
-pub(crate) fn record_ui(server: &mut Server) -> bool {
+/// The part of the scene a layer of the UI is on: the top screen's (0) or the second's (1).
+pub(crate) fn part(layer: Layer) -> usize {
+    match layer {
+        Layer::Screen(screen) | Layer::Overlay(screen) => usize::from(screen == Screen::Bottom),
+    }
+}
+
+/// Records the stale visible layers, to find what of the UI changed without drawing it: whether each part
+/// of the scene's (the top screen's, the second's) did.
+pub(crate) fn record_ui(server: &mut Server) -> [bool; 2] {
     server.place();
-    let mut changed = false;
+    let mut changed = [false; 2];
     for layer in LAYERS {
         if layer == Layer::Screen(Screen::Top) && server.scene.covers_top() {
             continue;
         }
-        if server.core.stale(layer) {
-            changed |= server.core.record(layer, false).is_some();
+        if server.core.stale(layer)
+            && server.core.record(layer, false).is_some()
+            && let Some(part) = changed.get_mut(part(layer))
+        {
+            *part = true;
         }
     }
     server.core.frames_done();

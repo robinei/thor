@@ -18,11 +18,39 @@
 use clamshell_ui::{Bounds, Layer, Screen};
 use smithay::input::pointer::CursorImageStatus;
 use smithay::reexports::wayland_server::Resource;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle};
 
 use crate::geometry::Geometry;
 use crate::server::Server;
 use crate::windows::ClientWindow;
+
+/// What surfaces committed since the hosts last looked (see `drawing_demand`): the parts of the scene they
+/// are drawn on (the top screen's, the second's), and whether the cursor's did.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Committed {
+    pub parts: [bool; 2],
+    pub cursor: bool,
+}
+
+/// Where a surface is drawn (see [`Server::surface_committed`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DrawnOn {
+    /// On a part of the scene: the top screen's (0), the second's (1).
+    Part(usize),
+    /// Nowhere: its window isn't shown.
+    Nowhere,
+    Cursor,
+}
+
+/// The surface at the root of `surface`'s tree of subsurfaces.
+fn root_of(surface: &WlSurface) -> WlSurface {
+    let mut root = surface.clone();
+    while let Some(parent) = smithay::wayland::compositor::get_parent(&root) {
+        root = parent;
+    }
+    root
+}
 
 /// One thing shown.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -42,6 +70,19 @@ pub(crate) enum Shown {
         area: Rectangle<i32, Logical>,
     },
     Window(Placed),
+}
+
+impl Shown {
+    /// The part of the scene it is on (the top screen's, 0, or the second's, 1), with the second screen's
+    /// left edge at `split`; None for the cursor, which is told apart (see `drawing_demand`).
+    pub fn part(&self, split: i32) -> Option<usize> {
+        match self {
+            Shown::Cursor { .. } => None,
+            Shown::Software { layer, .. } => Some(crate::render::part(*layer)),
+            Shown::Dim { area } => Some(usize::from(area.loc.x >= split)),
+            Shown::Window(placed) => Some(usize::from(placed.below)),
+        }
+    }
 }
 
 /// A window shown: on the second screen or the top one, where and how it is drawn, and whether input
@@ -173,10 +214,48 @@ impl Server {
         }
     }
 
-    /// The windows changed as their clients or the window manager left them (one added or gone, a commit):
-    /// the scene is placed again when next asked for.
+    /// The windows changed as their clients or the window manager left them (one added or gone, a surface
+    /// gone): the scene is placed again when next asked for, and both its parts are drawn again.
     pub(crate) fn windows_changed(&mut self) {
         self.windows_epoch = self.windows_epoch.wrapping_add(1);
+        self.committed.parts = [true; 2];
+    }
+
+    /// `surface` committed: the scene is placed again when next asked for, as the commit may change a
+    /// window's size, picture or mapping; and the part of it the surface is drawn on is drawn again: its
+    /// window's, none for a window not placed (which a change of placement would show), the cursor's; both
+    /// for a surface of none of these (a drag's icon).
+    pub(crate) fn surface_committed(&mut self, surface: &WlSurface) {
+        self.windows_epoch = self.windows_epoch.wrapping_add(1);
+        match self.drawn_on(surface) {
+            Some(DrawnOn::Part(part)) => {
+                if let Some(part) = self.committed.parts.get_mut(part) {
+                    *part = true;
+                }
+            }
+            Some(DrawnOn::Nowhere) => {}
+            Some(DrawnOn::Cursor) => self.committed.cursor = true,
+            None => self.committed.parts = [true; 2],
+        }
+    }
+
+    /// Where `surface` is drawn (see [`Server::surface_committed`]): as part of a window (its own surfaces and
+    /// subsurfaces, its popups, an X11 window's popups) on that window's part of the scene, or nowhere; or as
+    /// the cursor. None for any other surface. By the scene as last placed: a commit that moves its window
+    /// changes the scene, which is compared too (see `drawing_demand`).
+    fn drawn_on(&self, surface: &WlSurface) -> Option<DrawnOn> {
+        let root = root_of(surface);
+        if let CursorImageStatus::Surface(cursor) = &self.pointer.cursor
+            && root_of(cursor) == root
+        {
+            return Some(DrawnOn::Cursor);
+        }
+        let root = match self.popups.find_popup(&root) {
+            Some(popup) => root_of(&smithay::desktop::find_popup_root_surface(&popup).ok()?),
+            None => root,
+        };
+        let window = self.windows.iter().find(|w| w.window.root().as_ref() == Some(&root) || w.window.x11_popups().iter().any(|p| p.surface == root))?;
+        Some(self.scene.window(window.id).map_or(DrawnOn::Nowhere, |placed| DrawnOn::Part(usize::from(placed.below))))
     }
 
     /// Places the windows shown, front first, into `shown`: the top screen's stack, or while the overview
