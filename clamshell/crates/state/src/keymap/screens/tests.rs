@@ -827,7 +827,7 @@ fn each_player_has_a_keymap_of_its_own() {
     assert_eq!(grid.get(first.unwrap() + 1), Some(&SettingsId::Tile(Setting::Keymap2)), "player 2's after player 1's");
     // Player 2's picker chooses player 2's keymap.
     long(&mut s, Id::Settings(SettingsId::Tile(Setting::Keymap2)));
-    assert_eq!(s.keymapping().player(), two);
+    assert_eq!(s.keymapping().player(two), two);
     tap(&mut s, row(2));
     let zelda = s.prefs().settings().overrides_of("zelda-lttp");
     assert_eq!((zelda.get(Setting::Keymap), zelda.get(Setting::Keymap2)), (None, Some(1)), "player 2's, not player 1's");
@@ -848,9 +848,25 @@ fn each_player_has_a_keymap_of_its_own() {
     assert_eq!((sent_to(&fx, Player::ONE), sent_to(&fx, two)), (None, Some(1)));
     // A tap on player 1's tile steps player 1's keymap, and leaves player 2's.
     let fx = tap(&mut s, Id::Settings(SettingsId::Tile(Setting::Keymap)));
-    assert_eq!(s.keymapping().player(), Player::ONE);
+    assert_eq!(s.keymapping().player(two), Player::ONE);
     assert_eq!(s.prefs().settings().overrides_of("zelda-lttp").get(Setting::Keymap2), Some(1));
     assert!(sent_to(&fx, Player::ONE).is_some() && sent_to(&fx, two).is_none(), "{fx:?}");
+}
+
+/// Player 2's picker open while the count goes down to one chooses player 1's keymap: player 2 has no
+/// tile then, and its keymap would never be sent.
+#[test]
+fn the_keymap_picker_of_a_player_gone_chooses_within_the_count() {
+    use crate::device_view::controllers::ControllerEvent;
+    let mut s = State::new(Init { keymaps: Keymaps::initial(), ..init() });
+    tap(&mut s, Id::Tab(Tab::Settings));
+    s.applied(Event::Controller(ControllerEvent::StepCount(1)));
+    long(&mut s, Id::Settings(SettingsId::Tile(Setting::Keymap2)));
+    s.applied(Event::Controller(ControllerEvent::StepCount(-1)));
+    assert_eq!(s.panel().setting_of(crate::profiles::picker::Kind::Keymap), Setting::Keymap);
+    tap(&mut s, row(2));
+    let zelda = s.prefs().settings().overrides_of("zelda-lttp");
+    assert_eq!((zelda.get(Setting::Keymap), zelda.get(Setting::Keymap2)), (Some(1), None), "player 1's");
 }
 
 /// A player past the count has no keymap tile and is sent no keymap; back within the count, it is sent

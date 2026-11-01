@@ -424,7 +424,7 @@ impl<'a> Panel<'a> {
     /// or the lights.
     pub fn setting_of(&self, kind: crate::profiles::picker::Kind) -> Setting {
         match kind {
-            crate::profiles::picker::Kind::Keymap => Setting::keymap(self.kinds.keymapping.player()),
+            crate::profiles::picker::Kind::Keymap => Setting::keymap(self.kinds.keymapping.player(self.players)),
             crate::profiles::picker::Kind::Curve => Setting::Curve,
             crate::profiles::picker::Kind::Lights => Setting::Lights,
         }

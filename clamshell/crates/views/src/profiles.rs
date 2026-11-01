@@ -96,7 +96,10 @@ pub(super) fn draw(f: &mut Frame, kind: Kind, screen: PickerScreen) {
 /// keymap (Keymap 2).
 fn title(s: &clamshell_state::State, kind: Kind, w: &Words) -> &'static str {
     match kind {
-        Kind::Keymap => clamshell_state::device_view::controllers::keymap_label(s.device_view().controllers().count(), s.keymapping().player()),
+        Kind::Keymap => clamshell_state::device_view::controllers::keymap_label(
+            s.device_view().controllers().count(),
+            s.keymapping().player(s.device_view().controllers().count()),
+        ),
         Kind::Curve | Kind::Lights => w.title,
     }
 }

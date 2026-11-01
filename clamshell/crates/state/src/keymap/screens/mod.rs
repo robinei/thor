@@ -171,9 +171,11 @@ impl Keymapping {
         &self.keymaps
     }
 
-    /// The player whose keymap the picker chooses: the one whose tile was pressed last.
-    pub fn player(&self) -> crate::device_view::controllers::Player {
-        self.player
+    /// The player whose keymap the picker chooses: the one whose tile was pressed last, as far as
+    /// `count`, how many players there are now. The count may have been lowered in the Device view while
+    /// the picker was open, and a player past it has no tile and is sent no keymap.
+    pub fn player(&self, count: crate::device_view::controllers::Player) -> crate::device_view::controllers::Player {
+        self.player.min(count)
     }
 
     /// A player's keymap tile was pressed: the picker is for that player's keymap.
