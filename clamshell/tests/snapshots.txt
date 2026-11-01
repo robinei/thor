@@ -3,7 +3,7 @@
 bar-window-below.png 247012784e5f9f16
 battery.png bf4021fc85050808
 bluetooth.png a6af7addc019f415
-bottom.png 3604f66d1cdb2c88
+bottom.png 94cb4059c08bd1d2
 brightness.png 5736a060f1cb0503
 curve-edit-hdr.png 048380a15dcf2498
 curve-edit-histogram.png 62489d84a4cf63f0
@@ -75,7 +75,7 @@ library-pick.png f5675574ae216b69
 lights-edit-unlinked.png 386d8461886edee3
 lights-edit.png a2b431b96e9e78a6
 lights.png d3ac79cee8876db4
-notice-long.png 1b5490ec47aa3b79
+notice-long.png 6ccc2e235a6699c3
 portal-replace.png 7dc20c67a3a6f51e
 portal-save.png 829355a7ee610113
 settings-env.png 141480d50601cd5a
@@ -93,7 +93,7 @@ setup-wifi.png 8ea91506c11bd0b4
 setup-zone.png 260a82bc3dbfc2ef
 slider.png 55e23d69fe356b89
 status-low.png dcd7e61aed6a5359
-sysinfo.png 9debe13d50b2dc86
+sysinfo.png 6c6ffed4a78d4995
 time-by-hand.png 686fee2d8dc63df5
 time-europe.png 9e84d4034db845ee
 time-zones.png 8d564e362084b379

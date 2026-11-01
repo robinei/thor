@@ -94,11 +94,17 @@ pub(super) fn draw(f: &mut Frame) {
     t.graph(c, &h.fps, h.fps.max().max(FPS_SCALE), FPS);
 
     let t = tile("Power", 3);
-    let (value, detail) = match (m.power_w, m.minutes_left, s.sys().status().battery) {
-        (Some(w), Some(min), Some(b)) if w > 0.0 => (Line::of(format_args!("{w:.1} W")), Line::of(format_args!("{b}% · {} left", HoursMinutes(min)))),
-        (Some(w), _, Some(b)) if w < 0.0 => (Line::of(format_args!("{:.1} W", -w)), Line::of(format_args!("{b}% · charging"))),
-        (Some(w), _, _) => (Line::of(format_args!("{:.1} W", w.abs())), Line::of(format_args!("battery"))),
-        _ => (Line::of(format_args!("–")), Line::of(format_args!("no battery"))),
+    // The power drawn or charged, when read; under it the battery, whatever the power reading.
+    let value = match m.power_w {
+        Some(w) => Line::of(format_args!("{:.1} W", w.abs())),
+        None => Line::of(format_args!("–")),
+    };
+    let status = s.sys().status();
+    let detail = match (status.battery, m.minutes_left) {
+        (None, _) => Line::of(format_args!("no battery")),
+        (Some(b), _) if status.charging => Line::of(format_args!("{b}% · charging")),
+        (Some(b), Some(min)) => Line::of(format_args!("{b}% · {} left", HoursMinutes(min))),
+        (Some(b), None) => Line::of(format_args!("{b}%")),
     };
     t.text(c, &value, &detail);
     t.graph(c, &h.power, h.power.max().max(POWER_SCALE_W), POWER);

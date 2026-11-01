@@ -493,3 +493,28 @@ fn the_editors_parameters_are_one_slider_row() {
         }
     }
 }
+
+/// Sysinfo's Power tile says the battery from the battery's reading, whether or not the power is read.
+#[test]
+fn the_power_tile_says_the_battery_without_a_power_reading() {
+    let text = |status: Status| {
+        let mut state = State::new(Init { library: Some(clamshell_library::demo::library()), ..Init::default() });
+        state.apply(Event::tick(1_700_000_000), &mut Vec::new());
+        state.apply(Event::Reading(Reading::Status(status)), &mut Vec::new());
+        let mut cache = DrawCache::load();
+        let mut rec = Recording::default();
+        let mut targets = Vec::new();
+        let mut canvas = Canvas::new(&mut rec, (1240, 1080), 1.0, &mut cache);
+        let (mut images, mut scratch) = (Images::synchronous(), Scratch::default());
+        let mut f = Frame::new(&mut canvas, &state, &mut images, &mut scratch, &mut targets);
+        bottom(&mut f, Rect::new(0.0, 0.0, 1240.0, 1080.0));
+        f.finish();
+        String::from_utf8_lossy(rec.all_text()).into_owned()
+    };
+    let charging = text(Status { battery: Some(50), charging: true, ..Status::default() });
+    assert!(charging.contains("50% · charging") && !charging.contains("no battery"), "{charging}");
+    let draining = text(Status { battery: Some(50), ..Status::default() });
+    assert!(draining.contains("50%") && !draining.contains("no battery"), "{draining}");
+    let none = text(Status::default());
+    assert!(none.contains("no battery"), "{none}");
+}
