@@ -1391,7 +1391,10 @@ their presentation feedback, notes the commits it shows (for FIFO barriers), and
 by its next refresh; clients are told its refresh. Another screen showing the same part (the top panel
 while mirrored) shows each frame composed once it is free, and nothing else
 (`a_screen_that_doesnt_pace_only_shows_frames`,
-`an_external_display_paces_the_top_screen_while_connected_else_the_top_panel_does`).
+`an_external_display_paces_the_top_screen_while_connected_else_the_top_panel_does`). While no screen
+shows the second part (its panel broken or missing), the screen pacing the top part paces the second
+part's windows too, which would otherwise wait for good for their frame callbacks, FIFO barriers and
+timed commits (`the_top_pacer_paces_the_second_screens_windows_while_no_screen_shows_them`).
 
 What changed is told per part of the scene, the top screen's and the second's (`drawing_demand::Visuals`,
 `Server::surface_committed`): a surface's commit marks the part its window is shown on (with the window's

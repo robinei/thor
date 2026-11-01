@@ -84,13 +84,34 @@ pub(super) fn pacer(screens: impl Iterator<Item = (bool, bool)> + Clone, down: b
     of(true).or_else(|| of(false))
 }
 
-/// Sets which screens pace their windows (see [`pacer`]), and which panels are mirrored, logged when it
-/// changes. A screen that starts or stops pacing shows its next frame whole.
+/// The parts of the scene whose windows screen `index` paces, given each part's pacer (see [`pacer`]): its
+/// own part's (`Some(down)`); both (None) while no screen shows the other part (a second panel broken or
+/// missing), whose windows would otherwise wait for their frame callbacks, FIFO barriers and timed
+/// commits for good; or none.
+pub(super) fn paced(pacers: [Option<usize>; 2], index: usize) -> Option<Option<bool>> {
+    let [top, bottom] = pacers;
+    match (top == Some(index), bottom == Some(index)) {
+        (true, _) => Some(bottom.is_some().then_some(false)),
+        (_, true) => Some(top.is_some().then_some(true)),
+        _ => None,
+    }
+}
+
+/// Sets which screens pace their windows (see [`pacer`], [`paced`]), and which panels are mirrored, logged
+/// when it changes. A screen that starts or stops pacing shows its next frame whole.
 pub(super) fn pacing_decide(drawing: &mut Drawing) {
     let kinds = || drawing.screens.iter().map(|screen| (screen.external.is_some(), screen.down()));
     let pacers = [pacer(kinds(), false), pacer(kinds(), true)];
     for (index, screen) in drawing.screens.iter_mut().enumerate() {
-        let paces = pacers.get(screen.scene()).copied().flatten() == Some(index);
+        let parts = paced(pacers, index);
+        let paces = parts.is_some();
+        let parts = parts.unwrap_or(Some(screen.down()));
+        if parts != screen.paced {
+            if parts.is_none() {
+                log::info!("drm: no screen shows the other part of the scene: the {} screen paces its windows too", screen.name());
+            }
+            screen.paced = parts;
+        }
         if paces != screen.paces {
             screen.paces = paces;
             screen.dirty = true;
@@ -327,6 +348,18 @@ mod tests {
         assert_eq!(pacer(connected.iter().copied(), false), Some(2), "connected: the external display");
         assert_eq!(pacer(connected.iter().copied(), true), Some(1), "the second screen paces itself still");
         assert_eq!(pacer([(false, false)].iter().copied(), true), None, "no second screen");
+    }
+
+    /// The screen pacing a part paces the other part's windows too while no screen shows that part.
+    #[test]
+    fn the_top_pacer_paces_the_second_screens_windows_while_no_screen_shows_them() {
+        assert_eq!(paced([Some(0), Some(1)], 0), Some(Some(false)), "its own part");
+        assert_eq!(paced([Some(0), Some(1)], 1), Some(Some(true)));
+        assert_eq!(paced([Some(2), Some(1)], 0), None, "mirrored: the external display paces it");
+        assert_eq!(paced([Some(2), Some(1)], 2), Some(Some(false)));
+        assert_eq!(paced([Some(0), None], 0), Some(None), "no second screen: both parts");
+        assert_eq!(paced([Some(1), None], 1), Some(None), "nor while an external display paces the top");
+        assert_eq!(paced([Some(1), None], 0), None);
     }
 
     /// A connected display is probed once none is shown; one that couldn't be shown is left until it is

@@ -71,6 +71,9 @@ struct Screen {
     /// whether an external display mirrors it, which paces it instead.
     paces: bool,
     mirrored: bool,
+    /// The parts of the scene whose windows it paces, while it does, as the server's pacing takes them: its
+    /// own (`Some(down)`), or both (None) while no screen shows the other part (see [`paced`]).
+    paced: Option<bool>,
     surface: Presenter,
     /// The elements' states in the frame queued, for its flip; refilled in place for each frame, so that
     /// queueing one allocates nothing.
@@ -154,6 +157,7 @@ impl Screen {
             crtc,
             paces: external.is_none(),
             mirrored: false,
+            paced: Some(role == ScreenRole::Bottom),
             external,
             surface,
             part,
@@ -859,7 +863,7 @@ fn flipped(drawing: &mut Drawing, server: &mut Server, index: usize, metadata: O
         server.present_flip(&mut screen.feedback, time, hw_clock, screen.interval, metadata.map_or(0, |m| u64::from(m.sequence)));
     }
     if screen.paces {
-        screen.held = server.frame_callbacks(Some(down), screen.interval, Instant::now());
+        screen.held = server.frame_callbacks(screen.paced, screen.interval, Instant::now());
     }
 }
 
@@ -905,7 +909,7 @@ fn step(
     let mut timed = None;
     for screen in drawing.screens.iter().filter(|screen| screen.paces) {
         let next = screen.next_shown(clock);
-        let held = server.release_timed_commits(next, Some(screen.down()));
+        let held = server.release_timed_commits(next, screen.paced);
         timed = earlier(timed, held.map(|at| timed_wake(now, Duration::from(clock), Duration::from(next), Duration::from(at), screen.interval)));
     }
     // The frame's own work (the X11 windows' changes to the state) and the buffers' imports, which their
@@ -993,7 +997,6 @@ fn step(
         let Some(screen) = drawing.screens.get_mut(index) else {
             continue;
         };
-        let down = screen.down();
         // A frame waits for its flip: a move of the cursor alone goes at once.
         if screen.surface.in_flight()
             && screen.layers_dirty
@@ -1004,7 +1007,7 @@ fn step(
         }
         let turn = screen_turn(Timing::of(screen, server.pacing.commits), now);
         if turn.send_held {
-            screen.held = server.frame_callbacks(Some(down), screen.interval, now);
+            screen.held = server.frame_callbacks(screen.paced, screen.interval, now);
             due = earlier(due, screen.held);
         }
         due = earlier(due, turn.wake);
@@ -1018,7 +1021,7 @@ fn step(
             Does::Answer => {
                 screen.answered = server.pacing.commits;
                 screen.next_callbacks = Some(now + screen.interval);
-                screen.held = server.frame_callbacks(Some(down), screen.interval, now);
+                screen.held = server.frame_callbacks(screen.paced, screen.interval, now);
                 // A callback held back here is due later too (a FIFO client's empty commit, under a cap).
                 due = earlier(due, screen.held);
             }
