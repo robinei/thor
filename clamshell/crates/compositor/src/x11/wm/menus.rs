@@ -34,7 +34,7 @@ impl Wm {
         let Some(window) = self.windows.get_mut(index) else { return };
         log::info!("compositor: X11 override-redirect window {} has no owner: managed as a window", window.id);
         window.override_redirect = false;
-        if window.properties.role == clamshell_state::presentation::WindowRole::Normal {
+        if !window.properties.typed {
             window.properties.role = clamshell_state::presentation::WindowRole::Splash;
         }
     }

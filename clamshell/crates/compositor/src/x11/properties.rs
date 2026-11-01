@@ -40,6 +40,7 @@ pub(super) const NAMES: &[&str] = &[
     "_THOR_SELECTION",
     "_THOR_TIMESTAMP",
     "_XWAYLAND_RANDR_EMU_MONITOR_RECTS",
+    "_NET_WM_WINDOW_TYPE_NORMAL",
 ];
 pub(super) const PROPERTIES: &[&str] = &[
     "WM_NAME",
@@ -68,6 +69,9 @@ pub(super) struct Properties {
     pub transient: Option<u32>,
     pub limits: WindowLimits,
     pub role: WindowRole,
+    /// Whether `_NET_WM_WINDOW_TYPE` named a type we know (its role); without one, a transient window is a
+    /// dialog (EWMH).
+    pub typed: bool,
     pub delete: bool,
     pub take_focus: bool,
     pub input: Option<bool>,
@@ -116,20 +120,22 @@ impl Properties {
             "_NET_WM_WINDOW_TYPE" => {
                 let types = words(AtomEnum::ATOM.into());
                 self.tooltip = types.contains(&atoms.get("_NET_WM_WINDOW_TYPE_TOOLTIP"));
-                self.role = types
-                    .into_iter()
-                    .find_map(|atom| {
-                        if atom == atoms.get("_NET_WM_WINDOW_TYPE_DIALOG") {
-                            Some(WindowRole::Dialog)
-                        } else if atom == atoms.get("_NET_WM_WINDOW_TYPE_SPLASH") {
-                            Some(WindowRole::Splash)
-                        } else if atom == atoms.get("_NET_WM_WINDOW_TYPE_UTILITY") {
-                            Some(WindowRole::Utility)
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_default();
+                // EWMH: the first type the window manager knows, in the client's order of preference.
+                let role = types.into_iter().find_map(|atom| {
+                    if atom == atoms.get("_NET_WM_WINDOW_TYPE_NORMAL") {
+                        Some(WindowRole::Normal)
+                    } else if atom == atoms.get("_NET_WM_WINDOW_TYPE_DIALOG") {
+                        Some(WindowRole::Dialog)
+                    } else if atom == atoms.get("_NET_WM_WINDOW_TYPE_SPLASH") {
+                        Some(WindowRole::Splash)
+                    } else if atom == atoms.get("_NET_WM_WINDOW_TYPE_UTILITY") {
+                        Some(WindowRole::Utility)
+                    } else {
+                        None
+                    }
+                });
+                self.typed = role.is_some();
+                self.role = role.unwrap_or_default();
             }
             "_XWAYLAND_RANDR_EMU_MONITOR_RECTS" => {
                 self.emulated = match words(AtomEnum::CARDINAL.into()).as_slice() {
@@ -157,7 +163,7 @@ impl Properties {
             parent,
             limits: self.limits,
             x11: true,
-            role: if self.role == WindowRole::Normal && self.transient.is_some() { WindowRole::Dialog } else { self.role },
+            role: if !self.typed && self.transient.is_some() { WindowRole::Dialog } else { self.role },
             unit: process.unit,
             pids: process.pids,
             game: process.game,
@@ -217,6 +223,29 @@ mod tests {
             assert_eq!(facts.unit.as_deref(), Some("game.scope"));
             assert_eq!(facts.colour, None, "X11 metadata makes no claim about colour or buffer precision");
         }
+    }
+    /// The first type in the list that is known wins, NORMAL among them; an explicit NORMAL keeps a
+    /// transient window normal, while one without a known type is a dialog.
+    #[test]
+    fn the_first_known_window_type_wins_normal_among_them() {
+        let atoms = Atoms(NAMES.iter().enumerate().map(|(i, name)| (*name, 100 + i as u32)).collect());
+        let role = |types: &[&str], transient: bool| {
+            let mut properties = Properties { transient: transient.then_some(9), ..Properties::default() };
+            let words: Vec<u32> = types.iter().map(|name| if *name == "unknown" { 7 } else { atoms.get(name) }).collect();
+            let reply = GetPropertyReply {
+                format: 32,
+                type_: AtomEnum::ATOM.into(),
+                value: words.iter().flat_map(|v| v.to_ne_bytes()).collect(),
+                ..GetPropertyReply::default()
+            };
+            properties.update("_NET_WM_WINDOW_TYPE", &reply, &atoms);
+            properties.facts(5, None, crate::Process::default()).role
+        };
+        assert_eq!(role(&["_NET_WM_WINDOW_TYPE_NORMAL", "_NET_WM_WINDOW_TYPE_DIALOG"], false), WindowRole::Normal);
+        assert_eq!(role(&["unknown", "_NET_WM_WINDOW_TYPE_DIALOG"], false), WindowRole::Dialog);
+        assert_eq!(role(&["_NET_WM_WINDOW_TYPE_NORMAL"], true), WindowRole::Normal);
+        assert_eq!(role(&["unknown"], true), WindowRole::Dialog);
+        assert_eq!(role(&[], true), WindowRole::Dialog);
     }
     #[test]
     fn focus_protocols_and_input_hints_are_validated_and_removed() {

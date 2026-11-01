@@ -1572,7 +1572,8 @@ The WM follows the root's children it didn't create, at most 128; the client of 
 one that took its XID. Override-redirect windows are menus (below); input-only windows are mapped as asked
 and never reach the state. The facts of the others: app id, WM_CLASS's class; title, _NET_WM_NAME (UTF-8),
 else WM_NAME (Latin-1); parent, WM_TRANSIENT_FOR while that window is open; limits, WM_NORMAL_HINTS' sizes;
-role, dialog, splash or utility from _NET_WM_WINDOW_TYPE, and dialog for WM_TRANSIENT_FOR without a type;
+role, from the first of _NET_WM_WINDOW_TYPE's types that is normal, dialog, splash or utility, and dialog
+for WM_TRANSIENT_FOR without one of them (`the_first_known_window_type_wins_normal_among_them`);
 process, X-Resource's client PID, never _NET_WM_PID or Xwayland's own credentials (the unit and processes
 follow from it as for Wayland). Properties are read up to 4 KiB, their type and format checked; one absent
 or malformed clears its fact.
