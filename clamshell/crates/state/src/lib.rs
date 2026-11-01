@@ -248,6 +248,10 @@ pub struct State {
     /// The plays the session's steps ended, until they are recorded in the Library. Kept empty, so that its
     /// room is reused.
     plays: Vec<crate::session::running::Play>,
+    /// The entries settle starts (autostart's, then those Steam started), and the launcher games due after
+    /// their launcher's launch; kept empty between settles, so that their room is reused as `plays`' is.
+    starting: Vec<Arc<str>>,
+    after_launchers: Vec<(Arc<str>, Start)>,
 }
 
 impl State {
@@ -616,29 +620,31 @@ impl State {
             self.bottom.unwake();
         }
         self.record_plays(out);
-        let mut due = Vec::new();
+        // (Each list taken while `launch` borrows the state, and put back empty with its room.)
+        let mut starting = std::mem::take(&mut self.starting);
         // The entries to start are looked for in the library, so not before it is read, and not while the
         // account holds programs.
         if self.library_view.read() && !self.setup.holds_programs() {
-            self.session.autostart_due(self.library_view.library(), &mut due);
+            self.session.autostart_due(self.library_view.library(), &mut starting);
         }
-        for id in due {
+        for id in starting.drain(..) {
             self.launch(id, None, Start::Background, out);
         }
         // Launcher games asked for while their launcher's launch was starting, now that it has.
-        let mut after = Vec::new();
+        let mut after = std::mem::take(&mut self.after_launchers);
         self.session.due_after_launchers(&mut after);
-        for (id, start) in after {
+        for (id, start) in after.drain(..) {
             self.launch(id, None, start, out);
         }
-        let mut steam = Vec::new();
-        if self.session.start_by_app_id(&self.clock, self.library_view.library(), &mut steam) {
+        self.after_launchers = after;
+        if self.session.start_by_app_id(&self.clock, self.library_view.library(), &mut starting) {
             self.bottom.unwake();
         }
         // Before following the windows, which leaves a starting launch's windows where they are.
-        for id in steam {
+        for id in starting.drain(..) {
             self.launch(id, None, Start::Front, out);
         }
+        self.starting = starting;
         self.session.follow_windows(&self.clock, self.library_view.library(), &mut self.plays, out);
         self.record_plays(out);
         // After the windows are followed, which finds their owners.

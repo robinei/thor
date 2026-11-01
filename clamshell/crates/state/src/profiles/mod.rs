@@ -126,7 +126,9 @@ impl<B: Clone + Default + PartialEq> Profiles<B> {
     }
 
     /// The id for a new profile: one past the highest, so an id is never taken twice while the highest
-    /// stays. None once the ids have run out.
+    /// stays. None once the ids have run out. A deleted highest id is given again: harmless, as every
+    /// setting naming a deleted profile is put back on Default in the same `apply`
+    /// (`ProfileEvent::Deleted`; the randomized test's invariant 9), so nothing still names the old one.
     fn next_id(&self) -> Option<u16> {
         self.list.iter().map(|p| p.id).max().unwrap_or(0).checked_add(1)
     }
