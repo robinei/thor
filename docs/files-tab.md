@@ -78,6 +78,8 @@ are offered only where they can be done.)
   starting, and dirs left unmounted, are cleaned up at start.
 - Random access in a solid 7z or a rar is slow (a read may decompress from the start of a block): a game
   that reads a big disc image packed so is better extracted.
+- One whose ratarmount ended while it was in use (crashed, killed) is mounted again when it is next
+  opened.
 - One that can't be mounted (damaged, a password) opens empty, with a notice saying why.
 
 On the archive's own row:

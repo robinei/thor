@@ -89,10 +89,9 @@ impl Mounts {
     /// through first, which can take a while.
     pub(crate) fn mount(&mut self, archive: &Path, interrupted: &mut dyn FnMut() -> bool) -> Result<PathBuf, NotMounted> {
         let name = archive.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-        let root = self.root.as_ref().ok_or_else(|| NotMounted::Failed("no runtime dir".into()))?;
-        let dir = dir_of(root, archive);
-        if let Some(m) = self.mounted.iter_mut().find(|m| m.dir == dir) {
-            m.adopted = false;
+        let root = self.root.clone().ok_or_else(|| NotMounted::Failed("no runtime dir".into()))?;
+        let dir = dir_of(&root, archive);
+        if self.reuse(&dir, &mounted_under(&root)) {
             return Ok(dir);
         }
         fs::create_dir_all(&dir).map_err(|e| NotMounted::Failed(format!("Opening {name}: {e}")))?;
@@ -139,7 +138,7 @@ impl Mounts {
         // up when something else is asked for.
         let mounted = started
             && loop {
-                if mounted_under(root).contains(&dir) {
+                if mounted_under(&root).contains(&dir) {
                     break true;
                 }
                 if !active(&unit) {
@@ -167,6 +166,21 @@ impl Mounts {
         log::info!("archives: {} mounted at {}", archive.display(), dir.display());
         self.mounted.push(Mount { dir: dir.clone(), adopted: false });
         Ok(dir)
+    }
+
+    /// Whether the mount on `dir` is known and still mounted (in `live`), so it can be used again. One
+    /// whose ratarmount ended since (crashed, or killed) has left an empty dir, and is forgotten.
+    fn reuse(&mut self, dir: &Path, live: &[PathBuf]) -> bool {
+        let Some(i) = self.mounted.iter().position(|m| m.dir == dir) else { return false };
+        if !live.iter().any(|d| d == dir) {
+            log::warn!("archives: {} was no longer mounted (its service ended): mounted again", dir.display());
+            self.mounted.remove(i);
+            return false;
+        }
+        if let Some(m) = self.mounted.get_mut(i) {
+            m.adopted = false;
+        }
+        true
     }
 
     /// Unmounts the archives `in_use` doesn't need. An archive is needed if a path in `in_use` is the
@@ -323,6 +337,16 @@ mod tests {
         let mut mounts = Mounts { root: Some(root.clone()), index: None, mounted: vec![Mount { dir: dir_of(&root, archive), adopted: true }] };
         assert!(mounts.unused(&[archive]).is_empty());
         assert_eq!(mounts.mounted, [Mount { dir: dir_of(&root, archive), adopted: false }]);
+    }
+
+    #[test]
+    fn a_mount_whose_ratarmount_ended_is_mounted_again() {
+        let root = PathBuf::from("/run/archives");
+        let dir = dir_of(&root, Path::new("/roms/game.7z"));
+        let mut mounts = Mounts { root: Some(root), index: None, mounted: vec![Mount { dir: dir.clone(), adopted: false }] };
+        assert!(mounts.reuse(&dir, std::slice::from_ref(&dir)), "still mounted");
+        assert!(!mounts.reuse(&dir, &[]), "its dir no longer a mount");
+        assert!(mounts.mounted.is_empty(), "forgotten, so it is mounted again");
     }
 
     #[test]
