@@ -26,8 +26,8 @@ Read `architecture.md` first, then `../AGENTS.md` for how work is done here.
 
 ## Plans under way
 
-- `review-2026-10-31.md`: the whole-repository correctness, architecture, maintainability and quality
-  review after the Vulkan-driver setting, with verified findings and a suggested fix order.
+- `review-2026-11-01.md`: six read-only reviews (compositor, state, system, UI, packages,
+  architecture) merged into 142 findings with priorities, architecture themes and an order of work.
 - `refactors-plan.md`: the architecture refactors left from the review of 2026-10-28, with the choices
   to make.
 - `review-2026-10-26b.md`: the second review after the compositor became the only session, and its
@@ -54,6 +54,7 @@ Finished plans and reviews, kept for the reasons they record:
 - `history/state-review.md`
 - `history/compositor-mvp.md`
 - `history/review-2026-10-26.md`
+- `history/review-2026-10-31.md`: the review after the Vulkan-driver setting, R01–R20, all fixed.
 - `history/device-profiles-steps.md`
 - `history/screen-commits-plan.md`: a screen's commit errors by kind, and what it shows decided once.
 - `history/window-model-plan.md`: the session's windows, keyboard and slots computed from state where
