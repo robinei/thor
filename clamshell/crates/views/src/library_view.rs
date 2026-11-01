@@ -475,7 +475,7 @@ fn actions(f: &mut Frame, entry: &Entry, r: Rect, action_h: f32, pad: f32) -> f3
             Action::Continue => {
                 // The position within it is mpv's.
                 let library = s.library_view().library();
-                let next = library.entries().iter().position(|g| g.id == entry.id).and_then(|g| library.to_continue(g)).and_then(|i| library.entries().get(i));
+                let next = library.position(&entry.id).and_then(|g| library.to_continue(g)).and_then(|i| library.entries().get(i));
                 match next {
                     Some(n) => (Fmt::of(format_args!("Play · {}", Within(s, n, entry))), Tone::Go),
                     None => (Fmt::of(format_args!("Play")), Tone::Go),

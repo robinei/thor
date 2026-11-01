@@ -175,6 +175,11 @@ impl Library {
         self.index.runners()
     }
 
+    /// How many entries a scan with id `scan` takes now: those its ids name, outside its own groups.
+    pub fn taken(&self, scan: &str) -> usize {
+        self.index.taken(scan)
+    }
+
     /// Whether entry `id` is in it, or its source is away.
     pub fn has(&self, id: &str) -> bool {
         self.position(id).is_some() || self.away.iter().any(|p| id.starts_with(p.as_str()))

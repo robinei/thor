@@ -46,6 +46,9 @@ pub(crate) struct Index {
     marks: Vec<(u64, usize)>,
     /// The runners of the entries, sorted by key.
     runners: Vec<Runner>,
+    /// For each id prefix (an id up to one of its `:`, such as a scan's id), how many entries it names
+    /// outside its own groups: those whose parent isn't named by it too. A scan takes that many entries.
+    taken: HashMap<Box<str>, usize>,
     /// In tests, every hash is the same, so that each lookup has to tell entries apart by comparing.
     #[cfg(test)]
     pub(crate) collide: bool,
@@ -85,6 +88,18 @@ impl Index {
                 let mark = self.hash_text(mark);
                 self.marks.push((mark, i));
             });
+            for (end, _) in g.id.match_indices(':') {
+                let Some(prefix) = g.id.get(..end) else { continue };
+                let ours = |id: &str| id.get(..end) == Some(prefix) && id.as_bytes().get(end) == Some(&b':');
+                if g.parent.and_then(|p| entries.get(p)).is_none_or(|p| !ours(&p.id)) {
+                    match self.taken.get_mut(prefix) {
+                        Some(n) => *n += 1,
+                        None => {
+                            self.taken.insert(prefix.into(), 1);
+                        }
+                    }
+                }
+            }
             if let Some(r) = &g.runner {
                 match self.runners.binary_search_by(|o| o.of.key.cmp(&r.key)) {
                     Ok(at) => {
@@ -112,6 +127,7 @@ impl Index {
         self.desktop.clear();
         self.marks.clear();
         self.runners.clear();
+        self.taken.clear();
         self.stale = true;
     }
 
@@ -159,6 +175,12 @@ impl Index {
     /// Whether an entry filed under mark `mark` `matches`.
     pub(crate) fn any_marked(&self, entries: &[Entry], mark: fmt::Arguments<'_>, matches: impl Fn(&Entry) -> bool) -> bool {
         self.find(&self.marks, self.hash_text(mark), entries, matches).is_some()
+    }
+
+    /// How many entries the ids starting `prefix:` name outside their own groups (see `taken`).
+    pub(crate) fn taken(&self, prefix: &str) -> usize {
+        debug_assert!(!self.stale, "the library's index is used after its entries changed");
+        self.taken.get(prefix).copied().unwrap_or(0)
     }
 
     /// The runner with key `key`.
@@ -234,6 +256,14 @@ mod tests {
         }
         for key in entries.iter().map(|g| g.key.as_str()).chain(misses) {
             assert_eq!(slot(lib.entry_by_key(key)), first(&|g| g.key == key), "{key}");
+        }
+        // Each id prefix takes the entries it names outside its own groups, as a scan counts its own.
+        let prefixes = entries.iter().flat_map(|g| g.id.match_indices(':').map(|(end, _)| &g.id[..end])).chain(misses);
+        for prefix in prefixes {
+            let ours = |id: &str| id.strip_prefix(prefix).is_some_and(|rest| rest.starts_with(':'));
+            let kept = |g: &Entry| !g.id.is_empty() && !entries.iter().any(|other| other.key == g.key && other.id != g.id);
+            let top = |g: &&Entry| kept(g) && ours(&g.id) && g.parent.and_then(|p| entries.get(p)).is_none_or(|p| !ours(&p.id));
+            assert_eq!(lib.taken(prefix), entries.iter().filter(top).count(), "{prefix}");
         }
         for file in entries.iter().filter_map(|g| g.file.as_deref()).chain([Path::new("/nothing")]) {
             let of_file = first(&|g| g.browsed.is_none() && !g.is_group() && g.file.as_deref() == Some(file));
