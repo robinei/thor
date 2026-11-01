@@ -758,6 +758,19 @@ Pointer(Activate(Tab(Battery)))
   Watch Metrics off
   Watch Battery on
 -- battery.png
+-- battery-menu.png
+== group top-filter.png
+Tick 1760000000
+  Keymap 0 "Default"
+  PadRoute Ui
+  Lights(..)
+Start
+  Watch Metrics on
+Pointer(Activate(Tab(Keyboard)))
+  Watch Metrics off
+Tick 1760000005
+  Save Resume
+-- top-filter.png
 == group time.png
 Tick 1760000000
   Keymap 0 "Default"
@@ -897,6 +910,8 @@ Pointer(Activate(Tab(Bluetooth)))
   Watch Metrics off
   Watch Bluetooth on
 -- bluetooth.png
+-- bluetooth-pairing-type.png
+-- bluetooth-pairing-compare.png
 == group volume.png
 Tick 1760000000
   Keymap 0 "Default"

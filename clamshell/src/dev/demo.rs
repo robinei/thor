@@ -158,6 +158,17 @@ pub fn wifi_crowded() -> Wifi {
 }
 
 /// Four devices: paired and connected, paired, and new ones.
+/// The demo's Bluetooth while device `name` pairs, showing `code`.
+pub fn pairing(name: &str, code: clamshell_state::radios::bluetooth::PairingCode) -> Bluetooth {
+    let mut bluetooth = bluetooth();
+    // (Its own address: the demo's are made from the names' lengths, which two share.)
+    let address = "00:11:22:33:44:99".to_owned();
+    if let Some(device) = bluetooth.devices.iter_mut().find(|d| d.name == name) {
+        device.address = address.clone();
+    }
+    Bluetooth { busy: Some(address), code: Some(code), ..bluetooth }
+}
+
 pub fn bluetooth() -> Bluetooth {
     Bluetooth {
         present: true,

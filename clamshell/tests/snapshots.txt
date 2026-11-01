@@ -1,7 +1,10 @@
 # FNV-1a hashes of the snapshots' sizes and pixels (src/dev/snapshot.rs). After a change meant to change
 # what is drawn: CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots
 bar-window-below.png 60d2776a54975ee6
+battery-menu.png 41da1322968dda54
 battery.png da760771634d8668
+bluetooth-pairing-compare.png 2c1a88ea4052a66f
+bluetooth-pairing-type.png ed57c7bd9834b93b
 bluetooth.png 40c341b678c9a435
 bottom.png a0e3c43268171873
 brightness.png 21609660b36dd127
@@ -100,6 +103,7 @@ time-zones.png b4935574e921099a
 time.png 2ff9acb79a81d4e4
 top-actions.png 027868c1be1783c4
 top-back.png eb626224a288d10d
+top-filter.png 920f21b52834f612
 top-folder.png ab2cead4b37e716a
 top-group.png cf08bdd1b3b8331f
 top-played.png 6cedec54c9a8a46b

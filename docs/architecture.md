@@ -256,6 +256,13 @@ listed, and ClamShell can be restarted without losing track.
 | `clamshell/tests/picture-scaling.py` (`--gpu` for the Wine games) | test games launched from the Library, their pictures filling the top screen at each Resolution and Scaling | by hand, for the picture |
 | `tools/vm/vm-test.sh` | ClamShell in QEMU on the device's packaged system and session (thor-system, thor-session, installed with pacman): the account through its helper, polkit rule and Setup, the power group's udev rule, a fake controller with gyro and rumble, simulated Wi-Fi and Bluetooth, sleep and wake, the session's files; the system crate's tests of the real services (`#[ignore]`d at every commit: systemd, cgroups, D-Bus, PipeWire, NetworkManager, BlueZ, UPower, timedated, ratarmount), as its `ignored_tests` check; named only: `soak` (a long run: memory, files and threads don't grow) and `faults` (PipeWire, NetworkManager and BlueZ restarted under ClamShell) | by hand, for changes to devices, services and the session |
 
+What the snapshot test doesn't see: it draws the views at the Thor's screens only (the device profile's
+sizes; another profile's layout is checked by its pieces' tests, not by pixels); it has no host, so the
+scene, clients' windows and where the compositor places the overlays are the compositor's tests' and the
+nested test's; and the focus map walks the screens of the scenario, while the keymap editor's pad panels
+are reached by the views' pad tests. The views' warm no-alloc test draws the cases it names, the time
+zone pages and a tone curve's editor among them.
+
 Every commit passes `tools/check.sh` (the rows run at every commit) through the pre-commit hook, and CI runs it
 again on GitHub.
 

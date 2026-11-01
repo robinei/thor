@@ -689,6 +689,21 @@ Battery(Spender(0)): ^Tile(ChargeLimit) vBattery(Spender(1)) <Tile(ChargeLimit) 
 Battery(Spender(1)): ^Battery(Spender(0)) vBattery(Spender(2)) <Tile(ChargeLimit) >Tile(Sleep)
 Battery(Spender(2)): ^Battery(Spender(1)) vBattery(Spender(4)) <Tile(ChargeLimit) >Tile(Sleep)
 Battery(Spender(4)): ^Battery(Spender(2)) v- <Tile(ChargeLimit) >Tile(Sleep)
+== battery-menu.png (bottom; the pad on both screens)
+start "zelda-lttp"; back -
+-- bar as in bottom.png except
+Tab(Windows), PadMouse, Tab(Time): vBattery(Quit)
+Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): vBattery(Back)
+Tab(Bluetooth), Tab(Wifi), Tab(Battery): vBattery(Quit)
+-- screen
+Battery(Back): ^Tab(Settings) vBattery(Quit) <Tab(Settings) >Tab(Dock)
+Battery(Quit): ^Battery(Back) vBattery(ForceKill) <Battery(Back) >Tab(Touchpad)
+Battery(ForceKill): ^Battery(Quit) v- <Battery(Back) >Tab(Touchpad)
+== top-filter.png (top; the pad on both screens)
+start Key[2,7]; back -
+-- library
+Collection(0), Collection(1), Collection(2), Collection(3), Collection(4), Collection(5): ^"ff6" v"ff6" <"browse:Files/Home" >"ff6"
+"ff6": ^[ListStep(0)] vTab(Keyboard) <"browse:Files/Home" >[CollectionStep(1)]
 == time.png (bottom; the pad on both screens)
 start Tab(Time); back -
 -- bar as in bottom.png except
@@ -1114,6 +1129,20 @@ Bluetooth[0]: ^Control(Brightness) vBluetooth[1] <Tab(Settings) >Bluetooth(Power
 Bluetooth[1]: ^Bluetooth[0] vBluetooth[2] <Tab(Settings) >Bluetooth(Power)
 Bluetooth[2]: ^Bluetooth[1] vBluetooth[3] <Tab(Settings) >Bluetooth(Power)
 Bluetooth[3]: ^Bluetooth[2] v- <Tab(Settings) >Bluetooth(Power)
+== bluetooth-pairing-type.png (bottom; the pad on both screens)
+start Tab(Bluetooth); back -
+-- bar as in bottom.png except
+Tab(Windows), PadMouse, Tab(Time): vBluetooth(Power)
+Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth): vBluetooth[0]
+Tab(Wifi), Tab(Battery): vBluetooth(Power)
+-- screen as in bluetooth.png
+== bluetooth-pairing-compare.png (bottom; the pad on both screens)
+start Tab(Bluetooth); back -
+-- bar as in bottom.png except
+Tab(Windows), PadMouse, Tab(Time): vBluetooth(Power)
+Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth): vBluetooth[0]
+Tab(Wifi), Tab(Battery): vBluetooth(Power)
+-- screen as in bluetooth.png
 == volume.png (bottom; the pad on both screens)
 start "zelda-lttp"; back -
 -- bar as in bottom.png except

@@ -15,6 +15,7 @@ use clamshell_state::device_view::SticksEvent;
 use clamshell_state::keymap::{Actuation, Button, Dir, Input, Layer, MouseButton, Output, PadOut, Param, Side};
 use clamshell_state::levels::Level;
 use clamshell_state::library_view::edit::EditId;
+use clamshell_state::radios::bluetooth::PairingCode;
 use clamshell_state::settings::Setting;
 use clamshell_state::{
     Dock, EditorId, Event, Id, Init, KeymapId, LevelEvent, Library, LibraryViewEvent, LibraryViewId, ListEvent, ListId, PointerEvent, Reading, SettingsId,
@@ -650,7 +651,16 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot("wifi-scrolled.png", Bottom, vec![ListEvent::Scroll(ListId::Wifi, 3.4).into()]),
             ],
         ),
-        group(vec![], vec![shot("battery.png", Bottom, demo::battery(now))]),
+        group(
+            vec![],
+            vec![
+                shot("battery.png", Bottom, demo::battery(now)),
+                // A program's row in the battery tab tapped: its menu (Quit, Force kill).
+                shot("battery-menu.png", Bottom, vec![tap(Id::Battery(clamshell_state::BatteryId::Spender(0)))]),
+            ],
+        ),
+        // The Library narrowed by what is typed with no field open: the filter line on the top screen.
+        group(vec![tab(Tab::Keyboard)], vec![shot("top-filter.png", Top, control::type_text("fi")?)]),
         group(
             vec![],
             vec![
@@ -762,7 +772,15 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 ],
             )],
         ),
-        group(vec![], vec![shot("bluetooth.png", Bottom, vec![tab(Tab::Bluetooth), Reading::Bluetooth(demo::bluetooth()).into()])]),
+        group(
+            vec![],
+            vec![
+                shot("bluetooth.png", Bottom, vec![tab(Tab::Bluetooth), Reading::Bluetooth(demo::bluetooth()).into()]),
+                // Pairing: a keyboard's code to type on it, and a phone's to compare with the one it shows.
+                shot("bluetooth-pairing-type.png", Bottom, vec![Reading::Bluetooth(demo::pairing("MX Keys", PairingCode::Type("042137".into()))).into()]),
+                shot("bluetooth-pairing-compare.png", Bottom, vec![Reading::Bluetooth(demo::pairing("Pixel 8", PairingCode::Compare("042137".into()))).into()]),
+            ],
+        ),
         group(
             vec![],
             vec![shot(

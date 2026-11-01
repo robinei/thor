@@ -447,6 +447,32 @@ fn warm_frames_do_not_allocate() {
             ],
         ),
         (
+            "time, a region's zones",
+            vec![
+                tap(Id::Tab(Tab::Time)),
+                Event::Reading(Reading::Time(TimeZones {
+                    current: Some("Europe/Oslo".into()),
+                    zones: ["Europe/Oslo", "Europe/Paris", "America/New_York"].map(String::from).to_vec(),
+                    ntp: Some(true),
+                    synced: true,
+                    error: None,
+                })),
+                tap(Id::Time(clamshell_state::TimeId::Zone)),
+                tap(clamshell_state::ListId::Time.row(7)),
+            ],
+        ),
+        (
+            "a tone curve's editor",
+            vec![
+                // (A new curve, named, opens on its sliders.)
+                tap(Id::Tab(Tab::Settings)),
+                PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Curve))).into(),
+                tap(Id::Profile(clamshell_state::profiles::picker::Kind::Curve, clamshell_state::profiles::picker::ProfileId::New)),
+                key(Key::Char('a')),
+                tap(Id::Editor(clamshell_state::EditorId::Save)),
+            ],
+        ),
+        (
             "keymap name editor",
             vec![
                 tap(Id::Tab(Tab::Settings)),
@@ -534,7 +560,7 @@ fn warm_frames_do_not_allocate() {
     // For the cases that are easy to get wrong: the state each must reach, so that it tests the screen it
     // is named for.
     type Reached = fn(&State) -> bool;
-    let reached: [(&str, Reached); 12] = [
+    let reached: [(&str, Reached); 14] = [
         ("lights picker", |s| s.lighting().screen().is_some()),
         ("lights edit screen, unlinked, a slider held", |s| {
             s.lighting().editing().is_some() && s.held_slider().is_some() && s.lighting().stick() == Stick::Right
@@ -548,6 +574,8 @@ fn warm_frames_do_not_allocate() {
         ("dock, a tray menu", |s| s.dock().tray_open()),
         ("battery, a program's menu", |s| s.sys().spender_menu().is_some()),
         ("time", |s| s.bottom().tab() == Tab::Time),
+        ("time, a region's zones", |s| matches!(s.sys().time_page(), clamshell_state::status::time::TimePage::Region(_))),
+        ("a tone curve's editor", |s| matches!(s.curving().screen(), Some(clamshell_state::curve::screens::CurveScreen::Edit(_)))),
         ("dark while a game runs", |s| s.bottom_dark()),
     ];
     let base = || {
