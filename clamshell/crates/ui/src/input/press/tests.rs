@@ -394,3 +394,38 @@ fn event_times_keep_the_spacing_they_happened_with() {
     let second = clock.at(1008);
     assert_eq!(second.duration_since(first), Duration::from_millis(8));
 }
+
+/// A level row in a scrolled list, such as an app's volume in the Apps list.
+fn level_in_list() -> Target {
+    let list = Some(InList { list: ListId::Streams, row_h: 50.0 });
+    Target { list, ..target(Id::Level(Level::Stream(0)), Some(Drag::Level(Level::Stream(0), Track { x0: 100.0, w: 200.0 }))) }
+}
+
+/// In a list, a finger on a level row waits for its first move: up or down drags the list and leaves the
+/// level as it was; sideways sets the level and follows; let go still, it sets the level where it came
+/// down.
+#[test]
+fn a_level_row_in_a_list_scrolls_with_a_vertical_swipe_and_sets_with_a_sideways_one() {
+    let (finger, row) = (Source::Touch(1), level_in_list());
+    let set = |v| Event::from(LevelEvent::Set(Level::Stream(0), v));
+    let mut input = Input::default();
+    let down = input.touch(finger, Some(&row), true, (150.0, 25.0), t0());
+    assert!(!events(&down).iter().any(|e| matches!(e, Event::Level(_))), "nothing set yet: {down:?}");
+    let swiped = input.moved(finger, (152.0, 25.0 - DRAG_START), t0());
+    assert_eq!(events(&swiped), vec![PointerEvent::Up(row.id.clone()).into(), ListEvent::Scroll(ListId::Streams, DRAG_START / 50.0).into()]);
+    assert_eq!(events(&input.moved(finger, (180.0, -75.0), t0())), vec![ListEvent::Scroll(ListId::Streams, (100.0 - DRAG_START) / 50.0).into()]);
+    assert!(!events(&input.up(finger, End::Release, &blank(), t0())).iter().any(|e| matches!(e, Event::Level(_) | Event::Pointer(PointerEvent::Activate(_)))));
+
+    let mut input = Input::default();
+    input.touch(finger, Some(&row), true, (150.0, 25.0), t0());
+    assert_eq!(events(&input.moved(finger, (150.0 + DRAG_START, 27.0), t0())), vec![set(31)]);
+    assert_eq!(events(&input.moved(finger, (200.0, 60.0), t0())), vec![set(50)], "set, it follows the finger, whatever the height");
+    let up = input.up(finger, End::Release, &blank(), t0());
+    assert_eq!(events(&up), vec![PointerEvent::Activate(row.id.clone()).into(), PointerEvent::Up(row.id.clone()).into()]);
+
+    let mut input = Input::default();
+    input.touch(finger, Some(&row), true, (150.0, 25.0), t0());
+    assert_eq!(input.timer(finger, Timer::Hold, &blank(), t0()), vec![], "held still, it doesn't long-press");
+    let up = input.up(finger, End::Release, &blank(), t0());
+    assert_eq!(events(&up), vec![set(25), PointerEvent::Activate(row.id.clone()).into(), PointerEvent::Up(row.id.clone()).into()]);
+}

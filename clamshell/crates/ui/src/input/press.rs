@@ -9,7 +9,9 @@
 //! What a finger along a target sets is the target's drag ([`Drag`]). A finger on a target that slides a
 //! control may become a slide, by being held there briefly or moved sideways, or at once if the target
 //! says so. The slider then comes up under it and follows it. A finger on a level's target sets the level
-//! where it is, and follows it.
+//! where it is, and follows it. In a scrolled list, where a finger may also mean to drag the list, it
+//! waits: its first move past [`DRAG_START`] decides, sideways setting the level and up or down dragging
+//! the list, and let go before that, it sets the level where it came down.
 //!
 //! A finger on a scrolled list that moves up or down past [`DRAG_START`] drags the list instead, and the
 //! row under it is let go without a tap. If it is let go while moving, the list flings on, slowing down,
@@ -137,6 +139,9 @@ enum Gesture {
     /// Setting a level row. Holding it still doesn't long-press, and the release focuses it as a tap
     /// does.
     LevelDrag { level: Level, track: Track },
+    /// On a level row in a scrolled list, before the first move decides between setting the level and
+    /// dragging the list. Let go, it sets the level where it came down, as a tap.
+    PendingLevel { level: Level, track: Track },
     /// Dragging a list. `y` is where the finger was last.
     Dragging { list: InList, y: f32 },
     /// Pointing on the keyboard, as a touchpad finger.
@@ -256,6 +261,7 @@ impl Input {
                 let at = track.along(x);
                 (Gesture::PendingSlide { control, down_x: at, x: at, track }, at_once)
             }
+            Some(Drag::Level(level, track)) if target.is_some_and(|t| t.list.is_some()) => (Gesture::PendingLevel { level, track }, false),
             Some(Drag::Level(level, track)) => (Gesture::LevelDrag { level, track }, false),
             _ => (Gesture::Tap, false),
         };
@@ -331,8 +337,17 @@ impl Input {
         };
         press.trail.follow(now, y);
         press.at = (x, y);
-        if let (Gesture::Tap, Some(list)) = (press.gesture, press.list)
-            && (y - press.down.1).abs() >= DRAG_START
+        let (dx, dy) = ((x - press.down.0).abs(), (y - press.down.1).abs());
+        // A level row waiting for its first move: sideways, it sets the level from here on.
+        if let Gesture::PendingLevel { level, track } = press.gesture
+            && dx >= DRAG_START
+            && dx > dy
+        {
+            press.gesture = Gesture::LevelDrag { level, track };
+            return vec![Action::Emit(LevelEvent::Set(level, track.value_at(x)).into())];
+        }
+        if let (Gesture::Tap | Gesture::PendingLevel { .. }, Some(list)) = (press.gesture, press.list)
+            && dy >= DRAG_START
         {
             press.gesture = Gesture::Dragging { list, y };
             let rows = -(y - press.down.1) / list.row_h;
@@ -365,7 +380,7 @@ impl Input {
             Gesture::Sliding { track } => vec![Action::Emit(Slide::To { x: track.along(x) }.into())],
             Gesture::LevelDrag { level, track } => vec![Action::Emit(LevelEvent::Set(*level, track.value_at(x)).into())],
             Gesture::Pointing => vec![Action::Point(source, ContactPhase::Move, (x, y))],
-            Gesture::Tap | Gesture::Held => vec![],
+            Gesture::Tap | Gesture::Held | Gesture::PendingLevel { .. } => vec![],
         }
     }
 
@@ -391,7 +406,9 @@ impl Input {
                 actions.push(Action::Disarm(source, Timer::Slide));
                 actions.extend(Self::start_slide(press));
             }
-            Timer::Hold if matches!(press.gesture, Gesture::LevelDrag { .. } | Gesture::Dragging { .. } | Gesture::Pointing) => return actions,
+            Timer::Hold if matches!(press.gesture, Gesture::LevelDrag { .. } | Gesture::PendingLevel { .. } | Gesture::Dragging { .. } | Gesture::Pointing) => {
+                return actions;
+            }
             Timer::Hold => {}
         }
         if press.gesture == Gesture::Tap {
@@ -461,6 +478,11 @@ impl Input {
             // A tap let go off its target doesn't count.
             Gesture::Tap => press.on_target(source),
             Gesture::LevelDrag { .. } => true,
+            // Not moved: a tap on the level row sets it where the finger came down.
+            Gesture::PendingLevel { level, track } => {
+                actions.push(Action::Emit(LevelEvent::Set(level, track.value_at(press.down.0)).into()));
+                true
+            }
             Gesture::Held | Gesture::Sliding { .. } | Gesture::Dragging { .. } | Gesture::Pointing => false,
         };
         if activates && end == End::Release {

@@ -709,7 +709,10 @@ the sound thread hadn't carried out when it restarted give way to the readings. 
 per-screen shares are ClamShell's; the slider; the brightness save. Tests:
 `the_volume_tab_watches_and_sets_levels`, `commands_lost_with_the_sound_thread_give_way_to_the_readings`,
 `brightness_is_the_level_times_each_screens_share`, `the_pad_steps_levels`,
-the slider tests. Setting a muted stream's level unmutes it, as the output volume does:
+the slider tests. A finger on a level row in a scrolled list (the Apps, the screens' backlights) waits
+for its first move: up or down drags the list and sets nothing, sideways sets the level and follows,
+let go still it sets the level where it came down (ui
+`a_level_row_in_a_list_scrolls_with_a_vertical_swipe_and_sets_with_a_sideways_one`). Setting a muted stream's level unmutes it, as the output volume does:
 `setting_a_muted_streams_level_unmutes_it`. Dimming takes a third of the brightness, at least 1 but
 never more than it was: `dimming_never_raises_the_brightness`. The Mute key shows the volume's notice
 only when the mute changed (not while the volume is unknown):
