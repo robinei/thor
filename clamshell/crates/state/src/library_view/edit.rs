@@ -1,5 +1,5 @@
 //! The Library's edit mode: its tabs and folders, which are library.json's places, edited where they show
-//! (docs/top-screens-plan.md). The tabs are the places in no other; a tab's or an open folder's list is the
+//! (docs/history/top-screens-plan.md). The tabs are the places in no other; a tab's or an open folder's list is the
 //! places in it, then the folders sources make there (browsed dirs, removable storage: edited with their
 //! sources, so shown dimmed), then a row to make a new folder. The selected place's details have its
 //! actions: Rename, New folder, Cut and then Paste to move it, and Remove, for a place nothing is in and

@@ -1,5 +1,8 @@
 # The architecture refactors: a plan
 
+Built, as recommended in each choice below: `differ` and `flush_facts` in
+`compositor/src/windows.rs`, `Look::card` in the toolkit, and the library's `Index`.
+
 The changes left from the whole-repo review of 2026-10-28 that need a design before they are made. Each
 part says how it is now (file:line as of commit ea206759), the shape proposed, the steps as commits, the
 risks and the tests that cover them, and the choices to make, each with a recommendation. The mechanical

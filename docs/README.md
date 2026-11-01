@@ -28,15 +28,7 @@ Read `architecture.md` first, then `../AGENTS.md` for how work is done here.
 
 - `review-2026-11-01.md`: six read-only reviews (compositor, state, system, UI, packages,
   architecture) merged into 142 findings with priorities, architecture themes and an order of work.
-- `refactors-plan.md`: the architecture refactors left from the review of 2026-10-28, with the choices
-  to make.
-- `review-2026-10-26b.md`: the second review after the compositor became the only session, and its
-  plan.
-- `state-facts-plan.md`: State as facts and the rest derived: the review, the bugs it found, the steps.
 - `window-management-ideas.md`: candidate improvements to window management, not yet decided.
-- `top-screens-plan.md`: the Library, Device and Setup as built-in screens, the library's format and
-  editors, the file picker and what the image ships. Built, but for packaging the emulators the repos
-  lack.
 - `steam-android-plan.md`: Steam, per-game PC-gaming settings (FEX, Turnip, frame generation) and
   Android, after the 2026-10-30 survey of the other Thor systems. S2, P1 and P2 implemented; device
   checks and later phases remain.
@@ -54,6 +46,15 @@ Finished plans and reviews, kept for the reasons they record:
 - `history/state-review.md`
 - `history/compositor-mvp.md`
 - `history/review-2026-10-26.md`
+- `history/review-2026-10-26b.md`: the second review after the compositor became the only session;
+  every phase of its plan done.
+- `history/refactors-plan.md`: the architecture refactors from the review of 2026-10-28; built as
+  recommended (one window-facts path, `Look::card`, the library's index, identities without a thread
+  each).
+- `history/state-facts-plan.md`: State as facts and the rest derived; every step done.
+- `history/top-screens-plan.md`: the Library, Device and Setup as built-in screens, the library's format,
+  editors and the file picker; built. Packaging the emulators the repos lack (Dolphin, Azahar, ARMSX2,
+  DOSBox Pure, FBNeo) was left to the device work.
 - `history/review-2026-10-31.md`: the review after the Vulkan-driver setting, R01–R20, all fixed.
 - `history/device-profiles-steps.md`
 - `history/screen-commits-plan.md`: a screen's commit errors by kind, and what it shows decided once.
