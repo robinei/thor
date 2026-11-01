@@ -717,8 +717,8 @@ sent dimmed. Tests:
 
 ClamShell is the session's notification server. A program's notification comes from the bus thread
 (`system/session/notifications.rs`) as `Notification(Notified)`, with the id the thread gave it; the
-battery warnings are ClamShell's own (`NotificationId::Battery`) and tell the bus nothing. They are held
-by id, newest first, at most 32. Each is waiting, or seen since `t` while the bottom screen is lit
+battery warnings are ClamShell's own (`NotificationId::Battery`) and tell the bus nothing. A program's
+text comes bounded (`security.md`). They are held by id, newest first, at most 32. Each is waiting, or seen since `t` while the bottom screen is lit
 (`State::bottom_lit`: on, not refreshing, the screens not off by idle). How long it shows
 (`Notification::lasts`): the request's timeout in whole seconds rounded up, 5 s for -1, until dismissed
 for 0 or a critical one.

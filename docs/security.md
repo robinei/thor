@@ -121,9 +121,14 @@ user runs before the first password is set (above), so none can type it.
 ClamShell serves `org.freedesktop.Notifications`, so any program on the session bus can show a
 notification over the bottom screen, and a critical one wakes the screens. What it shows is plain text:
 markup is taken out, icons and images are never read, and at most 32 are held, the oldest closed first.
+The text is bounded as it comes in, cut at a character: 1 KiB of the app's name and of the summary, 4 KiB
+of the body (`a_notifications_text_is_bounded`).
 
 ## Tray icons
 
 A tray item names its icon and a folder for it over the bus. The name must be a name (no `/`, no `..`),
 and an SVG icon's `<image>` is drawn only from data inside the file, never from a file it names, so a
-program can't make ClamShell show other files of the user's.
+program can't make ClamShell show other files of the user's. What a tray item says is bounded as it comes in: 1 KiB of its title,
+id and each menu entry's label, 64 entries a menu, four levels of submenus, and our watcher registers at
+most 64 icons, each named in at most 1 KiB (`a_menus_size_is_bounded`,
+`the_watcher_registers_a_bounded_number_of_icons`).

@@ -191,8 +191,21 @@ fn next_id(last: &AtomicU32, replaces: u32) -> u32 {
     if id == 0 { last.fetch_add(1, Ordering::Relaxed).wrapping_add(1) } else { id }
 }
 
-/// The notification a `Notify` call asks for, with `id`: its text without markup, its urgency, its
-/// default action and its timeout.
+/// The most of a notification's app name and summary, and of its body, kept, in bytes (see
+/// [`crate::os::text::truncate`]): any program on the session bus can send megabytes, and the overlay
+/// measures every glyph of what it shows.
+const NAME_MAX: usize = 1024;
+const BODY_MAX: usize = 4096;
+
+/// `text` without markup, of at most `max` bytes. Markup taken out of four times as much at most.
+fn bounded_plain(text: &str, max: usize) -> String {
+    let mut text = plain(crate::os::text::bounded(text, max.saturating_mul(4)));
+    crate::os::text::truncate(&mut text, max);
+    text
+}
+
+/// The notification a `Notify` call asks for, with `id`: its text without markup and bounded, its urgency,
+/// its default action and its timeout.
 fn notification(id: u32, app: &str, summary: &str, body: &str, actions: &[String], hints: &PropMap, timeout_ms: i32) -> Notification {
     let level = hints.get("urgency").and_then(|v| v.0.as_u64().or_else(|| v.0.as_i64().and_then(|i| u64::try_from(i).ok())));
     let urgency = match level {
@@ -202,7 +215,8 @@ fn notification(id: u32, app: &str, summary: &str, body: &str, actions: &[String
     };
     // Keys and labels in turn; the default action is the one with the key "default".
     let action = actions.chunks(2).filter_map(|pair| pair.first()).find(|key| *key == "default").map(|key| Arc::from(key.as_str()));
-    Notification { id: NotificationId::Bus(id), app: plain(app), summary: plain(summary), body: plain(body), urgency, action, timeout_ms }
+    let (app, summary, body) = (bounded_plain(app, NAME_MAX), bounded_plain(summary, NAME_MAX), bounded_plain(body, BODY_MAX));
+    Notification { id: NotificationId::Bus(id), app, summary, body, urgency, action, timeout_ms }
 }
 
 /// `text` without markup: tags taken out and the five entities, and numbered ones, put back as the
@@ -278,6 +292,15 @@ mod tests {
         assert_eq!(n.urgency, Urgency::Normal);
         assert_eq!(n.action.as_deref(), Some("default"));
         assert_eq!(n.timeout_ms, -1);
+    }
+
+    /// Text of any length is cut where it comes in, at a character's boundary, after its markup is out.
+    #[test]
+    fn a_notifications_text_is_bounded() {
+        let long = "ø".repeat(1 << 20);
+        let n = notification(1, &long, &format!("<b>{long}</b>"), &long, &[], &hints(None), 0);
+        assert_eq!((n.app.len(), n.summary.len(), n.body.len()), (NAME_MAX, NAME_MAX, BODY_MAX));
+        assert!(n.summary.chars().all(|c| c == 'ø'), "the markup out, no character cut");
     }
 
     #[test]

@@ -35,6 +35,15 @@ use crate::os::dbus::{BUS_NAME, BUS_PATH};
 
 /// How long to wait before trying the bus again.
 const RETRY: Duration = Duration::from_secs(5);
+/// The most bytes kept of an icon's title and id and of a menu entry's label (see
+/// [`crate::os::text::truncate`]), and of an icon's key when it is registered.
+const TEXT_MAX: usize = 1024;
+/// The most icons registered with our watcher, and the most entries of a menu, and how deep its submenus
+/// go: any program on the session bus can register or describe as many as it likes.
+const ICONS_MAX: usize = 64;
+const ENTRIES_MAX: usize = 64;
+const MENU_DEPTH: usize = 4;
+
 /// How long after a signal the icons are read, so that a burst of signals, such as from a menu being
 /// rebuilt, causes one read.
 const SETTLE: Duration = Duration::from_millis(100);
@@ -239,7 +248,15 @@ fn answer_watcher(watched: &Mutex<Watched>, call: &Message) -> Option<Message> {
             let service: String = call.read1().inspect_err(|e| log::debug!("tray: RegisterStatusNotifierItem: {e}")).ok()?;
             let sender = call.sender().map(|s| s.to_string()).unwrap_or_default();
             let key = if service.starts_with('/') { format!("{sender}{service}") } else { format!("{service}{ITEM_PATH}") };
+            if key.len() > TEXT_MAX {
+                log::warn!("tray: an icon registered with a name of {} bytes: refused", key.len());
+                return Some(call.error(&"org.freedesktop.DBus.Error.InvalidArgs".into(), c"name too long"));
+            }
             if !w.items.contains(&key) {
+                if w.items.len() >= ICONS_MAX {
+                    log::warn!("tray: {key} not registered: {ICONS_MAX} icons already");
+                    return Some(call.error(&"org.freedesktop.DBus.Error.LimitsExceeded".into(), c"too many icons"));
+                }
                 w.items.push(key.clone());
             }
             w.registered.push(key);
@@ -317,7 +334,11 @@ fn read_item(bus: &mut Bus, key: &str, dirs: &[PathBuf]) -> Result<(TrayItem, Op
     let (name, path) = split(key);
     let all = bus.get_all(name, path, ITEM)?;
     let props = Props(&all);
-    let text = |k: &str| props.str(k).unwrap_or_default();
+    let text = |k: &str| {
+        let mut text = props.str(k).unwrap_or_default();
+        crate::os::text::truncate(&mut text, TEXT_MAX);
+        text
+    };
     let pid = bus.pid_of(name).inspect_err(|e| log::debug!("tray: {key}: its process: {e}")).ok();
     // Remember the process as it is now, so that anything done to it later by its id can check it is
     // still the same process.
@@ -363,7 +384,7 @@ fn read_menu(bus: &mut Bus, name: &str, path: &str) -> Vec<TrayEntry> {
     }
     let layout = bus.call::<(u32, Node)>(name, path, MENU, "GetLayout", (0i32, -1i32, Vec::<String>::new()));
     match layout {
-        Ok((_, (_, _, children))) => children.iter().filter_map(|c| entry(c)).collect(),
+        Ok((_, (_, _, children))) => entries(children.iter().map(|c| c as &dyn RefArg), 0),
         Err(e) => {
             log::debug!("tray: {name}{path}: menu: {e}");
             vec![]
@@ -374,9 +395,14 @@ fn read_menu(bus: &mut Bus, name: &str, path: &str) -> Vec<TrayEntry> {
 /// A menu's layout node: an entry's id, its properties and its children, which are nodes in variants.
 type Node = (i32, PropMap, Vec<Value>);
 
-/// A menu entry from its layout node, `(id, properties, children)` in a variant. None for a separator or
-/// a hidden entry.
-fn entry(node: &dyn RefArg) -> Option<TrayEntry> {
+/// A menu's entries from their layout nodes, at most [`ENTRIES_MAX`], at `depth` (0 the menu's own).
+fn entries<'a>(nodes: impl Iterator<Item = &'a dyn RefArg>, depth: usize) -> Vec<TrayEntry> {
+    nodes.filter_map(|node| entry(node, depth)).take(ENTRIES_MAX).collect()
+}
+
+/// A menu entry from its layout node, `(id, properties, children)` in a variant, at `depth`; its submenus
+/// below [`MENU_DEPTH`] left out. None for a separator or a hidden entry.
+fn entry(node: &dyn RefArg, depth: usize) -> Option<TrayEntry> {
     let mut fields = unwrap(node)?.as_iter()?;
     let (id, props, children) = (fields.next()?, fields.next()?, fields.next()?);
     let id = i32::try_from(unwrap(id)?.as_i64()?).ok()?;
@@ -395,8 +421,13 @@ fn entry(node: &dyn RefArg) -> Option<TrayEntry> {
         return None;
     }
     let checked = text("toggle-type").filter(|t| !t.is_empty()).map(|_| number("toggle-state") == Some(1));
-    let children = unwrap(children).and_then(|c| c.as_iter()).map(|c| c.filter_map(entry).collect()).unwrap_or_default();
-    Some(TrayEntry { id, label: mnemonic_free(&text("label").unwrap_or_default()), enabled: flag("enabled") != Some(false), checked, children })
+    let children = match unwrap(children).and_then(|c| c.as_iter()) {
+        Some(nodes) if depth + 1 < MENU_DEPTH => entries(nodes, depth + 1),
+        _ => Vec::new(),
+    };
+    let mut label = mnemonic_free(crate::os::text::bounded(&text("label").unwrap_or_default(), TEXT_MAX));
+    crate::os::text::truncate(&mut label, TEXT_MAX);
+    Some(TrayEntry { id, label, enabled: flag("enabled") != Some(false), checked, children })
 }
 
 /// A value unwrapped from the variants around it.
@@ -488,10 +519,51 @@ mod tests {
         // Pass it through a message, as a program's layout arrives.
         let message = Message::new_signal("/", "test.Menu", "Layout").unwrap().append1(vec![sub, sep, tick, off]);
         let nodes: Vec<Value> = message.read1().unwrap();
-        let entries: Vec<TrayEntry> = nodes.iter().filter_map(|n| entry(n)).collect();
+        let entries: Vec<TrayEntry> = entries(nodes.iter().map(|n| n as &dyn RefArg), 0);
         assert_eq!(entries.iter().map(|e| e.label.as_str()).collect::<Vec<_>>(), ["Games", "Big Picture"]);
         assert_eq!(entries[0].children[0].label, "Zelda");
         assert_eq!(entries[1].checked, Some(true));
+    }
+
+    /// A menu of any size is bounded where it comes in: so many entries, so deep, labels so long.
+    #[test]
+    fn a_menus_size_is_bounded() {
+        let node = |id: i32, label: String, kids: Vec<Value>| value((id, PropMap::from([("label".to_owned(), value(label))]), kids));
+        let mut deep = node(0, "leaf".into(), vec![]);
+        for id in 1..10 {
+            deep = node(id, format!("level {id}"), vec![deep]);
+        }
+        let nodes: Vec<Value> = std::iter::once(deep).chain((0..100).map(|id| node(100 + id, "ø".repeat(1000), vec![]))).collect();
+        let message = Message::new_signal("/", "test.Menu", "Layout").unwrap().append1(nodes);
+        let nodes: Vec<Value> = message.read1().unwrap();
+        let entries = entries(nodes.iter().map(|n| n as &dyn RefArg), 0);
+        assert_eq!(entries.len(), ENTRIES_MAX);
+        let mut depth = 0;
+        let mut level = &entries[0];
+        while let Some(child) = level.children.first() {
+            (level, depth) = (child, depth + 1);
+        }
+        assert_eq!(depth + 1, MENU_DEPTH);
+        assert!(entries[1].label.len() <= TEXT_MAX && entries[1].label.chars().all(|c| c == 'ø'));
+    }
+
+    /// Our watcher keeps at most [`ICONS_MAX`] icons, each of a name of at most [`TEXT_MAX`] bytes.
+    #[test]
+    fn the_watcher_registers_a_bounded_number_of_icons() {
+        let watched = Mutex::new(Watched::default());
+        let register = |service: String| {
+            let mut call =
+                Message::new_method_call("org.kde.StatusNotifierWatcher", WATCHER_PATH, WATCHER, "RegisterStatusNotifierItem").unwrap().append1(service);
+            // As sent: a reply needs the call's serial.
+            call.set_serial(1);
+            answer_watcher(&watched, &call).unwrap()
+        };
+        for n in 0..ICONS_MAX + 6 {
+            register(format!("/item/{n}"));
+        }
+        assert_eq!(crate::os::lock(&watched).items.len(), ICONS_MAX);
+        let refused = register(format!("/{}", "x".repeat(TEXT_MAX)));
+        assert_eq!(refused.msg_type(), ::dbus::message::MessageType::Error);
     }
 
     #[test]

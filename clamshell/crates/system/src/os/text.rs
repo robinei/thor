@@ -1,5 +1,6 @@
 //! Text as other programs and formats escape it: percent-encoding for URLs and the trash's records,
-//! and the octal and hex escapes in the kernel's tables and udev's names.
+//! and the octal and hex escapes in the kernel's tables and udev's names; and text from another program
+//! bounded where it comes in.
 
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
 
@@ -21,6 +22,18 @@ pub(crate) fn percent_encode_path(text: &str) -> String {
 /// Percent-encoding undone. A `%` not followed by two hex digits stays as it is.
 pub(crate) fn percent_decode(text: &str) -> String {
     percent_decode_str(text).decode_utf8_lossy().into_owned()
+}
+
+/// `text` cut to at most `max` bytes, at a character's boundary. Text another program sends (a
+/// notification's, a tray icon's) can be of any length, and is kept and drawn: it is bounded where it comes
+/// in.
+pub(crate) fn truncate(text: &mut String, max: usize) {
+    text.truncate(text.floor_char_boundary(max));
+}
+
+/// `text`'s first `max` bytes at most, cut at a character's boundary (see [`truncate`]).
+pub(crate) fn bounded(text: &str, max: usize) -> &str {
+    text.get(..text.floor_char_boundary(max)).unwrap_or_default()
 }
 
 /// Replaces escapes such as `\040` (in mounts) and `\x20` (in udev's names) with the characters they
@@ -65,6 +78,16 @@ mod tests {
         assert_eq!(percent_decode("A%20B%26C.png"), "A B&C.png");
         assert_eq!(percent_decode(&percent_encode_path("/a b/ø%.txt")), "/a b/ø%.txt");
         assert_eq!(percent_decode("100%"), "100%");
+    }
+
+    #[test]
+    fn text_is_cut_at_a_characters_boundary() {
+        assert_eq!(bounded("abcdef", 4), "abcd");
+        assert_eq!(bounded("aø", 2), "a", "ø is two bytes, not cut in half");
+        assert_eq!(bounded("ab", 10), "ab");
+        let mut text = "æøå".to_owned();
+        truncate(&mut text, 5);
+        assert_eq!(text, "æø");
     }
 
     #[test]
