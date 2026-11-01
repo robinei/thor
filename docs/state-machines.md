@@ -349,6 +349,7 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 | AskAwake 10 s before dimming, once, with the shown app's command | `an_app_shown_that_keeps_the_screen_on_…` |
 | first tick, wall-clock jumps | `what_is_heard_before_the_clock_is_known_…`, `a_step_of_the_wall_clock_…` |
 | a suspend that fails without Busy leaves the stage Asleep with screens off until input | `a_suspend_that_failed_waits_for_input` |
+| the system's sleep thread (`power/sleep.rs`) holds logind's delay lock; PrepareForSleep(true) while held → `pad::Command::Sleep` (the gyro's stream closed, waited for at most 1 s), the lock released; PrepareForSleep(false), the clocks saying it slept, or 10 s released without sleeping → `pad::Command::Woke`, the lock taken again. A batch of signals is taken in its order: released once, a sleep given up at once (true, false) a wake, a sleep again before the lock was taken (false, true) still released | system `prepare_for_sleep_signals_are_taken_in_their_order`; the lock and the pad's part: VM `gyro_sleep` |
 
 ## Device view (setup/)
 

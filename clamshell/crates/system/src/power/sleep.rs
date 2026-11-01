@@ -66,26 +66,19 @@ fn hold(pad: &Worker<pad::Command>) -> Result<(), crate::os::dbus::Error> {
     loop {
         // While released, wake once a second to check the clocks. Otherwise wait for the signal alone.
         bus.wait(held.is_none().then_some(Duration::from_secs(1)))?;
-        let mut woke = false;
-        // Handle the signals in order: a sleep given up at once (true, then false) counts as a wake.
-        for before in bus.signals()?.iter().filter_map(before_sleep) {
-            if before && held.is_some() {
-                let (done, wait) = mpsc::channel();
-                pad.send(pad::Command::Sleep(pad::Ack(done)));
-                if wait.recv_timeout(PAD_WAIT).is_err() {
-                    log::warn!("sleep: the pad didn't answer in time");
-                }
-                watch = Watch::new(slept());
-                released = Instant::now();
-                held = None;
-                woke = false;
-            } else if before {
-                // Woken and asleep again at once, before the lock was taken, so it stays released.
-                woke = false;
-            } else {
-                woke = true;
+        let signals = bus.signals()?;
+        let turn = after_signals(held.is_some(), signals.iter().filter_map(before_sleep));
+        if turn.release {
+            let (done, wait) = mpsc::channel();
+            pad.send(pad::Command::Sleep(pad::Ack(done)));
+            if wait.recv_timeout(PAD_WAIT).is_err() {
+                log::warn!("sleep: the pad didn't answer in time");
             }
+            watch = Watch::new(slept());
+            released = Instant::now();
+            held = None;
         }
+        let woke = turn.woke;
         // Without the signal, the clocks may say it slept. Or it has been released a while without
         // sleeping: CLOCK_MONOTONIC stops while asleep, so this much of it means the sleep didn't happen.
         if held.is_none() && (woke || watch.woke(slept()) || released.elapsed() > NOT_SLEPT) {
@@ -93,6 +86,32 @@ fn hold(pad: &Worker<pad::Command>) -> Result<(), crate::os::dbus::Error> {
             held = Some(lock(&mut bus)?);
         }
     }
+}
+
+/// What a batch of PrepareForSleep signals asks of [`hold`].
+#[derive(Debug, PartialEq, Eq)]
+struct AfterSignals {
+    /// Close the gyro and release the lock: the system is about to sleep.
+    release: bool,
+    /// The system is awake again (the lock to be taken again, if it was released).
+    woke: bool,
+}
+
+/// What PrepareForSleep's values `signals` (true before sleep, false after), in the order they came, ask
+/// of a hold whose lock is `held`. Order matters: the lock is released at the first `true` while held,
+/// once; a sleep given up at once (true, then false) counts as a wake; and a `true` after a `false` while
+/// released (woken and asleep again before the lock was taken) leaves it released and not woken.
+fn after_signals(held: bool, signals: impl Iterator<Item = bool>) -> AfterSignals {
+    let mut turn = AfterSignals { release: false, woke: false };
+    let mut held = held;
+    for before in signals {
+        if before && held {
+            turn.release = true;
+            held = false;
+        }
+        turn.woke = !before;
+    }
+    turn
 }
 
 /// Above this much CPU, in cores, for the user's processes, or this many bytes a second on the network,
@@ -166,5 +185,27 @@ mod live {
     #[ignore = "reads this machine"]
     fn busy_now() {
         println!("{:?}: {:?}", super::user_cgroup(), super::busy());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The signals are taken in their order: the lock released once at the first sleep, a sleep given up
+    /// at once a wake, and a sleep again before the lock was taken leaving it released.
+    #[test]
+    fn prepare_for_sleep_signals_are_taken_in_their_order() {
+        let turn = |held, signals: &[bool]| after_signals(held, signals.iter().copied());
+        let (release, woke, neither) =
+            (AfterSignals { release: true, woke: false }, AfterSignals { release: false, woke: true }, AfterSignals { release: false, woke: false });
+        assert_eq!(turn(true, &[true]), release, "about to sleep");
+        assert_eq!(turn(true, &[true, true]), release, "released once");
+        assert_eq!(turn(true, &[true, false]), AfterSignals { release: true, woke: true }, "given up at once: a wake");
+        assert_eq!(turn(false, &[false]), woke, "woken");
+        assert_eq!(turn(false, &[false, true]), neither, "woken and asleep again: still released");
+        assert_eq!(turn(false, &[true]), neither);
+        assert_eq!(turn(true, &[false]), woke, "a wake while held changes nothing more");
+        assert_eq!(turn(true, &[]), neither);
     }
 }
