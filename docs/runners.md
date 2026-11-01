@@ -179,6 +179,14 @@ install scripts too. `steam-setup --links` (each start of `steam`) points that l
 - exports them and execs Valve's `linuxarm64/steam-launch-wrapper` with its arguments unchanged
   (`CLAMSHELL_STEAM_WRAPPER` names another: on an x86 client `ubuntu12_32/` or `steamrt64/`).
 
+So a Steam game's settings are the saved ones, read from the files when Steam starts it, while
+ClamShell's own launches take them from the running state. The two agree once a change is saved, which
+the store thread does as the change is made (a slider when it is let go), well before Steam has started
+a game. They differ only if the save failed: then Steam's games get the settings saved last, the store
+logs the failure at `warn`, and the change would be lost for every game at ClamShell's next start
+anyway. The hook doesn't ask the running ClamShell instead: that would need a running ClamShell, a
+query on the control pipe with a time limit, and the files as the fallback all the same.
+
 On a failure the game starts as it is, and nothing is silent: the reason goes to the journal
 (`journalctl -t clamshell-steam`) and a notice says "<game> started without its settings"
 (`clamshell ctl launch-env failed steam:<id>`). ClamShell's programs run without Steam's
