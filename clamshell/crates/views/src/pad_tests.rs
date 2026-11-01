@@ -461,3 +461,19 @@ fn the_device_view_fits_the_screen() {
     let (left, players) = (rect(DeviceId::Zone), rect(DeviceId::Players));
     assert!(left[0] + left[2] + 10.0 <= players[0], "a gutter between the columns: {left:?}, {players:?}");
 }
+
+/// Off the device, the Device view's password and remote login rows are still there to tap and focus,
+/// dimmed, as the time tab's "Set automatically" is.
+#[test]
+fn unavailable_rows_are_still_focusable() {
+    use clamshell_state::{DeviceId, TimeId};
+    let account = clamshell_state::setup::account::Account::NoHelper;
+    let mut s = State::new(Init { library: Some(clamshell_library::demo::library()), account, ..Init::default() });
+    s.apply(Event::Entry("builtin:device".into(), clamshell_state::EntryAct::Play), &mut Vec::new());
+    let focusable = |s: &State| clamshell_ui::PadFrames::new(crate::VIEWS, (1920, 1080), (1240, 1080)).record(s).focusable(s);
+    for id in [DeviceId::Password, DeviceId::Ssh] {
+        assert!(focusable(&s).iter().any(|t| t.id == Id::Device(id)), "{id:?} focusable");
+    }
+    s.apply(clamshell_state::PointerEvent::Activate(Id::Tab(Tab::Time)).into(), &mut Vec::new());
+    assert!(focusable(&s).iter().any(|t| t.id == Id::Time(TimeId::Ntp)), "Set automatically focusable");
+}

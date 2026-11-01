@@ -73,7 +73,8 @@ fn main(f: &mut Frame) {
             };
             widgets::switch_row(f, Id::Time(TimeId::Ntp), ntp, size, label, on);
         }
-        None => widgets::value_row(f, ntp, size, "Set automatically", "Unavailable", false),
+        // Still there to tap, dimmed; the state does nothing then.
+        None => f.button(Id::Time(TimeId::Ntp), ntp, Look::ROW, |f| widgets::value_row(f, ntp, size, "Set automatically", "Unavailable", false)),
     }
     widgets::switch_row(f, Id::Time(TimeId::TwelveHour), col.take(row_h), size, "24-hour clock", !s.sys().twelve_hour());
     if let Some(error) = &zones.error {

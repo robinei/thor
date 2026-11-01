@@ -74,19 +74,23 @@ pub(super) fn app(f: &mut Frame, screen: Rect) {
     };
     f.button(Id::Device(DeviceId::Zone), zone, Look::ROW, |f| widgets::value_row(f, zone, size, "Time zone", &name, true));
 
+    // Unavailable, the rows are still there to tap, with their values dimmed; the state does nothing then.
     let account = s.setup().account();
     let password = col.take(row_h);
-    if account.available() {
-        let value = if account.password() { "Set" } else { "Not set" };
-        f.button(Id::Device(DeviceId::Password), password, Look::ROW, |f| widgets::value_row(f, password, size, "Password", value, account.password()));
-    } else {
-        widgets::value_row(f, password, size, "Password", "Unavailable", false);
-    }
+    let value = match (account.available(), account.password()) {
+        (true, true) => "Set",
+        (true, false) => "Not set",
+        (false, _) => "Unavailable",
+    };
+    let set = account.available() && account.password();
+    f.button(Id::Device(DeviceId::Password), password, Look::ROW, |f| widgets::value_row(f, password, size, "Password", value, set));
     let ssh = col.take(row_h);
     match (account.available(), account.password()) {
         (true, true) => widgets::switch_row(f, Id::Device(DeviceId::Ssh), ssh, size, "Remote login (ssh)", account.ssh()),
-        (true, false) => widgets::value_row(f, ssh, size, "Remote login (ssh)", "Needs a password", false),
-        (false, _) => widgets::value_row(f, ssh, size, "Remote login (ssh)", "Unavailable", false),
+        (available, _) => {
+            let value = if available { "Needs a password" } else { "Unavailable" };
+            f.button(Id::Device(DeviceId::Ssh), ssh, Look::ROW, |f| widgets::value_row(f, ssh, size, "Remote login (ssh)", value, false));
+        }
     }
 
     // The controller and the screen.

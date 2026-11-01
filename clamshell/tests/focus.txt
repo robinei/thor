@@ -724,17 +724,6 @@ Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vTime[0]
 start Device(Wifi); back Activate Device(Close)
 -- screen
 Device(Wifi): ^- vDevice(Zone) <- >Device(Players)
-Device(Zone): ^Device(Wifi) vDevice(Sticks) <- >Device(Players)
-Device(Sticks): ^Device(Zone) vDevice(Gyro) <- >Device(Players)
-Device(Gyro): ^Device(Sticks) vDevice(Refresh) <- >Device(Players)
-Device(Refresh): ^Device(Gyro) vDevice(EditLibrary) <- >Device(Players)
-Device(EditLibrary): ^Device(Refresh) vDevice(Close) <- >Device(Players)
-Device(Close): ^Device(EditLibrary) vTab(Touchpad) <- >Device(Players)
-Device(Players): ^Device(Wifi) vDevice(Sticks) <[Controller(StepCount(-1))] >[Controller(StepCount(1))]
-== device.png (top; the pad on both screens)
-start Device(Wifi); back Activate Device(Close)
--- screen
-Device(Wifi): ^- vDevice(Zone) <- >Device(Players)
 Device(Zone): ^Device(Wifi) vDevice(Password) <- >Device(Players)
 Device(Password): ^Device(Zone) vDevice(Ssh) <- >Device(Players)
 Device(Ssh): ^Device(Password) vDevice(Sticks) <- >Device(Players)
@@ -744,6 +733,9 @@ Device(Refresh): ^Device(Gyro) vDevice(EditLibrary) <- >Device(Players)
 Device(EditLibrary): ^Device(Refresh) vDevice(Close) <- >Device(Players)
 Device(Close): ^Device(EditLibrary) vTab(Touchpad) <- >Device(Players)
 Device(Players): ^Device(Wifi) vDevice(Password) <[Controller(StepCount(-1))] >[Controller(StepCount(1))]
+== device.png (top; the pad on both screens)
+start Device(Wifi); back Activate Device(Close)
+-- screen as in device-unavailable.png
 == device-controllers.png (top; the pad on both screens)
 start Device(Wifi); back Activate Device(Close)
 -- screen
