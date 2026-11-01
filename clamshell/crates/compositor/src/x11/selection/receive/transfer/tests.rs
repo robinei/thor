@@ -359,3 +359,33 @@ fn conversion_and_mailbox_limits_close_only_new_readers_and_old_owner_snapshots_
         reader.read(&mut [0]).unwrap() == 0
     }));
 }
+/// Once the requestors' resource ids are used up, XC-MISC is asked (once) for a range of those no longer in
+/// use, and the conversions after go on with it.
+#[test]
+fn used_up_resource_ids_are_refreshed_through_xc_misc() {
+    use x11rb_protocol::protocol::xc_misc;
+    let now = Instant::now();
+    let (_display, mut server) = server();
+    let (mut wire, mut peer) = wire(now);
+    let mut imports = imports();
+    imports.ids = Some(130);
+    let allocator = imports.allocator.as_mut().unwrap();
+    allocator.update_xid_range(&xc_misc::GetXIDRangeReply { start_id: 0x200010, count: 1, ..Default::default() }).unwrap();
+    allocator.generate_id().unwrap();
+    let format = Format { atom: 101, mime: "text/plain;charset=utf-8".into(), latin1: false };
+    for _ in 0..2 {
+        let (_reader, writer) = pipe();
+        imports.start(0, format.clone(), Some(writer), &mut wire, &atoms(), now).unwrap();
+    }
+    assert!(imports.transfers.is_empty(), "both dropped");
+    let sent = packets(&mut wire, &mut peer, now);
+    assert_eq!(sent.iter().map(|packet| (packet[0], packet[1])).collect::<Vec<_>>(), [(130, xc_misc::GET_XID_RANGE_REQUEST)], "asked once");
+    imports.pending.clear();
+    let mut range = Serialize::serialize(&xc_misc::GetXIDRangeReply { start_id: 0x200040, count: 16, ..Default::default() }).to_vec();
+    range.resize(32, 0);
+    range[0] = 1;
+    imports.reply(Query::Range, &range, &mut wire, &atoms(), &mut server, now).unwrap();
+    let (_reader, writer) = pipe();
+    imports.start(0, format, Some(writer), &mut wire, &atoms(), now).unwrap();
+    assert_eq!(imports.transfers.iter().map(|transfer| transfer.window).collect::<Vec<_>>(), [0x200040]);
+}

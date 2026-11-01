@@ -41,8 +41,16 @@ impl Imports {
             log::warn!("compositor: a paste from X11 dropped: {MAX_TRANSFERS} already going on");
             return Ok(());
         }
+        // A requestor window for each conversion: when the ids run out, XC-MISC gives a range of those no
+        // longer in use (the requestors destroyed), for the next.
         let Some(window) = self.allocator.as_mut().and_then(|allocator| allocator.generate_id()) else {
-            log::warn!("compositor: no X11 selection resource ids");
+            match self.ids {
+                Some(opcode) if !self.pending.iter().any(|pending| matches!(pending.query, Query::Range)) => {
+                    log::warn!("compositor: an X11 selection conversion dropped: resource ids used up, asking for more");
+                    self.query(wire, xc_misc::GetXIDRangeRequest, opcode, Query::Range)?;
+                }
+                _ => log::warn!("compositor: an X11 selection conversion dropped: no resource ids"),
+            }
             if pipe.is_none() {
                 self.offers.get_mut(selection).targets_done = true;
             }

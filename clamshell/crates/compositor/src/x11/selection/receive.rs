@@ -6,7 +6,11 @@ mod transfer;
 use super::*;
 use smithay::wayland::selection::{data_device, primary_selection};
 use std::{borrow::Cow, fs::File};
-use x11rb_protocol::{id_allocator::IdAllocator, protocol::xfixes, x11_utils::Request};
+use x11rb_protocol::{
+    id_allocator::IdAllocator,
+    protocol::{xc_misc, xfixes},
+    x11_utils::Request,
+};
 
 struct Pending {
     sequence: u64,
@@ -15,6 +19,10 @@ struct Pending {
 enum Query {
     Extension,
     Version,
+    /// XC-MISC's opcode, for more resource ids.
+    Ids,
+    /// A range of resource ids no longer in use (see `transfer::Imports::start`).
+    Range,
     Owner(usize, u64),
     Property(u64),
     Name(usize, u64, u32),
@@ -39,6 +47,8 @@ pub(super) struct Imports {
     extension: Option<(u8, u8)>,
     ready: bool,
     allocator: Option<IdAllocator>,
+    /// XC-MISC's opcode, once known.
+    ids: Option<u8>,
     offers: Pair<Offer>,
     pending: Vec<Pending>,
     transfers: Vec<transfer::Transfer>,
@@ -89,6 +99,7 @@ impl Imports {
             self.wm_owner = owner;
             self.started = true;
             self.query(wire, QueryExtensionRequest { name: b"XFIXES".as_slice().into() }, 0, Query::Extension)?;
+            self.query(wire, QueryExtensionRequest { name: b"XC-MISC".as_slice().into() }, 0, Query::Ids)?;
         }
         Ok(())
     }
@@ -142,6 +153,7 @@ impl Imports {
                         offer.pending_names = offer.pending_names.saturating_sub(1);
                     }
                 }
+                Query::Range => log::warn!("compositor: X11 refused more resource ids: imports stop"),
                 _ => log::warn!("compositor: X11 selection initialisation rejected"),
             }
             return Ok(());
@@ -182,6 +194,21 @@ impl Imports {
                     )?;
                 }
                 self.ready = true;
+            }
+            Query::Ids => {
+                let reply = QueryExtensionReply::try_parse(bytes).map_err(io::Error::other)?.0;
+                if reply.present {
+                    self.ids = Some(reply.major_opcode);
+                } else {
+                    log::warn!("compositor: Xwayland lacks XC-MISC: imports stop once the first resource ids are used");
+                }
+            }
+            Query::Range => {
+                let reply = xc_misc::GetXIDRangeReply::try_parse(bytes).map_err(io::Error::other)?.0;
+                match self.allocator.as_mut().map(|allocator| allocator.update_xid_range(&reply)) {
+                    Some(Ok(())) => log::info!("compositor: {} more X11 resource ids for imports", reply.count),
+                    _ => log::warn!("compositor: X11 has no more resource ids: imports stop"),
+                }
             }
             Query::Owner(selection, serial) => {
                 if self.offers.get(selection).serial == serial {

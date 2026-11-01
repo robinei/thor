@@ -1686,7 +1686,10 @@ edge, STRING in Latin-1, the desktop's clipboard untouched.
 Once connected, the adapter asks for XFixes 2 (without it, logged, nothing is imported), subscribes to
 CLIPBOARD's and PRIMARY's owner changes, and asks each's owner once; nothing polls. Each owner change starts
 a generation, which requests and replies carry, so an older one can't change a newer one. Each conversion
-has a fresh input-only requestor and `_THOR_SELECTION`. Replies have the transport's 30 s (a miss stops
+has a fresh input-only requestor and `_THOR_SELECTION`; when the resource ids run out, the conversion
+that found none is dropped (logged) and XC-MISC is asked once for a range of those no longer in use (the
+destroyed requestors), which the next conversions take (receive
+`used_up_resource_ids_are_refreshed_through_xc_misc`). Replies have the transport's 30 s (a miss stops
 Xwayland), at most 256 outstanding; a conversion's own 5 s without progress ends only it.
 
 | From | Event / condition | To | Effects | Test |
