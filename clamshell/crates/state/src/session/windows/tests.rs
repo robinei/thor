@@ -672,7 +672,7 @@ fn stepping_with_no_other_window_leaves_a_waiting_launch_waiting() {
     let ff6 = launch(&mut s, "ff6");
     s.applied(Event::HardwareKey(HardwareKey::WindowNext));
     assert_eq!(s.session().top_window().map(|w| w.id), Some(7));
-    assert_eq!(s.session().front_launch(), Some(&ff6), "still waiting");
+    assert_eq!(s.session().front_launch().and_then(|f| f.unit()), Some(&ff6), "still waiting");
 }
 
 /// A dialog whose window closed is the root of its own stack: a window of its group to step to.

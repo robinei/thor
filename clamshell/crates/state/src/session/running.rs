@@ -31,6 +31,7 @@ use crate::bottom::notice::{NoticeKind, NoticeSlot};
 use crate::effect::Effect;
 use crate::out::{LogLevel, Out};
 use crate::session::found::window_entry;
+use crate::session::intent::FrontIntent;
 use crate::session::launch_unit::LaunchUnit;
 use crate::session::launchers;
 use crate::session::tray::{TrayItem, tray_entry};
@@ -208,7 +209,7 @@ impl Session {
         // A launch the launcher never answered is given up, so that it can be launched again.
         while let Some(i) = self.launching.iter().position(|l| now >= l.at + LAUNCH_WAIT) {
             let l = self.launching.remove(i);
-            if self.front_launch.as_ref().is_some_and(|f| f.unit == l.unit) {
+            if self.front_launch.as_ref().is_some_and(|f| f.unit() == Some(&l.unit)) {
                 self.front_launch = None;
             }
             let title = library.entry(&l.entry).map_or_else(|| l.entry.to_string(), |g| g.title.clone());
@@ -344,7 +345,7 @@ impl Session {
         let Some(r) = new.last() else {
             return false;
         };
-        self.set_front_launch(LaunchUnit { key: r.key.clone(), secs: clock.unix(), n: 0 }, None);
+        self.set_front_launch(FrontIntent::entry(&r.key, now + HANDOFF));
         self.running.extend(new);
         true
     }
@@ -623,7 +624,7 @@ impl Session {
     /// window yet while one is waited for, a launch's in front or a launcher's game's. A program started
     /// in the background, as a launcher for its game, isn't.
     pub fn starting(&self, id: &str) -> bool {
-        let waited = |r: &Running| !r.seen && (matches!(r.origin, Origin::Windows { .. }) || self.front_launch.as_ref().is_some_and(|f| f.unit.key == r.key));
+        let waited = |r: &Running| !r.seen && (matches!(r.origin, Origin::Windows { .. }) || self.front_launch.as_ref().is_some_and(|f| f.key() == r.key));
         self.is_launching(id) || self.running(id).is_some_and(waited)
     }
 
@@ -641,7 +642,7 @@ impl Session {
         let unit = LaunchUnit { key, secs: clock.unix(), n: self.next_unit() };
         self.launching.push(Launching { entry, unit: unit.clone(), mark, at: clock.mono(), told: None });
         if start == Start::Front {
-            self.set_front_launch(unit.clone(), None);
+            self.set_front_launch(FrontIntent::launch(unit.clone(), clock.mono()));
         }
         unit
     }
@@ -732,7 +733,7 @@ impl Session {
         let now = clock.mono();
         self.running.push(Running { mark: library.mark_of(g), ..Running::of(g, Origin::Windows { since: now, until: now + LAUNCHER_WAIT }, now) });
         if start == Start::Front {
-            self.set_front_launch(LaunchUnit { key: g.key.clone(), secs: clock.unix(), n: 0 }, Some(now + LAUNCHER_WAIT));
+            self.set_front_launch(FrontIntent::entry(&g.key, now + LAUNCHER_WAIT));
         }
         self.refresh_launch = Some((g.id.clone(), now));
         let launch = Launch::Program { argv, workdir: None };

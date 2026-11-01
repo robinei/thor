@@ -7,6 +7,7 @@ pub mod below;
 pub mod enqueue;
 pub(crate) mod found;
 mod front;
+pub(crate) mod intent;
 pub mod launch_unit;
 pub mod launchers;
 pub mod overview;
@@ -21,6 +22,7 @@ use crate::effect::Effect;
 use crate::session::windows::WindowCommand;
 use crate::{Entry, Library};
 use clamshell_library::BuiltinApp;
+use intent::FrontIntent;
 use launch_unit::LaunchUnit;
 use running::{Launching, Running};
 use windows::{Group, Window, WindowFacts, WindowPlace};
@@ -31,17 +33,6 @@ pub(crate) enum InFront {
     /// One of ClamShell's own screens, with no window in front.
     App(BuiltinApp),
     Group(Group),
-}
-
-/// The launch to show when its first window appears, and when waiting for it gives up: set for a program
-/// still running whose window in front closed (see [`Session::follow_front`]); none for a launch.
-#[derive(Debug, Clone)]
-pub(crate) struct FrontLaunch {
-    unit: LaunchUnit,
-    until: Option<u64>,
-    /// The launcher's dialogs that brought its group in front, while any is open. It is not remembered as
-    /// having been in front, so that what comes after the game is what would have come without it.
-    promoted: Vec<i64>,
 }
 
 /// A window's group as worked out (see [`Session::home_of`]), borrowed: an entry's, by its key, or a
@@ -127,9 +118,9 @@ pub struct Session {
     open: [bool; BuiltinApp::ALL.len()],
     /// The selected stack of each top group, by its root, retained while the group is hidden.
     selected: Vec<(Group, i64)>,
-    /// The launch to show when its first window appears. Until then, other programs' new windows open
-    /// behind (see [`Session::opening_focus`]).
-    front_launch: Option<FrontLaunch>,
+    /// What to show when its window appears (see [`crate::session::intent`]). Until then, other
+    /// programs' new windows open behind (see [`Session::opening_focus`]).
+    front_launch: Option<FrontIntent>,
     /// The group whose window in front closed, leaving it empty, and when (see
     /// [`Session::follow_replacement`]).
     closed_front: Option<(Group, u64)>,
@@ -310,8 +301,8 @@ impl Session {
     /// units follow foreground launch intent; later windows of the shown program may select themselves.
     /// An unowned program's window is shown at once.
     pub(crate) fn opening_focus(&self, window: &WindowFacts, library: &Library) -> bool {
-        if let Some(FrontLaunch { unit, .. }) = &self.front_launch {
-            return self.of_launch(unit, window) || self.launcher_dialog(window, library);
+        if let Some(intent) = &self.front_launch {
+            return self.of_launch(intent, window) || self.launcher_dialog(window, library);
         }
         if let Some(parent) = window.parent.and_then(|id| self.window(id)) {
             return self.top_window().is_some_and(|top| top.group == parent.group);
@@ -323,19 +314,20 @@ impl Session {
         self.top_window().is_some_and(|top| top.group.as_ref().and_then(Group::key) == key) && self.windows.iter().any(|old| old.unit == window.unit)
     }
 
-    /// Whether `window` is one of launch `unit`'s: in its unit, of its entry by app id or process, or
-    /// a dialog of one in its group.
-    fn of_launch(&self, unit: &LaunchUnit, window: &WindowFacts) -> bool {
-        let running = self.running.iter().find(|r| r.key == unit.key);
-        let in_unit = window.unit.as_deref().and_then(LaunchUnit::unit_name).is_some_and(|name| unit.is(name));
-        let parent = window.parent.and_then(|id| self.window(id)).is_some_and(|parent| parent.group.as_ref().and_then(Group::key) == Some(&unit.key));
+    /// Whether `window` is one of those `intent` waits for: in its unit, of its entry by app id or
+    /// process, or a dialog of one in its group.
+    fn of_launch(&self, intent: &FrontIntent, window: &WindowFacts) -> bool {
+        let key = intent.key();
+        let running = self.running.iter().find(|r| r.key == key);
+        let in_unit = intent.takes_unit(window.unit.as_deref());
+        let parent = window.parent.and_then(|id| self.window(id)).is_some_and(|parent| parent.group.as_ref().and_then(Group::key) == Some(key));
         in_unit || parent || running.is_some_and(|r| r.owns(window) || r.fathered(window))
     }
 
     /// Whether `window`, opening while a launcher's game starts, is a dialog of that launcher, such as
     /// Steam asking which version to launch: a dialog, or a window with a parent, of the launcher's entry.
     /// It comes in front, its group promoted for as long as the game's launch waits (see
-    /// [`FrontLaunch::promoted`]); the launcher's other windows stay behind.
+    /// [`FrontIntent::promoted`]); the launcher's other windows stay behind.
     pub(crate) fn launcher_dialog(&self, window: &WindowFacts, library: &Library) -> bool {
         let Some(launcher) = self.front_launcher(library) else { return false };
         window.is_dialog() && self.running_of(window).is_some_and(|r| r.key == launcher)
@@ -344,14 +336,14 @@ impl Session {
     /// The key of the launcher's entry while the launch waiting for its window is a launcher's game,
     /// whichever way it came to wait (see [`launchers::launcher_of`]).
     fn front_launcher<'a>(&self, library: &'a Library) -> Option<&'a str> {
-        let key = &self.front_launch.as_ref()?.unit.key;
+        let key = self.front_launch.as_ref()?.key();
         let game = library.entry_by_key(key)?;
         launchers::launcher_of(game)?.entry(library).map(|l| l.key.as_str())
     }
 
-    /// Makes `unit` the launch to show when its window appears, waiting until `until` if given.
-    pub(crate) fn set_front_launch(&mut self, unit: LaunchUnit, until: Option<u64>) {
-        self.front_launch = Some(FrontLaunch { unit, until, promoted: Vec::new() });
+    /// Makes `intent` what is shown when its window appears.
+    pub(crate) fn set_front_launch(&mut self, intent: FrontIntent) {
+        self.front_launch = Some(intent);
     }
 
     /// Whether `group` is a launcher's, promoted for a dialog of it while its game starts.
@@ -662,10 +654,10 @@ impl Session {
         self.quitting.iter().filter(move |q| q.going_on(now)).map(|q| &q.entry)
     }
 
-    /// The launch to show when its first window appears.
+    /// What is shown when its window appears.
     #[cfg(test)]
-    pub(crate) fn front_launch(&self) -> Option<&LaunchUnit> {
-        self.front_launch.as_ref().map(|f| &f.unit)
+    pub(crate) fn front_launch(&self) -> Option<&FrontIntent> {
+        self.front_launch.as_ref()
     }
 
     /// The counter for a new unit's name (see [`crate::session::launch_unit::LaunchUnit`]).
@@ -729,26 +721,28 @@ impl Session {
         self.closed_front = Some((group, at));
     }
 
-    /// Shows the group of the launch just started, once its own first window is there. The entry's group
-    /// may already have windows of its other launches. An entry known by its app id has no unit
-    /// of ours, so any of its windows counts.
+    /// Shows the group of the launch just started, once its own first window is there, or of the entry
+    /// waited for, once a window of it is. The entry's group may already have windows of its other
+    /// launches. An entry known by its app id has no unit of ours, so any of its windows counts. The
+    /// intent is given up past its deadline, when its launch is neither starting nor listed, and when the
+    /// entry waited for no longer runs.
     pub(crate) fn follow_front_launch(&mut self, now: u64) {
-        if self.front_launch.as_ref().is_some_and(|f| f.until.is_some_and(|until| now > until)) {
-            self.cancel_front_launch();
-        }
-        let Some(FrontLaunch { unit, .. }) = &self.front_launch else { return };
-        let outside = self.running.iter().find(|r| r.key == unit.key).is_some_and(|r| r.outside() || matches!(r.origin, running::Origin::Windows { .. }));
-        if !outside && !self.units.contains(unit) && !self.launching.iter().any(|l| l.unit == *unit) {
+        let Some(intent) = &self.front_launch else { return };
+        let key = intent.key();
+        let running = self.running.iter().find(|r| r.key == key);
+        let outside = running.is_some_and(|r| r.outside() || matches!(r.origin, running::Origin::Windows { .. }));
+        let gone = match intent.unit() {
+            Some(unit) => !outside && !self.units.contains(unit) && !self.launching.iter().any(|l| l.unit == *unit),
+            None => running.is_none(),
+        };
+        if gone || intent.expired(now) {
             self.front_launch = None;
             return;
         }
         let arrived = self
             .windows
             .iter()
-            .find(|w| {
-                w.group.as_ref().and_then(Group::key) == Some(&unit.key)
-                    && (outside || w.unit.as_deref().and_then(LaunchUnit::unit_name).is_some_and(|name| unit.is(name)))
-            })
+            .find(|w| w.group.as_ref().and_then(Group::key) == Some(key) && (outside || intent.takes_unit(w.unit.as_deref())))
             .map(|w| (w.id, self.below(w.id)));
         if let Some((id, down)) = arrived {
             self.front_launch = None;

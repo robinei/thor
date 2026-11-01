@@ -25,6 +25,8 @@ use clamshell_library::ids;
 use crate::effect::Effect;
 use crate::out::Out;
 use crate::session::found::found_entry;
+use crate::session::front::REWAIT_SECS;
+use crate::session::intent::FrontIntent;
 use crate::session::launch_unit::LaunchUnit;
 use crate::session::running::{Origin, Running};
 use crate::{Clock, Entry, Library, Session};
@@ -130,7 +132,7 @@ impl Session {
         let Some(r) = self.running(entry) else {
             return false;
         };
-        self.set_front_launch(LaunchUnit { key: r.key.clone(), secs: clock.unix(), n: 0 }, None);
+        self.set_front_launch(FrontIntent::entry(&r.key, clock.mono() + REWAIT_SECS));
         out.effects.push(Effect::Tray(TrayCommand::Activate(key)));
         true
     }
@@ -306,5 +308,55 @@ mod tests {
         s.applied(Event::Tray(vec![item(":1.5/a", "zelda3", Some(zelda.service().as_str())), item(":1.9/b", "firefox", None)]));
         assert!(s.session().running("desktop:firefox").is_none(), "the desktop's");
         assert!(s.session().tray_of("zelda-lttp").is_some(), "its own launch's icon: its menu");
+    }
+
+    /// A launch of ours that sits in its tray, its window closed: a tap on its tile asks it to show
+    /// itself, and the window it then opens, in its unit, comes in front, however long after the close.
+    #[test]
+    fn a_launched_program_in_its_tray_shows_its_window_when_its_tile_is_tapped() {
+        let mut s = state();
+        s.applied(Event::tick(100));
+        let zelda = launch(&mut s, "zelda-lttp");
+        s.applied(Event::Tray(vec![item(":1.5/a", "zelda3", Some(zelda.service().as_str()))]));
+        s.observed(vec![win_of(5, "zelda3", &zelda)]);
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(5));
+        s.observed(vec![]);
+        s.applied(Event::tick(200));
+        let fx = s.applied(Event::Entry("zelda-lttp".into(), crate::EntryAct::Show));
+        assert!(fx.contains(&Effect::Tray(TrayCommand::Activate(":1.5/a".into()))), "{fx:?}");
+        s.observed(vec![win_of(6, "zelda3", &zelda)]);
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(6), "the window the tap asked for");
+    }
+
+    /// An Activate the program never answers is given up after [`REWAIT_SECS`]: until then another
+    /// program's window opens behind, after it in front.
+    #[test]
+    fn an_activate_never_answered_is_given_up() {
+        let mut s = started(crate::Init { device_session: true, ..init() });
+        s.applied(Event::tick(100));
+        s.applied(Event::Tray(vec![item(":1.7/c", "thing", None)]));
+        s.applied(Event::Entry("tray:thing".into(), crate::EntryAct::Show));
+        s.applied(Event::tick(100 + REWAIT_SECS));
+        assert!(!opening_focus(&s, &foot()), "waiting for its window");
+        s.applied(Event::tick(101 + REWAIT_SECS));
+        assert!(opening_focus(&s, &foot()), "given up");
+        s.observed(vec![foot()]);
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(foot().id));
+    }
+
+    /// A launch whose unit starts but never shows a window, as a program that lives in its tray, is
+    /// waited for until [`crate::session::intent::WINDOW_WAIT`] after it was asked for, not for as long
+    /// as it runs.
+    #[test]
+    fn a_launch_that_never_shows_a_window_is_given_up() {
+        let mut s = state();
+        s.applied(Event::tick(100));
+        launch(&mut s, "zelda-lttp");
+        s.applied(Event::tick(100 + crate::session::intent::WINDOW_WAIT));
+        assert!(!opening_focus(&s, &foot()), "waiting for its window");
+        s.applied(Event::tick(101 + crate::session::intent::WINDOW_WAIT));
+        assert!(s.session().running("zelda-lttp").is_some(), "it runs on");
+        s.observed(vec![foot()]);
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(foot().id), "given up");
     }
 }

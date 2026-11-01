@@ -1192,6 +1192,16 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     if let Some(p) = session.program() {
         ensure!(session.running(p).is_some(), "4: program {p} doesn't run");
     }
+    // What is to come in front has a deadline no further than the longest wait, not passed, and waits for
+    // a launch starting or listed, or an entry that runs (see session/intent.rs).
+    if let Some(intent) = session.front_launch() {
+        let now = s.clock().mono();
+        let longest = crate::session::intent::WINDOW_WAIT.max(crate::session::running::LAUNCHER_WAIT);
+        ensure!(now <= intent.until() && intent.until() <= now + longest, "4: front intent until {} at {now}", intent.until());
+        let runs = running.iter().any(|r| r.key == intent.key());
+        let started = intent.unit().is_some_and(|u| launching.iter().any(|l| l.unit == *u) || session.units().contains(u));
+        ensure!(runs || started, "4: front intent {intent:?} for nothing");
+    }
     if let Some(owner) = session.top_window().and_then(|w| session.running_of(w)) {
         ensure!(session.program() == Some(&owner.id), "4: program {:?}, the focused window's {}", session.program(), owner.id);
     }

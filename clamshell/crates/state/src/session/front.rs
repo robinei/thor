@@ -4,8 +4,9 @@
 use crate::Compositor;
 use crate::out::Out;
 use crate::session::InFront;
+use crate::session::intent::FrontIntent;
 use crate::session::windows::{Group, WindowCommand};
-use crate::{Effect, EntryAct, Event, LaunchUnit, Session};
+use crate::{Effect, EntryAct, Event, Session};
 
 /// How long a program whose window in front closed, still running, is waited for to show another (see
 /// [`Session::follow_front`]): Steam replacing its update dialog with its window takes a while.
@@ -27,8 +28,8 @@ impl Session {
         let was = was.clone();
         let closed = !windows.iter().any(|w| w.group.as_ref() == Some(&was));
         self.go_back();
-        if let Some(unit) = closed.then(|| self.still_running(&was)).flatten() {
-            self.set_front_launch(unit, Some(now + REWAIT_SECS));
+        if let Some(key) = closed.then(|| was.key()).flatten().filter(|key| self.running.iter().any(|r| r.key == *key)) {
+            self.set_front_launch(FrontIntent::entry(key, now + REWAIT_SECS));
         }
         self.closed_front = closed.then_some((was, now));
     }
@@ -46,15 +47,6 @@ impl Session {
             Some(InFront::App(b)) => self.command(WindowCommand::Show(b)),
             None => self.command(WindowCommand::Show(crate::builtin_apps::home())),
         }
-    }
-
-    /// The launch to wait for again in `group`, if its entry still runs: its unit, or for an entry known
-    /// by app id or process (none of whose windows need be in its unit), the entry.
-    fn still_running(&self, group: &Group) -> Option<LaunchUnit> {
-        let key = group.key()?;
-        let running = self.running.iter().find(|r| r.key == key)?;
-        let unit = self.units.iter().find(|unit| unit.key == key).cloned();
-        unit.or_else(|| running.outside().then(|| LaunchUnit { key: key.to_owned(), secs: running.start, n: 0 }))
     }
 
     /// The Home button always goes to the home app (see [`crate::builtin_apps::home`]).
@@ -186,6 +178,25 @@ mod tests {
         s.applied(Event::tick(1011 + super::REWAIT_SECS));
         s.observed(vec![window(5)]);
         assert!(crate::testkit::on_library(&s), "too late: it stays behind");
+    }
+
+    /// With two launches of one entry, the window that comes after the one in front closed is waited for
+    /// from either launch, not only from the first one listed.
+    #[test]
+    fn a_running_entrys_next_window_is_shown_from_any_of_its_launches() {
+        let mut s = state();
+        s.applied(Event::tick(1000));
+        let key = clamshell_library::key_of("zelda-lttp");
+        let (first, second) = (LaunchUnit { key: key.clone(), secs: 1, n: 0 }, LaunchUnit { key, secs: 2, n: 1 });
+        s.applied(Event::Units(vec![first.clone(), second.clone()]));
+        s.observed(vec![win_of(3, "zelda3", &second)]);
+        s.applied(WindowEvent::Activate(3).into());
+        s.observed(vec![]);
+        assert!(crate::testkit::on_library(&s));
+        // Later than a replacement would come.
+        s.applied(Event::tick(1010));
+        s.observed(vec![win_of(4, "zelda3", &second)]);
+        assert_eq!(s.session().top_window().map(|w| w.id), Some(4));
     }
 
     #[test]
