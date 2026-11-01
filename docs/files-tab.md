@@ -118,7 +118,8 @@ Files tab shows the home Trash only).
 ## Inside
 
 - **Listings:** opening a browsed folder sends `Effect::Browse(folder)`; the browse thread lists it and
-  sends `FilesEvent::Listed`, then watches it (inotify) and lists it again when it changes; leaving it
+  sends `FilesEvent::Listed`, then watches it (inotify) and lists it again when it changes, once it has
+  been quiet for 200 ms (at most a second, so a folder being filled is listed once a second); leaving it
   (out of it, another tab) drops the watch. The Library splices a listing into the library
   (`Library::set_listing`): entries there before keep their place in the library's list (and their own
   listings), those gone free theirs for the next.

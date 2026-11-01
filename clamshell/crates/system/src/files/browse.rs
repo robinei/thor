@@ -58,11 +58,11 @@ pub(crate) fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Wo
         let mut mounts = media_mounts();
         // When the mount table changes, the kernel signals POLLPRI on this file.
         let mount_table = fs::File::open("/proc/self/mounts").map_err(|e| log::warn!("browse: mounts: {e}")).ok();
+        let mut runners = Runners::default();
         // For an archive, `dir` is its mount.
-        let list = |b: &Browse, dir: &Path| {
-            let config = config.as_deref().map(content::read_config).unwrap_or_default().0;
-            let (runners, _) = runners::in_force(&config.runners);
-            let mut entries = list(dir, &b.folder, &runners, home.as_deref(), b.hidden);
+        let mut list = |b: &Browse, dir: &Path| {
+            let runners = runners.of(config.as_deref());
+            let mut entries = list(dir, &b.folder, runners, home.as_deref(), b.hidden);
             let wanted = known_videos(&mut entries, store.as_ref());
             if !wanted.is_empty() {
                 probe(wanted);
@@ -135,9 +135,12 @@ pub(crate) fn spawn_browse(browsing: Browsing, sink: impl Sink) -> io::Result<Wo
                     if folder_changed
                         && let (Some(fd), Some((b, dir, _))) = (notify.as_ref(), open.as_ref())
                         && changed(fd)
-                        && list(b, dir).is_err()
                     {
-                        return;
+                        // A folder being filled (a copy into it, a game writing) is listed once it settles.
+                        settle(bell, fd, SETTLE, SETTLE_MOST);
+                        if list(b, dir).is_err() {
+                            return;
+                        }
                     }
                 }
                 Err(TryRecvError::Disconnected) => return,
@@ -176,6 +179,57 @@ fn wait(bell: &Bell, notify: Option<&rustix::fd::OwnedFd>, mounts: Option<&fs::F
     bell.clear();
     let came = |i: Option<usize>, what: PollFlags| i.and_then(|i| fds.get(i)).is_some_and(|f| f.revents().intersects(what));
     (came(folder, PollFlags::IN), came(table, PollFlags::PRI | PollFlags::ERR))
+}
+
+/// How long a changed folder must stay unchanged before it is listed again, and the longest it is
+/// waited for: a folder that keeps changing is listed this often.
+const SETTLE: std::time::Duration = std::time::Duration::from_millis(200);
+const SETTLE_MOST: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Waits until the folder watched by `notify` has had no change for `quiet`, at most `most`, reading its
+/// events. A command (the bell) ends the wait at once, leaving the bell rung.
+fn settle(bell: &Bell, notify: &rustix::fd::OwnedFd, quiet: std::time::Duration, most: std::time::Duration) {
+    use rustix::event::{PollFd, PollFlags};
+    let until = std::time::Instant::now() + most;
+    loop {
+        let wait = quiet.min(until.saturating_duration_since(std::time::Instant::now()));
+        if wait.is_zero() {
+            return;
+        }
+        let mut fds = [PollFd::from_borrowed_fd(bell.fd(), PollFlags::IN), PollFd::new(notify, PollFlags::IN)];
+        match rustix::event::poll(&mut fds, Some(&crate::os::sys::timespec(wait))) {
+            Ok(0) => return,
+            Ok(_) if fds.first().is_some_and(|f| f.revents().contains(PollFlags::IN)) => return,
+            Ok(_) => {
+                changed(notify);
+            }
+            Err(rustix::io::Errno::INTR) => {}
+            Err(e) => {
+                log::debug!("browse: settling: {e}");
+                return;
+            }
+        }
+    }
+}
+
+/// The runners the open folder's files open with, from library.json, read again only when it changed.
+#[derive(Default)]
+struct Runners {
+    read: Option<(Option<std::time::SystemTime>, Vec<Runner>)>,
+    /// How many times library.json was read, for the tests.
+    reads: usize,
+}
+
+impl Runners {
+    fn of(&mut self, config: Option<&Path>) -> &[Runner] {
+        let stamp = config.and_then(|c| fs::metadata(c).and_then(|m| m.modified()).ok());
+        if self.read.as_ref().is_none_or(|(at, _)| stamp.is_none() || *at != stamp) {
+            let read = config.map(content::read_config).unwrap_or_default().0;
+            self.reads += 1;
+            self.read = Some((stamp, runners::in_force(&read.runners).0));
+        }
+        self.read.as_ref().map_or(&[], |(_, r)| r.as_slice())
+    }
 }
 
 /// Whether inotify has events. Reads them all.
@@ -328,6 +382,52 @@ fn known_videos(entries: &mut [Entry], store: Option<&crate::library::meta::cach
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+
+    /// library.json is read again for a listing only when it changed.
+    #[test]
+    fn the_runners_are_read_again_only_when_library_json_changed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = tmp.path().join("library.json");
+        fs::write(&config, r#"{"runners": [{"name": "Music", "match": ["*.mp3"], "launch": ["sh", "{paths}"]}]}"#).unwrap();
+        let mut runners = Runners::default();
+        assert_eq!(runners.of(Some(&config)).len(), 1);
+        runners.of(Some(&config));
+        assert_eq!(runners.reads, 1, "unchanged: not read again");
+        fs::write(&config, r#"{"runners": []}"#).unwrap();
+        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(5);
+        fs::File::options().write(true).open(&config).unwrap().set_modified(later).unwrap();
+        assert!(runners.of(Some(&config)).is_empty(), "changed: read again");
+        assert_eq!(runners.reads, 2);
+    }
+
+    /// A folder being filled is listed once it settles, and at most a second later; a command ends the
+    /// wait at once.
+    #[test]
+    fn a_folder_being_filled_is_listed_once_it_settles() {
+        use std::time::{Duration, Instant};
+        let tmp = tempfile::tempdir().unwrap();
+        let notify = inotify::init(inotify::CreateFlags::NONBLOCK | inotify::CreateFlags::CLOEXEC).unwrap();
+        inotify::add_watch(&notify, tmp.path(), inotify::WatchFlags::CREATE).unwrap();
+        let bell = Bell::new().unwrap();
+        let dir = tmp.path().to_path_buf();
+        let writer = std::thread::spawn(move || {
+            for i in 0..6 {
+                fs::write(dir.join(format!("f{i}")), "x").unwrap();
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        });
+        let start = Instant::now();
+        settle(&bell, &notify, Duration::from_millis(200), Duration::from_secs(5));
+        writer.join().unwrap();
+        assert!(start.elapsed() >= Duration::from_millis(400), "waited for the writes to end");
+        let start = Instant::now();
+        settle(&bell, &notify, Duration::from_millis(200), Duration::from_millis(300));
+        assert!(start.elapsed() < Duration::from_millis(280), "nothing more: settled after the quiet time");
+        bell.ring();
+        let start = Instant::now();
+        settle(&bell, &notify, Duration::from_secs(5), Duration::from_secs(5));
+        assert!(start.elapsed() < Duration::from_secs(1), "a command ends the wait");
+    }
 
     #[test]
     fn a_listing_has_folders_first_and_files_open_by_the_sources() {
