@@ -205,7 +205,7 @@ impl Cursor {
             CursorImageStatus::Hidden => {}
             CursorImageStatus::Surface(surface) if surface.is_alive() => {
                 if let Err(error) = import_surface_tree(renderer, &surface) {
-                    server.refuse_buffer(&surface, &format!("cannot import cursor buffer: {error}"));
+                    server.refuse_buffer(&surface, &format!("cannot import cursor buffer: {error}"), crate::render::clients_fault(&error));
                     server.pointer.cursor = CursorImageStatus::default_named();
                     return Ok(());
                 }

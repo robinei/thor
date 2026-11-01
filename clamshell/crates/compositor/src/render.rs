@@ -196,7 +196,7 @@ pub(crate) fn elements(
             Ok(())
         });
         if let Err(error) = imported {
-            server.refuse_buffer(surface, &format!("cannot import window {} buffer: {error}", placed.id));
+            server.refuse_buffer(surface, &format!("cannot import window {} buffer: {error}", placed.id), clients_fault(&error));
             continue;
         }
         let geometry = placed.geometry;
@@ -209,6 +209,14 @@ pub(crate) fn elements(
         });
     }
     Ok(())
+}
+
+/// Whether a buffer's import failed for its client's doing: a shared-memory buffer it shrank under us
+/// (Smithay has disconnected the client already). Its format and size were checked when it was made, so
+/// any other failure here is ours: the GPU's memory, or a context lost in a recovery.
+pub(crate) fn clients_fault(error: &smithay::backend::renderer::gles::GlesError) -> bool {
+    use smithay::{backend::renderer::gles::GlesError, wayland::shm::BufferAccessError};
+    matches!(error, GlesError::BufferAccessError(BufferAccessError::BadMap))
 }
 
 pub(crate) const LAYERS: [Layer; 4] = [Layer::Screen(Screen::Top), Layer::Screen(Screen::Bottom), Layer::Overlay(Screen::Top), Layer::Overlay(Screen::Bottom)];

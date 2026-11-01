@@ -26,7 +26,8 @@ impl Dispatch<zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, ()> for Client
                 state.imported_buffers += 1;
                 buffer.destroy();
             }
-            _ => panic!("unexpected import failure"),
+            zwp_linux_buffer_params_v1::Event::Failed => state.failed_imports += 1,
+            _ => panic!("unexpected params event"),
         }
     }
     wayland_client::event_created_child!(Client, zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1, [0 => (wl_buffer::WlBuffer, ())]);

@@ -41,6 +41,7 @@ pub(crate) struct Client {
     feedback_table: Vec<u8>,
     feedback_done: bool,
     imported_buffers: usize,
+    failed_imports: usize,
     pointer_serial: u32,
     cursor_enter: u32,
     popup_done: usize,
@@ -923,7 +924,7 @@ fn a_protocol_error_disconnects_only_its_client() {
 }
 
 #[test]
-fn a_rejected_dmabuf_disconnects_only_its_client() {
+fn a_dmabuf_that_fails_to_import_is_failed_and_its_client_stays() {
     client_error_is_isolated(true);
 }
 
@@ -983,7 +984,16 @@ fn client_error_is_isolated(dmabuf_error: bool) {
             file.set_len(4096).unwrap();
             params.add(file.as_fd(), 0, 0, 64, 0, 0);
             params.create(16, 16, Fourcc::Xrgb8888 as u32, zwp_linux_buffer_params_v1::Flags::empty());
-            assert!(bad_queue.roundtrip(&mut bad_state).is_err(), "a rejected import must end only its connection");
+            // The import is ours to fail (the format is offered): `failed`, so that the client can try
+            // another modifier or shared memory, and its connection stays.
+            for _ in 0..100 {
+                bad_queue.roundtrip(&mut bad_state).expect("a failed import leaves the client connected");
+                if bad_state.failed_imports > 0 {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            assert_eq!(bad_state.failed_imports, 1);
         } else {
             let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
             let shell: xdg_wm_base::XdgWmBase = globals.bind(&qh, 1..=6, ()).unwrap();
@@ -1181,11 +1191,55 @@ mod xwayland_shell {
             |_, server, step| {
                 if let Refusal::Committed = step {
                     let surface = crate::x11::shell::take(server, 7).unwrap();
-                    server.refuse_buffer(&surface, "test");
-                    server.refuse_buffer(&surface, "test");
+                    server.refuse_buffer(&surface, "test", true);
+                    server.refuse_buffer(&surface, "test", true);
                 }
             },
         );
         assert_eq!(checked, 2);
     }
+}
+
+/// A Wayland client's buffer that couldn't be imported for our reasons (the GPU's memory, a lost context)
+/// leaves it connected, its surface tried again at the next drawing; one it made bad (a shared-memory pool
+/// shrunk under us) disconnects it.
+#[test]
+fn a_buffer_refused_for_our_reasons_leaves_its_client_connected() {
+    use wayland_client::Proxy;
+    enum Refusal {
+        Committed(u32),
+        StillConnected,
+    }
+    let (mut display, mut server) = ServerBuilder::new().build();
+    let client = spawn_client(&mut display, ClientState::default(), |globals, mut queue, steps| {
+        let qh = queue.handle();
+        let compositor: wl_compositor::WlCompositor = globals.bind(&qh, 1..=6, ()).unwrap();
+        let surface = compositor.create_surface(&qh, ());
+        surface.commit();
+        let mut client = Client::default();
+        queue.roundtrip(&mut client).unwrap();
+        steps.step(Refusal::Committed(surface.id().protocol_id()));
+        queue.roundtrip(&mut client).expect("no protocol error");
+        steps.step(Refusal::StillConnected);
+    });
+    let peer = client.peer.clone();
+    let checked = client.serve(
+        &mut display,
+        &mut server,
+        |_| {},
+        |_, server, step| match step {
+            Refusal::Committed(id) => {
+                let surface: smithay::reexports::wayland_server::protocol::wl_surface::WlSurface = peer.object_from_protocol_id(&server.dh, id).unwrap();
+                server.refuse_buffer(&surface, "test", false);
+                server.refuse_buffer(&surface, "test", false);
+            }
+            // The client's own roundtrip found no protocol error.
+            Refusal::StillConnected => {}
+        },
+    );
+    assert_eq!(checked, 2);
+    use smithay::{backend::renderer::gles::GlesError, wayland::shm::BufferAccessError};
+    assert!(crate::render::clients_fault(&GlesError::BufferAccessError(BufferAccessError::BadMap)));
+    assert!(!crate::render::clients_fault(&GlesError::MappingError));
+    assert!(!crate::render::clients_fault(&GlesError::UnsupportedPixelFormat(smithay::backend::allocator::Fourcc::Argb8888)));
 }

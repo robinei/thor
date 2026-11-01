@@ -1024,8 +1024,9 @@ the exported event ring, and PQ, linear and SDR pixels from an EGL client.
 ### A client's failure (server.rs, render.rs, clients.rs)
 
     client --a duplicate toplevel role, or a popup that can't be tracked or configured--> ended [protocol error, reason logged]
-    client --its buffer fails to import while drawing--> ended [reason logged; the frame goes on]
-    client --a dmabuf fails to import, or more than 64 imports pending--> buffer rejected [logged; invalid_format ends the client]
+    client --its buffer fails to import while drawing: a shared-memory pool it shrank under us--> ended [reason logged; the frame goes on]
+    client --its buffer fails to import while drawing, for our reasons (the GPU's memory, a context lost in a recovery)--> the surface not drawn this time [a warning once for the surface, then debug; tried again at the next drawing]
+    client --a dmabuf fails to import--> failed [logged]; --more than 64 imports pending--> invalid_format ends the client
     client --protocol error--> gone [warn]; --disconnects--> gone [debug]
 
 Other clients' windows and the event loop go on. Under the nested host a renderer or host window error
@@ -1033,8 +1034,10 @@ ends the session (there is nothing left to show on); on DRM a failed compose is 
 on.
 
 Tests: `a_protocol_error_disconnects_only_its_client` (a duplicate role on a second connection; the healthy
-client's title still changes afterwards), `a_rejected_dmabuf_disconnects_only_its_client`. A failed shm or
-EGL import while drawing has no unit test.
+client's title still changes afterwards), `a_dmabuf_that_fails_to_import_is_failed_and_its_client_stays`,
+`a_buffer_refused_for_our_reasons_leaves_its_client_connected` (the refusal and which errors are the
+client's), `a_refused_x11_buffer_leaves_xwayland_connected`. A real failed import while drawing is not
+induced in a test.
 
 ### The window event ring and its replay (trace.rs)
 
@@ -1414,14 +1417,14 @@ fences; explicit sync is checked on the device).
     create --fewer than 64 imports pending for the client--> queued
     create --64 pending--> rejected [warn; invalid_format ends the client]                     no unit test
     queued --the next compose (nested redraw; DRM compose, or each turn with both screens off), import succeeds--> created [created sent once]
-    queued --import fails--> rejected [warn; invalid_format ends that client only]
+    queued --import fails (the format is one offered: the failure is ours or the driver's)--> failed [warn; the client stays and may try another modifier or shared memory]
     queued --the server dropped--> failed                                                      no unit test
 
 Tests: `an_accepted_import_completes_once_and_an_empty_frame_has_no_import_work` (a renderer boundary that
 succeeds: one buffer created, version 3 without a device, no work on an empty queue);
-`a_rejected_dmabuf_disconnects_only_its_client` (version 3's modifier events and version 4's feedback with
-a 10-bit format, the main device and the format table; one call at a failing boundary; the requesting
-client ended; a healthy window's later title applies). `tests/nested-compositor.py` checks that the
+`a_dmabuf_that_fails_to_import_is_failed_and_its_client_stays` (version 3's modifier events and version 4's
+feedback with a 10-bit format, the main device and the format table; one call at a failing boundary; the
+requesting client told `failed` and still connected; a healthy window's later title applies). `tests/nested-compositor.py` checks that the
 software host offers no `zwp_linux_dmabuf_v1`, and with `--gpu` that the EGL client and vkcube create
 dmabufs and vkcube gets its feedback; a real GPU import is checked only there.
 

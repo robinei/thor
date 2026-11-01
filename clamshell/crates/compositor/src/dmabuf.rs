@@ -65,9 +65,12 @@ impl Server {
                         log::debug!("compositor: dmabuf client left before import completed: {error}");
                     }
                 }
+                // The format and modifier are among those offered (Smithay checked them): a failure here is
+                // ours or the driver's, told as `failed`, so that the client can try another modifier or
+                // shared memory rather than be disconnected.
                 Err(error) => {
-                    log::warn!("compositor: rejecting client dmabuf: {error}");
-                    notifier.invalid_format();
+                    log::warn!("compositor: a client's dmabuf couldn't be imported: {error}");
+                    notifier.failed();
                 }
             }
         }

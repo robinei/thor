@@ -177,19 +177,22 @@ impl Server {
         }
     }
 
-    /// A buffer of `surface` that can't be drawn. A Wayland client is disconnected for it, as for any
-    /// request it can't make; Xwayland isn't, since it carries every X11 program: its window just isn't
-    /// drawn, logged as a warning once for the surface.
-    pub(crate) fn refuse_buffer(&self, surface: &WlSurface, message: &str) {
+    /// A buffer of `surface` that couldn't be imported for drawing: `client's` when the buffer itself was
+    /// bad (see [`crate::render::clients_fault`]). A Wayland client is disconnected for a bad buffer, as for
+    /// any request it can't make. Otherwise the failure is ours (the GPU's memory, a context lost in a
+    /// recovery), and the surface just isn't drawn this time and is tried again at the next drawing, logged
+    /// as a warning once for the surface. Xwayland is never disconnected, since it carries every X11
+    /// program.
+    pub(crate) fn refuse_buffer(&self, surface: &WlSurface, message: &str, clients: bool) {
         let xwayland = surface.client().and_then(|c| c.get_data::<crate::clients::ClientState>().map(|s| s.xwayland)).unwrap_or(false);
-        if !xwayland {
+        if clients && !xwayland {
             return self.reject_client(surface, message);
         }
         let first = smithay::wayland::compositor::with_states(surface, |states| states.data_map.insert_if_missing(|| BufferRefused));
         if first {
-            log::warn!("compositor: an X11 surface {:?} isn't drawn: {message}", surface.id());
+            log::warn!("compositor: a surface {:?} isn't drawn: {message}", surface.id());
         } else {
-            log::debug!("compositor: an X11 surface {:?} isn't drawn: {message}", surface.id());
+            log::debug!("compositor: a surface {:?} isn't drawn: {message}", surface.id());
         }
     }
 
