@@ -282,5 +282,77 @@ printf tail > "$last/zzz.config"
         self.assertFalse((partial.root / 'generation-calls').exists())
 
 
+class Account(unittest.TestCase):
+    """thor-account against a stub shadow entry: what counts as a password, and the paths it guards."""
+
+    def machine(self, hash):
+        m = Machine()
+        self.addCleanup(m.close)
+        m.file('hash', hash)
+        m.file('password', 'current-password')
+        m.command('id', 'echo thor')
+        m.command('getent', f'printf "thor:%s:20000:0:99999:7:::\\n" "$(cat {m.root}/hash)"')
+        m.command('chpasswd', f'IFS= read -r line; echo "$line" >> {m.root}/chpasswd; printf "%s" "${{line#thor:}}" > {m.root}/password; printf \'$6$set\' > {m.root}/hash')
+        m.command('runuser', f'[ "$(tr -d "\\0")" = "$(cat {m.root}/password)" ]')
+        m.command('systemctl', f'echo "$*" >> {m.root}/systemctl; case $* in *is-enabled*) exit 1 ;; esac')
+        return m
+
+    def account(self, m, *args, stdin=''):
+        source = (REPO / 'packages/thor-system/root/usr/lib/thor/thor-account').read_text()
+        script = m.file('script', source)
+        return subprocess.run(['bash', script, *args], input=stdin, env={**m.env, 'PKEXEC_UID': '1000'},
+                              capture_output=True, text=True, timeout=15)
+
+    def log(self, m, name):
+        path = m.root / name
+        return path.read_text() if path.exists() else ''
+
+    LOCKED = ['', '!', '!!', '!$6$salt$hash', '*', '!*']
+    SET = ['$6$salt$hash', '$y$j9T$salt$hash']
+
+    def test_status_reads_locked_and_starred_hashes_as_none_and_real_hashes_as_set(self):
+        for hash, expected in [(h, 'none') for h in self.LOCKED] + [(h, 'set') for h in self.SET]:
+            with self.subTest(hash=hash):
+                result = self.account(self.machine(hash), 'status')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, f'password {expected}\nssh off\n')
+
+    def test_first_password_is_set_without_the_current_one_and_then_reads_as_set(self):
+        for hash in self.LOCKED:
+            with self.subTest(hash=hash):
+                m = self.machine(hash)
+                result = self.account(m, 'password', stdin='new-password\n')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.log(m, 'chpasswd'), 'thor:new-password\n')
+                self.assertEqual(self.account(m, 'status').stdout, 'password set\nssh off\n')
+
+    def test_a_set_password_is_changed_only_with_the_current_one(self):
+        for hash in self.SET:
+            with self.subTest(hash=hash):
+                m = self.machine(hash)
+                result = self.account(m, 'password', stdin='new-password\n')
+                self.assertEqual((result.returncode, result.stderr), (1, 'failed\n'))
+                result = self.account(m, 'password', stdin='wrong-password\nnew-password\n')
+                self.assertEqual((result.returncode, result.stderr), (1, 'wrong password\n'))
+                self.assertEqual(self.log(m, 'chpasswd'), '')
+                result = self.account(m, 'password', stdin='current-password\nnew-password\n')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.log(m, 'chpasswd'), 'thor:new-password\n')
+
+    def test_ssh_on_needs_a_set_password(self):
+        for hash in self.LOCKED:
+            with self.subTest(hash=hash):
+                m = self.machine(hash)
+                result = self.account(m, 'ssh', 'on')
+                self.assertEqual((result.returncode, result.stderr), (1, 'set a password first\n'))
+                self.assertEqual(self.log(m, 'systemctl'), '')
+        for hash in self.SET:
+            with self.subTest(hash=hash):
+                m = self.machine(hash)
+                result = self.account(m, 'ssh', 'on')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(self.log(m, 'systemctl'), 'enable --now -q sshd\n')
+
+
 if __name__ == '__main__':
     unittest.main()

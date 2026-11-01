@@ -28,7 +28,7 @@ user=$(id -nu "$uid" 2> /dev/null) || fail "failed"
 has_password() {
     local hash
     hash=$(getent shadow "$user" | cut -d: -f2)
-    [ -n "$hash" ] && [ "${hash#[!*]}" = "$hash" ]
+    case $hash in '' | '!'* | '*'*) return 1 ;; esac
 }
 
 case ${1:-} in
