@@ -556,8 +556,13 @@ mod tests {
                 let surface: WlSurface = peer.object_from_protocol_id(&server.dh, id).unwrap();
                 wm.pair_surfaces(server);
                 assert!(wm.windows[0].surface.is_none(), "no serial for the window yet");
-                let message = ClientMessageEvent::new(32, 10, wm.atoms.get("WL_SURFACE_SERIAL"), [7, 1, 0, 0, 0]);
-                wm.event(&<[u8; 32]>::from(&message), &mut wire, server).unwrap();
+                let message = <[u8; 32]>::from(&ClientMessageEvent::new(32, 10, wm.atoms.get("WL_SURFACE_SERIAL"), [7, 1, 0, 0, 0]));
+                // One another client sent (SendEvent's bit) is ignored.
+                let mut forged = message;
+                forged[0] |= 0x80;
+                wm.event(&forged, &mut wire, server).unwrap();
+                assert_eq!(wm.windows[0].serial, None, "a forged serial is ignored");
+                wm.event(&message, &mut wire, server).unwrap();
                 assert_eq!(wm.windows[0].serial, Some(0x1_0000_0007));
                 wm.pair_surfaces(server);
                 assert_eq!(wm.windows[0].surface.as_ref(), Some(&surface));

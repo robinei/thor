@@ -1555,6 +1555,7 @@ are outstanding: property queries wait for room, any other request past that sto
 | connected | a partial reply | connected | polled once whole | transport `partial_replies_are_polled_and_idle_connections_never_probe` |
 | connected, idle | turns | connected | no traffic, no deadline | same |
 | writing | the peer not reading | writing | WouldBlock keeps the bytes; past 1 MiB refused; 3 s: stopping | transport `full_write_buffers_keep_the_queue_bounded_and_still_return_to_the_loop` |
+| connected | an event another client sent (SendEvent) other than a ClientMessage or SelectionNotify | connected | dropped, logged at debug: a forged DestroyNotify, CreateNotify or MapRequest changes nothing; a ClientMessage carrying WL_SURFACE_SERIAL is taken only from Xwayland itself | transport `events_other_clients_send_are_passed_on_only_where_the_protocol_has_them`; wm `a_window_is_paired_with_the_surface_committed_with_its_serial` |
 | connected | 32,768 requests since the last reply | anchoring | GetSelectionOwner(WM_S0), so the 16-bit sequence can't wrap unanchored; the reply must name the WM | transport `sequence_anchors_follow_actual_traffic_across_wire_wrap`; the owner check: GAP |
 
 ### X11 windows (x11/wm/, x11/properties.rs, x11/shell.rs)

@@ -11,7 +11,7 @@ use std::{
 use x11rb_protocol::{
     connect::Connect,
     connection::{Connection, ReplyFdKind},
-    protocol::xproto::Setup,
+    protocol::xproto::{CLIENT_MESSAGE_EVENT, SELECTION_NOTIFY_EVENT, Setup},
     x11_utils::Request,
 };
 
@@ -169,8 +169,19 @@ impl Transport {
         self.last_request.saturating_sub(self.last_reply) >= 32_768
     }
 
+    /// The next event. One another client sent (SendEvent, the code's top bit) is passed on only where the
+    /// protocol has clients send it: a ClientMessage (EWMH's requests to the root) or a SelectionNotify (an
+    /// owner's answer, ICCCM 2.2). Any other would be a forgery: a DestroyNotify closing another client's
+    /// window, a CreateNotify filling the window limit, a MapRequest mapping it.
     pub fn event(&mut self) -> Option<Vec<u8>> {
-        self.wire.poll_for_event_with_sequence().map(|(bytes, _)| bytes)
+        while let Some((bytes, _)) = self.wire.poll_for_event_with_sequence() {
+            let code = bytes.first().copied().unwrap_or_default();
+            if code & 0x80 == 0 || matches!(code & 0x7f, CLIENT_MESSAGE_EVENT | SELECTION_NOTIFY_EVENT) {
+                return Some(bytes);
+            }
+            log::debug!("compositor: ignored an X11 event of code {} another client sent", code & 0x7f);
+        }
+        None
     }
 
     fn queue(&mut self, bytes: &[u8]) -> io::Result<()> {
@@ -280,6 +291,29 @@ mod tests {
         peer.write_all(&oversized).unwrap();
         assert!(transport.turn(now).unwrap_err().to_string().contains("exceeds limit"));
         assert_eq!(transport.incoming.len(), 32, "a malicious length never allocates a huge packet");
+    }
+
+    /// Of the events another client sent, only ClientMessage and SelectionNotify are passed on.
+    #[test]
+    fn events_other_clients_send_are_passed_on_only_where_the_protocol_has_them() {
+        use x11rb_protocol::protocol::xproto::{CREATE_NOTIFY_EVENT, DESTROY_NOTIFY_EVENT, MAP_REQUEST_EVENT, UNMAP_NOTIFY_EVENT};
+        let (mut transport, _peer, _now) = connected();
+        let codes = [
+            DESTROY_NOTIFY_EVENT | 0x80,
+            CREATE_NOTIFY_EVENT | 0x80,
+            MAP_REQUEST_EVENT | 0x80,
+            UNMAP_NOTIFY_EVENT | 0x80,
+            CLIENT_MESSAGE_EVENT | 0x80,
+            SELECTION_NOTIFY_EVENT | 0x80,
+            DESTROY_NOTIFY_EVENT,
+        ];
+        for code in codes {
+            let mut event = [0; 32];
+            event[0] = code;
+            transport.wire.enqueue_packet(event.to_vec());
+        }
+        let passed: Vec<u8> = std::iter::from_fn(|| transport.event()).map(|event| event[0]).collect();
+        assert_eq!(passed, [CLIENT_MESSAGE_EVENT | 0x80, SELECTION_NOTIFY_EVENT | 0x80, DESTROY_NOTIFY_EVENT]);
     }
 
     #[test]

@@ -274,7 +274,11 @@ impl Wm {
             Some(CLIENT_MESSAGE_EVENT) => {
                 let event = ClientMessageEvent::try_parse(bytes).map_err(io::Error::other)?.0;
                 log::debug!("X11 client message window={} type={} data={:?}", event.window, event.type_, event.data.as_data32());
+                // Xwayland delivers the serial itself; one another client sent could pair a window with
+                // someone else's surface.
+                let synthetic = bytes.first().is_some_and(|code| code & 0x80 != 0);
                 if event.format == 32
+                    && !synthetic
                     && event.type_ == self.atoms.get("WL_SURFACE_SERIAL")
                     && let Some(window) = self.windows.iter_mut().find(|w| w.xid == event.window)
                     && let [low, high, ..] = event.data.as_data32()
