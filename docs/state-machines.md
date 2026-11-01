@@ -188,6 +188,20 @@ The state's side is pinned by `steams_windows_open_behind_a_steam_games_launch`,
 `a_launcher_without_a_window_is_not_brought_in_front`. The `-gamepadui` argument and the interface it gives are checked on
 the device.
 
+`clamshell --launch-env` takes a missing settings folder as the defaults; a folder that can't be
+listed, or a file there that can't be read or parsed, ends it with an error and no environment, and the
+hook then says LaunchEnvFailed and starts the game with its own environment (a session's start still
+skips and logs a single unreadable file). Tests: `launch_env_reports_broken_existing_settings_but_accepts_missing_settings`
+(the real command), `broken_settings_in_the_real_command_reach_the_hooks_notice_branch` (the hook).
+
+### Android's Wayland relay (system/waydroid/wire.rs)
+
+| From | Event / condition | To | Effects | Test |
+|---|---|---|---|---|
+| relaying | a header or body still incomplete | relaying | kept, at most one largest legal message (65,532 bytes) | `incomplete_headers_and_bodies_are_distinct_from_invalid_sizes`, `a_maximum_sized_valid_message_passes_through_the_bounded_buffer` |
+| relaying | a declared size under 8 bytes or not a multiple of 4 | ended | warned; both sockets closed, the descriptors received released; the reverse relay ends with the closed socket | `malformed_input_ends_both_sockets_and_releases_received_descriptors` |
+| relaying | descriptors with bytes not yet passed on | relaying | kept, and sent with the next bytes passed on, never alone; over 28 spread over several parts; over 112 waiting ends it | `a_descriptor_with_half_a_message_goes_on_with_the_rest`, `more_descriptors_than_a_send_holds_go_over_several_parts` |
+
 ### Front and Home
 
 | Trigger | Result | Test |
@@ -333,6 +347,16 @@ bottom screen to open the windows' tab and turn on (`Bottom::show_below`).
 | dark (`bottom_dark`): for a game set to darken it, until woken, and never while a window is shown there; while dark, or off, or showing a window, the tab's readings aren't watched | `the_dark_second_screen_watches_nothing_and_a_window_there_keeps_it_lit` |
 | Wake tap sets `woken`; a game starting resets it | `dark_for_a_game_…`, `a_game_can_start_the_pad_mouse_…`, `a_game_starting_lets_a_woken_screen_go_dark_again`; touch or pad focus don't wake a dark screen (kept by decision, S16 in the history notes) |
 
+The placement history keeps, for each live window, the exact rule that moved it down, beside the record
+that automatic placement has considered it; a sibling skipped as the rule was made has none. A title or
+app id change and a displacement keep it, so a displaced window moved down again uses that rule while it
+is saved; if another window forgot a shared rule, a move by hand remembers the facts again. Up removes
+its own rule and saves the rest, siblings' rules intact; a repeated return does nothing; a window closed
+drops its history. Tests: bottom/screen `returning_an_automatically_placed_window_forgets_the_rule_after_identity_changes`
+and its neighbours (manual and automatic returns, the saved lists); session/windows
+`a_backend_batch_keeps_replacement_history_until_all_changes_are_applied`; the randomized test's title
+and identity changes, with live ids distinct throughout (invariant 4).
+
 ## Idle and sleep (idle.rs)
 
 State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`, `woke_at`,
@@ -433,6 +457,12 @@ Tests: merge `axes_are_put_in_the_virtual_pads_ranges_from_each_controllers_rest
 Grabbing, hotplug over USB and Bluetooth, uinput pads and real rumble: the VM suite (`pad_*`, one fake
 pad) and on the device with several controllers.
 
+The sticks' calibrations and the controllers' players saved are read once as the session is prepared,
+and the state and the pad thread are given the same; with nothing saved, both get the defaults. The
+x86 emulation presets are written before either host starts, and the host's start only sends the
+prepared input. Checked by reading (`clamshell/src/session.rs` `saved`) and by every session the nested
+test starts; later changes and restarts follow the events and effects above.
+
 ### Home chords and directional flicks (system/input/)
 
 The reusable `Flick` recogniser receives normalised X/Y, arms below 30%, and reports the axis further
@@ -483,7 +513,7 @@ LayerPicker, LayerMenu; Undo per keymap since the edit screen opened. One Back f
 |---|---|
 | Keymap tile → List; a row → chosen for the level edited | `the_picker_chooses_a_keymap_for_the_level_edited` |
 | One keymap setting per player (`Setting::Keymap` for player 1, `Keymap2`..`Keymap8`), each chosen per game, runner and All as player 1's is; the grid has a keymap tile per player up to the count, player 1's first, each marked Keymap 1..N in its corner when there are several (one player: Keymap, as before). A keymap tile's tap or long press makes the keymaps' screens that player's (`Keymapping::player`), so the picker, its Reset and the tile's step choose that player's keymap, or the last player's once the count has gone below it (the count lowered with the picker open); a keymap's users are counted, and a deleted one forgotten, in every player's. Sync sends each player's keymap in force up to the count (`Keymap(player, keymap)`, player 1's first), and a player back within the count is sent its own again | `each_player_has_a_keymap_of_its_own`, `a_player_back_within_the_count_is_sent_its_keymap_and_a_deleted_one_is_forgotten_for_all`, `the_keymap_picker_of_a_player_gone_chooses_within_the_count` |
-| Own → made, settings saved then keymaps | `making_a_games_own_keymap_saves_the_settings_then_the_keymaps` |
+| Own → made, the keymaps saved then the settings (a stop between leaves an unchosen profile, never a setting naming an id a later profile could take) | `making_a_games_own_keymap_saves_the_keymaps_then_the_settings` |
 | Menu: rename, duplicate, load into own, save as, delete (asks if in use; settings forget it: all games back to Default if it was theirs, and who chose it chooses Default) | `rename_duplicate_and_delete_…`, `a_named_keymap_is_loaded_…`, `a_games_own_keymap_is_saved_…`; settings `forgetting_a_keymap_sets_who_chose_it_to_default` |
 | Edit: select, bind, map to (pick, capture, mouse, layers), toggles, slides, undo, layers | `a_new_keymap_is_named_edited_and_mapped`, `targets_offered_fit_the_input`, `the_hold_and_double_tabs_…`, `parameters_slide_…`, layer tests, `undo_goes_back_…` |
 | Calibrate from Edit; MakeOwn from Edit; Back from Load and the pickers; an empty name | `calibrate_on_the_edit_screen_calibrates_the_gyro`, `make_own_on_a_shared_keymaps_edit_screen`, `back_goes_up_from_load_and_the_pickers`, `an_empty_name_makes_nothing` |
@@ -585,6 +615,9 @@ test taps the lights' screens, slides their parameters and reads charging.
 | Library read: places restored by name and id, with what is typed in each list | `listings_outlive_the_library_read_again`, `a_library_read_keeps_what_is_typed`; the selection gone: the list's first, `a_library_read_without_the_selected_entry_selects_the_first` |
 | Continue, Meta, Position | `continue_plays_on_where_the_series_was_left`, `fetched_metadata_goes_to_its_entry`, tests `a_video_ended_asks_where_it_was_left` |
 | actions and button shortcuts (Y, X, Start) | `an_entrys_actions_come_from_…`, `copy_then_paste_…`, `selected_entries_are_what_the_actions_act_on`, `the_shortcuts_are_off_on_the_actions` |
+| a collection tapped from Apps, TV or any other reported tab → that collection, the focus, no effect at once; a repeated tap the same | `tapping_a_collection_from_apps_or_tv_selects_the_same_tab` |
+| an entry's key (process-control slices, settings files): a slug of its id's last part (16 characters at most), `_`, 64 bits of FNV-1a of the whole id in hex (`clamshell --key` prints it) | library `keys_use_the_complete_id_and_remain_bounded` |
+| two ids giving one key → both left out of every index and reported as a problem, again at each rebuild, so no key selects or launches the other | library `conflicting_persistent_keys_are_rejected_before_any_lookup`; state `entries_with_the_old_hash_collision_have_independent_control_slices`; system `settings_with_the_old_entry_key_collision_survive_independently` |
 
 ### Files tab (the Library/files.rs)
 
@@ -673,6 +706,12 @@ found by the asking process (the window whose process it is, or started; else th
 - The record keeps every collection's place, clamped to its list (one that shrank while another was
   shown). Test: the Library `the_resume_record_keeps_a_place_past_its_shrunk_list`.
 
+- Metadata workers: queued --reserve--> starting; a start that fails releases only its reservation and
+  leaves every job waiting (`Fetching(false)` if no worker is left), and a later fetch reserves the
+  missing workers again; a running worker may take the failed one's share without clearing busy early.
+  Tests: `failed_worker_starts_leave_jobs_available_for_retry`,
+  `a_failed_start_does_not_take_work_from_a_running_worker`.
+
 ## Lists and presses (nav/)
 
 `Scroll{offset, visible, anchor, to_show}` per list. Scrolling anchors on the top row's item; settle keeps
@@ -685,6 +724,13 @@ once `Visible` says how many rows fit, unless the list was scrolled meanwhile
 `a_dock_press_acts_on_the_entry_it_came_down_on`, `a_collection_press_acts_on_the_collection_it_came_down_on`,
 `an_output_press_chooses_the_output_it_came_down_on`, `a_battery_row_press_opens_the_program_it_came_down_on`
 (the battery tab's rows, keyed by their group, re-rank at every reading).
+
+## Drawing (ui/gfx/)
+
+| Transition | Test |
+|---|---|
+| a character waiting for its font (the finder thread) keeps the built-in advance for fitting, measuring and drawing, so a text cut to fit stays within its room, at the start or the end, before and after the answer | `fitting_keeps_waiting_characters_within_the_available_width`, `a_character_waiting_for_its_font_keeps_its_room`, `a_font_found_on_the_finder_thread_draws_the_character_once_back` |
+| the glyph cache keeps the 64 sizes last used, the icon cache 64 sides; a size used is refreshed without allocating; a 65th drops all of the oldest size's rasters, and a later request makes the same pixels again | `historical_resize_sizes_are_bounded_without_changing_rasters`, `historical_icon_sizes_are_bounded_and_evicted_masks_reproduce_exactly`; images `eviction_drops_the_least_recently_drawn_and_keeps_both_screens_latest` |
 
 ## Settings (settings/)
 
@@ -705,6 +751,7 @@ once `Visible` says how many rows fit, unless the list was scrolled meanwhile
 | installed graphics unknown/known --startup or driver tile tap/long press [ReadInstalled]--> refreshed versions, through `Reading::Installed`; missing, appearing, removed or repeated readings never rewrite the saved choice or apply a running program's settings. Newest is dimmed when missing, still tappable. Its version requires the package record, library and manifest; system version prefers vulkan-freedreno over mesa | `the_vulkan_choice_is_kept_when_its_package_appears_and_vanishes`; system `package_versions_are_exact_and_presence_requires_both_manifest_and_library`; snapshots `settings-vulkan-{missing,installed}.png`; randomized events and no-alloc test |
 | Newest launch --package removed or files missing--> warn and use loader defaults; resolve on the launch thread or in the one-shot Steam hook, never the compositor. Settings, controller ignore, user Env, private compositor displays follow in that order | system `package_removal_between_launches_uses_system_without_hiding_user_overrides`, `the_launch_thread_keeps_setting_then_user_then_display_order`; binary integration `launch_env_resolves_the_driver_and_preserves_the_env_override_under_a_session_lock`. Adreno execution and the path through pressure-vessel need the device (steam-android-plan 2.6) |
 | dimming: a `through_launch` tile and the Env tile are dimmed "no effect" where the launch hands its app over (`Panel::handed_over`: Android). x86 emulation is otherwise lit everywhere: whether an entry runs x86 code isn't known (a Steam game may be native arm64, a Heroic or Lutris game runs through Wine, a runner's command may be an x86 program), and its variable does nothing where FEX doesn't run | views `face`; status `an_app_handed_over_is_known_by_its_app_id_and_edited_without_what_it_cant_get` |
+| shared profiles are saved under `named-` file names, apart from the entries' and runners' own; a save naming one file twice fails before any saved data is replaced | system `named_entry_and_runner_profiles_survive_save_and_rename_for_every_kind`, `duplicate_profile_files_fail_before_replacing_saved_data` |
 
 Records kept by entry id are never pruned: an entry's overrides and Env text (`Settings`), its own
 keymap, curve and lights (`Profiles`, by owner), and every controller seen (by spec). An entry that
@@ -790,6 +837,13 @@ sent dimmed. Tests:
   `a_rows_menu_closes_when_the_tab_is_left_or_the_row_goes`.
 - Time pages: regions, a region's zones, set, back; reset on leaving the tab (`leaving_the_tab_resets_it_to_its_main_page`); NTP and stepping the
   clock by hand. Tests: `regions_then_their_zones_…`, `the_clock_set_by_the_network_or_by_hand…`.
+
+- GPU load: the kernel's direct busy reading whenever there is one, which never walks processes and
+  drops the fallback's baseline; without it, the clients' DRM times, sampled only while the metrics
+  show, a first interval seeded at start where needed; a lost source, missing or reset counters, no time
+  elapsed or clients gone give no load until an interval is valid. Readings every second while shown,
+  every five while hidden, the graphs' history kept. Tests: `a_direct_gpu_reading_never_scans_processes_and_clears_the_fallback`,
+  `gpu_fallback_handles_missing_reset_and_repeated_samples`.
 
 ## Notifications (notifications/, apply/notifying.rs)
 
@@ -957,6 +1011,13 @@ Tests: `a_games_client_is_answered_as_the_games_once_identified`,
 `a_window_opens_once_its_process_is_identified`, `a_menu_doesnt_wait_for_its_process_and_a_promoted_one_does`.
 A pid reused while its read is under way gets the old process's answer; that needs the pid to wrap within one
 read, and is accepted.
+
+An inherited scope (from before a restart) is taken back as an entry only when a window's or a tray
+icon's key matches the scope's key; an app id changed alone never gives the scope to another entry. Until
+then its windows keep their unit's group and stay usable, selecting a frozen one thaws its scope even
+without an entry, and a freezer thread started again replays the scope's state once. Tests: state
+`recovery_does_not_assign_a_scopes_control_key_to_a_changed_app_identity`, apply_alloc
+`an_unidentified_scope_is_checked_without_allocating_on_later_events`, the randomized test (seed 39 found it).
 
 ### Opening focus (session/mod.rs)
 
@@ -1233,6 +1294,11 @@ physical Shift kept, F12 delivered), `a_text_field_opens_the_keyboard_and_takes_
 given back), `home_takes_the_keyboard_from_a_text_field_and_closes_the_keyboard` (silence after Home). `tests/nested-compositor.py`: an X11 client receives whole strokes, a no-input
 client none; the VM suite's `keyboard_points` types into foot.
 
+The desktop's Enter goes the way the pad's A does, after the targets and modes are brought up to date,
+each keeping its own source: a release ends its own source's press even if a mode came or went meanwhile
+(views `enter_refreshes_targets_when_a_menu_opens_before_the_next_frame`,
+`enter_releases_its_original_press_when_a_mode_appears`).
+
 ### Idle and inhibitors (idle.rs)
 
 The state: the last input's time, whether an inhibitor is in effect, and the last report. An
@@ -1321,6 +1387,13 @@ hotspot, an old serial ignored, touch hiding it, Home, the cursor surface destro
 damage at its old and new places, the themed cursor after leaving a client, hidden after 3 s and shown
 again by motion.
 
+Its images are prepared before a backend starts: every named shape read once at its nearest requested
+size, a missing one replaced by the built-in image; drawing uses only prepared images and their uploaded
+textures, never a theme lookup, and an unexpected missing shape uses a logged in-memory fallback
+(`uncommon_shapes_are_prepared_before_drawing_and_keep_only_the_requested_size`,
+`missing_prepared_images_have_a_builtin_fallback_without_any_file_lookup`; the nested test checks the
+cursor's drawing, damage and hiding).
+
 ### Xdg activation (activation.rs)
 
 A token is tracked only if it carries a serial of this seat no older than the keyboard's last enter, the
@@ -1377,6 +1450,12 @@ Tests (tests/pointer_tests.rs; each checks the exact sequence of host modes):
 `opening_a_menu_releases_the_pointer_capture_and_takes_the_keyboard` (a menu releases a lock). `tests/nested-compositor.py` checks that the nested host offers
 no capture. A real mouse's relative motion: on the device.
 
+- The free pointer's absolute position is clipped to the scene both screens make, adjacent with no gap
+  at their seam, on resize too; relative motion goes to the client before the clipping, so a game gets
+  the whole accelerated and raw deltas; a lock keeps its position, a confinement its region. Tests:
+  `the_free_cursor_stays_in_the_scene_and_crosses_between_both_screens`,
+  `clipping_the_cursor_does_not_clip_relative_motion_sent_to_a_client`.
+
 ## Frames, buffers, screenshots and the clipboard (compositor/)
 
 Two hosts show the scene: the DRM host (`drm/`) on the device's screens, and the nested host
@@ -1412,6 +1491,7 @@ the compositor paces (`a_windows_fps_cap_is_the_one_set_for_its_program`,
 | timed commit (`wp_commit_timing`) | its time no later than when the frame being composed is shown | applied | | the barrier test |
 | timed commit | later | held | DRM wakes a refresh before it, or at the next frame if within a refresh | same; `a_timed_commit_wakes_the_loop_a_refresh_before_it_or_at_the_next_frame` |
 | timed commit of a capped window | any time | applied | the cap paces it instead | `a_capped_windows_timed_commit_goes_ahead_at_once` |
+| capped, callbacks pending on its root, its children or both | one due turn | | one cap interval taken per callback turn for the whole window; every waiting surface released together | `callbacks_anywhere_in_the_window_share_its_cap` |
 
 A frame is shown, on DRM, at the next refresh after the last flip of the screen pacing it, a refresh later
 if a frame is already queued (`a_frame_is_shown_at_the_next_refresh_after_the_last_flip`); nested, a host
@@ -1440,12 +1520,44 @@ composes for its part's changes, for the cursor's on its part unless the cursor 
 and when what is on its planes changed since it last composed; so a game drawing on the top screen leaves
 the second screen idle, answering its own windows' commits (`a_commit_or_the_cursor_changes_only_the_part_it_is_drawn_on`).
 
-Each DRM screen, each turn of the loop (`drm/mod.rs` `step`, `drm/turn.rs` `screen_turn`):
+### A DRM screen's frame (drm/mod.rs `step`, drm/turn.rs, frame_schedule.rs, draw_fence.rs, frame_timing.rs)
+
+The loop sleeps until the earliest of: the UI's own deadline (`Core::deadline`), the cursor's hiding, frame callbacks held under a cap (`pacing.frames_due`), the X11
+supervisor's (a restart's wait, a reply owed), and what `step` returns. Each turn, `step` does, in this
+order (the order is the behaviour; `drm/turns_tests.rs` drives a screen through it with a fake presenter):
+
+1. The seat away (another VT): only the clients' frame work and imports; no deadline.
+2. Each screen's completed GPU drawings observed into its schedule (`Schedule::observe`); no hardware
+   clock or no observation means the schedule is reset (composed at once, the full budget).
+3. Which screen paces which part (`pacing_decide`), the screens' power and the top panel's refresh
+   (`outputs`).
+4. Timed commits (`wp_commit_timing`) let through for each pacing screen's next frame; the loop wakes a
+   refresh before the next one held, or at the next frame if within a refresh (`timed_wake`).
+5. The server's frame work, pointer capture and dmabuf imports, every turn.
+6. Overlays and the UI recorded; a state change seen while recording wakes the loop at once; what goes
+   on the planes and what each screen shows decided (`layers_decide`, `shows_decide`).
+7. What changed, per part (`Visuals::observe`): a screen is to compose for its part's changes, the
+   cursor's unless the cursor has a plane, and what went on or off its planes.
+8. Each screen free and composed for is composed when its composition's deadline comes
+   (`Screen::composition_due`, the table below), at once for a screenshot or without a hardware clock;
+   the deadline otherwise wakes the loop.
+9. The histogram's sample and readback, a screenshot drawn and read once the GPU is done
+   (`capture_due`), and buffers unused for a while dropped (`Trims`), each with its own wake.
+10. A frame without its flip for 1 s is lost: the screen's buffers reset, drawn again (`flip_due`).
+11. Each screen's turn: a cursor move alone while a frame is in flight goes at once (`move_now`); then
+    `screen_turn`: held callbacks sent when due, and what it commits (`Does`): the frame drawn, its own
+    buffer, a window's buffer, its planes again, or an idle answer.
+12. Commits let through after composing (a FIFO barrier the cap let go) are composed at once
+    (`after_compose`).
+
+Each DRM screen's states, turn by turn (`drm/turn.rs` `screen_turn` decides what it commits, as one pure value, `Does`):
 
     pending --any turn--> pending [no callbacks, frame or wake]                     a_queued_frame_waits_for_its_flip_without_turning_the_loop
     pending --flip--> idle [frame shown, feedback, frame callbacks]                 on the device; the VM suite draws through it
-    pending --no flip for 1 s--> dirty [buffers reset, warn]                        a_frame_without_its_flip_for_a_second_is_lost
-    idle --its part of the scene changed, screen on--> pending [presented, commits answered]   a_changed_screen_shows_a_frame_if_on_and_an_idle_one_answers_at_most_once_a_refresh
+    pending --no flip for 1 s--> dirty [buffers reset, warn]                        no unit test (the presenter's `flip_due`); on the device
+    idle --its part of the scene changed, screen on--> composition waiting [planned: see the deadlines below]   frame_schedule `cold_drawings_start_immediately_then_leave_measured_room_before_the_target`
+    composition waiting --its deadline--> drawn [composed; nothing changed: no frame, the plan dropped]   same
+    drawn --screen_turn--> pending [the frame committed with its in-fence, commits answered]   a_changed_screen_shows_a_frame_if_on_and_an_idle_one_answers_at_most_once_a_refresh
     idle --commits unanswered, a refresh since the last answer--> idle [frame callbacks]       same
     drawing --the GPU done--> pending [the frame committed]                         a_screen_commits_what_it_shows_and_its_planes_whenever_free
     free, showing its own buffers --any turn--> pending if its view changed [its own buffer committed]   same
@@ -1457,6 +1569,50 @@ Each DRM screen, each turn of the loop (`drm/mod.rs` `step`, `drm/turn.rs` `scre
     both off --turn--> both off [no compose unless a screenshot waits; dmabuf imports still run]   no unit test
     following --its part changed, free--> pending [the frame shown; no feedback, no callbacks]   a_screen_that_doesnt_pace_only_shows_frames
     any --the seat resumed (back from another VT)--> dirty [pending cleared, buffers reset, the whole scene drawn]   on the device
+
+Composition deadlines (`frame_schedule::Schedule`, one per screen, learning independently):
+
+| From | Event / condition | To | Effects | Test |
+|---|---|---|---|---|
+| any | fewer than four GPU observations, or no hardware clock | | composed at once, the full refresh as its budget | frame_schedule `cold_drawings_start_immediately_then_leave_measured_room_before_the_target` |
+| learned | its part changed | composition waiting | planned for the predicted next flip less the budget: the most of its last 32 drawings, plus a quarter (at least 1/64 of a refresh) and the wakeup lateness seen, at most a refresh | same |
+| composition waiting | more damage | composition waiting | the same target, the freshest content when it is drawn; a larger budget may bring the wake forward, never later | `an_increased_cost_advances_an_armed_wakeup_without_postponing_its_target` |
+| any | a slow drawing | | the budget raised at once; it falls only once the sample ages out of the window | `a_slow_drawing_increases_the_budget_at_once_and_ages_out_only_after_a_window` |
+| pending | a flip more than half a refresh after the target | | a miss: back to the full-refresh warm-up, lateness headroom raised; a late arrival is drawn at once, without skipping a refresh | `wakeup_delay_and_missed_flips_make_future_drawings_more_conservative` |
+| composition waiting | the screen commits anything else for that flip (its own buffer, a window's) | idle | the plan dropped, made again for the flip after once free, so its frame on time is no miss | `a_plan_superseded_by_another_commit_plans_for_the_next_flip_and_is_no_miss`; drm `a_commit_of_anything_but_the_composed_frame_supersedes_the_composition_planned` |
+| composition waiting | its planes changed | composition waiting | nothing: the composition's commit carries them before the same flip | `a_screen_commits_what_it_shows_and_its_planes_whenever_free`; turns_tests `the_cursor_moving_while_a_composition_waits_goes_with_it_and_the_game_is_shown` |
+| any | mode change, power reset, lost flip, resume, empty damage, cancellation | idle | learning and phase reset, or the plan dropped with no submission; no pending drawing means no deadline | `outputs_are_independent_and_cancellation_leaves_no_deadline`, `randomized_turns_keep_budgets_bounded_and_reset_and_cancel_drop_pending_work` (10,000 turns) |
+| any | the VM's virtual DRM, composed as on the device | | real flips, completion samples, learned budgets and no timer while idle | VM `frame_schedule`; `screen_changes`, `external_display` (reset and mirroring); direct scanout: VM `scanout` |
+
+Direct scanout and the screens' own buffers bypass the schedule; screenshots draw at once. Imports,
+input and the state go on while a drawing waits, and its frame callbacks wait with it. Physical Adreno
+timing and input-to-photon gains are device measurements.
+
+GPU drawings and their timing:
+
+| From | Event / condition | To | Effects | Test |
+|---|---|---|---|---|
+| drawn | a native fence exported | queued | the frame queued to KMS with that fence, no wait | draw_fence `native_fences_are_handed_to_kms_without_waiting_for_readiness` |
+| drawn | no native fence, not ready | pending drawing | tried again a quarter refresh later (at least 1 ms), no blocking wait, redraw or idle polling; another screen goes on | `an_unfinished_frame_never_waits_or_prevents_another_screen_progressing` |
+| pending drawing | ready | queued | | same |
+| pending drawing | the screen's presentation, mode or power changes | discarded | | `abandoning_a_frame_clears_its_wait_without_querying_or_waiting` |
+| queued | the KMS submission succeeds | | the drawing's captured commit counter recorded as answered (later commits are not acknowledged by it); a failed submission restores its feedback and leaves the screen dirty | drm `a_failed_commits_feedback_goes_to_the_frame_drawn_again`; VM `screen_changes`, `pad_windows` |
+| a drawing | submitted | observed | the CPU time recorded, the exported fence armed on the screen's one reusable fence source | frame_timing `a_reusable_fence_source_wakes_once_per_drawing_and_never_waits` |
+| observed | the fence readable (or already complete) | | one completion sample, queueing and wakeup delay included, the fd unregistered; cancelled by a reset, a late completion yields nothing; no fence: GPU timing unavailable, never a CPU estimate | `completion_includes_queue_and_wakeup_delay_and_is_consumed_once` |
+
+`drm frame timing` and `nested frame timing` debug lines give CPU microseconds and the elapsed time to
+the GPU's completion as observed (a conservative duration, not the GPU's execution time); `drm flip
+timing` gives each flip's screen, whether composed, its time and whether the hardware clock gave it.
+None of it schedules a wake.
+
+### The nested host's frame (nested.rs, drawing_demand.rs)
+
+| From | Event / condition | To | Effects | Test |
+|---|---|---|---|---|
+| idle | the UI's recording, a client's commit, placement, the cursor or a colour changed | drawing pending | drawn at the host's next refresh; changes before it share one drawing; a cursor image request with another hotspot counts | drawing_demand `idle_never_requests_a_frame_and_changes_coalesce_until_submission`, `visual_facts_change_once_and_repeated_turns_stay_idle`; the nested test's idle count |
+| drawing pending | submitted | waiting for the host's frame callback | no further frame asked by itself; caps, timed commits, cursor animation, histogram readbacks and resource expiry keep their own deadlines; imports and window facts are handled without drawing | same |
+| waiting for the host | more damage or exposure | waiting | the damage kept, no EGL submission | `tests/nested-compositor.py` (a hidden workspace: submissions stop, clipboard round trips still answered) |
+| waiting for the host | its frame callback | idle | the damage drawn at the next refresh allowed; the host's event queue wakes the loop through its waker; an obscured host may withhold callbacks for good without stopping clients, timers or the watchdog | same (exposure resumes drawing); KWin by hand past its 30 s watchdog |
 
 The frame rate: at each turn of the server, for the mapped window in front on the top screen, the frames
 shown in the last second and their mean spacing (with two or more) go to the state as `Reading::Frames`
@@ -1619,6 +1775,11 @@ below and back, ended with exit 0 by `clamshell ctl window close` (Home+B), foot
 `vkcube --wsi wayland`: changing frames on top, still presenting with SMAA on (its edges blended), below
 after the resize, and back on top, and exit 0 on close. Home, the clipboard and the window event ring are
 checked after both. Screenshots and the clients' `WAYLAND_DEBUG` logs stay in the directory it prints.
+
+The harness's waits give each screenshot or control probe only what is left of their deadline; a probe
+past it is killed and reaped, and the error names the wait, so the session is torn down; a predicate true
+only after the deadline counts as failed. Outside waits, a probe has 10 s. `tests/nested_env_test.py`
+stalls each kind of probe and runs at every commit; CI's 15-minute limit is the last stop.
 
 ## X11 (compositor/x11/)
 
@@ -1947,6 +2108,53 @@ none.
 
 The Fan tile is dimmed when the profile has no fan (GAP).
 
+## Session ownership (clamshell/src/instance.rs)
+
+Before loading saved state, opening the control pipe or starting threads, the session takes an exclusive,
+non-blocking lock on `session.lock` in ClamShell's runtime folder (`Paths::own_runtime`,
+`$XDG_RUNTIME_DIR/clamshell`), held until it exits and closed on exec. One-shot commands (`ctl`,
+`--launch-env`, ...) don't take it. The file is never removed: one inode, so two processes can't lock
+different files at the same path.
+
+| From | Event / condition | To | Effects | Test |
+|---|---|---|---|---|
+| unowned | a session starts | owned | the state loaded, the compositor started | `another_session_is_refused_until_the_owner_exits` |
+| owned | a second session, nested or DRM | owned | the second says so and exits; the first goes on | same; `tests/nested-compositor.py` (both kinds refused, the first still usable) |
+| owned | the owner exits or crashes | unowned | the kernel releases the lock | same |
+| any | another runtime folder | | independent sessions (the nested test's, the VM's) | `separate_runtime_directories_are_independent` |
+| unowned | no runtime folder, or one that can't be used | unowned | an error, and exit: no other folder | `missing_or_unusable_runtime_is_an_error_without_a_fallback` |
+
+Two sessions reading one control pipe could have shared its commands between two views; the lock
+prevents the second reader.
+
+## The device's packages (packages/; tools/tests/package-recovery.py)
+
+The boot files (thor-boot):
+
+| From | Event / condition | To | Effects | Test |
+|---|---|---|---|---|
+| slot A selected | an update | slot B prepared | the inactive slot filled; the selected one never written meanwhile; a slot being filled is named by no entry (the previous kernel's entry removed and synced first) | `BootRecovery` |
+| B prepared | complete and synced (the slot's, KERNEL's and EFI's renames synced to the card before the entry's: FAT orders no metadata writes) | B selected | the entry renamed: the commit point; the roles swap | `BootRecovery.test_the_files_the_entry_names_reach_the_card_before_its_rename` |
+| any | a failure before the entry's rename | A selected | the slot left intact; a retry replaces the inactive slot | `BootRecovery` (failures injected before and after each rename, the real boot-image packer, repeated alternation) |
+| B selected | the slot left records its kernel | B selected | `thor-prev.conf` names it ("…, previous kernel"), `/var/lib/thor/boot-releases` both releases | `test_the_slot_left_is_a_second_entry_and_its_kernel_is_kept`, `test_a_slot_that_records_no_kernel_makes_no_previous_entry`, `test_a_failed_update_leaves_no_entry_naming_the_slot_it_was_filling` |
+| any | a second thor-boot, or thor-firstboot editing the entry | waits | `/run/thor-boot.lock` | `test_a_second_run_waits_for_the_first`, `SwapRecovery.test_the_entry_is_edited_under_thor_boots_lock` |
+| ABL path | an update | | one complete `/KERNEL`, the newest kernel only | `BootRecovery` |
+
+A real power cut on FAT, and booting the previous entry, are device checks.
+
+Kernel modules (thor-modules): before an update the running and installed kernels' trees are copied
+(`keep`); after it each copy goes back where the update removed its tree, else is dropped (`restore`,
+thor-boot's first step); at boot, copies left are restored, then each tree neither the running kernel's
+nor owned by a package is removed (`clean`), and any other failure of pacman removes nothing and fails
+the unit. Test: `Modules` (`test_clean_keeps_the_card_slots_kernels` among them).
+
+| From | Event / condition | To | Effects | Test |
+|---|---|---|---|---|
+| first boot, no swap | enough free space | swap made | the file valid, fstab reconciled atomically, activated (not twice), resume configured, marked done | `SwapRecovery` |
+| any | activation, the resume offset or the boot's publication fails | not done | the marker left out; a retry does what is unfinished | same |
+| first boot | not enough space | done | no swap on disk | same |
+| sensor registry missing or empty | generated and validated in a temporary folder, synced, renamed | published | a failure leaves no partial registry and can retry; a complete one keeps its learned data; unknown non-empty data is refused and kept | `RegistryRecovery` |
+
 ## Interactions
 
 | From | Route | To | Test |
@@ -2074,267 +2282,3 @@ event's number, its effects and the 20 events before it. 3000 seeds × 5000 even
 of S50 and S51 (history notes), and again with launcher marks, launcher dialogs and the focus and stack
 invariants, after fixing the keyboard left on a window displaced from below, a found program's Move
 taking another program's dialog, and a reader's restart losing the off of a tab left in the same event.
-
-### Session ownership
-
-Before loading saved state, changing the control pipe or starting threads, the session acquires an
-exclusive non-blocking file lock at `$XDG_RUNTIME_DIR/clamshell/session.lock`. The descriptor lives
-until the session exits and is closed on exec. One-shot commands, including `ctl` and `--launch-env`,
-do not take it.
-
-- `unowned --session starts--> owned [load state and start the compositor]`.
-- `owned --second nested or DRM session starts--> owned [second process logs a clear error and exits]`.
-- `owned --owner exits or crashes--> unowned [kernel releases the lock]`.
-- `unowned --missing or unusable runtime--> unowned [log error and exit; no alternate directory]`.
-
-The file is never unlinked: a persistent inode prevents two processes from locking different files at
-the same path. Unit tests cover contention, release, independent runtime directories and failures.
-The nested real-client test rejects both kinds of duplicate session while the first remains usable;
-its private runtime and the VM's runtime still permit independent sessions.
-
-The Library's collection taps use the same transition from Apps, TV and the other collections. The
-state test `tapping_a_collection_from_apps_or_tv_selects_the_same_tab` pins collection 1, focus and
-no immediate effects from both reported starting tabs, including a repeated tap. The control parser
-already pins `tap collection 1` to that target. The reported difference is not reproduced in the
-state; two sessions reading the same control pipe could divide commands between different views.
-Session ownership now prevents that second reader.
-
-## Persistent entry identities
-
-The full entry id produces a key for process-control slices and settings files: a readable slug of its last part (at most 16
-characters), `_`, and 64 bits of FNV-1a of the whole id in hex.
-Different ids supplying the same key are rejected from every library index and reported as problems;
-rebuilding the index keeps that rejection. This prevents a key conflict from selecting or launching a
-peer entry. `keys_use_the_complete_id_and_remain_bounded` and
-`conflicting_persistent_keys_are_rejected_before_any_lookup` cover key derivation and rejection;
-`entries_with_the_old_hash_collision_have_independent_control_slices` pins launch/ForceKill isolation,
-and system `settings_with_the_old_entry_key_collision_survive_independently` pins persistence.
-
-Shared profiles persist under `named-` filenames, independently of the entry/runner filename namespaces.
-A save with duplicate output filenames fails before changing any saved data. The system Store tests
-`named_entry_and_runner_profiles_survive_save_and_rename_for_every_kind` and
-`duplicate_profile_files_fail_before_replacing_saved_data` cover keymaps, curves and lights, including
-renames and invalid duplicate input.
-
-## Boot-file publication
-
-Selected slot A --update--> prepare slot B --complete and synced--> publish B and atomically select B;
-then the roles reverse. Any failure before the entry switch leaves the selected EFI slot intact; a
-failure after it leaves the new complete slot selected. ABL publishes one complete KERNEL independently.
-The inactive slot is replaceable on retry; the selected slot is never overwritten during preparation.
-The slot's, KERNEL's and EFI's renames are synced to the card before the entry's rename (FAT orders no
-metadata writes), so the entry never names a slot the card lacks.
-One run at a time: a second thor-boot, or thor-firstboot's edit of the entry, waits for
-`/run/thor-boot.lock`.
-
-The previous kernel: each slot records its kernel's release (`release`). After the entry's rename, the
-slot left becomes a second entry, `thor-prev.conf` ("…, previous kernel"), if it records one, and
-`/var/lib/thor/boot-releases` names both releases, whose modules `thor-modules clean` keeps. Before the
-next update fills that slot, its entry is removed and synced, so no entry ever names a slot being filled.
-A slot that records no kernel (one made before, or the image's empty first one) makes no second entry.
-The ABL path has only the newest kernel (/KERNEL). `BootRecovery` pins these; booting the previous entry
-is a device check.
-`tools/tests/package-recovery.py` injects failure before/after each publication rename, validates EFI
-and ABL coherence with the real boot-image packer, and checks retries and repeated slot alternation.
-Physical power interruption on FAT remains a device check.
-
-Kernel modules across an update: before it, the running and installed kernels' folders are copied
-(`keep`); after it, each copy goes back where the update removed its folder, else is dropped
-(`restore`, thor-boot's first step); at boot, copies left over are restored, then each folder that is
-not the running kernel's and that pacman says no package owns is removed (`clean`). Any other pacman
-failure removes nothing and fails the unit. The `Modules` package fixtures pin these outcomes.
-
-First boot: missing swap --enough free space--> create valid swap --file exists, including retry-->
-atomically reconcile fstab --not active--> activate --valid resume offset--> configure resume and mark
-complete. An activation/offset/boot-publication failure leaves the completion marker absent; retries
-repeat the unfinished work. Already active swap is not activated twice. Insufficient space intentionally
-completes without disk swap. `SwapRecovery` in the package fixtures covers these paths and repetition.
-
-Sensor registry: missing/empty --generate and validate in a temporary directory--> complete staged
-registry --sync and atomic rename--> published. Generation/publication failure leaves no partial
-published registry and can retry. A complete existing registry keeps learned data without regeneration;
-nonempty unknown data is refused and preserved. `RegistryRecovery` package fixtures pin these outcomes.
-
-## Pending GPU drawings
-
-A composed buffer --native fence export--> queued to KMS with that fence; --no native fence and not
-ready--> pending drawing. Pending --zero-time readiness query false--> same drawing, retry at a quarter
-refresh (at least 1 ms), with no blocking wait, redraw or idle polling. Pending --ready--> queued;
---screen presentation, mode or power changes--> discarded. Drawing captures its surfaces, feedback and
-client-commit counter; later commits are not acknowledged by that older drawing. Only successful KMS
-submission records the captured counter as answered. An unsuccessful submission discards its feedback
-and leaves the screen dirty for retry. `draw_fence` tests check native/failed exports, independent fences,
-readiness and cancellation with no wait calls. DRM VM `ui_scanout`, `screen_changes`, `external_display`
-and `pad_windows` check the real presenter and input (27/27); a real stalled GPU remains a device check.
-
-Cursor preparation: before a backend starts, read every supported named shape and retain its nearest
-requested size; missing images become the built-in fallback. Drawing consumes prepared images, then
-reuses uploaded textures; it never performs theme lookup. Even an unexpected missing prepared shape
-uses a logged in-memory fallback. Cursor tests cover uncommon shapes, size selection and missing images;
-the nested compositor checks cursor rendering, damage and hiding.
-
-At session preparation, persisted stick calibrations and controller players are read once. State and
-the pad worker receive that same snapshot; missing storage supplies defaults to both. FEX presets are
-written before entering either backend. The backend startup callback only sends prepared input data,
-with no persisted-input reads or preset writes. Workspace tests and the nested startup check cover
-this boundary; later input changes and worker restarts follow the existing event/effect routes.
-
-A window consumes at most one cap interval per callback turn, shared by its root and children.
-`callbacks_anywhere_in_the_window_share_its_cap` checks child-only, root-only, combined and absent
-callbacks: held callbacks remain pending, and one due turn releases all waiting surfaces.
-
-Metadata worker reservations: queued --reserve--> starting; starting --spawn failure--> queued
-[release only that reservation, leave all jobs waiting; Fetching(false) if no workers remain]. A later
-fetch request reserves the missing workers again. With another worker running, it may take the failed
-starter's share without clearing busy early. `failed_worker_starts_leave_jobs_available_for_retry` and
-`a_failed_start_does_not_take_work_from_a_running_worker` check job order, exactly-once completion,
-reservation counts and the final idle state without starting network requests.
-
-The free pointer's absolute position is clipped to the rectangular scene occupied by both outputs,
-including on resize. The outputs are adjacent, with no gap at their seam. Relative motion is sent to
-the client before clipping the cursor, so games still receive the complete accelerated and raw deltas.
-Pointer lock retains its position and confinement continues to restrict it to the permitted region.
-`the_free_cursor_stays_in_the_scene_and_crosses_between_both_screens` checks edges, seam and resize;
-`clipping_the_cursor_does_not_clip_relative_motion_sent_to_a_client` checks protocol deltas, alongside
-the existing lock/confinement protocol fixtures.
-
-Desktop Enter follows pad A's routing after refreshing stale targets and modes, but each retains its
-own input source. A release ends its source's original press even if a mode has appeared or vanished.
-`enter_refreshes_targets_when_a_menu_opens_before_the_next_frame` uses the real views to check that
-opening the FPS menu prevents activation of the hidden tile; ordinary Enter still changes its value.
-`enter_releases_its_original_press_when_a_mode_appears` checks release while a dock move takes input,
-then Enter ending that move without leaving a press held.
-
-A glyph awaiting fallback discovery reserves the same built-in advance for fitting, measurement and
-drawing. `fitting_keeps_waiting_characters_within_the_available_width` checks Keep::Start and Keep::End
-at two scales before discovery answers and after an answer without a font. The selected substring and
-recorded width agree and stay within the available width; existing finder tests cover a font arriving.
-
-Bottom placement history retains the exact rule that moved each live window, alongside the existing
-record that automatic placement has considered it. A sibling skipped at rule creation has no applied
-rule. Title/app-ID changes and displacement retain this history; moving a displaced window down again
-uses that same rule while it remains saved. If another window has forgotten a shared rule, a new
-manual move remembers the current facts again. WindowUp removes its recorded rule and saves the remaining list, leaving sibling
-rules intact; a repeated return does nothing. Closing a window drops its history. Manual/automatic
-return tests in bottom/screen cover identity changes and saved rule lists. Random event sequences
-include title and identity changes and require distinct live window IDs throughout placement history.
-
-The one-shot Steam environment read accepts a missing settings folder as defaults. Any failure to
-list an existing folder, read an existing JSON file or parse it ends the command with an error and no
-environment output. Steam's hook then reports LaunchEnvFailed and logs the failure while starting the
-game with its original environment. Session startup still logs and skips individual unreadable files.
-`launch_env_reports_broken_existing_settings_but_accepts_missing_settings` runs the actual command;
-`broken_settings_in_the_real_command_reach_the_hooks_notice_branch` checks the full hook failure path.
-
-The Android Wayland relay distinguishes incomplete messages from invalid headers. A declared size
-below eight bytes or not divisible by four ends that relay, logs a warning, closes both socket ends
-and releases received file descriptors; the reverse relay ends with the closed socket. Pending input
-is bounded to one maximum legal message (65,532 bytes). Wire parser tests cover fragmented headers and
-bodies and malformed sizes after a valid prefix. Socket-pair tests check closure and descriptor cleanup
-and pass a maximum-sized valid message through the bounded buffer.
-
-Nested test waits give each screenshot/control subprocess their remaining deadline. A timeout kills
-and reaps that subprocess and raises an error naming the active wait, allowing the enclosing session
-to tear down. Nested waits cannot extend their parent's deadline; a predicate returning success after
-the deadline is rejected. Outside waits, probes have a ten-second limit. `nested_env_test.py` stalls
-the image, screenshot and control probes, checks subprocess cleanup and late success, and runs in the
-normal check script. CI's 15-minute job timeout is a final backstop.
-
-The drawing cache keeps 64 recent exact glyph pixel sizes and, independently, 64 icon sides. Using a
-size refreshes its recency without allocating; adding a 65th size drops all rasters at the oldest size.
-Eviction changes no metrics, recordings or pixels: a later request rasterises the same font or icon
-again. Resize-workload tests bound retained entries, preserve a frequently used glyph size and compare
-recreated rasters byte for byte. Existing snapshots and warm-allocation tests check the actual views.
-
-An inherited scope is recovered as an entry only when a window or tray identity's canonical key matches
-the scope key. Changed app IDs alone never assign that control slice to another entry. Until identified,
-its windows retain their unit group and remain usable; selecting an inherited frozen window thaws its
-scope even without an entry, and a freezer worker restart replays that scope's current state once.
-A later matching identity can recover the scope normally. Scope recovery
-checks all candidate windows/icons and computes candidate keys without allocating on ordinary events.
-The identity/recovery regression, the unresolved-scope allocation test and random seed 39 cover this.
-
-Metrics GPU load uses the kernel's direct busy reading whenever available, without walking process
-fdinfo. Only a missing busy reading samples per-client DRM times. The first fallback interval is seeded
-at startup on machines that need it; losing a direct source, missing counters, zero elapsed time or
-clients exiting reports no fallback load until a valid interval exists. A direct reading clears the
-fallback baseline, so later comparisons never span a source change. Metrics tests assert direct reads
-never invoke the scan and cover source loss, missing/reset/repeated counters and bounded loads. Polling
-cadences stay one second when shown and five seconds when hidden, retaining graph history.
-
-## Nested drawing demand
-
-Idle --changed UI recording, client commit, placement, cursor or colour--> pending drawing;
-pending --next host refresh deadline--> submitted --no further change--> idle. Repeated changes
-before that deadline share one drawing. Host exposure also draws. A completed drawing never requests
-another frame by itself. Client frame caps, timed commits, cursor animation and hiding, histogram
-readbacks and resource expiry keep their own deadlines; imports and window facts are handled even
-without drawing. Displayed UI and scene textures stay resident while unused resources still expire.
-Cursor image requests invalidate the visual facts even when they reuse the same cursor surface with
-a different hotspot. No policy or placement is recomputed outside the existing scene model.
-
-The nested real-client test checks idle submission counts, waking on UI input and client commits,
-then the existing client, colour, pointer and clipboard cases. The redraw demand test checks repeated
-changes and returning to idle; cursor tests pin animation boundaries and timer-free static shapes.
-
-Nested host pacing: ready --submit--> awaiting the host's surface frame callback;
-awaiting --more damage or exposure--> awaiting with damage retained, no EGL submission;
-awaiting --callback--> ready, pending damage drawn at the next allowed refresh. An obscured
-host can withhold callbacks indefinitely without stopping client requests, timers or the watchdog.
-Its separate event queue registers a waker that pings the outer loop when winit reads its events.
-The nested real-client test switches host workspaces, checks clipboard round trips while hidden,
-checks that submissions stop, then checks that exposure resumes drawing. The desktop KWin host
-is also checked for longer than its 30-second watchdog after starting and while obscured.
-
-## Drawing time observations
-
-Each output owns one reusable GPU-fence source. Idle --changed drawing--> CPU start recorded;
---submission--> CPU duration recorded and the exported fence armed; --fence readable-->
-completion sample, fd unregistered. A fence already complete produces the sample immediately.
-No fence wait or periodic readiness polling is used. Reset/removal cancels the observation and
-unregisters its fd; late completion cannot produce a sample for a cancelled drawing. An unavailable
-fence/source is logged and leaves GPU timing unavailable, never replaced by a CPU-only estimate.
-`frame_timing` tests pin one-shot completion, source reuse and cancellation, including zero wait calls.
-The real-client test checks timing samples from actual drawings.
-
-Debug logs `nested frame timing` and `drm frame timing` report CPU microseconds and elapsed
-microseconds from drawing start until GPU completion is observed. The latter includes GPU queueing
-and event-loop wakeup delay; it is a conservative observed duration, not isolated GPU execution time.
-DRM flip logs separately report the output, whether its frame was composed, timestamp and whether
-the hardware clock supplied it. Instrumentation itself schedules no idle wakeups.
-
-## Adaptive composition deadlines
-
-An output starts with a full-refresh drawing budget. Four completed GPU observations allow a
-shorter budget: the maximum of its last 32 complete drawing durations, plus 25% headroom (at least
-1/64 of its refresh interval) and observed wakeup lateness, bounded by one refresh. Slow observations
-raise the budget immediately; they remain in the window before it can fall. Wakeup lateness decays
-by 1/32 per complete drawing. No duration from another output is used.
-
-Idle --changed recording or visual facts--> pending composition at predicted next flip minus budget;
-pending --further damage--> same target, freshest content retained; a larger budget may advance
-the wakeup, never postpone it. Pending --deadline--> draw, observe GPU completion, submit;
---hardware flip--> target checked. A flip more than half a refresh after the target restores the
-full-refresh warm-up and raises lateness headroom. A late arrival draws immediately, without
-skipping an extra refresh. Pending --the screen commits anything else for that flip (its planes'
-change, its own buffer, a window's)--> idle: the plan is dropped and made again for the flip after once
-the screen is free, so that its frame, on time, isn't counted against the flip gone by
-(`a_plan_superseded_by_another_commit_plans_for_the_next_flip_and_is_no_miss`,
-`a_commit_of_anything_but_the_composed_frame_supersedes_the_composition_planned`). Hardware clock or GPU observations unavailable means immediate
-composition with the conservative budget. Mode change, power reset, lost flip and resume reset
-learning and phase. Each output learns independently, including an external pacing output.
-
-Direct scanout and UI buffers bypass this scheduler; screenshots draw immediately. Empty damage
-clears the pending plan without a submission. Imports, input and state handling proceed while a
-drawing waits; its frame callbacks wait with it. Scene placement and presentation rules stay in the
-common model; the nested and DRM hosts share recording/damage observation. No pending drawing
-means no composition deadline or periodic calibration wakeup.
-
-`frame_schedule` unit tests pin warm-up, headroom, retained slow samples, an advancing wakeup,
-fixed targets, missed-flip recovery, cancellation/reset and independent outputs. A randomized
-10,000-turn test checks bounded budgets and pending-work invariants. DRM VM `frame_schedule`
-checks a changing client against real virtual-DRM flips, completion samples, learned budgets
-and a timer-free idle; `screen_changes` and `external_display` cover reset and mirroring. The VM
-runs ClamShell in the device's environment, composed, as the device does; its `scanout` check runs
-the direct scanout checks (`ui_scanout`, and `external_display` again) with `CLAMSHELL_SCANOUT=1`.
-Physical Adreno timing and input-to-photon improvement remain device measurements.
