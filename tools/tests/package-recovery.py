@@ -140,6 +140,27 @@ class Packaging(unittest.TestCase):
                 self.assertEqual(etc, sorted(line for line in out.splitlines() if line))
 
 
+    @unittest.skipUnless(shutil.which('visudo'), 'no visudo here')
+    def test_the_sudoers_file_parses(self):
+        result = subprocess.run(['visudo', '-c', '-f', REPO / 'packages/thor-system/root/etc/sudoers.d/10-thor-wheel'], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @unittest.skipUnless(shutil.which('makepkg') and shutil.which('fakeroot') and shutil.which('bsdtar'), 'no makepkg here')
+    def test_thor_system_installs_sudoers_with_sudos_modes(self):
+        m = Machine()
+        self.addCleanup(m.close)
+        shutil.copytree(REPO / 'packages/thor-system', m.root / 'thor-system', symlinks=True)
+        conf = m.file('makepkg.conf', "CARCH=x86_64\nBUILDENV=(!sign)\nOPTIONS=(!strip !debug emptydirs)\nPKGEXT='.pkg.tar'\nSRCEXT='.src.tar.gz'\n")
+        env = {**m.env, 'THOR_REPO': str(REPO), 'PKGDEST': str(m.root), 'BUILDDIR': str(m.root / 'build')}
+        result = subprocess.run(['makepkg', '-f', '--nodeps', '--noconfirm', '--config', conf], cwd=m.root / 'thor-system', env=env,
+                                capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout[-2000:] + result.stderr[-2000:])
+        package = next(m.root.glob('thor-system-*.pkg.tar'))
+        listing = subprocess.run(['bsdtar', '-tvf', package], capture_output=True, text=True, check=True).stdout
+        modes = {line.split()[-1]: line.split()[0] for line in listing.splitlines()}
+        self.assertEqual((modes['etc/sudoers.d/'], modes['etc/sudoers.d/10-thor-wheel']), ('drwxr-x---', '-r--r-----'))
+
+
 class BootRecovery(unittest.TestCase):
     def machine(self):
         m = Machine()
@@ -493,8 +514,8 @@ class BootImage(unittest.TestCase):
 
 
 class SystemInstall(unittest.TestCase):
-    """thor-system's install script: units added after the first version enabled when upgrading from before
-    them, and only then."""
+    """The install scripts: the services the device needs enabled at the first install; units added after
+    the first version enabled when upgrading from before them, and only then."""
 
     @unittest.skipUnless(shutil.which('vercmp'), 'no vercmp here')
     def test_units_are_enabled_coming_from_versions_before_them(self):
@@ -509,6 +530,19 @@ class SystemInstall(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 path = m.root / 'enabled'
                 self.assertEqual(path.read_text().split() if path.exists() else [], enabled)
+
+
+    def test_a_first_install_enables_the_services_the_device_needs(self):
+        for package, enabled in [('thor-system', ['thor-selftest', 'thor-firstboot', 'thor-old-modules', 'thor-drivers', 'systemd-timesyncd']),
+                                 ('thor-session', ['--global', 'thor-udiskie', 'NetworkManager', 'bluetooth'])]:
+            with self.subTest(package=package):
+                m = Machine()
+                self.addCleanup(m.close)
+                m.command('systemctl', f'for unit; do [ "$unit" = enable ] || echo "${{unit%.service}}"; done >> {m.root}/enabled')
+                script = (REPO / f'packages/{package}/{package}.install').read_text()
+                result = subprocess.run(['bash', '-c', f'{script}\npost_install r999.abc1234-1'], env=m.env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual((m.root / 'enabled').read_text().split(), enabled)
 
 
 class RegistryRecovery(unittest.TestCase):

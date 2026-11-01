@@ -1,4 +1,5 @@
-# The AYN Thor's system files (root/, as installed): the power group's write access to what ClamShell's
+# The AYN Thor's system files (root/, as installed): sudo for wheel, the time synced (systemd-timesyncd
+# on), UPower's hibernate when nearly empty, the power group's write access to what ClamShell's
 # settings set, the sticks' range, zram and swapping, the SD card's scheduler, PipeWire's buffers, sleep
 # (logind, s2idle, the wake log), the boot (thor-boot, our initramfs, the first boot's growing and swap
 # file), the checks at each boot (thor-selftest), the account helper for ClamShell's Device view
@@ -13,14 +14,14 @@ url=https://github.com/robinei/thor
 license=('MIT OR Apache-2.0')
 # (Not linux-thor: the test machine's image has Arch's kernel, which thor-boot leaves alone.)
 depends=(clamshell systemd polkit sudo openssh terminus-font python mkinitcpio gzip util-linux e2fsprogs cloud-guest-utils
-         gptfdisk zram-generator pipewire)
+         gptfdisk zram-generator pipewire upower)
 optdepends=('linux-thor: the Thor'"'"'s kernel'
             'thor-firmware: the Thor'"'"'s firmware (built locally from ROCKNIX'"'"'s release)'
             'thor-ucm: the Thor'"'"'s sound profiles')
 makedepends=(git)
 install=thor-system.install
 # (Edited on the device, kept by updates: pacman writes the package's own as a .pacnew.)
-backup=(etc/ssh/sshd_config.d/50-thor.conf)
+backup=(etc/ssh/sshd_config.d/50-thor.conf etc/sudoers.d/10-thor-wheel etc/UPower/UPower.conf.d/50-thor.conf)
 
 # The checkout: the one this PKGBUILD is in, or THOR_REPO (a build from a copy of packages/).
 _repo() { realpath "${THOR_REPO:-$startdir/../..}"; }
@@ -37,6 +38,9 @@ package() {
     local repo
     repo=$(_repo)
     cp -a --no-preserve=ownership "$startdir/root/." "$pkgdir/"
+    # (sudo's modes: it ignores a sudoers file others can write, and its folder is 750.)
+    chmod 750 "$pkgdir/etc/sudoers.d"
+    chmod 440 "$pkgdir/etc/sudoers.d/10-thor-wheel"
     # (Ours: MIT or Apache-2.0, either.)
     install -Dm644 -t "$pkgdir/usr/share/licenses/$pkgname" "$repo/LICENSE-MIT" "$repo/LICENSE-APACHE"
 }

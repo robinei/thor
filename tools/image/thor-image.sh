@@ -161,14 +161,12 @@ arch-chroot "$ROOT" locale-gen > /dev/null
 echo "LANG=$LOCALE" > "$ROOT/etc/locale.conf"
 say "  time zone $ZONE, locale $LOCALE"
 # The session's user (thor-session's autologin, polkit rules and the rest name it): input reads the
-# controller and keys, power writes what ClamShell's settings set; wheel: sudo, with the user's password.
-# (useradd leaves the account locked: no password.)
+# controller and keys, power writes what ClamShell's settings set; wheel: sudo, with the user's password
+# (thor-system's sudoers file). (useradd leaves the account locked: no password.) The services the device
+# needs on, sudo and UPower's settings are the packages' (thor-system, thor-session), so that they come
+# with `pacman -S thor` on any install. (sshd isn't on: ClamShell's Remote login turns it on, once there
+# is a password.)
 arch-chroot "$ROOT" useradd -m -G wheel,video,input,audio,power -s /bin/bash "$USER_NAME"
-# (A maintenance pass shares its timestamp with Claude's commands for its length only: thor-maintain.)
-printf '%%wheel ALL=(ALL:ALL) ALL\n' > "$ROOT/etc/sudoers.d/wheel"
-chmod 440 "$ROOT/etc/sudoers.d/wheel"
-# (sshd isn't: ClamShell's Remote login turns it on, once there is a password.)
-arch-chroot "$ROOT" systemctl enable NetworkManager bluetooth systemd-timesyncd > /dev/null
 if [ -n "${THOR_BRINGUP:-}" ]; then
     mkdir -p "$ROOT/etc/thor"
     echo "# Bring-up: the session doesn't start at boot (thor-session.sh). Remove to start it." > "$ROOT/etc/thor/no-session"
@@ -183,10 +181,6 @@ if [ -n "$SSH_KEY" ]; then
 fi
 # Each card its own machine ID: an empty /etc/machine-id, which systemd fills at the first boot.
 : > "$ROOT/etc/machine-id"
-# UPower: the battery's history (ClamShell's battery mode shows the last day) and, nearly empty, hibernate
-# rather than dying mid-write (UPower powers off instead when hibernate isn't possible).
-sed -i -e 's/^CriticalPowerAction=.*/CriticalPowerAction=Hibernate/' -e 's/^PercentageAction=.*/PercentageAction=3/' \
-    "$ROOT/etc/UPower/UPower.conf"
 
 if [ "$TARGET" = thor ]; then
     say "boot: the kernel, our initramfs and command line into both ways (thor-boot, as after updates)"

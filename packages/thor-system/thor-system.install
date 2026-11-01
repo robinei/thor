@@ -1,5 +1,6 @@
 post_install() {
-    systemctl enable thor-selftest.service thor-firstboot.service thor-old-modules.service thor-drivers.service > /dev/null 2>&1 || true
+    systemctl enable thor-selftest.service thor-firstboot.service thor-old-modules.service thor-drivers.service \
+        systemd-timesyncd.service > /dev/null 2>&1 || true
 }
 
 # Units added after the first version, enabled when coming from before them (not again later: one the

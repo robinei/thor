@@ -1,3 +1,5 @@
 post_install() {
     systemctl --global enable thor-udiskie.service > /dev/null 2>&1 || true
+    # The network and Bluetooth, which ClamShell's tabs use.
+    systemctl enable NetworkManager.service bluetooth.service > /dev/null 2>&1 || true
 }

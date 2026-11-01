@@ -52,8 +52,11 @@ Your notes are `changelog.md` in this folder (the device's own).
    `steam-setup --update` (it starts without updating itself).
 
 3. **pacnew/pacsave.** `pacdiff -o`. For each, diff against the live file, merge sensibly (keep this
-   device's changes, such as `CriticalPowerAction=Hibernate` in `/etc/UPower/UPower.conf`; take
-   upstream's new defaults), install the result, delete the .pacnew.
+   device's changes; take upstream's new defaults), install the result, delete the .pacnew. Our own
+   settings in another package's file are drop-ins of ours (UPower's in
+   `/etc/UPower/UPower.conf.d/50-thor.conf`), so its .pacnew can usually be taken as it is. A card
+   made before that still has `CriticalPowerAction=Hibernate` in `UPower.conf` itself: the drop-in
+   sets it too.
 
 4. **The checks at boot.** `journalctl -b -t thor-selftest`: its `FAIL` lines (and new ones since the
    last pass, in `/var/log/thor-selftest.log`), explained to the user.

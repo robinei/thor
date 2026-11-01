@@ -1,0 +1,3 @@
+# The wheel group (the session's user, thor) has sudo, with its own password: thor-account sets it. A
+# maintenance pass shares its timestamp with Claude's commands for its length only (thor-maintain).
+%wheel ALL=(ALL:ALL) ALL
