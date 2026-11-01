@@ -15,6 +15,7 @@ mod wm;
 
 use crate::clients::ClientState;
 use crate::server::Server;
+use clamshell_threads::{RESTART_CALM, RESTART_GIVE_UP};
 use command_fds::CommandFdExt;
 use smithay::reexports::{
     calloop::{Interest, LoopHandle, Mode, PostAction, RegistrationToken, generic::Generic},
@@ -63,39 +64,20 @@ pub(crate) struct Supervisor {
     running: Option<Running>,
 }
 
-/// After a run of failures, the waits before starting Xwayland again grow from none to this, doubling: as
-/// a system thread's after a panic (`clamshell_system`'s `os::worker`).
-const RESTART_FIRST: Duration = Duration::from_millis(250);
-const RESTART_MOST: Duration = Duration::from_secs(5);
-/// A run this long before failing is followed by a start at once.
-const RESTART_CALM: Duration = Duration::from_secs(30);
-/// Failures in a row, each sooner than [`RESTART_CALM`] after its start (or of the start itself), after
-/// which Xwayland is given up: it would only fail again (a broken update, a missing binary).
-const RESTART_GIVE_UP: u32 = 5;
-
-/// The waits before starting Xwayland again after it failed: none at first, then doubling from
-/// [`RESTART_FIRST`] to [`RESTART_MOST`] while it keeps failing soon after starting; none again after a
-/// calm run. None at all, to give up, after [`RESTART_GIVE_UP`] quick failures in a row. An Xwayland that
+/// Xwayland's restarts: after a failure (a non-zero exit, or a failed start) the waits of
+/// [`clamshell_threads::Backoff`], the system threads' policy, and given up as it says. An Xwayland that
 /// ends by itself (with its last client) failed nothing.
 #[derive(Debug, Default)]
 struct Restarts {
-    delay: Duration,
-    /// The runs in a row that failed soon after starting.
-    quick: u32,
+    backoff: clamshell_threads::Backoff,
     given_up: bool,
 }
 impl Restarts {
     /// The wait after a run of `ran` that failed, or `None` once given up.
     fn after(&mut self, ran: Duration) -> Option<Duration> {
-        let calm = ran >= RESTART_CALM;
-        self.quick = if calm { 0 } else { self.quick + 1 };
-        if self.quick >= RESTART_GIVE_UP {
-            self.given_up = true;
-            return None;
-        }
-        let wait = if calm { Duration::ZERO } else { self.delay };
-        self.delay = (wait * 2).clamp(RESTART_FIRST, RESTART_MOST);
-        Some(wait)
+        let wait = self.backoff.after(ran);
+        self.given_up = wait.is_none();
+        wait
     }
 }
 
@@ -185,7 +167,7 @@ impl Supervisor {
     /// Xwayland failed (`what`, after running `ran`): started again after a wait (see [`Restarts`]), or
     /// given up. The first of a run of failures is a warning, the repeats debug lines, giving up a warning.
     fn failed(&mut self, what: &str, ran: Duration, now: Instant) {
-        let first = self.restarts.quick == 0 || ran >= RESTART_CALM;
+        let first = self.restarts.backoff.quick() == 0 || ran >= RESTART_CALM;
         self.retry = match self.restarts.after(ran) {
             Some(wait) => {
                 if first {
@@ -472,7 +454,7 @@ impl Drop for Supervisor {
         if let Some(mut running) = self.running.take() {
             running.remove_sources(&self.handle);
             let _ = running.child.kill();
-            if let Err(error) = clamshell_ui::threads::start("xwayland reap", move || {
+            if let Err(error) = clamshell_threads::start("xwayland reap", move || {
                 let _ = running.child.wait();
             }) {
                 log::warn!("compositor: starting Xwayland reaper: {error}");
@@ -484,6 +466,7 @@ impl Drop for Supervisor {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+    use clamshell_threads::RESTART_FIRST;
 
     #[test]
     fn private_descriptors_are_inherited_only_by_the_selected_child() {

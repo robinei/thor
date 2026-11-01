@@ -78,7 +78,7 @@ fn run_limited(command: &mut Command, limit: Duration) -> std::io::Result<Vec<u8
 pub fn spawn_font_finder(requests: Receiver<char>, done: impl Fn(Found) -> bool + Send + 'static) -> std::io::Result<()> {
     // The fonts read, kept through a restart of the thread so that none is read twice.
     let mut read: Vec<String> = Vec::new();
-    crate::threads::lasting("fonts", move || {
+    clamshell_threads::lasting("fonts", move || {
         for ch in requests.iter() {
             let found =
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| find_font(ch, &mut |path| read.iter().any(|p| p == path)))).unwrap_or_else(|_| {

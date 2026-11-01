@@ -108,8 +108,8 @@ impl Identities {
         self.next = self.next.wrapping_add(1);
         self.asks.push(Ask { pid, token, waiting: vec![waiting] });
         let (identify, sender, wake) = (self.identify.clone(), self.send.clone(), self.wake.clone());
-        // At the ordinary priority, not the compositor thread's raised one (see `clamshell_ui::threads`).
-        let spawned = clamshell_ui::threads::start("identify", move || {
+        // At the ordinary priority, not the compositor thread's raised one (see `clamshell_threads::start`).
+        let spawned = clamshell_threads::start("identify", move || {
             if sender.send((token, identify(pid))).is_ok() {
                 wake();
             }

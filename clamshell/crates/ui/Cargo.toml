@@ -11,6 +11,7 @@ description = "ClamShell's drawing: both screens, recorded each frame and drawn 
 [dependencies]
 resvg.workspace = true
 clamshell-state.workspace = true
+clamshell-threads.workspace = true
 xkeysym.workspace = true
 jiff.workspace = true
 tiny-skia.workspace = true

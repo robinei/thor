@@ -16,7 +16,6 @@ pub mod gfx;
 pub mod input;
 pub mod render;
 pub mod screens;
-pub mod threads;
 pub mod toolkit;
 
 pub use crate::core::Core;

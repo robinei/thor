@@ -21,6 +21,7 @@ percent-encoding.workspace = true
 evdev.workspace = true
 rustix.workspace = true
 clamshell-state.workspace = true
+clamshell-threads.workspace = true
 clamshell-library = { workspace = true, features = ["serde"] }
 log.workspace = true
 libc.workspace = true

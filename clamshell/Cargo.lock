@@ -243,6 +243,7 @@ dependencies = [
  "clamshell-device",
  "clamshell-library",
  "clamshell-state",
+ "clamshell-threads",
  "clamshell-ui",
  "clamshell-views",
  "command-fds",
@@ -301,6 +302,7 @@ dependencies = [
  "clamshell-device",
  "clamshell-library",
  "clamshell-state",
+ "clamshell-threads",
  "crc32fast",
  "dbus",
  "evdev",
@@ -319,11 +321,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "clamshell-threads"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "rustix 1.1.5",
+]
+
+[[package]]
 name = "clamshell-ui"
 version = "0.1.0"
 dependencies = [
  "clamshell-library",
  "clamshell-state",
+ "clamshell-threads",
  "fontdue",
  "image",
  "jiff",
