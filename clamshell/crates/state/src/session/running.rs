@@ -301,12 +301,11 @@ impl Session {
         };
         let mark = self.launching.remove(i).mark;
         let Some(known) = library.entry(&entry).filter(|g| g.browsed.is_some() || mark.is_some()) else {
-            // There is nothing to wait for, so it didn't start, and a notice says so.
+            // There is nothing to wait for, so it didn't start, and a notice says so, also for another
+            // launch of an entry that runs (Open another).
             let title = library.entry(&entry).map_or_else(|| entry.to_string(), |g| g.title.clone());
-            if self.running(&entry).is_none() {
-                out.log(LogLevel::Warn, format!("{entry}: its launch didn't start"));
-                notice.show(NoticeKind::NotStarted(title), clock.mono());
-            }
+            out.log(LogLevel::Warn, format!("{entry}: its launch didn't start"));
+            notice.show(NoticeKind::NotStarted(title), clock.mono());
             return;
         };
         if self.running(&entry).is_none() {

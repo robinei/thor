@@ -117,7 +117,7 @@ State: `Session.launching`, `running` (each with `origin: Ours | Found{pid} | Wi
 | Launching | the same launched again | Launching | nothing | running `an_entry_runs_its_plays_count_…` |
 | Launching | `Units` lists its unit | Running(Ours) | second screen may go dark again | running `a_launch_runs_while_a_unit_…`; tests `…start_and_end_come_to_the_same_in_any_order` |
 | Launching | LaunchFailed, browsed file or app-id launch | Running(Windows, unseen, until now+15 s) | — | running `a_file_handed_to_another_program_…` (browsed); `a_failed_launch_known_by_app_id_waits_for_its_window` |
-| Launching | LaunchFailed otherwise | Idle | NotStarted notice | tests `a_launch_that_didnt_start_says_so` |
+| Launching | LaunchFailed otherwise | Idle, or as it was for another launch of an entry that runs (Open another) | NotStarted notice, logged at warn | tests `a_launch_that_didnt_start_says_so`, `a_second_launch_that_didnt_start_says_so` |
 | Launching | no answer from the launcher in 30 s | Idle | NotStarted notice; `front_launch` cleared | running `a_launch_never_answered_is_given_up` |
 | Idle | LaunchFailed of no launch waiting (a late answer to one given up; the failure names its launch, so a newer launch of the entry waits on) | Idle | nothing | running `a_launch_failure_after_it_was_given_up_says_nothing`, `a_late_failure_leaves_a_newer_launch_of_the_entry_waiting` |
 | Idle | `Units` lists a unit of a library entry (an earlier ClamShell) | Running(Ours) | — | running `entries_started_before_clamshell_…` |

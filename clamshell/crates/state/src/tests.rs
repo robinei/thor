@@ -141,6 +141,23 @@ fn a_launch_that_didnt_start_says_so() {
     assert!(s.session().running("zelda-lttp").is_none());
 }
 
+/// Another launch of an entry that runs (Open another) that fails says so too, though the entry runs on.
+#[test]
+fn a_second_launch_that_didnt_start_says_so() {
+    let mut library = clamshell_library::demo::library();
+    if let Some(g) = library.entries_mut().iter_mut().find(|g| &*g.id == "zelda-lttp") {
+        g.another = true;
+    }
+    let mut s = state_with(library);
+    crate::testkit::launch(&mut s, "zelda-lttp");
+    s.applied(Event::Entry("zelda-lttp".into(), crate::EntryAct::OpenAnother));
+    assert!(s.session().is_launching("zelda-lttp"));
+    crate::testkit::launch_failed(&mut s, "zelda-lttp");
+    let notice = s.bottom().notice().map(|n| n.what.clone());
+    assert!(matches!(&notice, Some(crate::bottom::notice::NoticeKind::NotStarted(t)) if t == "A Link to the Past"), "{notice:?}");
+    assert!(s.session().running("zelda-lttp").is_some(), "the first runs on");
+}
+
 #[test]
 fn starts_with_first_game_selected_and_focused() {
     let s = state();
