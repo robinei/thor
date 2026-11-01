@@ -1398,6 +1398,10 @@ Each DRM screen, each turn of the loop (`drm/mod.rs` `step`, `drm/turn.rs` `scre
     pending --no flip for 1 s--> dirty [buffers reset, warn]                        a_frame_without_its_flip_for_a_second_is_lost
     idle --its part of the scene changed, screen on--> pending [presented, commits answered]   a_changed_screen_shows_a_frame_if_on_and_an_idle_one_answers_at_most_once_a_refresh
     idle --commits unanswered, a refresh since the last answer--> idle [frame callbacks]       same
+    drawing --the GPU done--> pending [the frame committed]                         a_screen_commits_what_it_shows_and_its_planes_whenever_free
+    free, showing its own buffers --any turn--> pending if its view changed [its own buffer committed]   same
+    idle, showing a window's buffer --its part changed--> pending [the window's buffer committed]   same
+    free --only its overlay or cursor planes changed--> pending [the frame shown committed again with them; also while a composition waits for its deadline]   same
     on --the state turns it off--> off [nothing pending]                            a_screen_turned_on_is_drawn_whole
     off --the state turns it on--> dirty [buffers reset]                            same
     both off --turn--> both off [no compose unless a screenshot waits; dmabuf imports still run]   no unit test

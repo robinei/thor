@@ -908,25 +908,20 @@ fn step(
         }
         due = earlier(due, turn.wake);
         // A commit that failed wakes the loop for the next try (see `failed`).
-        if screen.on && screen.surface.rendering() {
-            due = earlier(due, present(drawing, server, index));
-        } else if screen.shows == Shows::Own {
-            if screen.on && !screen.surface.in_flight() {
-                due = earlier(due, present_ui(screen, server, &mut drawing.pipeline, &drawing.cursor));
-            }
-        } else if turn.present && matches!(screen.shows, Shows::Window(_)) {
-            due = earlier(due, present_window(screen, server, &mut drawing.pipeline, &drawing.cursor));
-        } else if turn.present {
-            due = earlier(due, present(drawing, server, index));
-        } else if screen.layers_dirty && screen.on && !screen.surface.in_flight() {
+        match turn.does {
+            Does::Frame => due = earlier(due, present(drawing, server, index)),
+            Does::Own => due = earlier(due, present_ui(screen, server, &mut drawing.pipeline, &drawing.cursor)),
+            Does::Window => due = earlier(due, present_window(screen, server, &mut drawing.pipeline, &drawing.cursor)),
             // Only the overlay or the cursor changed: the frame shown, committed again with them.
-            due = earlier(due, present_layers(screen, server, &mut drawing.pipeline, &drawing.cursor));
-        } else if turn.answer {
-            screen.answered = server.pacing.commits;
-            screen.next_callbacks = Some(now + screen.interval);
-            screen.held = server.frame_callbacks(Some(down), screen.interval, now);
-            // A callback held back here is due later too (a FIFO client's empty commit, under a cap).
-            due = earlier(due, screen.held);
+            Does::Layers => due = earlier(due, present_layers(screen, server, &mut drawing.pipeline, &drawing.cursor)),
+            Does::Answer => {
+                screen.answered = server.pacing.commits;
+                screen.next_callbacks = Some(now + screen.interval);
+                screen.held = server.frame_callbacks(Some(down), screen.interval, now);
+                // A callback held back here is due later too (a FIFO client's empty commit, under a cap).
+                due = earlier(due, screen.held);
+            }
+            Does::Nothing => {}
         }
     }
     drawing.pipeline.let_go();
@@ -1127,7 +1122,7 @@ mod tests {
         assert!(!Commit::Again.refusable());
     }
 
-    use super::{Timing, Turn, screen_turn, timed_wake};
+    use super::{Does, Timing, Turn, screen_turn, timed_wake};
     use std::time::{Duration, Instant};
 
     #[test]
@@ -1139,12 +1134,24 @@ mod tests {
         assert_eq!(super::nearest(&[] as &[u32], |r| *r, 60), None);
     }
 
-    const IDLE: Timing = Timing { pending: false, dirty: false, on: true, paces: true, held: None, answered: true, next_callbacks: None };
+    const IDLE: Timing = Timing {
+        in_flight: false,
+        rendering: false,
+        composing: false,
+        shows: super::Shows::Composed,
+        dirty: false,
+        layers_dirty: false,
+        on: true,
+        paces: true,
+        held: None,
+        answered: true,
+        next_callbacks: None,
+    };
 
     #[test]
     fn a_queued_frame_waits_for_its_flip_without_turning_the_loop() {
         let now = Instant::now();
-        let held = Timing { pending: true, held: Some(now), dirty: true, answered: false, ..IDLE };
+        let held = Timing { in_flight: true, held: Some(now), dirty: true, answered: false, ..IDLE };
         assert_eq!(screen_turn(held, now), Turn::default(), "no callbacks, no frame, no wake: the flip sends them");
     }
 
@@ -1160,10 +1167,14 @@ mod tests {
     fn a_changed_screen_shows_a_frame_if_on_and_an_idle_one_answers_at_most_once_a_refresh() {
         let now = Instant::now();
         let next = now + Duration::from_millis(8);
-        assert_eq!(screen_turn(Timing { dirty: true, answered: false, ..IDLE }, now), Turn { present: true, ..Turn::default() });
-        assert_eq!(screen_turn(Timing { dirty: true, on: false, answered: false, ..IDLE }, now), Turn { answer: true, ..Turn::default() }, "off: answered");
+        assert_eq!(screen_turn(Timing { dirty: true, answered: false, ..IDLE }, now), Turn { does: Does::Frame, ..Turn::default() });
+        assert_eq!(
+            screen_turn(Timing { dirty: true, on: false, answered: false, ..IDLE }, now),
+            Turn { does: Does::Answer, ..Turn::default() },
+            "off: answered"
+        );
         assert_eq!(screen_turn(Timing { answered: false, next_callbacks: Some(next), ..IDLE }, now), Turn { wake: Some(next), ..Turn::default() });
-        assert_eq!(screen_turn(Timing { answered: false, next_callbacks: Some(now), ..IDLE }, now), Turn { answer: true, ..Turn::default() });
+        assert_eq!(screen_turn(Timing { answered: false, next_callbacks: Some(now), ..IDLE }, now), Turn { does: Does::Answer, ..Turn::default() });
         assert_eq!(screen_turn(IDLE, now), Turn::default(), "nothing to answer");
     }
 
@@ -1174,9 +1185,27 @@ mod tests {
         let now = Instant::now();
         let follows = Timing { paces: false, held: Some(now), answered: false, next_callbacks: Some(now), ..IDLE };
         assert_eq!(screen_turn(follows, now), Turn::default(), "no callbacks, held or answered, and no wake");
-        assert_eq!(screen_turn(Timing { dirty: true, ..follows }, now), Turn { present: true, ..Turn::default() });
+        assert_eq!(screen_turn(Timing { dirty: true, ..follows }, now), Turn { does: Does::Frame, ..Turn::default() });
         assert_eq!(screen_turn(Timing { dirty: true, on: false, ..follows }, now), Turn::default(), "off: nothing");
-        assert_eq!(screen_turn(Timing { dirty: true, pending: true, ..follows }, now), Turn::default(), "at its flip");
+        assert_eq!(screen_turn(Timing { dirty: true, in_flight: true, ..follows }, now), Turn::default(), "at its flip");
+    }
+
+    /// What a screen commits: a frame drawing once the GPU is done with it, its own buffers whenever it is
+    /// free, the window's buffer or a frame composed when its part changed, and a change of its planes
+    /// alone whenever it is free, even while its composition waits for its deadline.
+    #[test]
+    fn a_screen_commits_what_it_shows_and_its_planes_whenever_free() {
+        use super::Shows;
+        let now = Instant::now();
+        let changed = Timing { dirty: true, answered: false, ..IDLE };
+        assert_eq!(screen_turn(Timing { rendering: true, ..IDLE }, now).does, Does::Frame, "the drawing, once the GPU is done");
+        assert_eq!(screen_turn(Timing { shows: Shows::Own, ..IDLE }, now).does, Does::Own);
+        assert_eq!(screen_turn(Timing { shows: Shows::Own, in_flight: true, ..IDLE }, now).does, Does::Nothing, "at its flip");
+        assert_eq!(screen_turn(Timing { shows: Shows::Window(7), ..changed }, now).does, Does::Window);
+        assert_eq!(screen_turn(Timing { shows: Shows::Straight(7), ..changed }, now).does, Does::Frame);
+        let waiting = Timing { layers_dirty: true, composing: true, ..changed };
+        assert_eq!(screen_turn(waiting, now).does, Does::Layers, "ahead of a composition waiting for its deadline");
+        assert_eq!(screen_turn(Timing { in_flight: true, ..waiting }, now).does, Does::Nothing, "at its flip");
     }
 
     /// Held callbacks due later and commits answered later still: the loop wakes for the earlier.
