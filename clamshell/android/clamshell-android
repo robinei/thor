@@ -41,6 +41,15 @@ if [ "${1:-}" = --awake ]; then
     ANDROID_ADB_SERVER_PORT=5039 adb -s "$dev" shell dumpsys power 2> /dev/null | grep -qE 'SCREEN_(BRIGHT|DIM)_WAKE_LOCK|FULL_WAKE_LOCK'
     exit
 fi
+# A package's name, as Android has them: `adb shell` joins its arguments into one line for Android's shell,
+# so anything else in it (from a desktop file's name, which any program of the user can make) would run
+# there.
+case $pkg in
+    '' | *[!A-Za-z0-9_.]*)
+        echo "clamshell-android: ${1:-} doesn't name an Android package" >&2
+        exit 2
+        ;;
+esac
 [ -n "$stop" ] && ! running && exit 0
 running && container Unfreeze
 if ! running; then

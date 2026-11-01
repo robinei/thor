@@ -958,5 +958,37 @@ class SensorsSandbox(unittest.TestCase):
                 for setting in ['ProtectSystem=strict', 'ReadWritePaths=/var/lib/thor-sensors', 'ProtectHome=yes', 'NoNewPrivileges=yes']:
                     self.assertIn(f'\n{setting}\n', path.read_text())
 
+
+class AndroidRunner(unittest.TestCase):
+    """The Android runner's script and its clipboard stand-in, with stub Waydroid, adb and ClamShell."""
+
+    SCRIPT = REPO / 'clamshell/android/clamshell-android'
+
+    def machine(self):
+        m = Machine()
+        self.addCleanup(m.close)
+        log = m.root / 'adb.log'
+        m.command('waydroid', "printf 'Session:\tRUNNING\nIP address:\t192.0.2.1\n'")
+        m.command('adb', f'echo "$*" >> {log}\ncase "$*" in *getprop*) echo 1 ;; esac')
+        m.command('ss', "echo 'LISTEN 0 4096 127.0.0.1:5039 0.0.0.0:*'")
+        for name in ['busctl', 'systemd-run']:
+            m.command(name)
+        return m, log
+
+    def android(self, m, *args):
+        env = {**m.env, 'XDG_RUNTIME_DIR': str(m.root), 'WAYLAND_DISPLAY': 'wayland-1'}
+        return subprocess.run(['sh', self.SCRIPT, *args], env=env, capture_output=True, text=True, timeout=15)
+
+    def test_only_a_packages_name_reaches_androids_shell(self):
+        m, log = self.machine()
+        for name in ['waydroid.x;reboot', 'waydroid.a b', 'waydroid.$(id)', 'waydroid.']:
+            ran = self.android(m, '--stop', name)
+            self.assertEqual(ran.returncode, 2, (name, ran.stderr))
+        self.assertFalse(log.exists(), 'adb never ran')
+        ran = self.android(m, '--stop', 'waydroid.org.example_app')
+        self.assertEqual(ran.returncode, 0, ran.stderr)
+        self.assertIn('am force-stop org.example_app', log.read_text())
+
+
 if __name__ == '__main__':
     unittest.main()
