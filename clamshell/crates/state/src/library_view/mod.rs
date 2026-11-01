@@ -66,7 +66,8 @@ pub struct LibraryView {
     /// How many list rows are on screen, as reported by the UI.
     rows: usize,
     /// The listings of browsed folders, by folder, in the order they came; a folder's listing comes before
-    /// those of the folders in it. They are applied again when the library is read again.
+    /// those of the folders in it. Those of the folders open when the library is read again are applied
+    /// to it again, and the rest are dropped (see [`LibraryView::reload`]).
     listings: Vec<(Arc<str>, Vec<Entry>)>,
     /// The clipboard and confirmation for file actions, and the folder being browsed (see [`files`]).
     files: files::Files,
@@ -587,28 +588,35 @@ impl LibraryView {
         self.files.keep_selected(&self.library);
     }
 
-    /// Takes the library read again. The listings of browsed folders that are still there are applied to
-    /// it again, and each collection's place is kept by name and ids, with what is typed in each list and
-    /// the scroll starting from the top. Returns whether the selection changed.
+    /// Takes the library read again. The listings of the browsed folders open (on a collection's open
+    /// path, or a pick's way) that are still there are applied to it again, in order, with one index
+    /// build; the others are dropped, and listed again when opened. Each collection's place is kept by
+    /// name and ids, with what is typed in each list and the scroll starting from the top. Returns
+    /// whether the selection changed.
     pub(crate) fn reload(&mut self, library: Library) -> bool {
         let before = self.selected().cloned();
         let mut places = Vec::new();
         self.kept_places(&mut places);
         let current = self.collection().map(|c| c.name.clone());
-        let listings = std::mem::take(&mut self.listings);
+        let mut open = Vec::new();
+        self.open_folders(&mut open);
+        let mut listings = std::mem::take(&mut self.listings);
+        listings.retain(|(folder, _)| open.contains(folder));
         let waiting = self.waiting.take();
         // The places start over in the new library, and are restored below; the rest of the Library stays.
         self.navs = vec![Nav::default(); library.collections.len()];
         (self.library, self.read, self.current) = (library, true, 0);
-        // One changed through entries_mut, as tests make them, comes with its index dropped.
-        self.library.reindex();
         self.listings_shown = self.listings_shown.wrapping_add(1);
+        // (The index is out of date while the listings go in: each folder is found by its id in the
+        // entries, which its parent's listing put there.)
         for (folder, entries) in listings {
-            if let Some(f) = self.library.position(&folder) {
+            if let Some(f) = self.library.entries().iter().position(|g| g.id == folder) {
                 self.library.set_listing(f, entries.clone());
                 self.listings.push((folder, entries));
             }
         }
+        // One changed through entries_mut, as tests make them, comes with its index dropped too.
+        self.library.reindex();
         for (name, levels) in &places {
             self.restore_place(name, levels);
         }
@@ -619,6 +627,18 @@ impl LibraryView {
         }
         self.library_changed(None);
         self.selected() != before.as_ref()
+    }
+
+    /// Appends to `open` the browsed folders open: on each collection's open path, and on the way of a
+    /// pick going on or set aside.
+    fn open_folders(&self, open: &mut Vec<Arc<str>>) {
+        let entries = self.library.entries();
+        for nav in &self.navs {
+            open.extend(nav.open.iter().filter_map(|&i| entries.get(i)).filter(|g| g.browsed.is_some()).map(|g| g.id.clone()));
+        }
+        for pick in self.pick.iter().chain(&self.own_aside) {
+            pick.folders(open);
+        }
     }
 
     /// Appends each collection's place to `places`, to be kept across a library read: its name, and its
@@ -697,6 +717,7 @@ impl LibraryView {
             None => self.listings.push((folder, entries.clone())),
         }
         self.library.set_listing(f, entries);
+        self.library.reindex();
         // Drops the listings of folders that went with it.
         let library = &self.library;
         self.listings.retain(|(id, _)| library.position(id).is_some());

@@ -328,18 +328,22 @@ mod tests {
         let mut listed = listing(&["Pictures", "Roms", "a.sfc", "b.txt"]);
         listed[2].runner = Some(RunnerOf::new("snes", "SNES", true));
         lib.set_listing(home, listed);
+        lib.reindex();
         assert!(lib.runner("runner:snes").is_some(), "a listing's runner");
         assert!(lib.index_is_current());
         agrees(&lib);
         let roms = lib.position("browse:Files/Home/Roms").unwrap();
         lib.set_listing(roms, vec![browsed("browse:Files/Home/Roms/zelda.sfc", false)]);
+        lib.reindex();
         agrees(&lib);
         // Roms goes, and zelda.sfc in it; then c and d take freed slots.
         lib.set_listing(home, listing(&["Pictures", "a.sfc"]));
+        lib.reindex();
         agrees(&lib);
         assert_eq!(lib.position("browse:Files/Home/Roms/zelda.sfc"), None);
         let slots = lib.entries().len();
         lib.set_listing(home, listing(&["Pictures", "a.sfc", "c.txt", "d.txt"]));
+        lib.reindex();
         assert_eq!(lib.entries().len(), slots, "c and d in freed slots");
         assert!(lib.index_is_current());
         agrees(&lib);

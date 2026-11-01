@@ -296,6 +296,9 @@ impl Library {
     /// new entries. That way a slot still held open, such as a removed folder the user is inside, never
     /// becomes another entry's straight away. Entries at the top of the Trash become
     /// [`BrowseKind::Trashed`].
+    ///
+    /// The index is out of date after it, until [`Library::reindex`], which also reports keys a listing
+    /// made collide: several listings are applied with one rebuild.
     pub fn set_listing(&mut self, folder: usize, entries: Vec<Entry>) {
         let Some(f) = self.entries.get(folder) else {
             return;
@@ -348,7 +351,7 @@ impl Library {
             f.items = items;
         }
         self.free.append(&mut freed);
-        self.index.build(&self.entries);
+        self.index.drop_all();
     }
 
     /// The files that enqueueing entry `i` adds, in order. For a file, that is the file itself. For a
@@ -560,12 +563,15 @@ mod tests {
         let mut lib = Library::new(Vec::new(), vec![browsed("browse:Home", true)]);
         assert!(lib.entries[0].is_group(), "a folder opens before it is listed");
         lib.set_listing(0, vec![browsed("browse:Home/a", true), browsed("browse:Home/b.txt", false)]);
+        lib.reindex();
         assert!(lib.entries[0].browsed.as_ref().unwrap().listed);
         assert_eq!(lib.entries[0].items, vec![1, 2]);
         assert_eq!(lib.entries[1].parent, Some(0));
         lib.set_listing(1, vec![browsed("browse:Home/a/x", false)]);
+        lib.reindex();
         // Listed again: a keeps its slot and its listing. b is gone and its slot is freed, but not for c.
         lib.set_listing(0, vec![browsed("browse:Home/a", true), browsed("browse:Home/c", false)]);
+        lib.reindex();
         assert_eq!(lib.entries[0].items, vec![1, 4]);
         assert_eq!(&*lib.entries[4].id, "browse:Home/c");
         assert_eq!(lib.entries[1].items, vec![3], "a's listing kept");
@@ -573,6 +579,7 @@ mod tests {
         assert_eq!(lib.free, vec![2]);
         // a is gone, and x in it. d takes b's slot, not a's.
         lib.set_listing(0, vec![browsed("browse:Home/c", false), browsed("browse:Home/d", true)]);
+        lib.reindex();
         assert_eq!(lib.entries[0].items, vec![4, 2]);
         let mut free = lib.free.clone();
         free.sort_unstable();

@@ -100,6 +100,41 @@ fn listings_outlive_the_library_read_again() {
     assert!(!fx.iter().any(|e| matches!(e, Effect::Browse(BrowseCommand::Open(_)))), "the same folder: watched still");
 }
 
+/// A library read applies again only the listings of the folders open; a folder listed and left is
+/// listed again when it is opened, so its listing isn't kept for the session.
+#[test]
+fn only_the_open_folders_listings_outlive_the_library_read_again() {
+    let mut s = files_state();
+    tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
+    let home = || vec![entry("browse:Home/Films", true, BrowseKind::Plain), entry("browse:Home/Music", true, BrowseKind::Plain)];
+    listed(&mut s, "browse:Home", home());
+    tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
+    listed(&mut s, "browse:Home/Films", vec![entry("browse:Home/Films/x.mkv", false, BrowseKind::Plain)]);
+    tap(&mut s, Id::LibraryView(LibraryViewId::Up));
+    s.applied(LibraryViewEvent::ListStep(1).into());
+    tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
+    assert_eq!(s.library_view().group().map(|g| &*g.id), Some("browse:Home/Music"));
+    listed(&mut s, "browse:Home/Music", vec![entry("browse:Home/Music/y.flac", false, BrowseKind::Plain)]);
+    let library = files_state().library_view().library().clone();
+    s.applied(Event::Library(Box::new(library)));
+    let has = |s: &State, id: &str| s.library_view().library().has(id);
+    assert!(has(&s, "browse:Home/Music/y.flac") && has(&s, "browse:Home/Films"), "Home's and Music's, open");
+    assert!(!has(&s, "browse:Home/Films/x.mkv"), "Films', left");
+    assert!(s.library_view().library().index_is_current());
+}
+
+/// A listing whose entry's key collides with another entry's makes both unavailable, and says so among
+/// the library's problems, as a library read does.
+#[test]
+fn a_listing_that_makes_a_key_collide_is_a_problem() {
+    let mut s = files_state();
+    tap(&mut s, Id::LibraryView(LibraryViewId::Launch));
+    let clash = Entry { key: clamshell_library::key_of("browse:Trash"), ..entry("browse:Home/z.txt", false, BrowseKind::Plain) };
+    listed(&mut s, "browse:Home", vec![clash]);
+    let problems = &s.library_view().library().problems;
+    assert!(problems.iter().any(|p| p.starts_with("browse:Home/z.txt:")), "{problems:?}");
+}
+
 #[test]
 fn copy_then_paste_into_the_folder_open() {
     let mut s = files_state();

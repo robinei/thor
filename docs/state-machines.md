@@ -553,7 +553,8 @@ State: `clip`, `selected`, `armed`, `busy`, `hidden`, the listings.
 | Paste; a cut entry leaves the clip when its move succeeds | copy tested; `a_cut_entry_stays_in_the_clip_until_it_is_moved` |
 | Rename, New folder, Extract → editor on the keyboard; Save gives the operation, Cancel goes back | `renaming_types_on_the_keyboard_and_goes_back`, `an_archive_is_a_folder_…`, `a_new_folder_is_named_on_the_keyboard` |
 | Open in, Eject, Mounts (rescan) | `open_in_eject_and_mounts` |
-| Listed: listing set, gone folders closed, selection kept by id | `the_folder_open_is_listed_and_watched_while_open`, `a_listing_closes_the_folders_gone_from_it` |
+| Listed: listing set, gone folders closed, selection kept by id; the index rebuilt, a key the listing made collide a problem | `the_folder_open_is_listed_and_watched_while_open`, `a_listing_closes_the_folders_gone_from_it`, `a_listing_that_makes_a_key_collide_is_a_problem` |
+| Library read again: the listings of the folders open (each collection's open path, a pick's way) applied again in order with one index build; the others dropped, listed again when opened | `only_the_open_folders_listings_outlive_the_library_read_again`, `listings_outlive_the_library_read_again`; tests `a_reload_keeps_the_listings_of_folders_in_folders_listed_again` |
 | Busy, Done: each operation sent ends in one Done, in order; `busy` lasts while any runs; Failed (outside an operation, an archive not mounted) only tells | `busy_lasts_while_any_operation_runs` |
 | sync: `Browse(Open)` on folder or hidden changes, `Browse(InUse)` by hash | `the_folder_open_is_listed…`, `an_archive_is_a_folder_…` |
 

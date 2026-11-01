@@ -76,6 +76,13 @@ pub enum PickFor {
 }
 
 impl Pick {
+    /// Appends the folders on its way to `folders`: the one it goes on from, and those of the Files
+    /// tab's place it gives back.
+    pub(crate) fn folders(&self, folders: &mut Vec<std::sync::Arc<str>>) {
+        folders.extend(self.on_the_way.iter().map(|(from, _)| from.clone()));
+        folders.extend(self.files_place.iter().filter_map(|(id, _)| id.clone()));
+    }
+
     /// Whether `entry` may be chosen.
     pub fn takes(&self, entry: &Entry) -> bool {
         let Some(browsed) = &entry.browsed else { return false };
