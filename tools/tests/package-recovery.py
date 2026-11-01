@@ -205,6 +205,67 @@ n=$((n+1)); echo "$n" > {m.root}/renames
             self.assertEqual(self.coherent(m), expected)
 
 
+class Modules(unittest.TestCase):
+    """thor-modules across an update of linux-thor: the running kernel's and the installed one's kept and
+    restored, and at boot only folders pacman says no package owns removed."""
+
+    def machine(self, running='r1', installed='r1', owned=('r1',)):
+        m = Machine()
+        self.addCleanup(m.close)
+        m.file('owned', ''.join(f'{m.root}/usr/lib/modules/{release}\n' for release in owned))
+        m.command('uname', f'echo {running}')
+        m.command('pacman', f'''case $1 in
+    -Qlq) echo {m.root}/usr/lib/modules/$(cat {m.root}/installed)/Image ;;
+    -Qqo)
+        [ "${{FAIL_PACMAN:-0}}" != 1 ] || {{ echo "error: could not open file {m.root}/var/lib/pacman/local/ALPM_DB_VERSION" >&2; exit 1; }}
+        grep -qxF "${{2%/}}" {m.root}/owned && {{ echo linux-thor; exit 0; }}
+        echo "error: No package owns $2" >&2; exit 1 ;;
+esac''')
+        m.file('installed', installed)
+        for release in {running, installed}:
+            m.file(f'usr/lib/modules/{release}/kernel/module.ko', release)
+        return m
+
+    def modules(self, m, *args, **env):
+        source = (REPO / 'packages/thor-system/root/usr/lib/thor/thor-modules').read_text()
+        source = source.replace('/usr/lib/modules', f'{m.root}/usr/lib/modules')
+        script = m.file('thor-modules', source)
+        script.chmod(0o755)
+        return subprocess.run([script, *args], env={**m.env, **env}, capture_output=True, text=True, timeout=15)
+
+    def releases(self, m):
+        return sorted(path.name for path in (m.root / 'usr/lib/modules').iterdir())
+
+    def test_an_update_keeps_the_running_and_installed_kernels_modules(self):
+        m = self.machine(running='r1', installed='r2', owned=('r2',))
+        self.assertEqual(self.modules(m, 'keep').returncode, 0)
+        # The update: pacman removes r2's folder and installs r3's.
+        shutil.rmtree(m.root / 'usr/lib/modules/r2')
+        m.file('usr/lib/modules/r3/kernel/module.ko', 'r3')
+        result = self.modules(m, 'restore')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.releases(m), ['r1', 'r2', 'r3'])
+        self.assertEqual((m.root / 'usr/lib/modules/r2/kernel/module.ko').read_text(), 'r2')
+        self.assertIn("r2's modules kept", result.stdout)
+
+    def test_clean_removes_only_folders_no_package_owns_besides_the_running_kernels(self):
+        m = self.machine(running='r2', installed='r3', owned=('r3',))
+        m.file('usr/lib/modules/r1/kernel/module.ko', 'r1')
+        m.file('usr/lib/modules/.thor-kept-r3/kernel/module.ko', 'r3')
+        result = self.modules(m, 'clean')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.releases(m), ['r2', 'r3'])
+        self.assertIn("r1's modules removed", result.stdout)
+
+    def test_clean_removes_nothing_when_pacman_fails_otherwise(self):
+        m = self.machine(running='r2', installed='r3', owned=('r3',))
+        m.file('usr/lib/modules/r1/kernel/module.ko', 'r1')
+        result = self.modules(m, 'clean', FAIL_PACMAN='1')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(self.releases(m), ['r1', 'r2', 'r3'])
+        self.assertIn('pacman failed', result.stdout)
+
+
 class SwapRecovery(unittest.TestCase):
     def machine(self, existing=True):
         m = Machine()

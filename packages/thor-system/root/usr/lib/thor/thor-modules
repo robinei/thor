@@ -11,6 +11,7 @@
 #                          it was if the update removed that, else dropped
 #   thor-modules clean     at boot (thor-old-modules.service): copies an interrupted update left restored,
 #                          then module folders no package owns, other than the running kernel's, removed
+#                          (none if pacman fails otherwise)
 set -eu
 dir=/usr/lib/modules
 case ${1:-} in
@@ -41,7 +42,13 @@ case ${1:-} in
         for release in "$dir"/*/; do
             release=$(basename "$release")
             [ "$release" = "$running" ] && continue
-            pacman -Qqo "$dir/$release" > /dev/null 2>&1 && continue
+            # Only pacman's "no package owns" removes a folder: a pacman failing otherwise (a damaged
+            # database) says nothing of it, and it may be a newer kernel's, on the card already.
+            owner=$(LC_ALL=C pacman -Qqo "$dir/$release" 2>&1) && continue
+            case $owner in
+                *"No package owns"*) ;;
+                *) echo "thor-modules: pacman failed on $release's modules, so none removed: $owner"; exit 1 ;;
+            esac
             rm -rf "${dir:?}/$release"
             echo "thor-modules: $release's modules removed (not running, no package's)"
         done

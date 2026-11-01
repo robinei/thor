@@ -2035,6 +2035,12 @@ The inactive slot is replaceable on retry; the selected slot is never overwritte
 and ABL coherence with the real boot-image packer, and checks retries and repeated slot alternation.
 Physical power interruption on FAT remains a device check.
 
+Kernel modules across an update: before it, the running and installed kernels' folders are copied
+(`keep`); after it, each copy goes back where the update removed its folder, else is dropped
+(`restore`, thor-boot's first step); at boot, copies left over are restored, then each folder that is
+not the running kernel's and that pacman says no package owns is removed (`clean`). Any other pacman
+failure removes nothing and fails the unit. The `Modules` package fixtures pin these outcomes.
+
 First boot: missing swap --enough free space--> create valid swap --file exists, including retry-->
 atomically reconcile fstab --not active--> activate --valid resume offset--> configure resume and mark
 complete. An activation/offset/boot-publication failure leaves the completion marker absent; retries
