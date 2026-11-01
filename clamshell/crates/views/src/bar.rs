@@ -1,8 +1,7 @@
 //! The bar along the top of the second screen. It has a button per tab, with the open one lit, all spread
 //! evenly. Volume and brightness sit near the middle, where a slider has room on both sides of the
-//! finger. Bluetooth, Wi-Fi and the battery are tabs too, and their icons show their status. Past a faint
-//! line come the clock (the time tab's button) and the pad mouse toggle, which is a switch rather than a
-//! tab. At the end is a button for the front program's windows on this screen when ClamShell's view hides
+//! finger. Bluetooth, Wi-Fi and the battery are tabs too, and their icons show their status. Then come
+//! the clock (the time tab's button) and the pad mouse toggle, which is a switch rather than a tab. At the end is a button for the front program's windows on this screen when ClamShell's view hides
 //! them. A tap shows them. Its room is kept when there are none, so nothing moves.
 //!
 //! While a finger is held on volume or brightness, or slides off it sideways, a slider is drawn over the
@@ -32,10 +31,6 @@ const CLOCK_PAD: f32 = 0.5;
 /// The width of the pad mouse switch's tap slot, as a fraction of the bar's height. The tabs share the
 /// room before the clock.
 const SLOT: f32 = 1.15;
-/// The line before the clock and the pad mouse toggle: its height as a fraction of the bar's, and how
-/// strongly it shows.
-const DIVIDER: f32 = 0.4;
-const DIVIDER_ALPHA: f32 = 0.35;
 /// The bar's height on `screen`.
 pub(super) fn height(screen: Rect) -> f32 {
     (screen.h * BAR_H).max(20.0)
@@ -61,7 +56,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
         let side = (bar_h * ICON).min(r.w * 0.8);
         f.button(id, r, Look::ICON, |f| f.c.icon(icon, r.square_center(side), tone));
     };
-    // On the right: the tabs at its end, the pad mouse, the clock, and the line before them.
+    // On the right: the tabs at its end, the pad mouse and the clock.
     for tab in at(BarPlace::End) {
         let (b, tone) = button(tab);
         let r = bar.take_right(bar_h * SLOT);
@@ -72,7 +67,6 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
     let mouse = bar.take_right(bar_h * SLOT);
     let tone = if s.pad().mouse_on() { Tone::Accent } else { Tone::Dim };
     icon_button(f, Id::PadMouse, mouse, Icon::Mouse, tone);
-    let mut line_at = bar.x + bar.w;
     for tab in at(BarPlace::Clock) {
         let (b, tone) = button(tab);
         let clock = f.scratch.local(s.clock().unix(), s.sys().time_zones().current.as_deref()).time(s.sys().twelve_hour());
@@ -82,12 +76,9 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
         f.button(b.id, clock_r, Look::ICON, |f| {
             f.c.text_in(clock_r, size, tone, &clock, Align::Center);
         });
-        line_at = clock_r.x;
     }
-    let line = bar_h * DIVIDER;
-    f.c.fill(Rect::new(line_at - 0.5, (bar_h - line) / 2.0, 1.0, line), Tone::Dim.rgb().alpha(DIVIDER_ALPHA));
 
-    // Before the line, the spread tabs, evenly. Volume and brightness land near the middle, and their
+    // Before the clock, the spread tabs, evenly. Volume and brightness land near the middle, and their
     // slider makes do with the room on either side. Each button opens its tab. Holding or sliding on
     // volume or brightness brings up the slider, which runs along the screen's whole width.
     let cell = bar.w.max(0.0) / at(BarPlace::Spread).count() as f32;
@@ -101,7 +92,7 @@ pub(super) fn draw(f: &mut Frame, screen: Rect) -> Rect {
         }
         f.tab_stop(Id::Tab(tab), b.id, tab == s.bottom().tab());
     }
-    // Then, left to right, those right of the line.
+    // Then, left to right, those from the clock on.
     for tab in at(BarPlace::Clock).chain(at(BarPlace::End)) {
         f.tab_stop(Id::Tab(tab), (tabs::view(tab).button)(s).id, tab == s.bottom().tab());
     }
