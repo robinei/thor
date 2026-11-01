@@ -865,5 +865,65 @@ esac''')
             'delete old-1-1-any.pkg.tar.zst',
         ])
 
+class SteamSetup(unittest.TestCase):
+    """steam-setup's client install with stub downloads: taken as installed only once complete."""
+
+    MANIFEST = '"bins_linuxarm64_linuxarm64"\n{\n\t"file"\t\t"bins.zip"\n\t"size"\t\t"1"\n\t"sha2"\t\t"SUM"\n}\n'
+
+    def machine(self, manifest=MANIFEST):
+        m = Machine()
+        self.addCleanup(m.close)
+        home = m.root / 'home'
+        (home / '.local/share/Steam/steam-runtime-steamrt-arm64').mkdir(parents=True)
+        client = m.root / 'bins.zip'
+        with zipfile.ZipFile(client, 'w') as z:
+            info = zipfile.ZipInfo('steamrtarm64/steam')
+            info.external_attr = 0o100777 << 16
+            z.writestr(info, '#!/bin/sh\necho ran >> "$HOME/runs"\n')
+            z.writestr('steamrtarm64/steamui.so', 'ui')
+            z.writestr('package\\steam_client_linuxarm64.manifest', 'manifest')
+        digest = hashlib.sha256(client.read_bytes()).hexdigest()
+        m.file('manifest', manifest.replace('SUM', digest))
+        # curl: the manifest, or the client to the -o file.
+        m.command('curl', f'''out=
+while [ $# -gt 0 ]; do case $1 in -o) out=$2; shift 2 ;; *) url=$1; shift ;; esac; done
+case $url in
+    *steam_client_*) cat {m.root}/manifest ;;
+    *bins.zip) /usr/bin/cp {client} "$out" ;;
+    *) exit 22 ;;
+esac''')
+        m.command('ldd')
+        return m
+
+    def setup(self, m, **env):
+        script = REPO / 'packages/thor-session/root/usr/bin/steam-setup'
+        return subprocess.run(['bash', script], env={**m.env, 'HOME': str(m.root / 'home'), **env}, capture_output=True, text=True, timeout=30)
+
+    def test_a_setup_cut_short_is_not_taken_as_installed(self):
+        # (Cut short as the zip is unpacked, after the client's own launcher; or as it is put in place.)
+        cuts = {'unzip': '/usr/bin/unzip "$@"; exit 75', 'cp': 'case $* in *client/.*) exit 75 ;; esac; exec /usr/bin/cp "$@"'}
+        for command, body in cuts.items():
+            with self.subTest(cut=command):
+                m = self.machine()
+                m.command(command, body)
+                result = self.setup(m)
+                self.assertNotEqual(result.returncode, 0)
+                steam = m.root / 'home/.local/share/Steam/steamrtarm64/steam'
+                self.assertFalse(steam.exists() and os.access(steam, os.X_OK), 'a client cut short reads as installed')
+                (m.root / 'bin' / command).unlink()
+                result = self.setup(m)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertTrue(os.access(steam, os.X_OK))
+                self.assertTrue((m.root / 'home/.local/share/Steam/package/steam_client_linuxarm64.manifest').exists())
+                self.assertEqual((m.root / 'home/.local/share/Steam/package/beta').read_text(), 'publicbeta\n')
+                self.assertEqual((m.root / 'home/runs').read_text(), 'ran\n')
+
+    def test_a_manifest_without_the_binaries_says_so(self):
+        m = self.machine(manifest='"other"\n{\n}\n')
+        result = self.setup(m)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("manifest names no linuxarm64 binaries", result.stdout)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -114,23 +114,30 @@ if [ ! -x "$ROOT/steamrtarm64/steam" ]; then
     manifest=$(curl -fsSL "$CDN/steam_client_${BRANCH}_linuxarm64")
     # (The block of bins_linuxarm64_linuxarm64: its "file", then its "sha2".)
     read -r file sum < <(awk '/"bins_linuxarm64_linuxarm64"/ { f = 1 } f && $1 == "\"file\"" { gsub(/"/, "", $2); name = $2 }
-                              f && $1 == "\"sha2\"" { gsub(/"/, "", $2); print name, $2; exit }' <<< "$manifest")
+                              f && $1 == "\"sha2\"" { gsub(/"/, "", $2); print name, $2; exit }' <<< "$manifest") || true
+    [ -n "${file:-}" ] && [ -n "${sum:-}" ] \
+        || { echo "the client's manifest names no linuxarm64 binaries with a checksum (has its format changed?)"; exit 1; }
     echo "== the client ($BRANCH, version $(awk -F'"' '$2 == "version" { print $4; exit }' <<< "$manifest")): $file"
     download "$CDN/$file" "$TMP/client.zip" "$sum"
-    unzip -q -o "$TMP/client.zip" -d "$ROOT"
+    # Unpacked and put right beside Steam first, then copied in; steam made executable last, so that a
+    # setup cut short is not taken as installed.
+    mkdir "$TMP/client"
+    unzip -q "$TMP/client.zip" -d "$TMP/client"
     # (A few of the zip's entries, links and a folder, are named with backslashes, Windows' separators:
     # put them where they belong.)
-    for path in "$ROOT"/*\\*; do
+    for path in "$TMP/client"/*\\*; do
         [ -e "$path" ] || [ -L "$path" ] || continue
-        to=$ROOT/$(basename "$path" | tr '\\' /)
+        to=$TMP/client/$(basename "$path" | tr '\\' /)
         mkdir -p "$(dirname "$to")"
         if [ -d "$path" ] && [ ! -L "$path" ]; then mkdir -p "$to" && rmdir "$path"; else mv -f "$path" "$to"; fi
     done
     # (Its files come world-writable.)
-    chmod -R go-w "$ROOT"
-    chmod +x "$ROOT/steamrtarm64/steam"
+    chmod -R go-w "$TMP/client"
+    chmod a-x "$TMP/client/steamrtarm64/steam"
+    cp -a "$TMP/client/." "$ROOT/"
     # (The client's channel: the manifest it updates from; a mismatch makes it exit, 42.)
     echo "$BRANCH" > "$ROOT/package/beta"
+    chmod +x "$ROOT/steamrtarm64/steam"
     links
     echo "== the client's first run: it fetches the rest of itself, then exits"
     update
