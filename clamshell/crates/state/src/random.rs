@@ -215,6 +215,14 @@ struct Sent {
     handovers: Vec<LaunchUnit>,
     /// The last Players.
     players: crate::device_view::controllers::Players,
+    /// The last Lights.
+    lights: Option<[crate::lights::Lit; 2]>,
+    /// The last save of the settings, keymaps, curves, light sets and window rules, once one was sent.
+    saved_settings: Option<crate::settings::Settings>,
+    saved_keymaps: Option<crate::keymap::Keymaps>,
+    saved_curves: Option<crate::curve::Curves>,
+    saved_lights: Option<crate::lights::LightSets>,
+    saved_rules: Option<crate::session::below::WindowRules>,
 }
 
 /// Whether `launch` hands a game to its launcher (see `launchers::headless`): Heroic's command with the
@@ -881,8 +889,12 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             match rng.below(10) {
                 0 => {
                     let window = if rng.one_in(2) && w.windows.len() < 9 {
-                        let parent = if rng.one_in(3) { rng.pick(&w.windows).map(|p| p.id) } else { None };
-                        w.open("foot", None, parent)
+                        // Now and then a dialog of a window there, in its program (whose stack may then be
+                        // moved down with the dialog in front, and up again).
+                        match rng.pick(&w.windows).cloned().filter(|_| rng.one_in(3)) {
+                            Some(parent) => w.open(&parent.app_id, parent.unit.clone(), Some(parent.id)),
+                            None => w.open("foot", None, None),
+                        }
                     } else {
                         window
                     };
@@ -954,7 +966,7 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     let app_pick = s.library_view().pick().is_some_and(|p| matches!(p.purpose, crate::library_view::pick::PickFor::App { .. }));
     let home = matches!(s.top(), Top::App { app, .. } if app == crate::builtin_apps::home());
     ensure!(!app_pick || home, "an app's pick not shown: {:?}", s.top());
-    ensure!(s.session().down_history_valid(), "bottom placement history has a closed or duplicate window");
+    ensure!(s.session().down_history_valid(), "bottom placement history has a closed or duplicate window, or a rule on a dialog");
     ensure!(s.session().selections_valid(), "a selected window is not in its top group, or a screen's window is not open or on both screens");
     ensure!(s.session().overview_valid(), "the overview is open for a group not in front, or with fewer than two windows, or a choice not in it");
     // Every window has a group once the event is settled, except one of a program still starting, whose
@@ -1030,6 +1042,12 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
             Effect::Brightness { level, .. } => sent.brightness = Some(*level),
             Effect::SizeTouchpad(layout) => sent.touchpad = *layout,
             Effect::Players(players) => sent.players.clone_from(players),
+            Effect::Lights(lit) => sent.lights = Some(*lit),
+            Effect::Save(Save::Settings(v)) => sent.saved_settings = Some(v.clone()),
+            Effect::Save(Save::Keymaps(v)) => sent.saved_keymaps = Some(v.clone()),
+            Effect::Save(Save::Curves(v)) => sent.saved_curves = Some(v.clone()),
+            Effect::Save(Save::Lights(v)) => sent.saved_lights = Some(v.clone()),
+            Effect::Save(Save::WindowRules(v)) => sent.saved_rules = Some(v.clone()),
             _ => {}
         }
     }
@@ -1063,7 +1081,17 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         let by_app = matches!(s.top(), Top::App { app, .. } if seen && crate::builtin_apps::definition(app).watches.contains(&crate::Watch::Account));
         let reads = s.setup().reads_account() || by_app;
         ensure!(sent.account == reads, "2: account watched {}, read {reads}", sent.account);
+        let lights = s.lights_shown();
+        ensure!(sent.lights == Some(lights), "2: lights sent {:?}, shown {lights:?}", sent.lights);
     }
+    // What was saved last is what the state holds: no change goes unsaved, and none is saved partly.
+    // (Except while a slider is held: what it slides is saved once, when it is let go.)
+    let held = s.slider.is_some();
+    ensure!(held || sent.saved_settings.as_ref().is_none_or(|v| v == s.prefs().settings()), "2: the settings differ from those saved");
+    ensure!(held || sent.saved_keymaps.as_ref().is_none_or(|v| v == s.keymapping().keymaps()), "2: the keymaps differ from those saved");
+    ensure!(held || sent.saved_curves.as_ref().is_none_or(|v| v == s.curving().curves()), "2: the curves differ from those saved");
+    ensure!(held || sent.saved_lights.as_ref().is_none_or(|v| v == s.lighting().sets()), "2: the light sets differ from those saved");
+    ensure!(held || sent.saved_rules.as_ref().is_none_or(|v| v == s.session().window_rules()), "2: the window rules differ from those saved");
     let screens_on = s.idle().stage() < Stage::Off;
     ensure!(sent.status == screens_on, "2: status watched {}, screens on {screens_on}", sent.status);
     // At most one tab's watch is on, and it is the open tab's (the dock's menu shows the battery's).
@@ -1268,9 +1296,18 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         ensure!(keymap.is_some_and(|k| k.layer_name(layer).is_some()), "9: layer {layer:?} of keymap {id} is gone");
     }
     let settings = s.prefs().settings();
-    let chosen = std::iter::once(settings.global.get(Setting::Keymap)).chain(settings.overrides.values().filter_map(|o| o.get(Setting::Keymap)));
-    for id in chosen {
-        ensure!(id == 0 || keymaps.get(id).is_some(), "9: keymap {id} chosen and gone");
+    // Every player's keymap, the tone curve and the lights chosen, at every level, exist (0 is Default).
+    let kinds = crate::device_view::controllers::Player::ALL.map(Setting::keymap).into_iter().chain([Setting::Curve, Setting::Lights]);
+    for setting in kinds {
+        let chosen = std::iter::once(settings.global.get(setting)).chain(settings.overrides.values().filter_map(|o| o.get(setting)));
+        for id in chosen.filter(|id| *id != 0) {
+            let exists = match setting {
+                Setting::Curve => s.curving().curves().get(id).is_some(),
+                Setting::Lights => s.lighting().sets().get(id).is_some(),
+                _ => keymaps.get(id).is_some(),
+            };
+            ensure!(exists, "9: {setting:?} {id} chosen and gone");
+        }
     }
 
     // 10. Settings.
@@ -1281,8 +1318,9 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
         }
     }
 
-    // 12. Notifications.
+    // 12. Notifications: at most 32 held.
     let notes = s.notifications();
+    ensure!(notes.iter().count() <= 32, "12: {} notifications held", notes.iter().count());
     let now = s.clock().mono();
     let lit = s.bottom_lit();
     for (i, n) in notes.iter().enumerate() {

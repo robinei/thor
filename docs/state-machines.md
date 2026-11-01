@@ -1860,6 +1860,9 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
    least 1) while dimmed. The last SizeTouchpad is the second screen's layout, or None while its
    pixels or millimetres aren't known.
    At most one tab's watch is on, and it is the open tab's (or the battery's, for the dock's menu).
+   Once the UI is up, the last Lights is `lights_shown()`. The last save of the settings, keymaps,
+   curves, light sets and window rules, once one was sent, is what the state holds (except while a
+   slider is held, which saves when let go).
 3. **Pad route:** consistent with claimant, listening, dock move and overview; reconciling again changes nothing;
    the focus ring shows only when the route is Ui, or after a hold on the Library's selected entry opened its
    actions with the pad elsewhere, until the next touch hides it (the ring is what shows the actions are
@@ -1878,14 +1881,18 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
    a program still starting (its app id launching). Stacks: the top screen's window is the topmost of its
    stack; the bottom screen's window is a stack root; `has_other_top_window` is true exactly when stepping
    would change the top window's root (the group in front has another top-level window, and the top
-   window's root is one of them).
+   window's root is one of them). Each window recorded as sent down is open and recorded once, and one
+   recorded with a rule is a stack's root (Up finds it by the root). The front intent
+   (session/intent.rs) has a deadline not passed and no further than the longest wait, and waits for a
+   launch starting or listed, or an entry that runs.
 5. **Dock:** ids unique; every running entry is on it; every item is pinned, running or being moved.
 6. **The Library:** the cursor within the list (the selected entry is worked out as the one at it); the collection index in
    range; every entry listed matches the filter.
 7. **Lists:** every scroll offset within its ends.
 8. **Bottom:** dimmed ⇒ no windows shown; the chosen tab differs from the tab only on Keyboard; the editor
    shown is the shown tab's; the Touchpad tab ⇒ pointing.
-9. **Keymaps:** the open screen's keymap exists; its layer exists; every keymap id in the settings exists.
+9. **Profiles:** the open keymap screen's keymap exists; its layer exists; every player's keymap, the
+   tone curve and the lights chosen at any level exist (0 being Default or Off).
 10. **Settings:** no empty override; no global-only setting in overrides.
 11. **Effect stream across events:** Freeze alternates per slice, starting frozen, while a unit of it is
     listed (a slice whose units are all gone is gone, and starts thawed again), except after the freezer
@@ -1894,7 +1901,7 @@ After every event (checked by `random.rs`, `random_event_sequences_keep_the_inva
     forced) for a key until it is quit again or launched; at most one RecordPlay per entry per event, and
     only for an entry that ran before it; no Launch for an entry already launching (one given up in the
     same event may be launched again, as a Steam game whose window is there is).
-12. **Notifications:** ids unique; none past its time; a time runs only while the bottom screen is lit;
+12. **Notifications:** at most 32 held; ids unique; none past its time; a time runs only while the bottom screen is lit;
     every NotificationClosed names one held before the event and gone after it, once; an ActionInvoked
     names one held with an action and is followed at once by its NotificationClosed.
 13. **Setup:** no Launch while the account holds programs (unread, unreadable or without a password);
@@ -1916,7 +1923,7 @@ after a write. A small model of the
 compositor and systemd follows the effects (focus, moves, windows down). The library holds a Steam game
 (ff6) and Steam, a Heroic game (launched through Heroic) and Heroic, a Lutris game and Lutris, an app
 handed over to another program (desktop:firefox), an enqueue runner's album, a browsed file, a group (the
-series), the Device tool, and any program may open several windows; stray windows, a landed Steam game's
+series), the Device tool, and any program may open several windows, now and then a dialog of one already there in its program; stray windows, a landed Steam game's
 or app's window, windows marked with a launcher's game mark (`WindowFacts::game`, in Steam's scope, a unit
 of ours or none), a launcher's dialogs while one of its games launches or is waited for (which promote its
 group), and a stray program's tray icon come and go; a closing window is often the one opened last. Clocks advance mostly

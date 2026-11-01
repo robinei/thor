@@ -171,12 +171,15 @@ impl Session {
         }
     }
 
+    /// Whether every window recorded as sent down is open and recorded once, and every record with a
+    /// rule is a stack's root's, by which Up finds it (see [`Session::window_down`]).
     #[cfg(test)]
     pub(crate) fn down_history_valid(&self) -> bool {
-        self.sent_down
-            .iter()
-            .enumerate()
-            .all(|(i, sent)| self.window(sent.window).is_some() && !self.sent_down.iter().take(i).any(|other| other.window == sent.window))
+        self.sent_down.iter().enumerate().all(|(i, sent)| {
+            self.window(sent.window).is_some()
+                && !self.sent_down.iter().take(i).any(|other| other.window == sent.window)
+                && (sent.rule.is_none() || self.root_of(sent.window) == sent.window)
+        })
     }
 
     /// The first main window on the top screen, not sent down before, whose program's rule wants it below.
