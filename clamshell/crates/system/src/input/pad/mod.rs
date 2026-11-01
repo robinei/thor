@@ -811,16 +811,14 @@ impl<S: Sink> Service for PadThread<S> {
             if left.is_zero() {
                 return Next::Elapsed;
             }
-            let Some(pad) = self.devices.as_ref().and_then(|d| d.pads.first()) else {
+            // Every player's pad, as while up: a game of any player waits for its uploads.
+            let virtual_pads = self.devices.as_ref().map_or(&[][..], |d| d.pads.as_slice());
+            if virtual_pads.is_empty() {
                 return worker::next(commands, Some(left));
-            };
-            let mut fds = [PollFd::from_borrowed_fd(pad.device.as_fd(), PollFlags::IN), PollFd::from_borrowed_fd(self.bell.fd(), PollFlags::IN)];
-            match rustix::event::poll(&mut fds, Some(&crate::os::sys::timespec(left))) {
-                Ok(_) | Err(rustix::io::Errno::INTR) => self.bell.clear(),
-                Err(e) => {
-                    log::warn!("pad: {e}");
-                    return worker::next(commands, Some(left));
-                }
+            }
+            if let Err(e) = wait(None, virtual_pads, &self.bell, Some(left)) {
+                log::warn!("pad: {e}");
+                return worker::next(commands, Some(left));
             }
             self.serve_effects(Instant::now());
         }
