@@ -26,6 +26,8 @@ depends=(clamshell thor-system dbus rtkit xdg-desktop-portal-gtk foot udiskie xo
          ppsspp scummvm firefox)
 makedepends=(git)
 install=thor-session.install
+# (Edited on the device, kept by updates: pacman writes the package's own as a .pacnew.)
+backup=(etc/profile.d/thor-session.sh)
 
 # The checkout: the one this PKGBUILD is in, or THOR_REPO (a build from a copy of packages/).
 _repo() { realpath "${THOR_REPO:-$startdir/../..}"; }

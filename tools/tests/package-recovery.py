@@ -129,6 +129,17 @@ class Syntax(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class Packaging(unittest.TestCase):
+    def test_every_file_a_package_installs_in_etc_is_backup(self):
+        """A file in /etc invites edits: pacman keeps an edited one only if it is in backup=."""
+        for root in sorted((REPO / 'packages').glob('*/root')):
+            with self.subTest(package=root.parent.name):
+                etc = sorted(str(path.relative_to(root)) for path in (root / 'etc').rglob('*') if path.is_file())
+                out = subprocess.run(['bash', '-c', 'source PKGBUILD; printf "%s\\n" "${backup[@]}"'], cwd=root.parent,
+                                     capture_output=True, text=True, check=True).stdout
+                self.assertEqual(etc, sorted(line for line in out.splitlines() if line))
+
+
 class BootRecovery(unittest.TestCase):
     def machine(self):
         m = Machine()
@@ -498,7 +509,6 @@ class SystemInstall(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 path = m.root / 'enabled'
                 self.assertEqual(path.read_text().split() if path.exists() else [], enabled)
-
 
 
 class RegistryRecovery(unittest.TestCase):

@@ -76,7 +76,9 @@ turns sshd on only once there is a password. So any program running as `thor` (a
 runs) could set the first password, and with it gain sudo and ssh, if it ran while there was none: which
 is why ClamShell's Setup sets it before anything else of the user's runs (below). Passwords
 are 8 characters at least; sshd (`/etc/ssh/sshd_config.d/50-thor.conf`) takes only `thor`, no root, 3
-tries a connection (and OpenSSH's own penalties for repeated failures).
+tries a connection (and OpenSSH's own penalties for repeated failures). The user's own sshd settings go in
+a file read before it, such as `10-local.conf` (sshd keeps the first value it reads); the packages' files
+in `/etc` are `backup=`, so an edit there is kept too, the new version written beside it as a `.pacnew`.
 
 sudo asks the password, per terminal, as usual. During a maintenance pass (`thor-maintain`) it is shared:
 the pass asks it once, writes `/etc/sudoers.d/zz-thor-maintenance` (`timestamp_type=global`) so that

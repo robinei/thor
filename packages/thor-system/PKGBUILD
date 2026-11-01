@@ -19,6 +19,8 @@ optdepends=('linux-thor: the Thor'"'"'s kernel'
             'thor-ucm: the Thor'"'"'s sound profiles')
 makedepends=(git)
 install=thor-system.install
+# (Edited on the device, kept by updates: pacman writes the package's own as a .pacnew.)
+backup=(etc/ssh/sshd_config.d/50-thor.conf)
 
 # The checkout: the one this PKGBUILD is in, or THOR_REPO (a build from a copy of packages/).
 _repo() { realpath "${THOR_REPO:-$startdir/../..}"; }
