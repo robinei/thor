@@ -78,39 +78,59 @@ fn run(op: &FileOp, data_home: Option<&Path>, sink: &impl Sink) -> Result<String
             }
             Ok(format!("Deleted {}", name_of(path)))
         }
-        FileOp::EmptyTrash(files) => {
-            let mut unread = 0;
-            for entry in fs::read_dir(files).map_err(|e| failed("Reading", files, &e))? {
-                match entry {
-                    Ok(entry) => remove(&entry.path()).map_err(|e| failed("Deleting", &entry.path(), &e))?,
-                    Err(e) => {
-                        log::warn!("files: {}: {e}", files.display());
-                        unread += 1;
-                    }
-                }
-            }
-            if let Some(info) = files.parent().map(|t| t.join("info")) {
-                match fs::read_dir(&info) {
-                    Ok(entries) => {
-                        for e in entries.filter_map(|e| e.inspect_err(|e| log::warn!("files: {}: {e}", info.display())).ok()) {
-                            if let Err(err) = fs::remove_file(e.path()) {
-                                log::warn!("files: removing {}: {err}", e.path().display());
-                            }
-                        }
-                    }
-                    Err(e) if e.kind() == io::ErrorKind::NotFound => log::debug!("files: {}: {e}", info.display()),
-                    Err(e) => log::warn!("files: {}: {e}", info.display()),
-                }
-            }
-            match unread {
-                0 => Ok("Emptied the Trash".to_owned()),
-                n => Err(format!("Emptying the Trash: {n} couldn't be read")),
-            }
-        }
+        FileOp::EmptyTrash(files) => empty_trash(files),
         FileOp::Eject(device) => {
             super::mounts::eject(device, EJECT_LIMIT).map_err(|e| format!("Ejecting {device}: {}", e.message()))?;
             Ok(format!("{device} can be taken out"))
         }
+    }
+}
+
+/// Empties the Trash whose `files` folder is `files`: each entry is deleted with its record, so one that
+/// can't be keeps its record and can still be restored. Records left with no entry are removed too. The
+/// failures are counted and the first said.
+fn empty_trash(files: &Path) -> Result<String, String> {
+    let mut left: Vec<String> = Vec::new();
+    for entry in fs::read_dir(files).map_err(|e| failed("Reading", files, &e))? {
+        let entry = match entry {
+            Ok(entry) => entry.path(),
+            Err(e) => {
+                log::warn!("files: {}: {e}", files.display());
+                left.push(format!("Reading {}: {e}", name_of(files)));
+                continue;
+            }
+        };
+        if let Err(e) = remove(&entry) {
+            log::warn!("files: deleting {}: {e}", entry.display());
+            left.push(failed("Deleting", &entry, &e));
+            continue;
+        }
+        if let Some(info) = trash_info(&entry)
+            && let Err(e) = fs::remove_file(&info)
+        {
+            log::warn!("files: removing {}: {e}", info.display());
+        }
+    }
+    if let Some(info) = files.parent().map(|t| t.join("info")) {
+        match fs::read_dir(&info) {
+            Ok(entries) => {
+                for record in entries.filter_map(|e| e.inspect_err(|e| log::warn!("files: {}: {e}", info.display())).ok()).map(|e| e.path()) {
+                    let entry = record.file_stem().map(|n| files.join(n));
+                    if entry.is_some_and(|e| e.symlink_metadata().is_err())
+                        && let Err(err) = fs::remove_file(&record)
+                    {
+                        log::warn!("files: removing {}: {err}", record.display());
+                    }
+                }
+            }
+            Err(e) if e.kind() == io::ErrorKind::NotFound => log::debug!("files: {}: {e}", info.display()),
+            Err(e) => log::warn!("files: {}: {e}", info.display()),
+        }
+    }
+    match left.as_slice() {
+        [] => Ok("Emptied the Trash".to_owned()),
+        [one] => Err(one.clone()),
+        [first, rest @ ..] => Err(format!("{first}, and {} more left in the Trash", rest.len())),
     }
 }
 
@@ -445,6 +465,31 @@ mod tests {
         fs::write(dir.join("c.txt"), "c").unwrap();
         assert_eq!(run(&FileOp::Rename { path: dir.join("b.txt"), name: "c.txt".into() }, None, &tx), Err("c.txt is there already".into()));
         assert_eq!(fs::read_to_string(dir.join("c.txt")).unwrap(), "c");
+    }
+
+    /// Emptying the Trash deletes each entry with its record; one that can't be deleted keeps its record,
+    /// the others go on, and the failure is said at the end. A record with no entry goes too.
+    #[test]
+    fn emptying_the_trash_keeps_the_records_of_what_stays() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let trash = tmp.path().join("Trash");
+        fs::create_dir_all(trash.join("files/stuck/locked")).unwrap();
+        fs::create_dir_all(trash.join("info")).unwrap();
+        fs::write(trash.join("files/stuck/locked/f"), "x").unwrap();
+        fs::write(trash.join("files/z.txt"), "z").unwrap();
+        for name in ["stuck", "z.txt", "gone.txt"] {
+            fs::write(trash.join(format!("info/{name}.trashinfo")), "[Trash Info]\n").unwrap();
+        }
+        // A folder whose contents can't be deleted.
+        fs::set_permissions(trash.join("files/stuck/locked"), fs::Permissions::from_mode(0o500)).unwrap();
+        let emptied = empty_trash(&trash.join("files"));
+        fs::set_permissions(trash.join("files/stuck/locked"), fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(emptied.is_err_and(|e| e.starts_with("Deleting stuck")));
+        assert!(!trash.join("files/z.txt").exists(), "the others are deleted");
+        let mut records: Vec<_> = fs::read_dir(trash.join("info")).unwrap().map(|e| e.unwrap().file_name()).collect();
+        records.sort();
+        assert_eq!(records, ["stuck.trashinfo"], "what stays keeps its record; the rest go");
     }
 
     #[test]
