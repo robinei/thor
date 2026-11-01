@@ -16,11 +16,11 @@ use clamshell_ui::toolkit::style::{Look, Tone};
 const HUD_TEXT: f32 = 0.028;
 /// The HUD box's background.
 const HUD_BACKGROUND: Rgb = Rgb(0x000000);
-/// How far an arrow's target reaches in from the screen's edge, and how tall it is.
-const ARROW_REACH: f32 = 80.0;
-const ARROW_HEIGHT: f32 = 100.0;
-/// The arrow's icon's side.
-const ARROW_ICON: f32 = 48.0;
+/// How far an arrow's target reaches in from the screen's edge, how tall it is, and its icon's side, as
+/// fractions of the screen's height (80, 100 and 48 pixels at 1080).
+const ARROW_REACH: f32 = 0.074;
+const ARROW_HEIGHT: f32 = 0.093;
+const ARROW_ICON: f32 = 0.044;
 
 pub fn draw(f: &mut Frame, screen: Rect) {
     if f.s.session().overview().is_some() {
@@ -80,8 +80,7 @@ fn hud(f: &mut Frame, screen: Rect) {
     };
     let size = HUD_TEXT * screen.h;
     let pad = size * 0.5;
-    // About half the size per character, as Noto Sans's digits are.
-    let width = text.chars().count() as f32 * size * 0.56 + pad * 2.0;
+    let width = f.c.text_width(size, &text) + pad * 2.0;
     f.c.rounded(Rect::new(screen.x + pad, screen.y + pad, width, size * 1.7), size * 0.4, HUD_BACKGROUND.alpha(0.6));
     f.c.text(screen.x + pad * 2.0, screen.y + pad + size * 0.35, size, Tone::High, &text);
 }
@@ -94,12 +93,12 @@ fn arrows(f: &mut Frame, screen: Rect) {
     if !session.home_held() || !session.has_other_top_window() {
         return;
     }
-    let y = screen.y + (screen.h - ARROW_HEIGHT) / 2.0;
-    for (next, x, icon) in [(false, screen.x, Icon::ChevronBack), (true, screen.x + screen.w - ARROW_REACH, Icon::Chevron)] {
-        let rect = Rect::new(x, y, ARROW_REACH, ARROW_HEIGHT);
+    let (reach, height, side) = (ARROW_REACH * screen.h, ARROW_HEIGHT * screen.h, ARROW_ICON * screen.h);
+    let y = screen.y + (screen.h - height) / 2.0;
+    for (next, x, icon) in [(false, screen.x, Icon::ChevronBack), (true, screen.x + screen.w - reach, Icon::Chevron)] {
+        let rect = Rect::new(x, y, reach, height);
         f.button(Id::WindowArrow { next }, rect, Look::PLAIN, |f| {
-            let (cx, cy) = rect.center();
-            f.c.icon(icon, Rect::new(cx - ARROW_ICON / 2.0, cy - ARROW_ICON / 2.0, ARROW_ICON, ARROW_ICON), Tone::Normal);
+            f.c.icon(icon, rect.square_center(side), Tone::Normal);
         });
     }
 }
@@ -166,6 +165,41 @@ mod tests {
         let hidden = overlay(&state(false));
         assert!(hidden.targets.is_empty());
         assert!(hidden.next.ink().is_empty(), "nothing drawn, so nothing is shown over the window");
+    }
+
+    /// The HUD's box is as wide as its text, measured, with the same margin on both sides.
+    #[test]
+    fn the_huds_box_fits_its_text() {
+        let mut settings = clamshell_state::settings::Settings::default();
+        settings.global.set(clamshell_state::settings::Setting::Hud, 2);
+        let mut s = State::new(Init { library: Some(clamshell_library::demo::library()), settings, ..Init::default() });
+        let mut fx = Vec::new();
+        s.apply(Event::tick(1_760_000_000), &mut fx);
+        let launch = clamshell_state::LaunchUnit { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 0 };
+        s.apply(Event::Units(vec![launch.clone()]), &mut fx);
+        s.apply(WindowEvent::Opened(WindowFacts { id: 1, app_id: "game".into(), unit: Some(launch.service()), ..WindowFacts::default() }).into(), &mut fx);
+        s.apply(WindowEvent::Activate(1).into(), &mut fx);
+        s.apply(Event::Reading(clamshell_state::Reading::Frames { fps: Some(120.0), frame_ms: Some(16.7) }), &mut fx);
+        let (w, h) = (1920, 1080);
+        let mut retained = Retained::default();
+        let mut cache = DrawCache::load();
+        record(
+            &mut retained,
+            Placement { size_px: (w, h), scale: 1, drift: (0, 0) },
+            Layer::Overlay(clamshell_ui::Screen::Top),
+            &s,
+            &mut cache,
+            &mut Images::synchronous(),
+            &crate::VIEWS,
+        );
+        let ink = retained.next.ink();
+        assert!(!ink.is_empty(), "the HUD drawn");
+        let size = super::HUD_TEXT * h as f32;
+        let mut scratch = clamshell_ui::gfx::record::Recording::default();
+        let text_w = clamshell_ui::gfx::Canvas::new(&mut scratch, (w, h), 1.0, &mut cache).text_width(size, "120 fps  16.7 ms");
+        // The box from half the text size in, with that margin on either side of the text.
+        let right = size * 0.5 + text_w + size;
+        assert!((ink.x1 as f32 - right).abs() <= 6.0, "the box ends at {} for text ending at {}", ink.x1, size + text_w);
     }
 
     /// The overview's cells are its targets, side by side for two windows, and take the arrows' place.
