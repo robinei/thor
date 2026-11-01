@@ -98,6 +98,15 @@ else, reading it again, and its password step can't be passed; only a machine wi
 programs run without one. While Setup shows, the second screen shows only the keyboard. What runs before
 the password is ClamShell and the image's own services. Changing a password asks for the current one.
 
+## The power group's files
+
+The session's user is in the `power` group, which writes what ClamShell's settings set (the CPU and GPU
+caps, the battery's limits: `73-thor-power.rules`) and the top panel's calibration
+(`/var/lib/thor/panel-calibration`). Root reads only root-owned paths, or regular files in root-owned
+directories: `/var/lib/thor` is root's (`tmpfiles.d/thor-panel.conf`), so the group can change the
+calibration file but not put a symlink in its place, and its readers (`thor-selftest`,
+`/usr/lib/thor/panel-calibration`) read it only as a regular file, never through a symlink.
+
 ## Input devices
 
 The session's user is in the `input` group, for ClamShell's virtual pad and keyboard (uinput) and for

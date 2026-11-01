@@ -354,5 +354,69 @@ class Account(unittest.TestCase):
                 self.assertEqual(self.log(m, 'systemctl'), 'enable --now -q sshd\n')
 
 
+class PanelCalibrationReaders(unittest.TestCase):
+    """Root's readers of /var/lib/thor/panel-calibration, which the power group writes."""
+
+    def machine(self):
+        m = Machine()
+        self.addCleanup(m.close)
+        m.file('sys/bus/mipi-dsi/devices/dsi0/frame_len_120', '52\n')
+        m.file('sys/bus/mipi-dsi/devices/dsi0/frame_len_60', '2000\n')
+        m.file('secret', 'root:$6$secret:20000::::::\n')
+        for command in ['systemctl', 'journalctl', 'runuser', 'loginctl', 'nmcli', 'NetworkManager', 'swapon',
+                        'lsblk', 'findmnt', 'mount', 'mountpoint', 'pacman', 'sync', 'id']:
+            m.command(command, 'exit 1')
+        return m
+
+    def selftest(self, m):
+        source = (REPO / 'packages/thor-system/root/usr/bin/thor-selftest').read_text()
+        source = re.sub('/sys/bus/mipi-dsi/|/var/lib/thor/|/var/log/', lambda match: f'{m.root}{match.group()}', source)
+        script = m.file('script', source)
+        result = subprocess.run(['bash', script, '--now'], env=m.env, capture_output=True, text=True, timeout=15)
+        return [line for line in result.stdout.splitlines() if 'frame lengths' in line]
+
+    def apply(self, m):
+        source = (REPO / 'packages/thor-system/root/usr/lib/thor/panel-calibration').read_text()
+        script = m.file('script', re.sub('/var/lib/thor/', f'{m.root}/var/lib/thor/', source))
+        return subprocess.run(['sh', script, m.root / 'sys/bus/mipi-dsi/devices/dsi0'], env=m.env, capture_output=True, text=True, timeout=15)
+
+    def test_a_symlink_or_empty_file_reads_as_uncalibrated_and_a_regular_file_as_its_values(self):
+        for kind in ['symlink', 'empty', 'regular']:
+            with self.subTest(kind=kind):
+                m = self.machine()
+                saved = m.root / 'var/lib/thor/panel-calibration'
+                saved.parent.mkdir(parents=True)
+                if kind == 'symlink':
+                    saved.symlink_to(m.root / 'secret')
+                elif kind == 'empty':
+                    saved.write_text('')
+                else:
+                    saved.write_text('frame_len_120=53\nframe_len_60=2010\n')
+                lines = self.selftest(m)
+                self.assertEqual(len(lines), 1, lines)
+                if kind == 'regular':
+                    self.assertTrue(lines[0].endswith('(frame_len_120=53 frame_len_60=2010 )'), lines)
+                else:
+                    self.assertTrue(lines[0].endswith('(uncalibrated)'), lines)
+
+    def test_the_driver_files_are_written_only_from_a_regular_file(self):
+        for kind in ['symlink', 'regular']:
+            with self.subTest(kind=kind):
+                m = self.machine()
+                values = 'frame_len_120=53\nframe_len_60=2010\n'
+                saved = m.root / 'var/lib/thor/panel-calibration'
+                saved.parent.mkdir(parents=True)
+                if kind == 'symlink':
+                    m.file('elsewhere', values)
+                    saved.symlink_to(m.root / 'elsewhere')
+                else:
+                    saved.write_text(values)
+                result = self.apply(m)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                panel = m.root / 'sys/bus/mipi-dsi/devices/dsi0'
+                expected = ('53\n', '2010\n') if kind == 'regular' else ('52\n', '2000\n')
+                self.assertEqual(((panel / 'frame_len_120').read_text(), (panel / 'frame_len_60').read_text()), expected)
+
+
 if __name__ == '__main__':
     unittest.main()

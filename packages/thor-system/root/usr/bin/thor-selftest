@@ -35,6 +35,12 @@ check() {
 val() { tr '\n' ' ' 2> /dev/null < "$1" | sed 's/ *$//'; }
 # The input devices' names (from /proc/bus/input/devices).
 inputs() { sed -n 's/^N: Name="\(.*\)"$/\1/p' /proc/bus/input/devices 2> /dev/null; }
+# The saved panel calibration, or "uncalibrated". The power group writes the file, so it is read only as
+# a regular file: a symlink there would have root copy whatever it names into the log.
+calibration() {
+    local f=/var/lib/thor/panel-calibration
+    if [ -f "$f" ] && [ ! -L "$f" ] && [ -s "$f" ]; then tr '\n' ' ' < "$f"; else echo uncalibrated; fi
+}
 flush() {
     [ "$NOW" = 1 ] && return
     journalctl --sync 2> /dev/null
@@ -103,7 +109,7 @@ settled() {
     info "backlights: $(ls /sys/class/backlight 2> /dev/null | tr '\n' ' ')"
     local fl
     for fl in /sys/bus/mipi-dsi/devices/*/frame_len_120; do
-        [ -e "$fl" ] && info "top panel's frame lengths: 120 Hz $(val "$fl"), 60 Hz $(val "${fl%120}60") ($( [ -r /var/lib/thor/panel-calibration ] && tr '\n' ' ' < /var/lib/thor/panel-calibration || echo uncalibrated))"
+        [ -e "$fl" ] && info "top panel's frame lengths: 120 Hz $(val "$fl"), 60 Hz $(val "${fl%120}60") ($(calibration))"
     done
 
     # Input devices.
