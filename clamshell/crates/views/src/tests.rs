@@ -423,3 +423,30 @@ fn a_long_notice_is_cut_to_the_screen() {
     let text = String::from_utf8_lossy(rec.all_text()).into_owned();
     assert!(text.contains("/home/thor/.config/clamshell/library.json: line 12") && text.contains('…'), "{text}");
 }
+
+/// A keymap's edit screen says who uses it: "{name}, not used" for one nobody uses, not "used by not
+/// used".
+#[test]
+fn an_unused_keymaps_line_says_it_is_not_used() {
+    use clamshell_state::settings::Setting;
+    use clamshell_state::{ListId, PointerEvent, SettingsId};
+    let keymaps = clamshell_state::keymap::Keymaps::initial();
+    let mut state = State::new(Init { library: Some(clamshell_library::demo::library()), keymaps, ..Init::default() });
+    for event in [
+        Event::Pointer(PointerEvent::Activate(Id::Tab(Tab::Settings))),
+        PointerEvent::LongPress(Id::Settings(SettingsId::Tile(Setting::Keymap))).into(),
+        Event::Pointer(PointerEvent::Activate(Id::Row { list: ListId::Keymaps, i: 2, part: clamshell_state::RowPart::Edit })),
+    ] {
+        state.apply(event, &mut Vec::new());
+    }
+    let mut cache = DrawCache::load();
+    let mut rec = Recording::default();
+    let mut targets = Vec::new();
+    let mut canvas = Canvas::new(&mut rec, (1240, 1080), 1.0, &mut cache);
+    let (mut images, mut scratch) = (Images::synchronous(), Scratch::default());
+    let mut f = Frame::new(&mut canvas, &state, &mut images, &mut scratch, &mut targets);
+    bottom(&mut f, Rect::new(0.0, 0.0, 1240.0, 1080.0));
+    f.finish();
+    let text = String::from_utf8_lossy(rec.all_text()).into_owned();
+    assert!(text.contains(", not used") && !text.contains("used by not"), "{text}");
+}

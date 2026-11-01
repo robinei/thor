@@ -120,6 +120,17 @@ pub(super) fn users(f: &Frame, kind: Kind, id: u16) -> Fmt<48> {
     }
 }
 
+/// Who uses a profile, as it follows its name: "used by all games, 2 games", or "not used".
+pub(super) fn used_by(f: &Frame, kind: Kind, id: u16) -> Fmt<48> {
+    let u = f.s.prefs().settings().users(kind.setting(), id);
+    match (u.all_entries, u.entries) {
+        (true, 0) => Fmt::of(format_args!("used by all games")),
+        (true, n) => Fmt::of(format_args!("used by all games, {n} {}", if n == 1 { "game" } else { "games" })),
+        (false, 0) => Fmt::of(format_args!("not used")),
+        (false, n) => Fmt::of(format_args!("used by {n} {}", if n == 1 { "game" } else { "games" })),
+    }
+}
+
 /// What the list is for.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Listing {

@@ -88,11 +88,6 @@ fn remap_title(input: Input, labels: &clamshell_state::ControlLabels) -> Fmt<64>
     Fmt::of(format_args!("Remap {} to…", Label(input, labels)))
 }
 
-/// Who uses a keymap, in words.
-fn users(f: &Frame, id: u16) -> Fmt<48> {
-    super::profiles::users(f, Kind::Keymap, id)
-}
-
 /// Edit screen sizes. The labels' text is a fraction of the small text size. A cluster's width, the gap
 /// between it and its labels where the lines turn, and the labels' column width are fractions of the
 /// area's width. The panel's row height is a fraction of the area's height.

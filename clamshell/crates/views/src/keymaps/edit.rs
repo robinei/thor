@@ -2,7 +2,6 @@
 //! for each changed control, the corners (Close, Undo, the layer button), and the layout they share.
 
 use clamshell_state::profiles::picker::{Kind, ProfileId};
-use std::fmt::Write;
 
 use clamshell_state::keymap::{Actuation, Binding, Button, Change, Dir, Input, Keymap, Layer, Side, change};
 use clamshell_state::{Id, KeymapId};
@@ -420,14 +419,14 @@ pub(super) fn edit(f: &mut Frame, id: u16, picking: Option<Picking>) {
 }
 
 /// Which keymap is edited: a game's own ("Own keymap of Hades"), or a named one with who uses it ("FPS,
-/// used by all games, 2 games"). For a game without its own keymap, "Make own" follows, which makes a
+/// used by all games, 2 games", "FPS, not used"). For a game without its own keymap, "Make own" follows, which makes a
 /// copy for that game alone to edit from then on.
 fn keymap_line(f: &mut Frame, mut row: Rect, id: u16, size: f32) {
     let own = f.s.keymapping().is_own(id);
     let text = match (own, f.s.panel().editing()) {
         (true, Some(entry)) => Fmt::<128>::of(format_args!("Own keymap of {}", entry.title)),
         (true, None) => Fmt::of(format_args!("Own keymap")),
-        (false, _) => Fmt::of(format_args!("{}, used by {}", f.s.keymapping().name(id), Lower(super::users(f, id).as_str()))),
+        (false, _) => Fmt::of(format_args!("{}, {}", f.s.keymapping().name(id), super::super::profiles::used_by(f, Kind::Keymap, id).as_str())),
     };
     let label = if !own && f.s.panel().keymap_can_make_own() { "Make own" } else { "" };
     // The text and then the action, centred together.
@@ -440,19 +439,6 @@ fn keymap_line(f: &mut Frame, mut row: Rect, id: u16, size: f32) {
         f.text_button(Id::Keymap(KeymapId::MakeOwn), action, size, Tone::Fn, label, Align::End);
     }
     f.c.text_fit(row, size, Tone::Dim, &text, Keep::Start);
-}
-
-/// Text with its first letter in lower case, as for "All games" after "used by".
-struct Lower<'a>(&'a str);
-
-impl std::fmt::Display for Lower<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let mut chars = self.0.chars();
-        if let Some(c) = chars.next() {
-            f.write_char(c.to_ascii_lowercase())?;
-        }
-        f.write_str(chars.as_str())
-    }
 }
 
 /// A control in a cluster, as a target: its outline and its mark in `tone` (blue when mapped, grey when
