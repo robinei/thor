@@ -299,3 +299,44 @@ fn enter_releases_its_original_press_when_a_mode_appears() {
     core.key(xkeysym::Keysym::Return, false);
     assert!(core.state().pointer().pressed().is_none(), "a mode disappearing leaves no held press");
 }
+
+/// View moving the pad from a game to the second screen brings the focus there, whether it comes from
+/// the pad (as the pad thread sends it, while the core is handling events) or a desktop's Tab key.
+#[test]
+fn view_from_a_game_brings_the_focus_to_the_second_screen() {
+    for via_key in [true, false] {
+        let account = clamshell_state::setup::account::Account::NoHelper;
+        let state = State::new(Init { library: Some(clamshell_library::demo::library()), account, ..Init::default() });
+        let mut core = clamshell_ui::Core::new(state, crate::VIEWS, || {}).expect("a core");
+        for screen in Screen::BOTH {
+            core.resize(screen, (1280, 720), 1);
+        }
+        core.handle(Event::tick(1_760_000_000));
+        let launch = clamshell_state::LaunchUnit { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 0 };
+        core.handle(Event::Units(vec![launch.clone()]));
+        let window = clamshell_state::session::windows::WindowFacts { id: 1, app_id: "game".into(), unit: Some(launch.service()), ..Default::default() };
+        core.handle(clamshell_state::WindowEvent::Opened(window).into());
+        core.handle(clamshell_state::WindowEvent::Activate(1).into());
+        for layer in [clamshell_ui::Layer::Screen(Screen::Top), clamshell_ui::Layer::Screen(Screen::Bottom)] {
+            core.record(layer, false);
+        }
+        core.frames_done();
+        assert_eq!(core.state().pad().route(), clamshell_state::PadRoute::Game);
+        let on_top = core.state().pointer().focus().cloned();
+        assert!(matches!(on_top, Some(Id::LibraryView(_))), "the focus is left on the Library: {on_top:?}");
+        let switch = |core: &mut clamshell_ui::Core| match via_key {
+            true => core.key(xkeysym::Keysym::Tab, true),
+            false => core.handle(Event::Pad(PadInput::Switch)),
+        };
+        switch(&mut core);
+        assert_eq!(core.state().pad().route(), clamshell_state::PadRoute::Ui, "via_key {via_key}");
+        assert_eq!(core.state().pointer().focus(), Some(&Id::Tab(core.state().bottom().tab())), "via_key {via_key}: the focus on the second screen");
+        // Moved and switched away and back, it comes back where it was.
+        core.handle(PointerEvent::Focus(Id::Tab(Tab::Wifi)).into());
+        switch(&mut core);
+        assert_eq!(core.state().pad().route(), clamshell_state::PadRoute::Game);
+        core.handle(PointerEvent::Focus(on_top.clone().expect("a focus")).into());
+        switch(&mut core);
+        assert_eq!(core.state().pointer().focus(), Some(&Id::Tab(Tab::Wifi)), "via_key {via_key}: where it was");
+    }
+}

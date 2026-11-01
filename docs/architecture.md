@@ -174,6 +174,10 @@ and fixed once. Seven rules:
   software surface: kept, with only what changed uploaded) where the scene places it, and
   carries out the effects that are its own (the screens' power, the refresh rate, closing windows,
   screenshots, quitting).
+- **The queue.** An event that comes while another is handled waits until that one is done, effects and
+  all. Pad input, from the pad or the keys standing in for it, is always taken from that queue, so the
+  events it gives are only queued and it decides from the state before them; what depends on their
+  outcome (where the focus goes after View moved the pad) is a step queued after them.
 - **Drawing.** Views are functions of `&State` that draw on a canvas. The canvas records commands (fills,
   text, icons, images, clips) into a flat, reused buffer; after every event each visible screen is recorded
   and compared with its last recording. If nothing differs, nothing is drawn or committed. If something does,

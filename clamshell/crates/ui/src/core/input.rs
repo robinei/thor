@@ -9,7 +9,7 @@ use crate::input::focus::{self, PadPress};
 use crate::input::nav::Dir;
 use crate::input::{End, Source};
 
-use super::Core;
+use super::{Core, Step};
 
 impl Core {
     /// A finger or button comes down at `position` on `screen`. It presses the topmost target there,
@@ -95,12 +95,10 @@ impl Core {
     /// - View moves focus to the other screen while the pad may use both. Otherwise it moves the pad
     ///   between the second screen and whatever else wants it, such as the pad mouse or typing. The pad
     ///   thread sends View from there too.
-    pub(crate) fn pad(&mut self, input: PadInput) {
-        self.pad_from(input, Source::PadA);
-    }
-
-    /// Enter follows the same fresh targets and modes as A, but keeps its own press and release.
-    fn pad_from(&mut self, input: PadInput, source: Source) {
+    ///
+    /// It is taken from the queue (see [`super::Step`]), from `source`: the pad's A, or Enter on a
+    /// desktop, which follows the same fresh targets and modes as A but keeps its own press and release.
+    pub(super) fn pad_from(&mut self, input: PadInput, source: Source) {
         self.handle(Event::PadActive);
         self.fresh();
         // A held A lets go wherever it was pressed, a mode or not, so no press is left held.
@@ -140,15 +138,18 @@ impl Core {
             // Move the pad between the second screen and whatever else wants it. When it comes back to
             // the screen, the focus returns to where it was.
             PadInput::Switch => {
-                let on_ui = |s: &State| s.pad().route() == clamshell_state::PadRoute::Ui;
                 if on_ui(&self.state) {
                     self.focus_memory.bottom = self.state.pointer().focus().cloned();
                 }
                 self.handle(Event::PadSwitch);
-                if on_ui(&self.state) {
-                    let event = focus::focus_bottom(&self.state, &self.screens, &self.focus_memory);
-                    self.handle_all(event);
-                }
+                // Order: where the focus goes depends on where the switch put the pad.
+                self.after(|core| {
+                    if on_ui(&core.state) {
+                        core.fresh();
+                        let event = focus::focus_bottom(&core.state, &core.screens, &core.focus_memory);
+                        core.handle_all(event);
+                    }
+                });
             }
             PadInput::Up | PadInput::Down | PadInput::Left | PadInput::Right => {}
         }
@@ -177,9 +178,14 @@ impl Core {
     /// mode, the mode's.
     pub fn key(&mut self, sym: Keysym, down: bool) {
         match focus::desktop_key(sym) {
-            Some(PadInput::A(_)) => self.pad_from(PadInput::A(down), Source::Enter),
-            Some(input) if down => self.pad(input),
+            Some(PadInput::A(_)) => self.step(Step::Pad(PadInput::A(down), Source::Enter)),
+            Some(input) if down => self.step(Step::Pad(input, Source::PadA)),
             _ => {}
         }
     }
+}
+
+/// Whether the pad drives ClamShell's screens.
+fn on_ui(s: &State) -> bool {
+    s.pad().route() == clamshell_state::PadRoute::Ui
 }

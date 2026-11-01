@@ -361,6 +361,7 @@ windows is open, listening included. The focus ring hides when the route leaves 
 |---|---|
 | front or tab changes the claimant, the route follows | `the_pad_goes_to_library_view_the_program_or_typing_…` |
 | View switches to the second screen and back | `view_moves_the_pad_between_…`, `view_does_nothing_with_a_builtin_in_front` |
+| View (from the pad or a desktop's Tab) bringing the pad to the second screen brings the focus there: where it was when View took the pad away, else the open tab; decided by the UI core after the switch is applied | views `view_from_a_game_brings_the_focus_to_the_second_screen` |
 | a claimant change keeps the switch to the second screen; the Library claiming the pad clears it | `the_pad_moved_to_the_second_screen_stays_there_until_view_or_library_view` |
 | pad mouse by hand, by game, kept by hand | `pad_mouse_toggles_independently_…`, `the_pad_mouse_follows_the_game_…` |
 | listening, dock move, focus ring | `a_new_keymap_is_named_edited_and_mapped`, `moving_a_dock_entry_takes_the_pad_…`, `the_focus_ring_hides_when_the_pad_leaves_…` |

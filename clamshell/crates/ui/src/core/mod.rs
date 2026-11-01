@@ -1,6 +1,6 @@
 //! The UI without a backend: the state and the event queue, the input machines, the timers as deadlines,
 //! and each screen recorded and drawn into a pixmap. The compositor hosts it:
-//! - gives it input by screen ([`Core::press`], [`Core::pad`], ...) and the screens' sizes;
+//! - gives it input by screen ([`Core::press`], [`Core::key`], ...) and the screens' sizes;
 //! - runs it when its deadline comes and after each turn of its loop ([`Core::run`]);
 //! - draws a screen that is due when a frame can be shown: [`Core::record`], then [`Core::draw`] into a
 //!   pixmap of the screen's size, then [`Core::frames_done`]; and the same for each screen's overlay
@@ -16,7 +16,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::time::Instant;
 
 use clamshell_state::bottom::touch::{Contact, Pointing};
-use clamshell_state::{Effect, Event, Id, PointerEvent, State};
+use clamshell_state::{Effect, Event, Id, PadInput, PointerEvent, State};
 
 use crate::Error;
 use crate::gfx::fonts::Found;
@@ -180,19 +180,32 @@ impl Core {
     /// Handles `event`. One that comes while another is being handled, such as one the input side emits,
     /// waits until that one is done, effects and all (see [`EventQueue`]).
     pub fn handle(&mut self, event: Event) {
-        if !self.queue.push(event) {
+        self.step(Step::Event(event));
+    }
+
+    /// Takes `step` in turn (see [`Step`]).
+    fn step(&mut self, step: Step) {
+        if !self.queue.push(step) {
             return;
         }
-        while let Some(event) = self.queue.next() {
-            self.handle_one(event);
+        while let Some(step) = self.queue.next() {
+            match step {
+                // The pad driving the screens is input, handled here like keys and touches.
+                Step::Event(Event::Pad(input)) => self.pad_from(input, Source::PadA),
+                Step::Event(event) => self.handle_one(event),
+                Step::Pad(input, source) => self.pad_from(input, source),
+                Step::After(after) => after(self),
+            }
         }
     }
 
+    /// Runs `after` once the events queued before it are handled, for input that depends on what they
+    /// change (see [`Step::After`]).
+    fn after(&mut self, after: fn(&mut Core)) {
+        self.step(Step::After(after));
+    }
+
     fn handle_one(&mut self, event: Event) {
-        // The pad driving the screens is input, handled here like keys and touches.
-        if let Event::Pad(input) = event {
-            return self.pad(input);
-        }
         if let Some(observer) = &mut self.event_observer {
             observer(&event, &self.state);
         }
@@ -427,26 +440,40 @@ fn tell(to: &Sender<Arrival>, wake: &dyn Fn(), arrival: Arrival) -> bool {
     sent
 }
 
-/// The events waiting to be handled. Events are handled one at a time: one that comes while another is
+/// What the queue holds: events, and the pad's input, which turns into events.
+///
+/// Pad input is always taken from the queue, by the pad's own events ([`Event::Pad`]) and by the keys
+/// that stand in for the pad alike. So every event it gives is only queued, and what it decides it
+/// decides from the state before any of them: it never reads a state that one of its own events was
+/// meant to change and didn't yet. Input that depends on the outcome of its events queues an
+/// [`Step::After`] behind them.
+enum Step {
+    Event(Event),
+    Pad(PadInput, Source),
+    /// Runs once the steps queued before it are done.
+    After(fn(&mut Core)),
+}
+
+/// The steps waiting to be taken. Events are handled one at a time: one that comes while another is
 /// being handled, from the input side or a frame drawn, waits until that one is done, effects and all, so
-/// that the effects come in the order of the events. Waiting events are handled in the order they came.
+/// that the effects come in the order of the events. Waiting steps are taken in the order they came.
 #[derive(Default)]
 struct EventQueue {
-    events: VecDeque<Event>,
-    /// An event is being handled.
+    events: VecDeque<Step>,
+    /// A step is being taken.
     busy: bool,
 }
 
 impl EventQueue {
-    /// Queues `event`. Returns whether the caller is to handle the queue, which it is unless an event is
-    /// being handled already.
-    fn push(&mut self, event: Event) -> bool {
-        self.events.push_back(event);
+    /// Queues `step`. Returns whether the caller is to take the queue's steps, which it is unless one is
+    /// being taken already.
+    fn push(&mut self, step: Step) -> bool {
+        self.events.push_back(step);
         !std::mem::replace(&mut self.busy, true)
     }
 
-    /// The next event to handle, or None once the queue is empty, which ends handling.
-    fn next(&mut self) -> Option<Event> {
+    /// The next step to take, or None once the queue is empty, which ends handling.
+    fn next(&mut self) -> Option<Step> {
         let next = self.events.pop_front();
         self.busy = next.is_some();
         next
@@ -467,11 +494,11 @@ mod tests {
 
     impl Fake {
         fn handle(&mut self, event: Event) {
-            if !self.queue.push(event) {
+            if !self.queue.push(Step::Event(event)) {
                 return;
             }
-            while let Some(event) = self.queue.next() {
-                let Event::LibraryView(LibraryViewEvent::Rows(n)) = event else {
+            while let Some(step) = self.queue.next() {
+                let Step::Event(Event::LibraryView(LibraryViewEvent::Rows(n))) = step else {
                     continue;
                 };
                 self.log.push(format!("apply {n}"));
