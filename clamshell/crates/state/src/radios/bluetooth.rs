@@ -87,9 +87,18 @@ pub struct Bluetooth {
     pub busy: Option<String>,
     /// Why the last attempt failed, until the next one.
     pub error: Option<Problem>,
-    /// A code to type on the device being paired, then Enter, while its pairing waits for it: a
-    /// keyboard's.
-    pub code: Option<String>,
+    /// The pairing's code while its pairing waits for it (see [`PairingCode`]).
+    pub code: Option<PairingCode>,
+}
+
+/// A code shown while a device pairs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PairingCode {
+    /// To type on the device, then Enter: a keyboard's.
+    Type(String),
+    /// To compare with the one the device shows (numeric comparison: a phone, a computer); the pairing is
+    /// confirmed here, and turned down on the device if they differ.
+    Compare(String),
 }
 
 /// What a device's row says about it.

@@ -100,6 +100,15 @@ after the device slept past the timestamp), and removes the file; the pass forge
 ends, and one killed outright leaves it for up to 15 minutes. Should that unit be cut off too, the next
 boot removes the file (`tmpfiles.d/thor-maintenance.conf`).
 
+## Bluetooth pairing
+
+Pairing is started only by a tap in the Bluetooth tab, and our agent (DisplayYesNo) is registered only
+while that pairing runs. A keyboard is shown the code to type on it. A device with a screen of its own
+pairs by numeric comparison: its code is shown here ("Phone should show 042137") and confirmed here, so
+the protection against a device in the middle is the user comparing the two and turning the pairing
+down on the device if they differ. Authorization requests during the pairing are accepted, and a code
+the device shows for typing here is refused (there is no way to type one).
+
 ## The power group's files
 
 The session's user is in the `power` group, which writes what ClamShell's settings set (the CPU and GPU

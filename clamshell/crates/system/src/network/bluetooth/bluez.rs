@@ -3,6 +3,8 @@
 
 use std::collections::HashMap;
 
+use clamshell_state::radios::bluetooth::PairingCode;
+
 use crate::os::dbus::{Message, Path, PropMap};
 
 pub(crate) const SERVICE: &str = "org.bluez";
@@ -26,7 +28,7 @@ pub(crate) fn device_path(adapter: &str, address: &str) -> String {
 /// compared with the device's, where the pairing is confirmed or turned down; here it is confirmed, since
 /// the user asked to pair. It has no keyboard to type a code shown on the device, and it confirms
 /// whatever else BlueZ asks. Returns its reply to a call, if the call is for it.
-pub(crate) fn agent(call: &Message, show: &mut dyn FnMut(Option<String>)) -> Option<Message> {
+pub(crate) fn agent(call: &Message, show: &mut dyn FnMut(Option<PairingCode>)) -> Option<Message> {
     if call.path().as_deref() != Some(AGENT_PATH) || call.interface().as_deref() != Some("org.bluez.Agent1") {
         return None;
     }
@@ -34,24 +36,24 @@ pub(crate) fn agent(call: &Message, show: &mut dyn FnMut(Option<String>)) -> Opt
         "DisplayPasskey" => {
             // (The device, the passkey, and how many digits have been typed so far.)
             let (_, passkey): (dbus::Path, u32) = call.read2().ok()?;
-            show(Some(format!("{passkey:06}")));
+            show(Some(PairingCode::Type(format!("{passkey:06}"))));
             Some(call.method_return())
         }
         "DisplayPinCode" => {
             let (_, pin): (dbus::Path, String) = call.read2().ok()?;
-            show(Some(pin));
+            show(Some(PairingCode::Type(pin)));
             Some(call.method_return())
         }
         // An old keyboard asks the host for a PIN, which is then typed on it.
         "RequestPinCode" => {
             let pin = format!("{:06}", random() % 1_000_000);
-            show(Some(pin.clone()));
+            show(Some(PairingCode::Type(pin.clone())));
             Some(call.method_return().append1(pin))
         }
         "RequestPasskey" => Some(call.error(&"org.bluez.Error.Rejected".into(), c"no way to enter a code")),
         "RequestConfirmation" => {
             let (_, passkey): (dbus::Path, u32) = call.read2().ok()?;
-            show(Some(format!("{passkey:06}")));
+            show(Some(PairingCode::Compare(format!("{passkey:06}"))));
             Some(call.method_return())
         }
         "Release" | "Cancel" => {
@@ -96,13 +98,13 @@ mod tests {
         };
         let device = Path::from("/org/bluez/hci0/dev_AA");
         let mut shown = None;
-        let mut show = |code: Option<String>| shown = code;
+        let mut show = |code: Option<PairingCode>| shown = code;
         let reply = agent(&call("DisplayPasskey").append3(device.clone(), 42u32, 0u16), &mut show).unwrap();
         assert_eq!(reply.msg_type(), dbus::MessageType::MethodReturn);
-        assert_eq!(shown.as_deref(), Some("000042"), "six digits");
+        assert_eq!(shown, Some(PairingCode::Type("000042".into())), "six digits, to type");
         let reply = agent(&call("RequestPinCode").append1(device.clone()), &mut |code| shown = code).unwrap();
         let pin: String = reply.read1().unwrap();
-        assert_eq!(shown.as_deref(), Some(pin.as_str()), "the PIN given is the one shown");
+        assert_eq!(shown, Some(PairingCode::Type(pin.clone())), "the PIN given is the one shown");
         assert_eq!(pin.len(), 6);
         agent(&call("Cancel"), &mut |code| shown = code).unwrap();
         assert_eq!(shown, None);
@@ -111,6 +113,6 @@ mod tests {
         // A phone's numeric comparison: its code is shown, to compare with the phone's, and confirmed.
         let reply = agent(&call("RequestConfirmation").append2(device, 7u32), &mut |code| shown = code).unwrap();
         assert_eq!(reply.msg_type(), dbus::MessageType::MethodReturn);
-        assert_eq!(shown.as_deref(), Some("000007"), "the code to compare is shown");
+        assert_eq!(shown, Some(PairingCode::Compare("000007".into())), "the code to compare is shown, as one to compare");
     }
 }

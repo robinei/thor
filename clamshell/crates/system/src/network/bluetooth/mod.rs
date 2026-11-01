@@ -2,9 +2,10 @@
 //! every second while the Bluetooth tab is open, and sent as [`Reading::Bluetooth`] when they change.
 //! While the tab is open, it also looks for new devices.
 //!
-//! Connecting a new device pairs, trusts and connects it. For the pairing, a "no input, no output" agent
-//! is registered, since headphones and controllers pair without a code. It is unregistered afterwards,
-//! so a desktop's own agent otherwise stays the default. Connecting, and pairing, which can take long,
+//! Connecting a new device pairs, trusts and connects it. For the pairing, an agent is registered as
+//! DisplayYesNo (see [`bluez::agent`]): a keyboard is shown the code to type, a device with a screen the
+//! code to compare, and headphones and controllers pair without one. It is unregistered afterwards, so a
+//! desktop's own agent otherwise stays the default. Connecting, and pairing, which can take long,
 //! run on a worker of their own, so the list, the radio's switch and leaving the tab don't wait for it.
 //! Every call has a time limit.
 
@@ -98,7 +99,7 @@ struct BtState {
     busy: Option<String>,
     error: Option<Problem>,
     /// The code the device being paired wants typed on it (see [`bluez::agent`]).
-    code: Option<String>,
+    code: Option<clamshell_state::radios::bluetooth::PairingCode>,
 }
 
 #[derive(Clone, Default)]

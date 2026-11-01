@@ -5,7 +5,7 @@
 
 use std::fmt::{self, Display, Formatter};
 
-use clamshell_state::radios::bluetooth::{Action, Bluetooth, DeviceState, Problem, Reason};
+use clamshell_state::radios::bluetooth::{Action, Bluetooth, DeviceState, PairingCode, Problem, Reason};
 use clamshell_state::{BtId, Id, ListId, RadioStatus};
 
 use super::icons;
@@ -63,7 +63,9 @@ impl Display for Status<'_> {
             RadioStatus::Off => f.write_str("Bluetooth is off"),
             RadioStatus::Busy(name) => match &self.0.code {
                 // A keyboard pairing by a code typed on it.
-                Some(code) => write!(f, "Type {code} on {name}, then Enter"),
+                Some(PairingCode::Type(code)) => write!(f, "Type {code} on {name}, then Enter"),
+                // A device with a screen of its own, pairing by numeric comparison.
+                Some(PairingCode::Compare(code)) => write!(f, "{name} should show {code}"),
                 None => write!(f, "Connecting {name}"),
             },
             RadioStatus::Connected(name) => write!(f, "Connected to {name}"),
@@ -90,5 +92,20 @@ impl Display for ProblemText<'_> {
             Reason::Bus(reason) => reason,
         };
         write!(f, "{action}: {reason}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// While a device pairs, the status line says what to do with its code: a keyboard's to type, a code
+    /// to compare with the one a device with a screen shows.
+    #[test]
+    fn a_pairing_code_is_said_by_its_kind() {
+        let said = |code| Status(&Bluetooth { present: true, on: true, busy: Some("Phone".into()), code, ..Bluetooth::default() }).to_string();
+        assert_eq!(said(Some(PairingCode::Type("042137".into()))), "Type 042137 on Phone, then Enter");
+        assert_eq!(said(Some(PairingCode::Compare("042137".into()))), "Phone should show 042137");
+        assert_eq!(said(None), "Connecting Phone");
     }
 }

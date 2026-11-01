@@ -730,6 +730,24 @@ Wi-Fi and Bluetooth readings replace the state whole; the system is the authorit
   tab is open. Test: `taps_connect_or_disconnect_and_a_long_press_forgets`. A connect's busy mark is
   kept over readings as a join's is: `a_connection_stays_busy_until_a_reading_answers_it`.
 
+### Bluetooth pairing codes (system/network/bluetooth/bluez.rs)
+
+A new device is paired by the connecting worker with our agent registered as DisplayYesNo for the
+pairing's time; the code it is asked to show reaches the state in the Bluetooth reading (`code`), and the
+tab's status line says it while the device is busy. Off the pairing, the desktop's own agent is the
+default again.
+
+| From | BlueZ asks the agent | To | Effects | Test |
+|---|---|---|---|---|
+| no code | DisplayPasskey(n) or DisplayPinCode(pin): a keyboard pairing by a code typed on it | Type(code) | shown, six digits: "Type 042137 on Keyboard, then Enter" | system `the_agent_shows_a_keyboards_code_and_clears_it` |
+| no code | RequestPinCode: an old keyboard asking the host for a PIN | Type(pin) | a random six-digit PIN made here, shown and given | same |
+| no code | RequestConfirmation(n): numeric comparison, a device with a screen of its own | Compare(code) | shown, "Phone should show 042137"; confirmed here, as the user asked to pair: the comparison is the user's, turning it down on the device if they differ | same (the comparison case) |
+| any | RequestPasskey: a code shown on the device to type here | unchanged | rejected: there is no way to type one | same |
+| any | RequestAuthorization, AuthorizeService | unchanged | accepted: the user asked to pair | by reading |
+| a code | Release or Cancel | no code | cleared | same |
+| a code | the pairing's connect ends, connected or failed | no code | busy and code cleared together | by reading (`connecting_worker`) |
+| any code | the tab drawn | | the status line from the code's kind, drawn without allocating | views `a_pairing_code_is_said_by_its_kind`, `no_alloc` (a keyboard's code) |
+
 ## Levels (levels/)
 
 The sound (volume, mute, streams, outputs) is the system's: readings are kept as they come, each with
