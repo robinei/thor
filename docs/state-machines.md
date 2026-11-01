@@ -1545,7 +1545,10 @@ idle Xwayland is stopped": an idle Xwayland under SIGSTOP is not restarted).
 The WM's connection is a non-blocking socket; x11rb supplies the wire types and sequence tracking, never
 I/O. Readiness of the socket, the display pipe, the listener and the pidfd are event loop sources; what
 the window manager asks for in a turn is written at the end of it (wm `requests_of_a_turn_are_written_in_it`),
-and write interest is there only while bytes the socket didn't take wait. Each turn does at most 64 writes, 64 setup reads, 64 packet reads
+and write interest is there only while bytes the socket didn't take wait. The child is looked at (`try_wait`) and the socket
+read only in a turn after one of Xwayland's sources fired (mod `a_source_firing_is_noted_for_the_turn`,
+transport `the_socket_is_read_only_when_readable`); the deadlines are checked and the window manager's
+settle runs at every turn. Each turn does at most 64 writes, 64 setup reads, 64 packet reads
 of up to 4096 bytes and 64 events. Packets and the outgoing queue are capped at 1 MiB, a packet's length
 checked before its payload is read. Partial setup, packets and writes keep their bytes. Deadlines, each
 `HUNG` (30 s, as a game loading can hold the X server for seconds): setup; a queue that started waiting

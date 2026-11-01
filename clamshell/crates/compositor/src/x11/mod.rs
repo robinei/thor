@@ -109,6 +109,9 @@ struct Running {
     transport: Transport,
     wm: wm::Wm,
     ready_logged: bool,
+    /// Whether one of its own sources (the pidfd, the WM's socket, the display pipe) fired since the last
+    /// turn: only then is the child looked at and the socket read.
+    woken: Rc<Cell<bool>>,
     deadline: Instant,
     stopping: bool,
     sources: Vec<RegistrationToken>,
@@ -116,9 +119,18 @@ struct Running {
     write_source: Option<RegistrationToken>,
     selection_sources: Vec<selection::IoSource>,
 }
-fn watch(handle: &LoopHandle<'static, Server>, fd: &impl AsFd, interest: Interest) -> io::Result<RegistrationToken> {
+/// Watches `fd` for `interest`, the loop waking while it is ready, and `woken` set each time.
+fn watch(handle: &LoopHandle<'static, Server>, fd: &impl AsFd, interest: Interest, woken: Option<&Rc<Cell<bool>>>) -> io::Result<RegistrationToken> {
     let fd = fd.as_fd().try_clone_to_owned()?;
-    handle.insert_source(Generic::new(fd, interest, Mode::Level), |_, _, _| Ok(PostAction::Continue)).map_err(|e| io::Error::other(e.error))
+    let woken = woken.cloned();
+    handle
+        .insert_source(Generic::new(fd, interest, Mode::Level), move |_, _, _| {
+            if let Some(woken) = &woken {
+                woken.set(true);
+            }
+            Ok(PostAction::Continue)
+        })
+        .map_err(|e| io::Error::other(e.error))
 }
 impl Supervisor {
     pub fn new(handle: LoopHandle<'static, Server>) -> io::Result<Self> {
@@ -208,7 +220,11 @@ impl Supervisor {
     }
     pub fn turn(&mut self, server: &mut Server, now: Instant) {
         if let Some(running) = self.running.as_mut() {
-            match running.child.try_wait() {
+            // Its end is looked for, and its socket read, only when one of its sources fired (or its end
+            // isn't watched): not at every turn of the loop.
+            let woken = running.woken.replace(false) || running.sources.is_empty();
+            let status = if woken { running.child.try_wait() } else { Ok(None) };
+            match status {
                 Ok(Some(status)) => {
                     let ran = now.saturating_duration_since(running.started);
                     running.remove_sources(&self.handle);
@@ -232,7 +248,7 @@ impl Supervisor {
                     }
                 }
                 Ok(None) => {
-                    if let Err(error) = running.turn(&self.handle, server, now) {
+                    if let Err(error) = running.turn(&self.handle, server, now, woken) {
                         log::warn!("compositor: Xwayland: {error}; stopping");
                         running.fail(&self.handle, server);
                     }
@@ -337,6 +353,7 @@ impl Running {
             transport,
             wm: wm::Wm::default(),
             ready_logged: false,
+            woken: Rc::new(Cell::new(true)),
             deadline: now + HUNG,
             stopping: false,
             sources: Vec::new(),
@@ -352,14 +369,14 @@ impl Running {
             .and_then(rustix::process::Pid::from_raw)
             .ok_or_else(|| io::Error::other("invalid child pid"))?;
         let pidfd = rustix::process::pidfd_open(pid, rustix::process::PidfdFlags::empty())?;
-        self.sources.push(watch(handle, &pidfd, Interest::READ)?);
-        self.sources.push(watch(handle, self.transport.fd(), Interest::READ)?);
-        self.ready_source = Some(watch(handle, &self.ready_socket, Interest::READ)?);
+        self.sources.push(watch(handle, &pidfd, Interest::READ, Some(&self.woken))?);
+        self.sources.push(watch(handle, self.transport.fd(), Interest::READ, Some(&self.woken))?);
+        self.ready_source = Some(watch(handle, &self.ready_socket, Interest::READ, Some(&self.woken))?);
         self.update_writing(handle)
     }
     fn update_writing(&mut self, handle: &LoopHandle<'static, Server>) -> io::Result<()> {
         if self.transport.writing() && self.write_source.is_none() {
-            self.write_source = Some(watch(handle, self.transport.fd(), Interest::WRITE)?);
+            self.write_source = Some(watch(handle, self.transport.fd(), Interest::WRITE, Some(&self.woken))?);
         } else if !self.transport.writing()
             && let Some(token) = self.write_source.take()
         {
@@ -367,11 +384,12 @@ impl Running {
         }
         Ok(())
     }
-    fn turn(&mut self, handle: &LoopHandle<'static, Server>, server: &mut Server, now: Instant) -> io::Result<()> {
-        if self.display.is_none() {
-            if now >= self.deadline {
-                return Err(io::Error::new(io::ErrorKind::TimedOut, "startup timed out"));
-            }
+    /// Its turn, `woken` when one of its sources fired.
+    fn turn(&mut self, handle: &LoopHandle<'static, Server>, server: &mut Server, now: Instant, woken: bool) -> io::Result<()> {
+        if self.display.is_none() && now >= self.deadline {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "startup timed out"));
+        }
+        if self.display.is_none() && woken {
             let mut buffer = [0u8; 32];
             match self.ready_socket.read(&mut buffer) {
                 Ok(0) => return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "displayfd closed before readiness")),
@@ -393,7 +411,7 @@ impl Running {
                 return Err(io::Error::other("display number exceeds limit"));
             }
         }
-        exchange(&mut self.transport, &mut self.wm, server, now)?;
+        exchange(&mut self.transport, &mut self.wm, server, now, woken)?;
         self.wm.sync_selection_sources(handle, &mut self.selection_sources)?;
         self.update_writing(handle)?;
         if self.wm.ready && self.display.is_some() && !self.ready_logged {
@@ -437,10 +455,10 @@ impl Running {
         }
     }
 }
-/// One exchange with Xwayland: what came read, the window manager's turn, and what it asked for written in
-/// the same turn rather than at the next wake.
-fn exchange(transport: &mut Transport, wm: &mut wm::Wm, server: &mut Server, now: Instant) -> io::Result<()> {
-    transport.turn(now)?;
+/// One exchange with Xwayland: what came read (when the socket is `readable`), the window manager's turn, and
+/// what it asked for written in the same turn rather than at the next wake.
+fn exchange(transport: &mut Transport, wm: &mut wm::Wm, server: &mut Server, now: Instant, readable: bool) -> io::Result<()> {
+    transport.step(now, readable)?;
     wm.turn(transport, server, now)?;
     // Order: after the window manager's turn, so that its requests (a focus, a configure, a selection's
     // answer) go out now; the socket is watched for writing only for what it didn't take.
@@ -520,6 +538,22 @@ mod tests {
             assert_eq!(client.read(&mut [0; 1]).unwrap(), 0, "closed");
             assert!(supervisor.running.is_none() && supervisor.deadline().is_none());
         }
+    }
+
+    /// Xwayland's sources note that they fired, so that its turn reads and looks at the child only then.
+    #[test]
+    fn a_source_firing_is_noted_for_the_turn() {
+        use std::io::Write;
+        let mut event_loop = smithay::reexports::calloop::EventLoop::<Server>::try_new().unwrap();
+        let (socket, mut peer) = UnixStream::pair().unwrap();
+        let woken = Rc::new(Cell::new(false));
+        watch(&event_loop.handle(), &socket, Interest::READ, Some(&woken)).unwrap();
+        let mut server = server();
+        event_loop.dispatch(Some(Duration::ZERO), &mut server).unwrap();
+        assert!(!woken.get());
+        peer.write_all(b"x").unwrap();
+        event_loop.dispatch(Some(Duration::ZERO), &mut server).unwrap();
+        assert!(woken.get());
     }
 
     fn server() -> Server {

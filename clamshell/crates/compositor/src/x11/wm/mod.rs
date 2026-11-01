@@ -692,7 +692,7 @@ mod tests {
         let mut wm = Wm { root: 1, owner: 2, atoms: Atoms(NAMES.iter().enumerate().map(|(i, name)| (*name, 100 + i as u32)).collect()), ..Wm::default() };
         wm.discover(10, Rectangle::from_size((400, 300).into()), false, &mut wire, &mut server).unwrap();
         (wm.windows[0].outstanding, wm.windows[0].wants_map) = (0, true);
-        super::super::exchange(&mut wire, &mut wm, &mut server, now).unwrap();
+        super::super::exchange(&mut wire, &mut wm, &mut server, now, true).unwrap();
         assert!(!wire.writing(), "nothing left for the next wake");
         peer.set_nonblocking(true).unwrap();
         let mut bytes = [0; 4096];

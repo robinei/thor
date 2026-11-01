@@ -311,7 +311,7 @@ impl Imports {
                 sources.push(IoSource {
                     id: transfer.id,
                     incoming: true,
-                    token: super::super::watch(handle, pipe, smithay::reexports::calloop::Interest::WRITE)?,
+                    token: super::super::watch(handle, pipe, smithay::reexports::calloop::Interest::WRITE, None)?,
                 });
             }
         }

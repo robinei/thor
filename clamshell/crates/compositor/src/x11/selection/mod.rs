@@ -314,7 +314,7 @@ impl Bridge {
                 sources.push(IoSource {
                     id: transfer.id,
                     incoming: false,
-                    token: super::watch(handle, &transfer.pipe, smithay::reexports::calloop::Interest::READ)?,
+                    token: super::watch(handle, &transfer.pipe, smithay::reexports::calloop::Interest::READ, None)?,
                 });
             }
         }

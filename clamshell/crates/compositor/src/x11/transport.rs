@@ -60,12 +60,22 @@ impl Transport {
         })
     }
 
+    /// A turn with the socket read (see [`Transport::step`]).
+    #[cfg(test)]
     pub fn turn(&mut self, now: Instant) -> io::Result<()> {
+        self.step(now, true)
+    }
+
+    /// A turn: its deadlines checked, what waits written, and what came read if the socket is `readable`
+    /// (its readiness having woken the loop), rather than a read that would block at every turn.
+    pub fn step(&mut self, now: Instant, readable: bool) -> io::Result<()> {
         if self.handshake.is_some() && now >= self.setup_deadline {
             return Err(io::Error::new(io::ErrorKind::TimedOut, "X11 setup timed out"));
         }
         self.flush(now)?;
-        self.read()?;
+        if readable {
+            self.read()?;
+        }
         // Order: after reading, so that an answer that came at the last moment counts.
         if self.owed.front().is_some_and(|(_, at)| now >= *at + crate::x11::HUNG) {
             return Err(io::Error::new(io::ErrorKind::TimedOut, "X11 reply timed out"));
@@ -367,6 +377,24 @@ mod tests {
         transport.turn(now + Duration::from_secs(1)).unwrap();
         assert_eq!(transport.deadline(), None, "answered, nothing is owed");
         transport.turn(now + crate::x11::HUNG + Duration::from_secs(1)).unwrap();
+    }
+
+    /// The socket is read only when it is readable (its readiness woke the loop); its deadlines are
+    /// checked at every turn.
+    #[test]
+    fn the_socket_is_read_only_when_readable() {
+        use x11rb_protocol::protocol::xproto::GetInputFocusRequest;
+        let (mut transport, mut peer, now) = connected();
+        let sequence = transport.request(GetInputFocusRequest {}, 0, true).unwrap();
+        peer.write_all(&reply(sequence as u16)).unwrap();
+        transport.step(now, false).unwrap();
+        assert!(transport.reply(sequence).is_none(), "not read");
+        assert!(transport.step(now + crate::x11::HUNG + Duration::from_secs(1), false).is_err(), "deadlines still checked");
+        let (mut transport, mut peer, now) = connected();
+        let sequence = transport.request(GetInputFocusRequest {}, 0, true).unwrap();
+        peer.write_all(&reply(sequence as u16)).unwrap();
+        transport.step(now, true).unwrap();
+        assert!(transport.reply(sequence).is_some());
     }
 
     /// Of the events another client sent, only ClientMessage and SelectionNotify are passed on.
