@@ -48,6 +48,8 @@ struct Suid {
 /// The sensor hub's gyro, while there is one.
 pub(crate) struct SensorHub {
     socket: OwnedFd,
+    /// Our own node, whose name service tells where the hub is.
+    node: u32,
     facts: HubFacts,
     /// The hub's service node and port, once the name service has given them.
     service: Option<(u32, u32)>,
@@ -72,7 +74,7 @@ impl SensorHub {
         let hub = (|| {
             let (socket, node) = qrtr::socket()?;
             qrtr::lookup(&socket, node, facts.service)?;
-            Ok::<_, io::Error>(SensorHub { socket, facts, service: None, gyro: None, refused: 0, txn: 0, buf: vec![0; 65536] })
+            Ok::<_, io::Error>(SensorHub { socket, node, facts, service: None, gyro: None, refused: 0, txn: 0, buf: vec![0; 65536] })
         })();
         hub.map_err(|e| log::warn!("pad: the sensor hub: {e}")).ok().inspect(|_| log::info!("pad: gyro from the sensor hub, once it is up"))
     }
@@ -176,22 +178,45 @@ impl MotionSource for SensorHub {
     fn fetch(&mut self, out: &mut Vec<Sample>) -> io::Result<()> {
         let mut buf = std::mem::take(&mut self.buf);
         let result = (|| {
-            while let Some((n, _, port)) = qrtr::recv_from(&self.socket, &mut buf)? {
+            while let Some((n, node, port)) = qrtr::recv_from(&self.socket, &mut buf)? {
                 let msg = buf.get(..n).unwrap_or_default();
                 // Log the datagrams as they come, for the tests' fixtures. See docs/thor-gameplan.md.
                 if log::log_enabled!(log::Level::Trace) {
                     log::trace!("port {port:#x}: {}", msg.iter().map(|b| format!("{b:02x}")).collect::<String>());
                 }
-                if port == qrtr::PORT_CTRL {
-                    self.control(msg);
-                } else {
-                    self.message(msg, out);
+                match source(self.node, self.service, (node, port)) {
+                    Sender::NameService => self.control(msg),
+                    Sender::Hub => self.message(msg, out),
+                    Sender::Other => log::debug!("pad: the sensor hub's socket: a datagram from {node}:{port:#x} dropped"),
                 }
             }
             Ok(())
         })();
         self.buf = buf;
         result
+    }
+}
+
+/// Who a datagram on the hub's socket is from.
+#[derive(Debug, PartialEq, Eq)]
+enum Sender {
+    /// The name service of our own node, saying where the hub is.
+    NameService,
+    /// The hub's service, where the name service said it is.
+    Hub,
+    /// Anyone else: a client of the socket's or a stale service. Dropped, so it can't give samples or a
+    /// sensor to configure.
+    Other,
+}
+
+/// Who a datagram from `(node, port)` is from, with our node `own` and the hub at `service`.
+fn source(own: u32, service: Option<(u32, u32)>, (node, port): (u32, u32)) -> Sender {
+    if port == qrtr::PORT_CTRL {
+        if node == own { Sender::NameService } else { Sender::Other }
+    } else if service == Some((node, port)) {
+        Sender::Hub
+    } else {
+        Sender::Other
     }
 }
 
@@ -380,5 +405,17 @@ mod tests {
     #[test]
     fn the_thors_frame_is_turned_a_quarter() {
         assert_eq!(turned(HubFacts::thor().axes, [1.0, 2.0, 3.0]), [-2.0, 1.0, 3.0]);
+    }
+
+    /// Only our node's name service and the hub where it said are listened to.
+    #[test]
+    fn datagrams_count_only_from_the_name_service_and_the_hub() {
+        let (own, hub) = (1, Some((5, 0x20)));
+        assert_eq!(source(own, hub, (1, qrtr::PORT_CTRL)), Sender::NameService);
+        assert_eq!(source(own, hub, (5, 0x20)), Sender::Hub);
+        assert_eq!(source(own, hub, (7, qrtr::PORT_CTRL)), Sender::Other, "another node's control port");
+        assert_eq!(source(own, hub, (5, 0x21)), Sender::Other, "another port of the hub's node");
+        assert_eq!(source(own, hub, (1, 0x4000)), Sender::Other, "a client on our node");
+        assert_eq!(source(own, None, (5, 0x20)), Sender::Other, "before the hub is announced, or after it went");
     }
 }
