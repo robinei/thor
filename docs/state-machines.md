@@ -1543,18 +1543,22 @@ The WM's connection is a non-blocking socket; x11rb supplies the wire types and 
 I/O. Readiness of the socket, the display pipe, the listener and the pidfd are event loop sources; write
 interest is there only while bytes wait. Each turn does at most 64 writes, 64 setup reads, 64 packet reads
 of up to 4096 bytes and 64 events. Packets and the outgoing queue are capped at 1 MiB, a packet's length
-checked before its payload is read. Partial setup, packets and writes keep their bytes. Deadlines: setup
-3 s; a queue that started waiting must empty within 3 s; each reply 3 s. At most 256 of the WM's replies
-are outstanding: property queries wait for room, any other request past that stops Xwayland.
+checked before its payload is read. Partial setup, packets and writes keep their bytes. Deadlines, each
+`HUNG` (30 s, as a game loading can hold the X server for seconds): setup; a queue that started waiting
+must empty; each request with a reply must be processed, whoever asked (the WM or the clipboard bridge,
+which keep only what a reply is for). A request is processed once any packet carries its sequence number
+or a later one. At most 256 of the WM's replies are outstanding: property queries wait for room, any
+other request past that stops Xwayland.
 
 | From | Event / condition | To | Effects | Test |
 |---|---|---|---|---|
 | handshake | partial setup | handshake | bytes kept | every transport test's fixture |
-| handshake | 3 s without setup, or EOF | stopping | | transport `setup_timeout_eof_and_oversized_packets_end_only_the_connection` |
+| handshake | 30 s without setup, or EOF | stopping | | transport `setup_timeout_eof_and_oversized_packets_end_only_the_connection` |
 | connected | a packet over 1 MiB | stopping | nothing allocated | same |
 | connected | a partial reply | connected | polled once whole | transport `partial_replies_are_polled_and_idle_connections_never_probe` |
+| connected | a request with a reply unprocessed for 30 s | stopping | earlier, nothing: a slow reply is waited for | transport `a_slow_reply_is_waited_for_until_xwayland_is_taken_to_be_hung`; send `late_atom_replies_cannot_restore_an_old_generation_and_missing_answers_are_waited_for_until_hung` |
 | connected, idle | turns | connected | no traffic, no deadline | same |
-| writing | the peer not reading | writing | WouldBlock keeps the bytes; past 1 MiB refused; 3 s: stopping | transport `full_write_buffers_keep_the_queue_bounded_and_still_return_to_the_loop` |
+| writing | the peer not reading | writing | WouldBlock keeps the bytes; past 1 MiB refused; 30 s: stopping | transport `full_write_buffers_keep_the_queue_bounded_and_still_return_to_the_loop` |
 | connected | an event another client sent (SendEvent) other than a ClientMessage or SelectionNotify | connected | dropped, logged at debug: a forged DestroyNotify, CreateNotify or MapRequest changes nothing; a ClientMessage carrying WL_SURFACE_SERIAL is taken only from Xwayland itself | transport `events_other_clients_send_are_passed_on_only_where_the_protocol_has_them`; wm `a_window_is_paired_with_the_surface_committed_with_its_serial` |
 | connected | 32,768 requests since the last reply | anchoring | GetSelectionOwner(WM_S0), so the 16-bit sequence can't wrap unanchored; the reply must name the WM | transport `sequence_anchors_follow_actual_traffic_across_wire_wrap`; the owner check: GAP |
 
@@ -1602,7 +1606,7 @@ the append).
 |---|---|---|---|---|
 | settled | the keyboard focus changes | stamping | an empty append to _THOR_TIMESTAMP on the hidden window | wm `placement_…` |
 | stamping | its PropertyNotify (time t) | settled | SetInputFocus (the window if WM_HINTS' input is true or absent, else None) at t; WM_TAKE_FOCUS at t if offered; _NET_ACTIVE_WINDOW | same (passive, locally active, globally active and no-input; the same nonzero t in both; a new time per change) |
-| stamping | no PropertyNotify within 3 s | stopping | | GAP |
+| stamping | no PropertyNotify within 30 s | stopping | | GAP |
 | stamping | the focus back where X11 has it before t comes | settled | t dropped | GAP |
 | settled | the focused window's WM_HINTS or WM_PROTOCOLS read again | stamping | focus sent again | GAP |
 
@@ -1640,11 +1644,11 @@ popup that is detached cancels the touch sequence.
 The seat's selection callbacks keep, for CLIPBOARD and PRIMARY each, a revision and up to 64 MIME types of
 at most 255 bytes (longer names dropped); nothing reaches the state. An offer imported from X11 is never
 exported back. UTF8_STRING, TEXT and STRING are offered when the source has text/plain;charset=utf-8 or
-text/plain. Replies and the timestamp have 3 s; a miss stops Xwayland.
+text/plain. Replies (the transport's deadline) and the timestamp have 30 s; a miss stops Xwayland.
 
 | From | Event / condition | To | Effects | Test |
 |---|---|---|---|---|
-| any | a new seat revision, not imported | preparing | the selection's transfers cancelled; an empty selection releases ownership at its acquisition time; InternAtom for each type | send `late_atom_replies_cannot_restore_an_old_generation_and_missing_replies_have_a_deadline`, `clearing_a_source_releases_ownership_at_its_acquisition_time_and_removes_read_watches` |
+| any | a new seat revision, not imported | preparing | the selection's transfers cancelled; an empty selection releases ownership at its acquisition time; InternAtom for each type | send `late_atom_replies_cannot_restore_an_old_generation_and_missing_answers_are_waited_for_until_hung`, `clearing_a_source_releases_ownership_at_its_acquisition_time_and_removes_read_watches` |
 | preparing | an atom reply of an older revision | preparing | ignored | send `late_atom_replies_…` |
 | preparing | every atom, at least one format | awaiting time | TIMESTAMP replaced on the hidden window | send `server_timestamp_precedes_ownership_and_stale_clears_cannot_cancel_a_new_offer` |
 | awaiting time | its PropertyNotify, the same revision | owned | SetSelectionOwner at that time | same |
@@ -1675,8 +1679,8 @@ edge, STRING in Latin-1, the desktop's clipboard untouched.
 Once connected, the adapter asks for XFixes 2 (without it, logged, nothing is imported), subscribes to
 CLIPBOARD's and PRIMARY's owner changes, and asks each's owner once; nothing polls. Each owner change starts
 a generation, which requests and replies carry, so an older one can't change a newer one. Each conversion
-has a fresh input-only requestor and `_THOR_SELECTION`. Replies have 3 s (a miss stops Xwayland), at most
-256 outstanding.
+has a fresh input-only requestor and `_THOR_SELECTION`. Replies have the transport's 30 s (a miss stops
+Xwayland), at most 256 outstanding; a conversion's own 5 s without progress ends only it.
 
 | From | Event / condition | To | Effects | Test |
 |---|---|---|---|---|

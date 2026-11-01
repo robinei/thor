@@ -1,7 +1,8 @@
 //! ClamShell's X11 window manager, inside the compositor: it finds Xwayland's windows, reads their
 //! properties, pairs each with its Wayland surface, configures each to the place the state gives it, sets
 //! the focus and closes them, and turns them into the state's window facts. It never waits on Xwayland:
-//! requests are pipelined and each reply handled when it comes, within a deadline.
+//! requests are pipelined and each reply handled when it comes (the transport decides how long Xwayland
+//! may take).
 
 use super::{
     properties::{Atoms, NAMES, PROPERTIES, Properties},
@@ -33,7 +34,6 @@ mod setup;
 struct Pending {
     sequence: u64,
     kind: Query,
-    deadline: Instant,
 }
 enum Query {
     Atom(&'static str),
@@ -115,23 +115,23 @@ impl Wm {
             Stamp::Requested(deadline) => Some(deadline),
             _ => None,
         };
-        self.pending.iter().map(|p| p.deadline).chain(self.selection.deadline()).chain(stamp).min()
+        self.selection.deadline().into_iter().chain(stamp).min()
     }
-    fn query(&mut self, wire: &mut Transport, request: impl Request, opcode: u8, kind: Query, now: Instant) -> io::Result<()> {
+    fn query(&mut self, wire: &mut Transport, request: impl Request, opcode: u8, kind: Query) -> io::Result<()> {
         if self.pending.len() >= 256 {
             return Err(io::Error::other("too many pending XWM replies"));
         }
         let sequence = wire.request(request, opcode, true)?;
-        self.pending.push(Pending { sequence, kind, deadline: now + crate::x11::HUNG });
+        self.pending.push(Pending { sequence, kind });
         Ok(())
     }
     pub fn turn(&mut self, wire: &mut Transport, server: &mut Server, now: Instant) -> io::Result<()> {
-        self.start_setup(wire, now)?;
+        self.start_setup(wire)?;
         self.dispatch_replies(wire, server, now)?;
         self.finish_setup(wire)?;
-        self.anchor_sequence(wire, now)?;
+        self.anchor_sequence(wire)?;
         self.dispatch_events(wire, server)?;
-        self.query_window_properties(wire, now)?;
+        self.query_window_properties(wire)?;
         self.sync_selection(wire, server, now)?;
         self.take_identified(server);
         self.settle(wire, server)?;
@@ -156,11 +156,8 @@ impl Wm {
             let Some(pending) = self.pending.get(index) else { break };
             if let Some(bytes) = wire.reply(pending.sequence) {
                 let pending = self.pending.remove(index);
-                self.reply(pending.kind, &bytes, wire, server, now)?;
+                self.reply(pending.kind, &bytes, wire, server)?;
             } else {
-                if now >= pending.deadline {
-                    return Err(io::Error::new(io::ErrorKind::TimedOut, "XWM reply timed out"));
-                }
                 index += 1;
             }
         }
@@ -180,30 +177,29 @@ impl Wm {
     }
     fn sync_selection(&mut self, wire: &mut Transport, server: &mut Server, now: Instant) -> io::Result<()> {
         if self.ready {
-            self.selection.init_imports(wire, self.owner, now)?;
+            self.selection.init_imports(wire, self.owner)?;
             self.selection.turn(wire, &self.atoms, self.owner, server, now)?;
         }
         Ok(())
     }
-    fn query_window_properties(&mut self, wire: &mut Transport, now: Instant) -> io::Result<()> {
+    fn query_window_properties(&mut self, wire: &mut Transport) -> io::Result<()> {
         for i in 0..self.windows.len() {
-            self.query_initial_properties(i, wire, now)?;
-            self.query_changed_properties(i, wire, now)?;
+            self.query_initial_properties(i, wire)?;
+            self.query_changed_properties(i, wire)?;
         }
         Ok(())
     }
-    fn query_initial_properties(&mut self, i: usize, wire: &mut Transport, now: Instant) -> io::Result<()> {
+    fn query_initial_properties(&mut self, i: usize, wire: &mut Transport) -> io::Result<()> {
         let Some(window) = self.windows.get(i) else { return Ok(()) };
         if window.wants_map && !window.queried && self.pending.len() + PROPERTIES.len() + 2 <= 256 {
             let (id, xid) = (window.id, window.xid);
-            self.query(wire, GetWindowAttributesRequest { window: xid }, 0, Query::Attributes(id), now)?;
+            self.query(wire, GetWindowAttributesRequest { window: xid }, 0, Query::Attributes(id))?;
             for name in PROPERTIES {
                 self.query(
                     wire,
                     GetPropertyRequest { delete: false, window: xid, property: self.atoms.get(name), type_: 0, long_offset: 0, long_length: 1024 },
                     0,
                     Query::Property(id, name),
-                    now,
                 )?;
             }
             self.query(
@@ -211,7 +207,6 @@ impl Wm {
                 res::QueryClientIdsRequest { specs: vec![res::ClientIdSpec { client: xid, mask: res::ClientIdMask::LOCAL_CLIENT_PID }].into() },
                 self.res.unwrap_or_default(),
                 Query::Pid(id),
-                now,
             )?;
             if let Some(window) = self.windows.get_mut(i) {
                 window.queried = true;
@@ -220,7 +215,7 @@ impl Wm {
         }
         Ok(())
     }
-    fn query_changed_properties(&mut self, i: usize, wire: &mut Transport, now: Instant) -> io::Result<()> {
+    fn query_changed_properties(&mut self, i: usize, wire: &mut Transport) -> io::Result<()> {
         for (bit, name) in PROPERTIES.iter().enumerate() {
             let Some(window) = self.windows.get_mut(i) else { continue };
             if !window.queried
@@ -237,7 +232,6 @@ impl Wm {
                 GetPropertyRequest { delete: false, window: xid, property: self.atoms.get(name), type_: 0, long_offset: 0, long_length: 1024 },
                 0,
                 Query::Property(id, name),
-                now,
             )?;
         }
         Ok(())
@@ -272,12 +266,12 @@ mod tests {
         let mut wire = Transport::new(socket, now).unwrap();
         let mut wm = Wm::default();
         assert_eq!(wm.deadline(), None);
-        wm.query(&mut wire, GetWindowAttributesRequest { window: 10 }, 0, Query::Attributes(7), now).unwrap();
-        assert_eq!(wm.deadline(), Some(now + crate::x11::HUNG));
-        wm.turn(&mut wire, &mut server, now + Duration::from_secs(3)).expect("a late reply is waited for");
-        assert_eq!(wm.turn(&mut wire, &mut server, now + crate::x11::HUNG).unwrap_err().kind(), io::ErrorKind::TimedOut);
-        wm.pending.clear();
+        wm.query(&mut wire, GetWindowAttributesRequest { window: 10 }, 0, Query::Attributes(7)).unwrap();
+        // How long its answer may take is the transport's to say (see `transport`).
         assert_eq!(wm.deadline(), None);
+        wm.turn(&mut wire, &mut server, now + Duration::from_secs(3)).expect("a late reply is waited for");
+        wm.turn(&mut wire, &mut server, now + crate::x11::HUNG).expect("the WM keeps no deadline of its own");
+        wm.pending.clear();
         wm.discover(10, Rectangle::from_size((640, 360).into()), false, &mut wire, &mut server).unwrap();
         let old_id = wm.windows[0].id;
         wm.forget(old_id, &mut server);
@@ -304,7 +298,7 @@ mod tests {
             ..GetPropertyReply::default()
         });
         bytes.resize(40, 0);
-        wm.reply(Query::Property(old_id, "WM_NAME"), &bytes, &mut wire, &mut server, now).unwrap();
+        wm.reply(Query::Property(old_id, "WM_NAME"), &bytes, &mut wire, &mut server).unwrap();
         assert_eq!(wm.windows.len(), 1);
         assert!(wm.windows[0].properties.name.is_empty());
         assert_eq!(server.core.state().session().windows().len(), 0);
@@ -442,9 +436,9 @@ mod tests {
             window.wants_map = true;
         }
         let [waits, gone, no_pid] = [0, 1, 2].map(|i| wm.windows[i].id);
-        wm.reply(Query::Pid(waits), &pid_reply(Some(4321)), &mut wire, &mut server, now).unwrap();
-        wm.reply(Query::Pid(gone), &pid_reply(Some(4322)), &mut wire, &mut server, now).unwrap();
-        wm.reply(Query::Pid(no_pid), &pid_reply(None), &mut wire, &mut server, now).unwrap();
+        wm.reply(Query::Pid(waits), &pid_reply(Some(4321)), &mut wire, &mut server).unwrap();
+        wm.reply(Query::Pid(gone), &pid_reply(Some(4322)), &mut wire, &mut server).unwrap();
+        wm.reply(Query::Pid(no_pid), &pid_reply(None), &mut wire, &mut server).unwrap();
         wm.settle(&mut wire, &mut server).unwrap();
         let session = server.core.state().session();
         assert!(session.window(waits).is_none() && session.window(gone).is_none(), "waiting for their processes");
@@ -500,7 +494,7 @@ mod tests {
         for (id, pid) in [(menu, 7), (splash, 9), (managed, 7)] {
             let ids = vec![res::ClientIdValue { spec: res::ClientIdSpec { client: 10, mask: res::ClientIdMask::LOCAL_CLIENT_PID }, value: vec![pid] }];
             let reply = Serialize::serialize(&res::QueryClientIdsReply { sequence: 0, length: 4, ids });
-            wm.reply(Query::Pid(id), &reply, &mut wire, &mut server, now).unwrap();
+            wm.reply(Query::Pid(id), &reply, &mut wire, &mut server).unwrap();
         }
         wm.settle(&mut wire, &mut server).unwrap();
         wm.settle_menus(&mut wire, &mut server).unwrap();

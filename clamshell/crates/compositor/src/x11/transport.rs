@@ -1,6 +1,11 @@
 //! The window manager's connection to Xwayland: a non-blocking socket with bounded buffers and timeouts,
 //! read and written when the event loop says it is ready. x11rb supplies the wire types and tracks the
 //! sequence numbers; the I/O is ours, so nothing waits on Xwayland.
+//!
+//! Whether Xwayland answers is decided here alone, for every request of the window manager and the
+//! clipboard bridge alike: each request with a reply is owed one within [`super::HUNG`], counted from when
+//! it was queued; Xwayland is answering it once any packet tells that it has processed that request. What
+//! a reply is for is its asker's to keep.
 
 use std::{
     collections::VecDeque,
@@ -11,7 +16,7 @@ use std::{
 use x11rb_protocol::{
     connect::Connect,
     connection::{Connection, ReplyFdKind},
-    protocol::xproto::{CLIENT_MESSAGE_EVENT, SELECTION_NOTIFY_EVENT, Setup},
+    protocol::xproto::{CLIENT_MESSAGE_EVENT, KEYMAP_NOTIFY_EVENT, SELECTION_NOTIFY_EVENT, Setup},
     x11_utils::Request,
 };
 
@@ -30,6 +35,8 @@ pub(super) struct Transport {
     write_deadline: Option<Instant>,
     last_request: u64,
     last_reply: u64,
+    /// The requests with a reply not yet processed, oldest first, with when each was queued.
+    owed: VecDeque<(u64, Instant)>,
 }
 
 impl Transport {
@@ -49,6 +56,7 @@ impl Transport {
             write_deadline: Some(now + crate::x11::HUNG),
             last_request: 0,
             last_reply: 0,
+            owed: VecDeque::new(),
         })
     }
 
@@ -120,11 +128,33 @@ impl Transport {
                     .ok_or_else(|| io::Error::other("X11 packet exceeds limit"))?;
             }
             if self.incoming.len() == self.packet_size {
-                self.wire.enqueue_packet(std::mem::replace(&mut self.incoming, Vec::with_capacity(32)));
+                let packet = std::mem::replace(&mut self.incoming, Vec::with_capacity(32));
+                self.answered(&packet);
+                self.wire.enqueue_packet(packet);
                 self.packet_size = 32;
             }
         }
+        // Order: after reading, so that an answer that came at the last moment counts.
+        if self.owed.front().is_some_and(|(_, at)| now >= *at + crate::x11::HUNG) {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "X11 reply timed out"));
+        }
         Ok(())
+    }
+
+    /// Takes the requests `packet` tells were processed off those owed a reply. Every reply, error and
+    /// event carries the (low 16 bits of the) sequence number of the last request the server processed;
+    /// KeymapNotify alone carries none.
+    fn answered(&mut self, packet: &[u8]) {
+        if packet.first().map(|code| code & 0x7f) == Some(KEYMAP_NOTIFY_EVENT) {
+            return;
+        }
+        let Some(low) = packet.get(2..4).and_then(|bytes| bytes.try_into().ok()).map(u16::from_ne_bytes) else { return };
+        // The latest request sent whose number ends in `low`: fewer than 2^15 requests are ever unanswered
+        // (see `needs_sequence_anchor`).
+        let processed = self.last_request.wrapping_sub(u64::from((self.last_request as u16).wrapping_sub(low)));
+        while self.owed.front().is_some_and(|(sequence, _)| *sequence <= processed) {
+            self.owed.pop_front();
+        }
     }
 
     /// Whether `xid` is one of the window manager's own resources (its range from the setup).
@@ -145,7 +175,8 @@ impl Transport {
         !self.outgoing.is_empty()
     }
     pub fn deadline(&self) -> Option<Instant> {
-        self.handshake.as_ref().map(|_| self.setup_deadline).into_iter().chain(self.write_deadline).min()
+        let owed = self.owed.front().map(|(_, at)| *at + crate::x11::HUNG);
+        self.handshake.as_ref().map(|_| self.setup_deadline).into_iter().chain(self.write_deadline).chain(owed).min()
     }
     pub fn request(&mut self, request: impl Request, opcode: u8, reply: bool) -> io::Result<u64> {
         let (bytes, fds) = request.serialize(opcode);
@@ -156,6 +187,9 @@ impl Transport {
         let sequence = self.wire.send_request(kind).ok_or_else(|| io::Error::other("X11 sequence exhausted"))?;
         self.queue(&bytes)?;
         self.last_request = sequence;
+        if reply {
+            self.owed.push_back((sequence, Instant::now()));
+        }
         Ok(sequence)
     }
 
@@ -291,6 +325,36 @@ mod tests {
         peer.write_all(&oversized).unwrap();
         assert!(transport.turn(now).unwrap_err().to_string().contains("exceeds limit"));
         assert_eq!(transport.incoming.len(), 32, "a malicious length never allocates a huge packet");
+    }
+
+    /// A reply Xwayland is slow with is waited for up to `HUNG` (a game loading can hold the server for
+    /// seconds), whoever asked; any packet telling that the request was processed ends the wait.
+    #[test]
+    fn a_slow_reply_is_waited_for_until_xwayland_is_taken_to_be_hung() {
+        use x11rb_protocol::protocol::xproto::{GetInputFocusRequest, NoOperationRequest};
+        let (mut transport, mut peer, now) = connected();
+        let first = transport.request(GetInputFocusRequest {}, 0, true).unwrap();
+        transport.request(NoOperationRequest {}, 0, false).unwrap();
+        let second = transport.request(GetInputFocusRequest {}, 0, true).unwrap();
+        transport.turn(now).unwrap();
+        peer.read_exact(&mut [0; 12]).unwrap();
+        let queued = transport.deadline().unwrap();
+        assert!(queued >= now + crate::x11::HUNG);
+        transport.turn(now + Duration::from_secs(4)).expect("four seconds is no hang");
+        // An event processed after the first request answers for it, not for the second.
+        let mut event = [0; 32];
+        event[0] = 22;
+        event[2..4].copy_from_slice(&(first as u16).to_ne_bytes());
+        peer.write_all(&event).unwrap();
+        transport.turn(now + Duration::from_secs(5)).unwrap();
+        assert_eq!(transport.owed.iter().map(|(sequence, _)| *sequence).collect::<Vec<_>>(), [second]);
+        assert_eq!(transport.turn(queued + Duration::from_secs(1)).unwrap_err().kind(), io::ErrorKind::TimedOut);
+        let (mut transport, mut peer, now) = connected();
+        let sequence = transport.request(GetInputFocusRequest {}, 0, true).unwrap();
+        peer.write_all(&reply(sequence as u16)).unwrap();
+        transport.turn(now + Duration::from_secs(1)).unwrap();
+        assert_eq!(transport.deadline(), None, "answered, nothing is owed");
+        transport.turn(now + crate::x11::HUNG + Duration::from_secs(1)).unwrap();
     }
 
     /// Of the events another client sent, only ClientMessage and SelectionNotify are passed on.

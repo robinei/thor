@@ -251,7 +251,7 @@ fn offers_wait_for_names_are_tagged_and_do_not_echo_or_clear_newer_wayland_selec
     let id = imports.transfers[0].id;
     let origin = imports.offers.clipboard.origin;
     imports.transfers[0].targets = [101u32, 300].into_iter().flat_map(u32::to_ne_bytes).collect();
-    imports.targets(id, &mut wire, &atoms(), now).unwrap();
+    imports.targets(id, &mut wire, &atoms()).unwrap();
     imports.finish(id, &mut wire).unwrap();
     imports.publish(0, &mut server);
     assert!(!imports.offers.clipboard.published);

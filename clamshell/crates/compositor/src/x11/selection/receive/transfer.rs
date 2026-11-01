@@ -251,7 +251,7 @@ impl Imports {
                             transfer.phase = Phase::Chunk;
                         } else {
                             if transfer.pipe.is_none() {
-                                self.targets(id, wire, atoms, now)?;
+                                self.targets(id, wire, atoms)?;
                             }
                             self.finish(id, wire)?;
                             continue;
@@ -276,13 +276,13 @@ impl Imports {
                         CHUNK as u32 / 4
                     },
                 };
-                self.query(wire, request, 0, Query::Property(id), now)?;
+                self.query(wire, request, 0, Query::Property(id))?;
             }
             index += 1;
         }
         Ok(())
     }
-    fn targets(&mut self, id: u64, wire: &mut Transport, atoms: &Atoms, now: Instant) -> io::Result<()> {
+    fn targets(&mut self, id: u64, wire: &mut Transport, atoms: &Atoms) -> io::Result<()> {
         let Some(transfer) = self.transfers.iter().find(|transfer| transfer.id == id) else {
             return Ok(());
         };
@@ -315,7 +315,7 @@ impl Imports {
             })
             .take(62.min(256usize.saturating_sub(self.pending.len())))
         {
-            self.query(wire, GetAtomNameRequest { atom }, 0, Query::Name(selection, origin, atom), now)?;
+            self.query(wire, GetAtomNameRequest { atom }, 0, Query::Name(selection, origin, atom))?;
             self.offers.get_mut(selection).pending_names += 1;
         }
         Ok(())

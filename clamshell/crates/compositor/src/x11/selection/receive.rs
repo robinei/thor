@@ -11,7 +11,6 @@ use x11rb_protocol::{id_allocator::IdAllocator, protocol::xfixes, x11_utils::Req
 struct Pending {
     sequence: u64,
     query: Query,
-    deadline: Instant,
 }
 enum Query {
     Extension,
@@ -48,7 +47,7 @@ pub(super) struct Imports {
 }
 impl Imports {
     pub fn deadline(&self) -> Option<Instant> {
-        self.pending.iter().map(|pending| pending.deadline).chain(self.transfers.iter().map(|transfer| transfer.deadline)).min()
+        self.transfers.iter().map(|transfer| transfer.deadline).min()
     }
     pub fn clear(&mut self, server: &mut Server) {
         for selection in 0..2 {
@@ -71,15 +70,15 @@ impl Imports {
             }
         }
     }
-    fn query(&mut self, wire: &mut Transport, request: impl Request, opcode: u8, query: Query, now: Instant) -> io::Result<()> {
+    fn query(&mut self, wire: &mut Transport, request: impl Request, opcode: u8, query: Query) -> io::Result<()> {
         if self.pending.len() >= 256 {
             return Err(io::Error::other("selection request queue exceeded"));
         }
         let sequence = wire.request(request, opcode, true)?;
-        self.pending.push(Pending { sequence, query, deadline: now + Duration::from_secs(3) });
+        self.pending.push(Pending { sequence, query });
         Ok(())
     }
-    pub fn start_setup(&mut self, wire: &mut Transport, owner: u32, now: Instant) -> io::Result<()> {
+    pub fn start_setup(&mut self, wire: &mut Transport, owner: u32) -> io::Result<()> {
         if !self.started
             && let Some(setup) = &wire.setup
         {
@@ -89,7 +88,7 @@ impl Imports {
             self.allocator = Some(allocator);
             self.wm_owner = owner;
             self.started = true;
-            self.query(wire, QueryExtensionRequest { name: b"XFIXES".as_slice().into() }, 0, Query::Extension, now)?;
+            self.query(wire, QueryExtensionRequest { name: b"XFIXES".as_slice().into() }, 0, Query::Extension)?;
         }
         Ok(())
     }
@@ -100,8 +99,6 @@ impl Imports {
             if let Some(bytes) = wire.reply(pending.sequence) {
                 let pending = self.pending.remove(index);
                 self.reply(pending.query, &bytes, wire, atoms, server, now)?;
-            } else if now >= pending.deadline {
-                return Err(io::Error::new(io::ErrorKind::TimedOut, "X11 selection reply timed out"));
             } else {
                 index += 1;
             }
@@ -153,7 +150,7 @@ impl Imports {
                     return Ok(());
                 }
                 self.extension = Some((reply.major_opcode, reply.first_event));
-                self.query(wire, xfixes::QueryVersionRequest { client_major_version: 5, client_minor_version: 0 }, reply.major_opcode, Query::Version, now)?;
+                self.query(wire, xfixes::QueryVersionRequest { client_major_version: 5, client_minor_version: 0 }, reply.major_opcode, Query::Version)?;
             }
             Query::Version => {
                 let reply = xfixes::QueryVersionReply::try_parse(bytes).map_err(io::Error::other)?.0;
@@ -178,7 +175,6 @@ impl Imports {
                         GetSelectionOwnerRequest { selection: selection_atom(atoms, selection) },
                         0,
                         Query::Owner(selection, self.offers.get(selection).serial),
-                        now,
                     )?;
                 }
                 self.ready = true;

@@ -111,7 +111,6 @@ struct PendingAtom {
     selection: usize,
     revision: u64,
     mime: String,
-    deadline: Instant,
 }
 #[derive(Default)]
 pub(super) struct Bridge {
@@ -133,10 +132,9 @@ pub(super) struct IoSource {
 }
 impl Bridge {
     pub fn deadline(&self) -> Option<Instant> {
-        self.pending
+        self.transfers
             .iter()
-            .map(|pending| pending.deadline)
-            .chain(self.transfers.iter().map(|transfer| transfer.deadline))
+            .map(|transfer| transfer.deadline)
             .chain(self.clock_pending.as_ref().map(|clock| clock.deadline))
             .chain(self.imports.deadline())
             .min()
@@ -148,8 +146,8 @@ impl Bridge {
         self.exports = Default::default();
         self.clock_pending = None;
     }
-    pub fn init_imports(&mut self, wire: &mut Transport, owner: u32, now: Instant) -> io::Result<()> {
-        self.imports.start_setup(wire, owner, now)
+    pub fn init_imports(&mut self, wire: &mut Transport, owner: u32) -> io::Result<()> {
+        self.imports.start_setup(wire, owner)
     }
     pub fn turn(&mut self, wire: &mut Transport, atoms: &Atoms, owner: u32, server: &mut Server, now: Instant) -> io::Result<()> {
         if self.clock_pending.as_ref().is_some_and(|clock| now >= clock.deadline) {
@@ -169,8 +167,6 @@ impl Bridge {
                     let reply = InternAtomReply::try_parse(&bytes).map_err(io::Error::other)?.0;
                     export.formats.push(Format { atom: reply.atom, mime: pending.mime, latin1: false });
                 }
-            } else if now >= pending.deadline {
-                return Err(io::Error::new(io::ErrorKind::TimedOut, "clipboard atom reply timed out"));
             } else {
                 index += 1;
             }
@@ -216,7 +212,7 @@ impl Bridge {
                 }
                 for mime in &seat.mime_types {
                     let sequence = wire.request(InternAtomRequest { only_if_exists: false, name: mime.as_bytes().into() }, 0, true)?;
-                    self.pending.push(PendingAtom { sequence, selection, revision: seat.revision, mime: mime.clone(), deadline: now + Duration::from_secs(3) });
+                    self.pending.push(PendingAtom { sequence, selection, revision: seat.revision, mime: mime.clone() });
                     export.pending += 1;
                 }
             }
@@ -242,7 +238,8 @@ impl Bridge {
                 0,
                 false,
             )?;
-            self.clock_pending = Some(Clock { deadline: now + Duration::from_secs(3), revisions });
+            // As for the WM's focus time: a PropertyNotify Xwayland owes, so missing it means Xwayland hung.
+            self.clock_pending = Some(Clock { deadline: now + super::HUNG, revisions });
         }
         self.pump(wire, atoms, now)
     }

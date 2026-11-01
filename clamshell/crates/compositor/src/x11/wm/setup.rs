@@ -4,17 +4,17 @@
 use super::*;
 
 impl Wm {
-    pub(super) fn start_setup(&mut self, wire: &mut Transport, now: Instant) -> io::Result<()> {
+    pub(super) fn start_setup(&mut self, wire: &mut Transport) -> io::Result<()> {
         if !self.started && wire.setup.is_some() {
             self.started = true;
             for name in NAMES {
-                self.query(wire, InternAtomRequest { only_if_exists: false, name: name.as_bytes().into() }, 0, Query::Atom(name), now)?;
+                self.query(wire, InternAtomRequest { only_if_exists: false, name: name.as_bytes().into() }, 0, Query::Atom(name))?;
             }
-            self.query(wire, QueryExtensionRequest { name: b"X-Resource".as_slice().into() }, 0, Query::Extension, now)?;
-            self.query(wire, QueryExtensionRequest { name: b"RANDR".as_slice().into() }, 0, Query::RandrExtension, now)?;
+            self.query(wire, QueryExtensionRequest { name: b"X-Resource".as_slice().into() }, 0, Query::Extension)?;
+            self.query(wire, QueryExtensionRequest { name: b"RANDR".as_slice().into() }, 0, Query::RandrExtension)?;
         }
         if self.started && self.composite.is_none() && !self.pending.iter().any(|p| matches!(p.kind, Query::CompositeExtension)) {
-            self.query(wire, QueryExtensionRequest { name: b"Composite".as_slice().into() }, 0, Query::CompositeExtension, now)?;
+            self.query(wire, QueryExtensionRequest { name: b"Composite".as_slice().into() }, 0, Query::CompositeExtension)?;
         }
         Ok(())
     }
@@ -24,10 +24,10 @@ impl Wm {
         }
         Ok(())
     }
-    pub(super) fn anchor_sequence(&mut self, wire: &mut Transport, now: Instant) -> io::Result<()> {
+    pub(super) fn anchor_sequence(&mut self, wire: &mut Transport) -> io::Result<()> {
         // X11's 16-bit wire sequence needs a reply before wrapping, only after actual traffic.
         if self.ready && self.pending.len() < 256 && wire.needs_sequence_anchor() && !self.pending.iter().any(|p| matches!(p.kind, Query::OwnershipBarrier)) {
-            self.query(wire, GetSelectionOwnerRequest { selection: self.atoms.get("WM_S0") }, 0, Query::OwnershipBarrier, now)?;
+            self.query(wire, GetSelectionOwnerRequest { selection: self.atoms.get("WM_S0") }, 0, Query::OwnershipBarrier)?;
         }
         Ok(())
     }

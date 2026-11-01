@@ -226,7 +226,7 @@ fn server_timestamp_precedes_ownership_and_stale_clears_cannot_cancel_a_new_offe
     assert_eq!(clock.len(), 1);
     assert_eq!(clock[0][0], CHANGE_PROPERTY_REQUEST);
     assert!(!bridge.exports.clipboard.owned);
-    assert_eq!(bridge.deadline(), Some(now + Duration::from_secs(3)));
+    assert_eq!(bridge.deadline(), Some(now + crate::x11::HUNG));
     // A timestamp requested for an earlier generation must not acquire a replacement offer.
     bridge.exports.clipboard.revision = Some(1);
     server.x11.selections.entries.clipboard.revision = 1;
@@ -270,7 +270,7 @@ fn event_bytes(bytes: impl AsRef<[u8]>) -> Vec<u8> {
 }
 
 #[test]
-fn late_atom_replies_cannot_restore_an_old_generation_and_missing_replies_have_a_deadline() {
+fn late_atom_replies_cannot_restore_an_old_generation_and_missing_answers_are_waited_for_until_hung() {
     let now = Instant::now();
     let (_display, mut server) = server();
     server.x11.selections.entries.clipboard.mime_types.push("application/x-thor-old".into());
@@ -299,13 +299,18 @@ fn late_atom_replies_cannot_restore_an_old_generation_and_missing_replies_have_a
     );
     assert!(!bridge.exports.clipboard.owned);
     assert_eq!(packets(&mut wire, &mut peer, now)[0][0], CHANGE_PROPERTY_REQUEST);
-    assert_eq!(bridge.turn(&mut wire, &atoms, 5, &mut server, now + Duration::from_secs(3)).unwrap_err().kind(), io::ErrorKind::TimedOut);
+    // The server's time is owed as a reply is: a game can hold Xwayland for seconds.
+    bridge.turn(&mut wire, &atoms, 5, &mut server, now + Duration::from_secs(4)).expect("four seconds is no hang");
+    assert_eq!(bridge.turn(&mut wire, &atoms, 5, &mut server, now + crate::x11::HUNG).unwrap_err().kind(), io::ErrorKind::TimedOut);
     bridge.clear(&mut server);
     assert!(bridge.transfers.is_empty());
     assert_eq!(bridge.deadline(), None);
     bridge.turn(&mut wire, &atoms, 5, &mut server, now).unwrap();
     assert!(!bridge.pending.is_empty());
-    assert_eq!(bridge.turn(&mut wire, &atoms, 5, &mut server, now + Duration::from_secs(3)).unwrap_err().kind(), io::ErrorKind::TimedOut);
+    // A missing atom is the transport's to time out, as any reply.
+    bridge.turn(&mut wire, &atoms, 5, &mut server, now + Duration::from_secs(4)).expect("the bridge keeps no reply deadline");
+    wire.turn(now + Duration::from_secs(4)).expect("four seconds is no hang");
+    assert_eq!(wire.turn(now + crate::x11::HUNG + Duration::from_secs(1)).unwrap_err().kind(), io::ErrorKind::TimedOut);
 }
 #[test]
 fn clearing_a_source_releases_ownership_at_its_acquisition_time_and_removes_read_watches() {

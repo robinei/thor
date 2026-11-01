@@ -3,7 +3,7 @@
 use super::*;
 
 impl Wm {
-    pub(super) fn reply(&mut self, query: Query, bytes: &[u8], wire: &mut Transport, server: &mut Server, now: Instant) -> io::Result<()> {
+    pub(super) fn reply(&mut self, query: Query, bytes: &[u8], wire: &mut Transport, server: &mut Server) -> io::Result<()> {
         if bytes.first() == Some(&0) {
             match query {
                 Query::Property(id, _) | Query::Pid(id) | Query::Attributes(id) => {
@@ -25,7 +25,7 @@ impl Wm {
                     return Err(io::Error::other("Xwayland lacks X-Resource"));
                 }
                 self.res = Some(reply.major_opcode);
-                self.query(wire, res::QueryVersionRequest { client_major: 1, client_minor: 2 }, reply.major_opcode, Query::Version, now)?;
+                self.query(wire, res::QueryVersionRequest { client_major: 1, client_minor: 2 }, reply.major_opcode, Query::Version)?;
             }
             Query::CompositeExtension => {
                 let reply = QueryExtensionReply::try_parse(bytes).map_err(io::Error::other)?.0;
@@ -38,7 +38,6 @@ impl Wm {
                     composite::QueryVersionRequest { client_major_version: 0, client_minor_version: 4 },
                     reply.major_opcode,
                     Query::CompositeVersion,
-                    now,
                 )?;
             }
             Query::RandrExtension => {
@@ -48,13 +47,13 @@ impl Wm {
                     return Ok(());
                 }
                 self.randr = Some(reply.major_opcode);
-                self.query(wire, randr::QueryVersionRequest { major_version: 1, minor_version: 3 }, reply.major_opcode, Query::RandrVersion, now)?;
+                self.query(wire, randr::QueryVersionRequest { major_version: 1, minor_version: 3 }, reply.major_opcode, Query::RandrVersion)?;
             }
             Query::RandrVersion => {
                 randr::QueryVersionReply::try_parse(bytes).map_err(io::Error::other)?;
                 let root = wire.setup.as_ref().and_then(|setup| setup.roots.first()).map(|root| root.root);
                 if let (Some(opcode), Some(window)) = (self.randr, root) {
-                    self.query(wire, randr::GetScreenResourcesCurrentRequest { window }, opcode, Query::RandrModes, now)?;
+                    self.query(wire, randr::GetScreenResourcesCurrentRequest { window }, opcode, Query::RandrModes)?;
                 }
             }
             Query::RandrModes => {
