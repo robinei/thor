@@ -19,6 +19,9 @@ pub enum Command {
     LaunchEnv(String),
     /// `--library`: print the tabs and entries found (library.json's content dirs, Steam, desktop files).
     Library,
+    /// `--key <entry id>`: print the key the id gives (`clamshell_library::key_of`): its launches' units and
+    /// its settings' files are named by it. For the VM's checks, which otherwise would derive it again.
+    Key(String),
     /// `--tray`: print the tray icons there are, and their menus (see clamshell_system::session::tray).
     Tray,
     /// `--clipboard get`: print the clipboard's text. `--clipboard set`: set the clipboard to the text read
@@ -59,6 +62,7 @@ used by ClamShell itself:
 for development:
   --snapshot DIR       both screens' views drawn into DIR (built with --features dev)
   --library            the library as it reads, written out
+  --key ID             the key an entry's id gives, as its units and settings files are named
   --tray               the tray icons there are, written out
   --fetch-metadata     the missing covers and details fetched";
 
@@ -73,6 +77,7 @@ pub fn parse(args: &[String]) -> Option<Command> {
         #[cfg(any(test, feature = "dev"))]
         [flag, dir] if flag == "--snapshot" => Command::Snapshot(dir.into()),
         [flag] if flag == "--library" => Command::Library,
+        [flag, id] if flag == "--key" => Command::Key(id.clone()),
         [flag] if flag == "--tray" => Command::Tray,
         [flag] if flag == "--wayland-filter" => Command::WaylandFilter,
         [flag, what] if flag == "--clipboard" && what == "get" => Command::ClipboardGet,
@@ -109,6 +114,7 @@ mod tests {
         assert_eq!(parse(&args("--launch-env steam:620")), Some(Command::LaunchEnv("steam:620".into())));
         assert_eq!(parse(&args("--launch-env")), None, "without its entry");
         assert_eq!(parse(&args("--library")), Some(Command::Library));
+        assert_eq!(parse(&args("--key desktop:foot")), Some(Command::Key("desktop:foot".into())));
         assert_eq!(parse(&args("--tray")), Some(Command::Tray));
         assert_eq!(parse(&args("--fetch-metadata")), Some(Command::FetchMetadata));
         assert_eq!(parse(&args("--snapshot")), None, "without its dir");

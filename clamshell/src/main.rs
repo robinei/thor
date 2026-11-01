@@ -95,6 +95,10 @@ fn carry_out(command: Command) -> Result<(), String> {
             std::io::Read::read_to_string(&mut std::io::stdin(), &mut text).map_err(|e| format!("clipboard: {e}"))?;
             clamshell_system::session::clipboard::set(text).map_err(|e| format!("clipboard: {e}"))
         }
+        Command::Key(id) => {
+            println!("{}", clamshell_library::key_of(&id));
+            Ok(())
+        }
         Command::Tray => commands::print_tray(&paths),
         Command::LaunchEnv(entry) => commands::print_launch_env(&paths, &sources, &entry),
         Command::ReleaseHardware => {
