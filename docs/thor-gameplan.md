@@ -135,6 +135,12 @@ fingerprint, or `pacman -U` of the new thor-keyring from the release), and image
 it. If it leaks: the same, and the old fingerprint in thor-keyring's `thor-revoked`, so that devices which
 update stop trusting it.
 
+A planned change of key (neither lost nor leaked) takes two publishes, as pacman checks every package's
+signature before any install script runs: a thor-keyring and packages signed by a new key can't be taken in
+one `pacman -Syu` ("unknown trust"). First a thor-keyring that holds both keys, signed by the old one; once
+devices have updated (weeks), packages signed by the new key; later a thor-keyring without the old key. A
+device that missed the first step takes `pacman -Sy thor-keyring` before `-Su` (maintain.md, step 2).
+
 What the image adds:
 
 | Part | Source |

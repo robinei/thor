@@ -50,6 +50,11 @@ Your notes are `changelog.md` in this folder (the device's own).
    If `thor-sensors` changed: `sudo systemctl restart thor-sensors` (its hexagonrpcd runs on as it was).
    Steam, if set up (`~/.local/share/Steam/steamrtarm64/steam`) and not running (`pgrep -x steam`):
    `steam-setup --update` (it starts without updating itself).
+   If pacman refuses [thor]'s packages for "unknown trust" or an invalid signature, the repository's
+   key has changed: `sudo pacman -Sy thor-keyring` first (it carries the new key, signed by the old
+   one), then `sudo pacman -Su`. If thor-keyring itself is refused, the key was replaced without that
+   overlap (lost or leaked): tell the user (`docs/thor-gameplan.md`, "The repository's key"), and import
+   no key yourself.
 
 3. **pacnew/pacsave.** `pacdiff -o`. For each, diff against the live file, merge sensibly (keep this
    device's changes; take upstream's new defaults), install the result, delete the .pacnew. Our own

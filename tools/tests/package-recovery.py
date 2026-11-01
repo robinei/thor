@@ -142,6 +142,12 @@ class Packaging(unittest.TestCase):
                 self.assertEqual(etc, sorted(line for line in out.splitlines() if line))
 
 
+    def test_the_keyring_is_installed_after_pacman(self):
+        """Its install script runs pacman-key: in one transaction (an image's), pacman must come first."""
+        out = subprocess.run(['bash', '-c', 'source PKGBUILD; printf "%s\\n" "${depends[@]}"'], cwd=REPO / 'packages/thor-keyring',
+                             capture_output=True, text=True, check=True).stdout
+        self.assertIn('pacman', out.split())
+
     @unittest.skipUnless(shutil.which('visudo'), 'no visudo here')
     def test_the_sudoers_file_parses(self):
         result = subprocess.run(['visudo', '-c', '-f', REPO / 'packages/thor-system/root/etc/sudoers.d/10-thor-wheel'], capture_output=True, text=True)
