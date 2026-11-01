@@ -418,5 +418,25 @@ class PanelCalibrationReaders(unittest.TestCase):
                 self.assertEqual(((panel / 'frame_len_120').read_text(), (panel / 'frame_len_60').read_text()), expected)
 
 
+class DevicePacman(unittest.TestCase):
+    def test_the_device_requires_thor_s_database_and_packages_signed(self):
+        line = next(line for line in (REPO / 'tools/image/thor-image.sh').read_text().splitlines() if 's||[thor]' in line)
+        m = Machine()
+        self.addCleanup(m.close)
+        m.file('etc/pacman.conf', '[options]\nSigLevel = Required DatabaseOptional\n\n[core]\nInclude = /etc/pacman.d/mirrorlist\n')
+        result = subprocess.run(['bash', '-c', line], env={**m.env, 'ROOT': str(m.root), 'SERVER': 'https://example/thor'}, capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        sections, name = {}, None
+        for text in (m.root / 'etc/pacman.conf').read_text().splitlines():
+            if text.startswith('['):
+                name = text.strip('[]')
+                sections[name] = {}
+            elif '=' in text and name:
+                key, value = (part.strip() for part in text.split('=', 1))
+                sections[name][key] = value
+        self.assertEqual(list(sections), ['options', 'thor', 'core'])
+        self.assertEqual(sections['thor'], {'SigLevel': 'Required', 'Server': 'https://example/thor'})
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -143,8 +143,9 @@ grep -iE "^error|error:|failed" "$WORK/pacstrap.log" | head -20 || true
 gpgconf --homedir "$ROOT/etc/pacman.d/gnupg" --kill all 2> /dev/null || true
 gpgconf --homedir "$WORK/gnupg" --kill all 2> /dev/null || true
 if [ "$TARGET" = thor ]; then
-    # The device's pacman: the published repository first.
-    sed -i "0,/^\[core\]/s||[thor]\nServer = $SERVER\n\n[core]|" "$ROOT/etc/pacman.conf"
+    # The device's pacman: the published repository first, its database signed as well as its packages
+    # (ALARM's default takes an unsigned database, which would let an older one be served).
+    sed -i "0,/^\[core\]/s||[thor]\nSigLevel = Required\nServer = $SERVER\n\n[core]|" "$ROOT/etc/pacman.conf"
     grep -q '^\[thor\]' "$ROOT/etc/pacman.conf"
 else
     # (The test machine's packages are this PC's own, never published: no [thor] there.)
