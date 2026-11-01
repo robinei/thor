@@ -64,6 +64,7 @@ fn log_failed_start(name: &str, result: io::Result<()>) {
 }
 
 /// What a read of the library does first (see [`rescanner`]).
+#[derive(Debug)]
 pub(crate) enum Rescan {
     Read,
     /// The metadata misses forgotten, so that they are fetched again.
@@ -75,38 +76,15 @@ pub(crate) enum Rescan {
 /// The Tools tab's rescan, the library's first read at start, and its read after an edit. On a thread of
 /// its own, which takes them in the order asked, so that writes of library.json land in order: it does
 /// what `Rescan` says first, reads the library and sends it (as written, after a write), and fetches what
-/// the library wants.
+/// the library wants. A plain read waiting behind others is covered by the read that ends each of them,
+/// so it is left out ([`covered`]).
 fn rescanner<S: Sink + Clone>(sources: Sources, paths: Paths, queue: meta::Queue, sink: S) -> Worker<Rescan> {
     let spawned = Worker::spawn(clamshell_state::Thread::Rescan.name(), move |commands: &std::sync::mpsc::Receiver<Rescan>| {
         while let Ok(first) = commands.recv() {
-            let wrote = matches!(first, Rescan::Write(_));
-            match first {
-                Rescan::Read => {}
-                Rescan::Refetch => {
-                    if let Some(art) = paths.art.as_deref() {
-                        log::info!("rescan: {} misses forgotten", Cache::open(art).forget_misses());
-                    }
+            for command in covered(std::iter::once(first).chain(commands.try_iter()).collect()) {
+                if !rescan(command, &sources, &paths, &queue, &sink) {
+                    return;
                 }
-                // A failed write leaves the file as it was, and what is read shows that.
-                Rescan::Write(config) => match library::write(&sources, &config) {
-                    Ok(()) => log::info!("library.json written"),
-                    Err(e) => {
-                        log::error!("library.json not written: {e}");
-                        if sink.send(clamshell_state::Event::NotSaved("library.json")).is_err() {
-                            return;
-                        }
-                    }
-                },
-            }
-            let loaded = library::load(&sources);
-            log::info!("rescan: {} entries", loaded.library.entries().len());
-            let library = Box::new(loaded.library);
-            let event = if wrote { clamshell_state::Event::LibraryWritten(library) } else { clamshell_state::Event::Library(library) };
-            if sink.send(event).is_err() {
-                return;
-            }
-            if let Some(art) = paths.art.clone() {
-                meta::spawn(meta::Fetch { wanted: loaded.wanted, keys: Some(loaded.keys), art }, &queue, sink.clone());
             }
         }
     });
@@ -114,6 +92,49 @@ fn rescanner<S: Sink + Clone>(sources: Sources, paths: Paths, queue: meta::Queue
         log::error!("rescan: couldn't start: {e}");
         Worker::gone(clamshell_state::Thread::Rescan.name())
     })
+}
+
+/// The commands waiting, but each plain read that another command follows: every command ends with a
+/// read of the library, which serves it too. Writes and refetches are kept, in order: each write's read
+/// is counted by the state (see `LibraryWritten`).
+fn covered(waiting: Vec<Rescan>) -> Vec<Rescan> {
+    let last = waiting.len().saturating_sub(1);
+    waiting.into_iter().enumerate().filter(|(i, c)| !matches!(c, Rescan::Read) || *i == last).map(|(_, c)| c).collect()
+}
+
+/// Carries out one command: what it says, then the library read and sent, and its metadata fetched.
+/// False once the UI is gone.
+fn rescan(command: Rescan, sources: &Sources, paths: &Paths, queue: &meta::Queue, sink: &(impl Sink + Clone)) -> bool {
+    let wrote = matches!(command, Rescan::Write(_));
+    match command {
+        Rescan::Read => {}
+        Rescan::Refetch => {
+            if let Some(art) = paths.art.as_deref() {
+                log::info!("rescan: {} misses forgotten", Cache::open(art).forget_misses());
+            }
+        }
+        // A failed write leaves the file as it was, and what is read shows that.
+        Rescan::Write(config) => match library::write(sources, &config) {
+            Ok(()) => log::info!("library.json written"),
+            Err(e) => {
+                log::error!("library.json not written: {e}");
+                if sink.send(clamshell_state::Event::NotSaved("library.json")).is_err() {
+                    return false;
+                }
+            }
+        },
+    }
+    let loaded = library::load(sources);
+    log::info!("rescan: {} entries", loaded.library.entries().len());
+    let library = Box::new(loaded.library);
+    let event = if wrote { clamshell_state::Event::LibraryWritten(library) } else { clamshell_state::Event::Library(library) };
+    if sink.send(event).is_err() {
+        return false;
+    }
+    if let Some(art) = paths.art.clone() {
+        meta::spawn(meta::Fetch { wanted: loaded.wanted, keys: Some(loaded.keys), art }, queue, sink.clone());
+    }
+    true
 }
 
 /// Starts every system thread, sending to `sink`, and applies the global settings, which are in force
@@ -238,6 +259,18 @@ fn restarts_told<S: Sink>(sink: S) -> impl Fn(&'static str) + Send + 'static {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
+    /// A read waiting behind another command is left out, since that command's own read serves it;
+    /// writes and refetches stay, in order, and the last read stays.
+    #[test]
+    fn reads_waiting_behind_others_are_one() {
+        use super::{Rescan, covered};
+        let write = || Rescan::Write(std::sync::Arc::default());
+        let kinds = |c: Vec<Rescan>| covered(c).into_iter().map(|c| format!("{c:?}").chars().take(4).collect::<String>()).collect::<Vec<_>>();
+        assert_eq!(kinds(vec![Rescan::Read, Rescan::Read, Rescan::Read]), ["Read"]);
+        assert_eq!(kinds(vec![Rescan::Read, write(), Rescan::Read, Rescan::Refetch, write()]), ["Writ", "Refe", "Writ"]);
+        assert_eq!(kinds(vec![write(), Rescan::Read]), ["Writ", "Read"]);
+    }
+
     use clamshell_state::{Event, Thread};
     use std::sync::mpsc;
     use std::time::{Duration, Instant};
