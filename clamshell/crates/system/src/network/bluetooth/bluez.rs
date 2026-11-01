@@ -21,9 +21,11 @@ pub(crate) fn device_path(adapter: &str, address: &str) -> String {
 
 /// The pairing agent (org.bluez.Agent1 at [`AGENT_PATH`]), served while pairing. It shows a code to type
 /// on the device through `show` (a keyboard pairing by passkey: BlueZ gives the code; an old one asking
-/// for a PIN: it is made here), and clears it when the pairing is over or cancelled. It has no keyboard to
-/// type a code shown on the device, and it confirms whatever else BlueZ asks, since the user asked to
-/// pair. Returns its reply to a call, if the call is for it.
+/// for a PIN: it is made here), and clears it when the pairing is over or cancelled. A device with a
+/// screen of its own (a phone, a computer) pairs by numeric comparison: the code is shown here too, to be
+/// compared with the device's, where the pairing is confirmed or turned down; here it is confirmed, since
+/// the user asked to pair. It has no keyboard to type a code shown on the device, and it confirms
+/// whatever else BlueZ asks. Returns its reply to a call, if the call is for it.
 pub(crate) fn agent(call: &Message, show: &mut dyn FnMut(Option<String>)) -> Option<Message> {
     if call.path().as_deref() != Some(AGENT_PATH) || call.interface().as_deref() != Some("org.bluez.Agent1") {
         return None;
@@ -47,11 +49,16 @@ pub(crate) fn agent(call: &Message, show: &mut dyn FnMut(Option<String>)) -> Opt
             Some(call.method_return().append1(pin))
         }
         "RequestPasskey" => Some(call.error(&"org.bluez.Error.Rejected".into(), c"no way to enter a code")),
+        "RequestConfirmation" => {
+            let (_, passkey): (dbus::Path, u32) = call.read2().ok()?;
+            show(Some(format!("{passkey:06}")));
+            Some(call.method_return())
+        }
         "Release" | "Cancel" => {
             show(None);
             Some(call.method_return())
         }
-        "RequestConfirmation" | "RequestAuthorization" | "AuthorizeService" => Some(call.method_return()),
+        "RequestAuthorization" | "AuthorizeService" => Some(call.method_return()),
         _ => None,
     }
 }
@@ -99,7 +106,11 @@ mod tests {
         assert_eq!(pin.len(), 6);
         agent(&call("Cancel"), &mut |code| shown = code).unwrap();
         assert_eq!(shown, None);
-        let refused = agent(&call("RequestPasskey").append1(device), &mut |code| shown = code).unwrap();
+        let refused = agent(&call("RequestPasskey").append1(device.clone()), &mut |code| shown = code).unwrap();
         assert_eq!(refused.msg_type(), dbus::MessageType::Error);
+        // A phone's numeric comparison: its code is shown, to compare with the phone's, and confirmed.
+        let reply = agent(&call("RequestConfirmation").append2(device, 7u32), &mut |code| shown = code).unwrap();
+        assert_eq!(reply.msg_type(), dbus::MessageType::MethodReturn);
+        assert_eq!(shown.as_deref(), Some("000007"), "the code to compare is shown");
     }
 }
