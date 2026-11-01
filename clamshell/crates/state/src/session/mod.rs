@@ -212,6 +212,13 @@ impl Session {
         entry_in(library, &self.running, id)
     }
 
+    /// An entry as its settings are taken (see [`crate::State::settings_of`]): a running entry as it
+    /// started, so that a runner given to it since applies from its next start, else the library's. The
+    /// settings in force and the settings panel both go by it.
+    pub(crate) fn settings_entry<'a>(&'a self, library: &'a Library, id: &str) -> Option<&'a Entry> {
+        self.running(id).and_then(|r| r.entry.as_deref()).or_else(|| library.entry(id))
+    }
+
     /// A running entry, by its id.
     pub fn running(&self, id: &str) -> Option<&Running> {
         self.running.iter().find(|r| &*r.id == id)

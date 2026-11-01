@@ -640,6 +640,7 @@ anchored lists on their item and every list within its ends; Focus scrolls just 
 |---|---|
 | tile tap cycles the value at the level edited (global-only settings always global); a profile tile's (Keymap, tone curve, Lights) steps through Default (Default colours, Off), the level's own, then the named ones | `games_override_the_global_settings`, `a_profile_tile_steps_through_its_profiles_and_its_picker_resets` |
 | tile long press opens its menu (`Prefs::menu`, list `Values`): its values, the one in force marked; a row sets it and closes; Reset (last, when the level chooses it itself, or All differs from stock) goes back to the level below's (`Panel::inherited_value`); Back closes. A profile tile's long press opens its picker, which ends with the same Reset | `a_tiles_menu_picks_a_value_and_resets_to_the_level_below`, `a_profile_tile_steps_…` |
+| the levels an item inherits from, in force and in the panel alike (`Session::settings_entry`): a running entry's runner as it started, until it starts again after an edit gave it another; else the library's | `the_panel_and_the_settings_in_force_name_the_same_runner` |
 | A level tab selects the level; Reset drops an item's overrides and env | `the_panel_offers_the_items_levels`, `a_runner_can_leave_its_items_without_settings_…` |
 | Env editor | `the_environment_editor_takes_the_keyboard` |
 | runner keymaps given on Library / Start | `a_runner_gets_its_keymap_once`, `a_runners_keymap_given_while_its_item_runs_is_applied` |

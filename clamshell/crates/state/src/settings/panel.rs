@@ -210,7 +210,8 @@ impl<'a> Panel<'a> {
         kinds: Kinds<'a>,
         players: Player,
     ) -> Panel<'a> {
-        let entry_of = |id: &str| session.entry(library_view.library(), id);
+        // As the settings in force take it, so that the panel shows the levels they inherit from.
+        let entry_of = |id: &str| session.settings_entry(library_view.library(), id);
         let context = subject.and_then(|id| entry_of(&id).map(|g| Program { id, title: &g.title }));
         let entry = context.as_ref().and_then(|item| entry_of(&item.id));
         let levels = match (&context, entry) {

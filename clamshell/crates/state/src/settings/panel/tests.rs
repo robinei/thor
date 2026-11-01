@@ -414,3 +414,28 @@ fn the_vulkan_choice_is_kept_when_its_package_appears_and_vanishes() {
     taps(&mut s, Setting::VulkanDriver, 1);
     assert_eq!(s.panel().tile_value(Setting::VulkanDriver), 0);
 }
+
+/// After an edit gives a running entry another runner, the panel shows the levels the settings in force
+/// inherit from, the runner it started with, until it starts again.
+#[test]
+fn the_panel_and_the_settings_in_force_name_the_same_runner() {
+    let library = |runner: &str| {
+        let mut library = clamshell_library::demo::library();
+        if let Some(g) = library.entries_mut().iter_mut().find(|g| &*g.id == "zelda-lttp") {
+            g.runner = Some(clamshell_library::RunnerOf::new(runner, runner, true));
+        }
+        library
+    };
+    let mut s = crate::testkit::state_with(library("snes"));
+    let (snes, gba) = (clamshell_library::runner_key("snes"), clamshell_library::runner_key("gba"));
+    s.settings_mut().set(Some(&snes), Setting::CpuMax, Some(50));
+    s.settings_mut().set(Some(&gba), Setting::CpuMax, Some(80));
+    let unit = launch(&mut s, "zelda-lttp");
+    s.observed(vec![win_of(7, "zelda3", &unit)]);
+    s.applied(Event::Library(Box::new(library("gba"))));
+    assert_eq!(s.in_force().get(Setting::CpuMax), 50, "as it started");
+    tap(&mut s, Id::Settings(SettingsId::Scope(SettingsLevel::Content)));
+    let panel = s.panel();
+    assert_eq!(panel.levels()[0].as_ref().map(|(_, p)| &*p.id), Some(&*snes), "the runner it started with");
+    assert_eq!(panel.tile_value(Setting::CpuMax), 50);
+}

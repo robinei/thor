@@ -28,11 +28,9 @@ impl State {
     }
 
     /// The level that entry `id` takes its settings from before its own, which is its runner's, if it
-    /// has one. A running entry's is the one it started with, found without searching the library (this
-    /// runs several times per window and event).
+    /// has one (see [`crate::Session::settings_entry`]).
     fn runner_of(&self, id: &str) -> Option<&str> {
-        let running = self.session.running(id).and_then(|r| r.entry.as_deref());
-        running.or_else(|| self.entry(id)).and_then(|g| g.runner.as_ref()).map(|r| &*r.key)
+        self.session.settings_entry(self.library_view.library(), id).and_then(|g| g.runner.as_ref()).map(|r| &*r.key)
     }
 
     /// The settings entry or level `id` runs with: the global ones, then its runner's, then its own.
