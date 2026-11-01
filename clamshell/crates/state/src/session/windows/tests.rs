@@ -726,3 +726,24 @@ fn a_dialogs_close_brings_back_its_parent_while_a_launch_waits() {
     s.applied(WindowEvent::Closed(9).into());
     assert_eq!(s.session().top_window().map(|w| w.id), Some(7), "the parent, not 8");
 }
+
+/// Down with a dialog in front moves its stack and makes the rule of the stack's root, whose record Up
+/// finds on the bottom screen: Up forgets the rule again. A rule made from the dialog's title would stay
+/// saved and could later send a main window of that title down.
+#[test]
+fn a_stack_moved_down_with_its_dialog_in_front_is_ruled_by_its_root() {
+    let mut s = state();
+    let emu = launch(&mut s, "zelda-lttp");
+    let main = WindowFacts { title: "Game".into(), ..win_of(1, "emu", &emu) };
+    let dialog = WindowFacts { title: "Settings".into(), parent: Some(1), ..win_of(2, "emu", &emu) };
+    s.observed(vec![main.clone()]);
+    s.applied(WindowEvent::Activate(1).into());
+    s.observed(vec![main, dialog]);
+    assert_eq!(s.session().top_window().map(|w| w.id), Some(2), "the dialog in front");
+    s.applied(Event::HardwareKey(HardwareKey::WindowDown));
+    assert_eq!(s.session().bottom_window().map(|w| w.id), Some(1));
+    let rules = s.session().window_rules().list();
+    assert!(matches!(rules, [r] if &*r.app_id == "emu" && r.title.as_deref() == Some("Game")), "{rules:?}");
+    s.applied(Event::HardwareKey(HardwareKey::WindowUp));
+    assert!(s.session().window_rules().list().is_empty(), "Up forgets the rule Down made");
+}

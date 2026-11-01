@@ -88,8 +88,11 @@ impl Session {
 
     /// Home + right stick down moves the window in front on the top screen to the bottom screen and
     /// remembers it for its program. Returns whether a window moved, for the bottom screen to show it.
+    /// The rule and the record are the stack's root's, though a dialog of it may be in front: the stack
+    /// moves as one, rules apply only to roots ([`Session::wanted_down`]), and Up finds the record by the
+    /// root on the bottom screen.
     pub(crate) fn window_down(&mut self, notice: &mut NoticeSlot, now: u64, out: &mut Out) -> bool {
-        let Some(w) = self.top_window().cloned() else {
+        let Some(w) = self.top.and_then(|root| self.window(root)).cloned() else {
             return false;
         };
         self.command(WindowCommand::Down(w.id));
