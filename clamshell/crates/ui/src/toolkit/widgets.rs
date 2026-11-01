@@ -16,7 +16,8 @@ use crate::gfx::{Align, Canvas, Column, Keep, LINE, Rect, Rgb};
 /// cut to `max` wide, with `inner` space on both sides. The current tab is bright with an amber line
 /// under it. When they don't all fit, the row scrolls: it starts as far along as it must for the current
 /// tab and the one after it to show, so a tap on the last shown brings the next in, and a dim ‹ or › at an
-/// end says there are more that way. Returns where the next tab would start.
+/// end says there are more that way. A tap on ‹ or › is a tap on the nearest tab hidden that way, which
+/// then shows. Returns where the next tab would start.
 pub fn tabs<'a, I>(f: &mut Frame, area: Rect, size: f32, inner: f32, max: f32, items: I) -> f32
 where
     I: IntoIterator<Item = (Id, Option<Icon>, &'a str, bool)>,
@@ -62,13 +63,13 @@ where
         (false, _) => (area.x + marker, room),
     };
     let mut x = left;
-    let mut hidden_after = false;
+    let mut hidden_after = None;
     for (id, icon, name, current) in items.clone().skip(start) {
         let lead = if icon.is_some() { icon_w + gap } else { 0.0 };
         let text_w = f.c.text_width(size, name).min(max);
         let r = Rect::new(x, area.y, lead + text_w + 2.0 * inner, area.h);
         if r.x + r.w > left + room {
-            hidden_after = true;
+            hidden_after = Some(id);
             break;
         }
         f.button(id, r, Look::TAB, |f| {
@@ -83,11 +84,17 @@ where
         });
         x += r.w;
     }
-    if start > 0 {
-        f.c.text_in(Rect::new(area.x, area.y, marker, area.h), size, Tone::Dim, "‹", Align::Center);
+    let more = |f: &mut Frame, id: Id, r: Rect, mark: &str| {
+        let tone = if f.pressed(&id) { Tone::High } else { Tone::Dim };
+        f.button(id, r, Look::TAB, |f| {
+            f.c.text_in(r, size, tone, mark, Align::Center);
+        });
+    };
+    if let Some((id, ..)) = start.checked_sub(1).and_then(|before| items.clone().nth(before)) {
+        more(f, id, Rect::new(area.x, area.y, marker, area.h), "‹");
     }
-    if hidden_after {
-        f.c.text_in(Rect::new(left + room, area.y, marker, area.h), size, Tone::Dim, "›", Align::Center);
+    if let Some(id) = hidden_after {
+        more(f, id, Rect::new(left + room, area.y, marker, area.h), "›");
         return left + room + marker;
     }
     x

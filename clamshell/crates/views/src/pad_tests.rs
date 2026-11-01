@@ -477,3 +477,35 @@ fn unavailable_rows_are_still_focusable() {
     s.apply(clamshell_state::PointerEvent::Activate(Id::Tab(Tab::Time)).into(), &mut Vec::new());
     assert!(focusable(&s).iter().any(|t| t.id == Id::Time(TimeId::Ntp)), "Set automatically focusable");
 }
+
+/// When the Library's tabs don't all fit, ‹ and › are there to tap: each is the nearest tab hidden that
+/// way, which a tap opens and brings into view.
+#[test]
+fn the_tabs_hidden_past_an_end_are_tapped_through_their_marker() {
+    use clamshell_state::library_view::edit::EditId;
+    let account = clamshell_state::setup::account::Account::NoHelper;
+    let mut s = State::new(Init { library: Some(clamshell_library::demo::library()), account, ..Init::default() });
+    s.apply(Event::Entry("builtin:device".into(), clamshell_state::EntryAct::Play), &mut Vec::new());
+    s.apply(PointerEvent::Activate(Id::Device(clamshell_state::DeviceId::EditLibrary)).into(), &mut Vec::new());
+    let tabs = |s: &State| {
+        let drawn = clamshell_ui::PadFrames::new(crate::VIEWS, (1920, 1080), (1240, 1080)).record(s).drawn(Screen::Top);
+        drawn
+            .into_iter()
+            .filter_map(|t| match t.id {
+                Id::LibraryView(LibraryViewId::Edit(EditId::Tab(i))) => Some((i, t.rect)),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    // The markers are as narrow as their mark; the tabs are wider.
+    let marker = |shown: &[(u16, [f32; 4])], i: u16| shown.iter().any(|(at, r)| *at == i && r[2] < 60.0);
+    let shown = tabs(&s);
+    let hidden = shown.iter().map(|(i, _)| *i).max().expect("tabs drawn");
+    assert!(marker(&shown, hidden), "› is the first tab hidden after: {shown:?}");
+    assert_eq!(s.library_view().edit().map(|e| e.tab()), Some(0));
+    s.apply(PointerEvent::Activate(Id::LibraryView(LibraryViewId::Edit(EditId::Tab(hidden)))).into(), &mut Vec::new());
+    assert_eq!(s.library_view().edit().map(|e| e.tab()), Some(usize::from(hidden)), "the hidden tab opened");
+    let shown = tabs(&s);
+    assert!(shown.iter().any(|(i, r)| *i == hidden && r[2] >= 60.0), "and shown as a tab: {shown:?}");
+    assert!(marker(&shown, 0), "‹ is the tab hidden before: {shown:?}");
+}
