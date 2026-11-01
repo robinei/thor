@@ -9,17 +9,30 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 /// Writes `bytes` to `path` whole. They go to a file beside it, which is flushed to the disk and then
-/// renamed over it. The folder is synced too, so the rename lasts.
+/// renamed over it. The folder is synced too, so the rename lasts. The file beside it has a name of this
+/// write's own (`<name>.part-<process>-<count>`), so two writers of one path, threads or processes (the
+/// FEX presets from ClamShell and `--launch-env`), each put a whole file in place; the last one stays.
 pub(crate) fn write_file(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static WRITES: AtomicU64 = AtomicU64::new(0);
     let dir = path.parent().ok_or_else(|| io::Error::other("no folder"))?;
     fs::create_dir_all(dir)?;
     let mut part = path.as_os_str().to_owned();
-    part.push(".part");
+    part.push(format!(".part-{}-{}", std::process::id(), WRITES.fetch_add(1, Ordering::Relaxed)));
     let part = PathBuf::from(part);
-    let mut file = fs::File::create(&part)?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    fs::rename(&part, path)?;
+    let written = (|| {
+        let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&part)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        fs::rename(&part, path)
+    })();
+    if written.is_err()
+        && let Err(e) = fs::remove_file(&part)
+        && e.kind() != io::ErrorKind::NotFound
+    {
+        log::warn!("{}: {e}", part.display());
+    }
+    written?;
     fs::File::open(dir)?.sync_all()
 }
 
@@ -40,4 +53,34 @@ pub(crate) fn read_json<T: DeserializeOwned>(path: &Path) -> Option<T> {
         })
         .ok()?;
     serde_json::from_str(&text).map_err(|e| log::warn!("{}: {e}", path.display())).ok()
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+mod tests {
+    use super::*;
+
+    /// Two writers of one file at once each put a whole file in place, and neither fails.
+    #[test]
+    fn writers_of_one_file_at_once_each_write_it_whole() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("list.json");
+        let writers: Vec<_> = [b'a', b'b']
+            .into_iter()
+            .map(|c| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    let bytes = vec![c; 1 << 16];
+                    (0..100).all(|_| write_file(&path, &bytes).is_ok())
+                })
+            })
+            .collect();
+        for w in writers {
+            assert!(w.join().unwrap(), "no write failed");
+        }
+        let kept = fs::read(&path).unwrap();
+        assert_eq!(kept.len(), 1 << 16);
+        assert!(kept.iter().all(|&c| c == kept[0]), "one writer's whole");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1, "no part left");
+    }
 }
