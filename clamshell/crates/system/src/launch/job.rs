@@ -96,7 +96,10 @@ fn command_in(job: &Job, own: impl Iterator<Item = String>) -> Option<Command> {
         cmd.arg(format!("--slice={slice}"));
     }
     let workdir = job.workdir.clone().unwrap_or_else(|| PathBuf::from("/"));
-    cmd.arg(format!("--working-directory={}", workdir.display()));
+    // As the bytes it is, so a folder whose name isn't UTF-8 is the same folder.
+    let mut wd = std::ffi::OsString::from("--working-directory=");
+    wd.push(&workdir);
+    cmd.arg(wd);
     // ClamShell's own environment, as a program it started itself would have it (a service starts with
     // the user manager's: a ClamShell run with its own runtime or config dirs, nested or in a test, would
     // send its games to another compositor), then the job's own, which go before it. ClamShell's are
@@ -118,6 +121,13 @@ fn command_in(job: &Job, own: impl Iterator<Item = String>) -> Option<Command> {
         ok
     });
     cmd.args(env.map(|(k, v)| format!("--setenv={k}={v}")));
+    // systemd-run finds the program itself, from its own working directory, which is ClamShell's: a
+    // relative path such as a desktop file's `./start.sh` is taken from the launch's folder instead. A bare
+    // name is looked for in PATH.
+    let program = match std::path::Path::new(program) {
+        p if p.is_relative() && p.components().count() > 1 => workdir.join(p).into_os_string(),
+        _ => program.clone(),
+    };
     cmd.arg("--").arg(program).args(args);
     Some(cmd)
 }
@@ -201,6 +211,40 @@ mod tests {
         let cmd = command_in(&job, own).unwrap();
         let setenv: Vec<&str> = cmd.get_args().filter_map(|a| a.to_str()).filter(|a| a.starts_with("--setenv=")).collect();
         assert_eq!(setenv, ["--setenv=PATH", "--setenv=OK=2"]);
+    }
+
+    /// systemd-run looks for a relative program from its own folder, which is ClamShell's: one with a
+    /// folder in its path is given from the launch's folder; a bare name is left for PATH.
+    #[test]
+    fn a_relative_program_is_found_from_the_launchs_folder() {
+        let job = |program: &str| Job {
+            unit: "clamshell-run-jobtest-0-0".into(),
+            slice: None,
+            argv: vec![program.into(), "./arg".into()],
+            env: vec![],
+            workdir: Some("/opt/game dir".into()),
+            properties: vec![],
+        };
+        let after = |program: &str| {
+            let cmd = command_in(&job(program), std::iter::empty()).unwrap();
+            let args: Vec<std::ffi::OsString> = cmd.get_args().map(ToOwned::to_owned).collect();
+            let at = args.iter().position(|a| a == "--").unwrap();
+            args.get(at + 1..).unwrap().to_vec()
+        };
+        assert_eq!(after("./start.sh"), ["/opt/game dir/./start.sh", "./arg"]);
+        assert_eq!(after("bin/game"), ["/opt/game dir/bin/game", "./arg"]);
+        assert_eq!(after("retroarch"), ["retroarch", "./arg"], "a name is looked for in PATH");
+        assert_eq!(after("/usr/bin/mpv"), ["/usr/bin/mpv", "./arg"]);
+    }
+
+    /// A working folder whose name isn't UTF-8 is passed as it is.
+    #[test]
+    fn a_working_folder_is_passed_as_its_bytes() {
+        use std::os::unix::ffi::OsStrExt;
+        let folder = std::ffi::OsStr::from_bytes(b"/games/\xff");
+        let job = Job { unit: "u".into(), slice: None, argv: vec!["p".into()], env: vec![], workdir: Some(folder.into()), properties: vec![] };
+        let cmd = command_in(&job, std::iter::empty()).unwrap();
+        assert!(cmd.get_args().any(|a| a.as_bytes() == b"--working-directory=/games/\xff"));
     }
 
     /// Starts services on this machine's user manager. Run it by hand with `--ignored`.
