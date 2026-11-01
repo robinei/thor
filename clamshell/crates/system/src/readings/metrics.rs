@@ -9,7 +9,9 @@
 //! and the battery's power supply.
 //!
 //! GPU load comes from amdgpu's busy file where there is one. Otherwise, as for the Thor's Adreno, it is
-//! the GPU time of every DRM client over the interval (see [`crate::os::drm`]).
+//! the GPU time of every DRM client over the interval (see [`crate::os::drm`]), which walks every
+//! process's descriptors: it is read only while the metrics can be seen, and the hidden history has no
+//! GPU load then.
 
 use std::io;
 use std::sync::mpsc::Receiver;
@@ -40,8 +42,6 @@ pub(crate) fn spawn(sink: impl Sink) -> io::Result<Worker<Shown>> {
 fn follow(sink: &impl Sink, commands: &Receiver<Shown>) -> Result<(), Closed> {
     let mut previous = read_cpu_times();
     let mut gpu = GpuTimes::default();
-    // Seed the first interval only when this machine needs the per-client fallback.
-    gpu.load(read_gpu().0, gpu_time);
     let mut shown = false;
     loop {
         match worker::next(commands, Some(if shown { SHOWN_EVERY } else { HIDDEN_EVERY })) {
@@ -51,7 +51,7 @@ fn follow(sink: &impl Sink, commands: &Receiver<Shown>) -> Result<(), Closed> {
         }
         let now = read_cpu_times();
         let mut m = read(&previous, &now);
-        m.gpu = gpu.load(m.gpu, gpu_time);
+        m.gpu = gpu.load(m.gpu, shown, gpu_time);
         sink.send(Event::Reading(Reading::Metrics(m)))?;
         previous = now;
     }
@@ -63,8 +63,11 @@ fn follow(sink: &impl Sink, commands: &Receiver<Shown>) -> Result<(), Closed> {
 struct GpuTimes(Option<(u64, Instant)>);
 
 impl GpuTimes {
-    fn load(&mut self, busy: Option<f32>, scan: impl FnOnce() -> Option<(u64, Instant)>) -> Option<f32> {
-        if busy.is_some() {
+    /// The GPU's load: `busy` where the GPU says it, else from the clients' times `scan` gives, over the
+    /// interval since the last. The scan is costly, so it is made only while `shown`; hidden, the
+    /// baseline is dropped and the first interval once shown again seeds a new one.
+    fn load(&mut self, busy: Option<f32>, shown: bool, scan: impl FnOnce() -> Option<(u64, Instant)>) -> Option<f32> {
+        if busy.is_some() || !shown {
             self.0 = None;
             return busy;
         }
@@ -220,7 +223,7 @@ fn read_gpu() -> (Option<f32>, Option<u32>) {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 mod tests {
     use super::*;
 
@@ -228,11 +231,11 @@ mod tests {
     fn a_direct_gpu_reading_never_scans_processes_and_clears_the_fallback() {
         let mut gpu = GpuTimes::default();
         let at = Instant::now();
-        assert_eq!(gpu.load(None, || Some((100, at))), None);
+        assert_eq!(gpu.load(None, true, || Some((100, at))), None);
         let scanned = std::cell::Cell::new(false);
         for busy in [0.0, 0.5, 1.0] {
             assert_eq!(
-                gpu.load(Some(busy), || {
+                gpu.load(Some(busy), true, || {
                     scanned.set(true);
                     Some((200, at))
                 }),
@@ -240,23 +243,25 @@ mod tests {
             );
         }
         assert!(!scanned.get());
-        assert_eq!(gpu.load(None, || Some((900, at + Duration::from_secs(10)))), None, "a lost direct source seeds a new baseline");
-        assert_eq!(gpu.load(None, || Some((500_000_900, at + Duration::from_secs(11)))), Some(0.5));
+        assert_eq!(gpu.load(None, true, || Some((900, at + Duration::from_secs(10)))), None, "a lost direct source seeds a new baseline");
+        assert_eq!(gpu.load(None, true, || Some((500_000_900, at + Duration::from_secs(11)))), Some(0.5));
     }
 
     #[test]
     fn gpu_fallback_handles_missing_reset_and_repeated_samples() {
         let mut gpu = GpuTimes::default();
         let at = Instant::now();
-        assert_eq!(gpu.load(None, || None), None);
-        assert_eq!(gpu.load(None, || Some((100, at))), None);
-        assert_eq!(gpu.load(None, || Some((100, at))), None, "no elapsed time");
-        assert_eq!(gpu.load(None, || Some((250_000_100, at + Duration::from_secs(1)))), Some(0.25));
-        assert_eq!(gpu.load(None, || Some((5, at + Duration::from_secs(2)))), None, "a client exited");
-        assert_eq!(gpu.load(None, || Some((500_000_005, at + Duration::from_secs(3)))), Some(0.5));
-        assert_eq!(gpu.load(None, || None), None);
-        assert_eq!(gpu.load(None, || Some((900, at + Duration::from_secs(4)))), None, "missing counters reset the interval");
-        assert_eq!(gpu.load(None, || Some((2_000_000_900, at + Duration::from_secs(5)))), Some(1.0), "load is clamped");
+        assert_eq!(gpu.load(None, true, || None), None);
+        assert_eq!(gpu.load(None, true, || Some((100, at))), None);
+        assert_eq!(gpu.load(None, false, || panic!("no scan while hidden")), None);
+        assert_eq!(gpu.load(None, true, || Some((100, at))), None, "shown again: a new baseline");
+        assert_eq!(gpu.load(None, true, || Some((100, at))), None, "no elapsed time");
+        assert_eq!(gpu.load(None, true, || Some((250_000_100, at + Duration::from_secs(1)))), Some(0.25));
+        assert_eq!(gpu.load(None, true, || Some((5, at + Duration::from_secs(2)))), None, "a client exited");
+        assert_eq!(gpu.load(None, true, || Some((500_000_005, at + Duration::from_secs(3)))), Some(0.5));
+        assert_eq!(gpu.load(None, true, || None), None);
+        assert_eq!(gpu.load(None, true, || Some((900, at + Duration::from_secs(4)))), None, "missing counters reset the interval");
+        assert_eq!(gpu.load(None, true, || Some((2_000_000_900, at + Duration::from_secs(5)))), Some(1.0), "load is clamped");
     }
 
     #[test]
