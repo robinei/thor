@@ -367,7 +367,9 @@ windows is open, listening included. The focus ring hides when the route leaves 
 
 ### Controllers and players' pads (system/input/pad/mod.rs, merge.rs)
 
-The pad thread takes every controller (CLAMSHELL_GAMEPAD: only that one) and keeps a virtual Xbox 360 pad
+The pad thread takes every controller (CLAMSHELL_GAMEPAD: only that one) but Steam Input's virtual pads
+(Steam's vendor id, 28de, on a virtual device in sysfs), which read the virtual pads and would feed them
+back into player 1's (device `steams_virtual_pads_are_left_alone`), and keeps a virtual Xbox 360 pad
 for each player up to the count (`Players`), with fixed buttons and ranges, so a pad never has to be made
 again for another controller. A run (`Service::Session`) holds the controllers and a router per player;
 the virtual devices outlive runs and controllers.

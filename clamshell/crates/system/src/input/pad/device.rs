@@ -190,10 +190,15 @@ impl VirtualMouse {
     }
 }
 
+/// Steam's USB vendor id. Steam Input's virtual pads have it, as do Valve's own controllers.
+const STEAM_VENDOR: u16 = 0x28de;
+
 /// The candidates for controllers: the one CLAMSHELL_GAMEPAD names, or else every device other than our
-/// own with gamepad buttons and two sticks, each with its /dev/input path.
+/// own and Steam's virtual pads with gamepad buttons and two sticks, each with its /dev/input path.
 pub(crate) fn candidates(spec: &DeviceSpec) -> Vec<(std::path::PathBuf, RawDevice)> {
-    let not_ours = |d: &RawDevice| d.name().is_none_or(|n| n != VIRTUAL_PAD && n != VIRTUAL_MOUSE);
+    let not_ours = |path: &std::path::Path, d: &RawDevice| {
+        d.name().is_none_or(|n| n != VIRTUAL_PAD && n != VIRTUAL_MOUSE) && !steams_virtual(d.input_id().vendor(), || sysfs_of(path))
+    };
     match spec {
         DeviceSpec::Path(path) => match RawDevice::open(path) {
             Ok(d) => vec![(path.clone(), d)],
@@ -203,13 +208,33 @@ pub(crate) fn candidates(spec: &DeviceSpec) -> Vec<(std::path::PathBuf, RawDevic
             }
         },
         DeviceSpec::Named(name) => {
-            let named: Vec<_> = evdev::raw_stream::enumerate().filter(|(_, d)| not_ours(d) && d.name().is_some_and(|n| n.contains(name.as_str()))).collect();
+            let named: Vec<_> = evdev::raw_stream::enumerate().filter(|(p, d)| not_ours(p, d) && d.name().is_some_and(|n| n.contains(name.as_str()))).collect();
             // A controller's motion sensor shares its name: the one that looks like a gamepad first.
             let first = named.iter().position(|(_, d)| gamepad(d)).unwrap_or(0);
             named.into_iter().nth(first).into_iter().collect()
         }
-        DeviceSpec::Auto => evdev::raw_stream::enumerate().filter(|(_, d)| not_ours(d) && gamepad(d)).collect(),
+        DeviceSpec::Auto => evdev::raw_stream::enumerate().filter(|(p, d)| not_ours(p, d) && gamepad(d)).collect(),
     }
+}
+
+/// Where the input device at `path` (`/dev/input/eventN`) is in sysfs, or an empty path if that can't be
+/// read.
+fn sysfs_of(path: &std::path::Path) -> std::path::PathBuf {
+    let Some(node) = path.file_name() else { return std::path::PathBuf::new() };
+    let class = std::path::Path::new("/sys/class/input").join(node);
+    std::fs::canonicalize(&class).unwrap_or_else(|e| {
+        log::debug!("pad: {}: {e}", class.display());
+        std::path::PathBuf::new()
+    })
+}
+
+/// Whether a device with USB vendor `vendor`, at `sys()` in sysfs, is one of Steam's virtual pads. Steam Input
+/// makes one (an Xbox 360 pad, 28de:11ff) from the controllers it reads, which here are the virtual pads:
+/// taken as a controller, its buttons would be merged back into player 1's pad, which Steam reads again,
+/// so a button let go stays held. Valve's real controllers aren't virtual and are taken. Other virtual
+/// devices are, such as the VM's fake pad.
+fn steams_virtual(vendor: u16, sys: impl FnOnce() -> std::path::PathBuf) -> bool {
+    vendor == STEAM_VENDOR && sys().starts_with("/sys/devices/virtual")
 }
 
 /// Whether a device looks like a gamepad: buttons and two sticks.
@@ -335,6 +360,20 @@ mod tests {
         assert_eq!(key(0x045e, 0x0b13, Some("aa:bb:cc:dd:ee:ff"), "Xbox Wireless Controller"), "045e:0b13:aa:bb:cc:dd:ee:ff");
         assert_eq!(key(0x2020, 0x3001, Some(" "), "AYN Odin2 Gamepad"), "2020:3001:AYN Odin2 Gamepad", "a blank unique id is none");
         assert_eq!(key(0x2dc8, 0x6003, None, "8BitDo Pro 2"), "2dc8:6003:8BitDo Pro 2");
+    }
+
+    /// Steam's virtual pads aren't controllers; Valve's real ones and other virtual devices are.
+    #[test]
+    fn steams_virtual_pads_are_left_alone() {
+        use std::path::PathBuf;
+        let at = |p: &'static str| move || PathBuf::from(p);
+        assert!(steams_virtual(0x28de, at("/sys/devices/virtual/input/input42/event17")), "Steam Input's Xbox 360 pad (28de:11ff)");
+        assert!(
+            !steams_virtual(0x28de, at("/sys/devices/platform/soc/a600000.usb/usb1/1-1/1-1:1.0/0003:28DE:1205.0001/input/input3/event3")),
+            "a Steam Deck's or Steam Controller's own"
+        );
+        assert!(!steams_virtual(0x0000, at("/sys/devices/virtual/input/input9/event9")), "the VM's fake pad, also uinput");
+        assert!(!steams_virtual(0x28de, at("")), "unknown in sysfs: taken");
     }
 
     #[test]
