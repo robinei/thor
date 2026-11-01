@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """The packages' scripts and rules: their syntax, and their recovery transitions on temporary filesystems,
 without root, mounts or services."""
+import contextlib
 import fcntl
 import importlib.util
+import io
 import os
 import shutil
 import sys
@@ -252,6 +254,14 @@ for last; do :; done; echo "mv ${{last#{m.root}/run/thor-esp/}}" >> {m.root}/eve
         self.assertIn('records no kernel', result.stdout)
         self.assertEqual((m.root / 'var/lib/thor/boot-releases').read_text(), 'new\n')
 
+    def test_several_options_lines_are_one_command_line(self):
+        m = self.machine()
+        entry = m.root / 'run/thor-esp/loader/entries/thor.conf'
+        entry.write_text(entry.read_text() + 'options quiet loglevel=3\n')
+        result = self.run_boot(m)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(bootimg.read(m.root / 'run/thor-esp/KERNEL')['cmdline'], 'root=LABEL=THOR_ROOT rw quiet loglevel=3')
+
     def test_a_second_run_waits_for_the_first(self):
         m = self.machine()
         source = (REPO / 'packages/thor-system/root/usr/bin/thor-boot').read_text()
@@ -406,6 +416,14 @@ touch {m.root}/active''')
         self.assertEqual(self.result.returncode, 0, self.result.stdout + self.result.stderr)
         self.complete(m)
 
+    def test_options_keep_ampersands_and_bars_and_become_one_line(self):
+        m = self.machine()
+        m.file('run/thor-esp/loader/entries/thor.conf', 'title Thor\noptions root=LABEL=THOR_ROOT rw a=x&y resume=old\nlinux /thor-a/Image\noptions b=1|2\n')
+        result = self.run_firstboot(m)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((m.root / 'run/thor-esp/loader/entries/thor.conf').read_text(),
+                         'title Thor\noptions root=LABEL=THOR_ROOT rw a=x&y b=1|2 resume=LABEL=THOR_ROOT resume_offset=123\nlinux /thor-a/Image\n')
+
     def test_failed_activation_is_not_marked_complete_and_can_retry(self):
         m = self.machine()
         result = self.run_firstboot(m, FAIL_SWAP='1')
@@ -446,6 +464,41 @@ touch {m.root}/active''')
         self.assertFalse((low.root / 'swapfile').exists())
         self.assertFalse((low.root / 'active').exists())
         self.assertTrue((low.root / 'var/lib/thor-firstboot').exists())
+
+
+class BootImage(unittest.TestCase):
+    def test_a_command_line_past_511_bytes_is_written_with_a_warning(self):
+        m = Machine()
+        self.addCleanup(m.close)
+        image = {'kernel': b'k', 'ramdisk': b'r', 'second': b'', 'kernel_addr': 0, 'ramdisk_addr': 0, 'second_addr': 0,
+                 'tags_addr': 0, 'page': 4096, 'os_version': 0, 'name': b'Thor'}
+        for length, warned in [(511, False), (600, True)]:
+            with self.subTest(length=length):
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr):
+                    bootimg.write({**image, 'cmdline': 'x' * length}, m.root / 'KERNEL')
+                self.assertEqual('ABL may not read' in stderr.getvalue(), warned, stderr.getvalue())
+                self.assertEqual(bootimg.read(m.root / 'KERNEL')['cmdline'], 'x' * length)
+
+
+class SystemInstall(unittest.TestCase):
+    """thor-system's install script: units added after the first version enabled when upgrading from before
+    them, and only then."""
+
+    @unittest.skipUnless(shutil.which('vercmp'), 'no vercmp here')
+    def test_units_are_enabled_coming_from_versions_before_them(self):
+        for before, enabled in [('r402.abc1234-1', ['thor-old-modules', 'thor-drivers']), ('r403.abc1234-1', ['thor-drivers']),
+                                ('r410.abc1234-1', ['thor-drivers']), ('r411.abc1234-1', [])]:
+            with self.subTest(before=before):
+                m = Machine()
+                self.addCleanup(m.close)
+                m.command('systemctl', f'echo "${{2%.service}}" >> {m.root}/enabled')
+                script = (REPO / 'packages/thor-system/thor-system.install').read_text()
+                result = subprocess.run(['bash', '-c', f'{script}\npost_upgrade r999.abc1234-1 {before}'], env=m.env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                path = m.root / 'enabled'
+                self.assertEqual(path.read_text().split() if path.exists() else [], enabled)
+
 
 
 class RegistryRecovery(unittest.TestCase):
@@ -632,6 +685,17 @@ class PanelCalibrationReaders(unittest.TestCase):
                     self.assertTrue(lines[0].endswith('(frame_len_120=53 frame_len_60=2010 )'), lines)
                 else:
                     self.assertTrue(lines[0].endswith('(uncalibrated)'), lines)
+
+    def test_a_login_shell_other_than_bash_is_a_failure(self):
+        for shell, line in [('/bin/bash', 'ok'), ('/usr/bin/bash', 'ok'), ('/usr/bin/fish', 'FAIL')]:
+            with self.subTest(shell=shell):
+                m = self.machine()
+                m.command('getent', f'echo "thor:x:1000:1000::/home/thor:{shell}"')
+                source = (REPO / 'packages/thor-system/root/usr/bin/thor-selftest').read_text()
+                result = subprocess.run(['bash', m.file('script', source), '--now'], env=m.env, capture_output=True, text=True, timeout=15)
+                lines = [text for text in result.stdout.splitlines() if 'login shell' in text]
+                self.assertEqual(len(lines), 1, result.stdout)
+                self.assertTrue(lines[0].startswith(line), lines)
 
     def test_the_driver_files_are_written_only_from_a_regular_file(self):
         for kind in ['symlink', 'regular']:

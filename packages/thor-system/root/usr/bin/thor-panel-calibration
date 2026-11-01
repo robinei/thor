@@ -135,8 +135,12 @@ def main():
     except OSError:
         pass
     saved.update({calibration["attribute"]: str(found[calibration["hz"]]) for calibration in rates if calibration["hz"] in found})
+    # (In place, as one write, synced: the folder is root's, so no new file can be renamed over it; a write
+    # cut short leaves it empty, which reads as uncalibrated.)
     with open(SAVED, "w") as f:
         f.write("".join(f"{k}={v}\n" for k, v in sorted(saved.items())))
+        f.flush()
+        os.fsync(f.fileno())
     print(f"saved in {SAVED}")
     if len(found) < len(rates):
         sys.exit("one rate not calibrated (the other saved)")

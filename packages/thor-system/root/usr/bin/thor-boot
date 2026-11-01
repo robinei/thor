@@ -34,7 +34,8 @@ mkdir -p "$mnt"
 mountpoint -q "$mnt" || mount "$esp" "$mnt"
 trap 'umount "$mnt"; rm -rf "$work"' EXIT
 
-cmdline=$(sed -n 's/^options //p' "$mnt/loader/entries/thor.conf")
+# (systemd-boot joins several options lines with spaces: so here.)
+cmdline=$(sed -n 's/^options //p' "$mnt/loader/entries/thor.conf" | paste -sd ' ')
 [ -n "$cmdline" ] || { echo "thor-boot: no options line in the loader entry"; exit 1; }
 # Fill the inactive slot, then select the complete set with one loader-entry rename. The slot
 # selected now is never written while preparing a replacement.

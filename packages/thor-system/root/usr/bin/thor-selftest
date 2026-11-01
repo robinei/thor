@@ -197,6 +197,9 @@ settled() {
     local uid
     uid=$(id -u "$USER_NAME" 2> /dev/null)
     check "a session for $USER_NAME" bash -c "loginctl list-sessions --no-legend | grep -qw $USER_NAME"
+    # (The session starts from bash's login profile, thor-session.sh: another login shell never starts it.)
+    check "$USER_NAME's login shell is bash (the session starts from its profile)" \
+        bash -c "getent passwd $USER_NAME | cut -d: -f7 | grep -qxE '/(usr/)?bin/bash'"
     # The session's units: ClamShell's compositor, and udiskie.
     local units="clamshell thor-udiskie"
     if [ -n "$uid" ] && [ -d "/run/user/$uid" ]; then

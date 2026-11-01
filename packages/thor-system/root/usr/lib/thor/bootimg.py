@@ -57,6 +57,9 @@ def write(image, path):
     cmdline = image["cmdline"].encode()
     if len(cmdline) > 512 + 1024 - 2:
         sys.exit("command line too long")
+    if len(cmdline) > 511:
+        print(f"bootimg: the command line is {len(cmdline)} bytes: past 511 it goes into the header's extra field, "
+              "which the ABL may not read", file=sys.stderr)
     # The id: SHA-1 over each section and its size (as mkbootimg makes it).
     sha = hashlib.sha1()
     for part in ("kernel", "ramdisk", "second"):

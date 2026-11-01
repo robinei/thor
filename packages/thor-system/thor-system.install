@@ -3,12 +3,14 @@ post_install() {
 }
 
 # Units added after the first version, enabled when coming from before them (not again later: one the
-# user disabled stays so).
+# user disabled stays so). Each is compared with the first version that has it, rN: the versions are
+# rN.<commit> and $2 is the one upgraded from, which vercmp orders after rN itself, so "-lt 0" holds
+# exactly for those before.
 post_upgrade() {
-    if [ "$(vercmp "$2" r403)" -le 0 ]; then
+    if [ "$(vercmp "$2" r403)" -lt 0 ]; then
         systemctl enable thor-old-modules.service > /dev/null 2>&1 || true
     fi
-    if [ "$(vercmp "$2" r410)" -le 0 ]; then
+    if [ "$(vercmp "$2" r411)" -lt 0 ]; then
         systemctl enable thor-drivers.service > /dev/null 2>&1 || true
     fi
 }

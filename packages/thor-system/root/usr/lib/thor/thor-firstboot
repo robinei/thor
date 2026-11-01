@@ -55,9 +55,15 @@ if [ -e /swapfile ]; then
         # (A run cut off before may have left it mounted.)
         mountpoint -q /run/thor-esp || mount "$esp" /run/thor-esp
         entry=/run/thor-esp/loader/entries/thor.conf
-        # (The options line without any resume= of before, then this file's.)
-        options=$(sed -n 's/^options //p' "$entry" | sed -E 's/ ?resume(_offset)?=[^ ]*//g')
-        sed -i "s|^options .*|options $options resume=LABEL=THOR_ROOT resume_offset=$offset|" "$entry"
+        # (The options, joined as systemd-boot joins several lines, without any resume= of before, then
+        # this file's, as one line where the first was. awk takes them as they are: a sed replacement
+        # would read & and its separator in them.)
+        options=$(sed -n 's/^options //p' "$entry" | paste -sd ' ' | sed -E 's/ ?resume(_offset)?=[^ ]*//g')
+        options="$options resume=LABEL=THOR_ROOT resume_offset=$offset" awk '
+            $1 == "options" { if (!done) print "options " ENVIRON["options"]; done = 1; next }
+            { print }
+        ' "$entry" > "$entry.new"
+        mv "$entry.new" "$entry"
         umount /run/thor-esp
     ) 9> /run/thor-boot.lock
     sync -f /etc/fstab
