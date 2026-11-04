@@ -1,0 +1,71 @@
+# Dethrace, Carmageddon (1997) reimplemented: robinei's fork of dethrace-labs' (github.com/robinei/dethrace)
+# at a pinned commit, its BRender submodule (github.com/robinei/dethrace-brender) pinned too, as a second
+# source. SDL 2 (sdl2-compat over SDL 3) and OpenGL 3.1 at run time, which dethrace loads through SDL:
+# Mesa's Freedreno on the Thor. The game's files aren't ours to give: the package has the program, a
+# starting config for the Thor (/usr/share/dethrace/dethrace.ini, copied to ~/.local/share/dethrace/
+# with [Games] c1 set to the game's folder) and the desktop file, through which the Library lists it
+# among the games.
+pkgname=dethrace
+pkgver=0.10.1.r713.gec1ecb2
+pkgrel=1
+_commit=ec1ecb218156a78518b59576d643ca1815a6db00
+_brender=8dd048fcfdcf971e87794f069569abf72469c236
+pkgdesc='Carmageddon reimplemented (the game files not included)'
+arch=(aarch64)
+url=https://github.com/robinei/dethrace
+# (Dethrace's GPL; BRender's MIT; the bundled inih, libsmacker, miniaudio and stb.)
+license=(GPL-3.0-only MIT BSD-3-Clause LGPL-2.1-or-later 'MIT-0 OR Unlicense')
+depends=(glibc sdl2-compat libglvnd mesa)
+makedepends=(cmake git)
+source=("git+https://github.com/robinei/dethrace.git#commit=$_commit"
+        "git+https://github.com/robinei/dethrace-brender.git#commit=$_brender"
+        dethrace.desktop)
+sha256sums=(SKIP
+            SKIP
+            839efd7456e9bfa206a36d6cc2cdb9f94c30501f8287bdc435a46b524148d1ad)
+
+prepare() {
+    cd dethrace
+    git submodule init lib/BRender-v1.3.2
+    git config submodule.lib/BRender-v1.3.2.url "$srcdir/dethrace-brender"
+    git -c protocol.file.allow=always submodule update
+    [ "$(git -C lib/BRender-v1.3.2 rev-parse HEAD)" = "$_brender" ]
+    # The version the program reports, without the tags git describe would need.
+    echo "$pkgver" > VERSION
+}
+
+build() {
+    local cross=()
+    # (Cross-compiled on the PC: tools/repo/build.sh's compiler and sysroot.)
+    if [ -n "${THOR_CROSS_CC:-}" ]; then
+        printf '%s\n' 'set(CMAKE_SYSTEM_NAME Linux)' 'set(CMAKE_SYSTEM_PROCESSOR aarch64)' \
+            "set(CMAKE_C_COMPILER \"$THOR_CROSS_CC\")" "set(CMAKE_AR llvm-ar)" "set(CMAKE_RANLIB llvm-ranlib)" \
+            "set(CMAKE_SYSROOT \"$THOR_CROSS_SYSROOT\")" "set(CMAKE_FIND_ROOT_PATH \"$THOR_CROSS_SYSROOT\")" \
+            'set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)' 'set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)' \
+            'set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)' 'set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)' \
+            > toolchain.cmake
+        cross=(-DCMAKE_TOOLCHAIN_FILE="$srcdir/toolchain.cmake")
+    fi
+    cmake -S dethrace -B build -G 'Unix Makefiles' "${cross[@]}" -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr -DDETHRACE_FIX_BUGS=ON -DDETHRACE_GAMEPAD=ON \
+        -DDETHRACE_SOUND_ENABLED=ON -DDETHRACE_NET_ENABLED=ON -DDETHRACE_PLATFORM_SDL2=ON \
+        -DDETHRACE_PLATFORM_SDL_DYNAMIC=OFF -DDETHRACE_WERROR=OFF
+    cmake --build build -j "${THOR_BUILD_JOBS:-$(nproc)}"
+}
+
+check() {
+    readelf -h build/dethrace | grep -q 'Machine:.*AArch64'
+    readelf -d build/dethrace | grep -q 'NEEDED.*libSDL2-2.0.so.0'
+}
+
+package() {
+    install -Dm755 build/dethrace "$pkgdir/usr/bin/dethrace"
+    "${THOR_CROSS_STRIP:-strip}" --strip-unneeded "$pkgdir/usr/bin/dethrace"
+    install -Dm644 dethrace/packaging/thor/dethrace.ini "$pkgdir/usr/share/dethrace/dethrace.ini"
+    install -Dm644 dethrace.desktop "$pkgdir/usr/share/applications/dethrace.desktop"
+    install -Dm644 dethrace/packaging/icon_source.png "$pkgdir/usr/share/pixmaps/dethrace.png"
+    install -Dm644 dethrace/LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 dethrace/lib/BRender-v1.3.2/LICENSE "$pkgdir/usr/share/licenses/$pkgname/BRender-LICENSE"
+    install -Dm644 dethrace/lib/inih/LICENSE.TXT "$pkgdir/usr/share/licenses/$pkgname/inih-LICENSE"
+    install -Dm644 dethrace/lib/miniaudio/LICENSE "$pkgdir/usr/share/licenses/$pkgname/miniaudio-LICENSE"
+}

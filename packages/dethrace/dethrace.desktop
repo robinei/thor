@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Dethrace
+Comment=Carmageddon reimplemented; needs the game's files (/usr/share/dethrace/dethrace.ini)
+Exec=dethrace
+Icon=dethrace
+Terminal=false
+Categories=Game;ActionGame;

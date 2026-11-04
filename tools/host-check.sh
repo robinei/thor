@@ -16,7 +16,7 @@ for step in "$@"; do
     case $step in
         packages)
             for t in llvm-ar:llvm llvm-objcopy:llvm make:make flex:flex bison:bison perl:perl python3:python bc:bc \
-                     xz:xz depmod:kmod patch:patch cpio:cpio meson:meson ninja:ninja glslangValidator:glslang; do need "${t%%:*}" "${t#*:}"; done
+                     xz:xz depmod:kmod patch:patch cpio:cpio meson:meson ninja:ninja glslangValidator:glslang cmake:cmake; do need "${t%%:*}" "${t#*:}"; done
             for t in makepkg:pacman fakeroot:fakeroot git:git rustup:rustup clang:clang ld.lld:lld pkg-config:pkgconf \
                      repo-add:pacman gpg:gnupg unsquashfs:squashfs-tools bsdtar:libarchive curl:curl; do need "${t%%:*}" "${t#*:}"; done
             for module in mako packaging yaml; do

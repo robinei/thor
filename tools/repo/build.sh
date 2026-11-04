@@ -6,7 +6,8 @@
 # (aarch64-unknown-linux-gnu: rustup's target, clang and lld, against tools/repo/sysroot.sh's sysroot);
 # Turnip is Mesa's Adreno-only Vulkan driver, built without LLVM for the MSM kernel driver.
 # linux-thor builds Armada's kernel, thor-sensors hexagonrpc (cross-compiled too; their source packages
-# also: the GPL's corresponding source, published beside them); thor-firmware unpacks ROCKNIX's release
+# also: the GPL's corresponding source, published beside them); dethrace is cross-compiled with CMake
+# (its source package too); thor-firmware unpacks ROCKNIX's release
 # (kept in ~/.cache/thor-vm/rocknix: downloaded there if missing) and goes to the repository's local/,
 # never published; the rest are files.
 #
@@ -25,7 +26,7 @@ PACKAGES=("$@")
 "$HERE/../host-check.sh" packages || exit 1
 if [ "$ARCH" = aarch64 ]; then
     export THOR_REPO_DIR=$CACHE/repo
-    [ ${#PACKAGES[@]} -gt 0 ] || PACKAGES=(thor-keyring thor-ucm linux-thor thor-sensors turnip-devel clamshell thor-system thor-session thor thor-firmware)
+    [ ${#PACKAGES[@]} -gt 0 ] || PACKAGES=(thor-keyring thor-ucm linux-thor thor-sensors turnip-devel clamshell thor-system thor-session thor thor-firmware dethrace)
     # Regenerate a sysroot that predates dethrace's SDL 2.
     [ -e "$SYSROOT/usr/lib/pkgconfig/sdl2.pc" ] || "$HERE/sysroot.sh"
 else
@@ -109,9 +110,9 @@ for p in "${PACKAGES[@]}"; do
         || { tail -30 "$work/$p.log"; exit 1; }; }
     mk -f
     ls "$OUT"/"$p"-[0-9r]*.pkg.tar.*
-    # The GPL's corresponding source of what we build from others' GPL code (the kernel, hexagonrpc):
+    # The GPL's corresponding source of what we build from others' GPL code (the kernel, hexagonrpc, dethrace):
     # its source package with every source in it.
-    if [ "$p" = linux-thor ] || [ "$p" = thor-sensors ]; then
+    if [ "$p" = linux-thor ] || [ "$p" = thor-sensors ] || [ "$p" = dethrace ]; then
         rm -f "$OUT"/"$p"-[0-9]*.src.tar.gz
         mk --allsource -f
         ls "$OUT"/"$p"-[0-9]*.src.tar.gz
