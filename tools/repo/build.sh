@@ -26,8 +26,8 @@ PACKAGES=("$@")
 if [ "$ARCH" = aarch64 ]; then
     export THOR_REPO_DIR=$CACHE/repo
     [ ${#PACKAGES[@]} -gt 0 ] || PACKAGES=(thor-keyring thor-ucm linux-thor thor-sensors turnip-devel clamshell thor-system thor-session thor thor-firmware)
-    # Regenerate a sysroot that predates Turnip's WSI dependencies.
-    [ -e "$SYSROOT/usr/lib/pkgconfig/libffi.pc" ] || "$HERE/sysroot.sh"
+    # Regenerate a sysroot that predates dethrace's SDL 2.
+    [ -e "$SYSROOT/usr/lib/pkgconfig/sdl2.pc" ] || "$HERE/sysroot.sh"
 else
     export THOR_REPO_DIR=$CACHE/repo-$ARCH
     [ ${#PACKAGES[@]} -gt 0 ] || PACKAGES=(thor-keyring clamshell thor-system thor-session)

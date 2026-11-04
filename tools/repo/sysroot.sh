@@ -1,8 +1,8 @@
 #!/bin/bash
-# The aarch64 sysroot ClamShell, thor-sensors and turnip-devel are cross-compiled against on this PC (tools/repo/build.sh):
+# The aarch64 sysroot ClamShell, thor-sensors, turnip-devel and dethrace are cross-compiled against on this PC (tools/repo/build.sh):
 # what linking ClamShell needs (glibc, libgcc, libxkbcommon, libdbus, and for its compositor libseat, libinput,
 # libudev and libgbm, their pkg-config files), and what
-# compiling C/C++ needs (glibc and kernel headers, json-c, the C++ runtime and Turnip's WSI libraries), from Arch Linux ARM's packages,
+# compiling C/C++ needs (glibc and kernel headers, json-c, the C++ runtime, Turnip's WSI libraries, SDL 2 for dethrace), from Arch Linux ARM's packages,
 # installed by this PC's pacman with their signatures checked (tools/image/pacman-conf.sh's config and
 # keyring), under fakeroot, without their scripts, into a scratch root; the files linking needs copied
 # out of it. Again after Arch Linux ARM's glibc or those libraries move on (an older sysroot still makes
@@ -13,7 +13,7 @@ set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 CACHE=${XDG_CACHE_HOME:-$HOME/.cache}/thor-vm
 OUT=${1:-$CACHE/sysroot}
-PACKAGES=(glibc libgcc gcc libxkbcommon dbus systemd-libs linux-api-headers json-c seatd libinput mesa libstdc++ libdrm wayland libx11 libxcb libxshmfence xcb-util-keysyms libxau libxdmcp libffi expat zstd zlib xorgproto xcb-proto wayland-protocols)
+PACKAGES=(glibc libgcc gcc libxkbcommon dbus systemd-libs linux-api-headers json-c seatd libinput mesa libstdc++ libdrm wayland libx11 libxcb libxshmfence xcb-util-keysyms libxau libxdmcp libffi expat zstd zlib xorgproto xcb-proto wayland-protocols sdl2-compat)
 # What linking needs from /usr/lib (links kept as links), besides the libraries' own .so names.
 LIBS="crt1.o crti.o crtn.o Scrt1.o ld-linux-aarch64.so.1 libc.so libc.so.6 libc_nonshared.a libm.so libm.so.6
       libmvec.so libmvec.so.1 libdl.so.2 libpthread.so.0 librt.so.1 libutil.so.1 libgcc_s.so libgcc_s.so.1
@@ -53,6 +53,12 @@ for name in libdrm wayland-client wayland-server x11 x11-xcb xcb xcb-dri3 xcb-pr
     xcb-render xcb-shape xcb-shm xcb-sync xcb-xfixes xcb-keysyms xshmfence xau xdmcp libffi expat libzstd zlib; do
     cp -a "$lib/pkgconfig/$name.pc" "$OUT/usr/lib/pkgconfig/"
 done
+# dethrace's SDL 2 (sdl2-compat, which loads SDL 3 when it runs): its library, pkg-config file and CMake
+# package. (OpenGL needs nothing here: dethrace loads it through SDL.)
+cp -a "$lib"/libSDL2*.so* "$lib/libSDL2main.a" "$lib/libSDL2_test.a" "$OUT/usr/lib/"
+cp -a "$lib/pkgconfig/sdl2.pc" "$lib/pkgconfig/sdl2-compat.pc" "$OUT/usr/lib/pkgconfig/"
+mkdir -p "$OUT/usr/lib/cmake"
+cp -a "$lib/cmake/SDL2" "$OUT/usr/lib/cmake/"
 # Architecture-independent protocol metadata is needed by the target pkg-config too.
 mkdir -p "$OUT/usr/share/pkgconfig"
 cp -a "$work/root/usr/share/pkgconfig/." "$OUT/usr/share/pkgconfig/"
