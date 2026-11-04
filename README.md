@@ -248,7 +248,8 @@ rules and launch context.
 
 Arch Linux ARM and the Thor's own packages (`packages/`: `thor`, the metapackage that is the whole
 system, and what it holds: `linux-thor`, `thor-system`, `thor-session`, `clamshell`, `thor-ucm`,
-`thor-sensors`, `thor-keyring`; and `thor-firmware`, which is never published), kept current with
+`thor-sensors`, `thor-keyring`; `thor-firmware`, which is never published; and `dethrace`, a game
+installed on its own), kept current with
 `pacman -Syu` from the repository `[thor]`, the GitHub release `packages`. What each holds:
 `docs/thor-gameplan.md`, "Our image and packages". On the device, `.claude/commands/maintain.md` is the
 playbook for a maintenance pass with Claude Code, which the dock's Maintenance app starts: news,
@@ -265,7 +266,7 @@ From a checkout, on an Arch Linux PC, everything is built here and nothing needs
 
 The steps on their own: `tools/repo/build.sh [PACKAGE...]` (the packages, from the last commit: ClamShell
 cross-compiled against `tools/repo/sysroot.sh`'s sysroot of Arch Linux ARM's packages, Turnip built as an Adreno-only Vulkan driver without LLVM, linux-thor built
-from Armada's pinned commit), `tools/repo/follow-armada.sh [COMMIT]` (linux-thor moved to another of
+from Armada's pinned commit, dethrace with CMake from its pinned commits), `tools/repo/follow-armada.sh [COMMIT]` (linux-thor moved to another of
 Armada's commits), `tools/repo/repo.sh publish` (the
 repository uploaded with `gh`: only with the signing key, `~/.config/thor-repo/gnupg`, which isn't in the
 repository; without it the packages are indexed unsigned and images still build). Arch Linux ARM's
@@ -284,6 +285,8 @@ Ours: MIT or Apache-2.0, at your choice (`LICENSE-MIT`, `LICENSE-APACHE`). Not o
   kernel: Linux, GPL-2.0) carries the kernel's license files and is published with its corresponding
   source beside it: its source package, `linux-thor-VERSION.src.tar.gz` (`makepkg --allsource`: the
   PKGBUILD, kernel.org's tarball, Armada's repository at the commit, our patches and config).
+- dethrace: GPL-3.0 (its bundled BRender MIT, inih BSD-3-Clause, libsmacker LGPL-2.1, miniaudio MIT-0
+  or Unlicense), the licenses carried; published with its source package beside it, as linux-thor's.
 - thor-ucm: ROCKNIX's Thor profiles, additions to alsa-ucm-conf, under its BSD-3-Clause license (carried).
 - thor-firmware: AYN's and Qualcomm's firmware from ROCKNIX's release, not redistributed by us (built
   where it is installed, never published).

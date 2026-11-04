@@ -23,6 +23,8 @@ repository):
 - `clamshell`: ClamShell and the fan daemon.
 - `thor-ucm`: the Thor's sound profiles.
 - `thor-sensors`: the motion sensors' services (hexagonrpcd), for ClamShell's gyro.
+- `dethrace` (when installed): Carmageddon reimplemented; its config is the user's
+  (`~/.local/share/dethrace/dethrace.ini`), the package's `/usr/share/dethrace/dethrace.ini` only a start.
 - `thor-firmware`: the Thor's firmware from ROCKNIX's release, and the motion sensors' configuration
   from PB-OS's repository, built on this device (never published: AYN's and Qualcomm's), so not updated
   by pacman from the repository: step 5.
