@@ -6,9 +6,9 @@
 # with [Games] c1 set to the game's folder) and the desktop file, through which the Library lists it
 # among the games.
 pkgname=dethrace
-pkgver=0.10.1.r713.gec1ecb2
+pkgver=0.10.1.r715.gf86caf4
 pkgrel=1
-_commit=ec1ecb218156a78518b59576d643ca1815a6db00
+_commit=f86caf4a857b3c273a24b1096437a6eed36c98be
 _brender=8dd048fcfdcf971e87794f069569abf72469c236
 pkgdesc='Carmageddon reimplemented (the game files not included)'
 arch=(aarch64)
