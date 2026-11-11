@@ -1,12 +1,13 @@
 #!/bin/sh
 # The checks every commit passes (the pre-commit hook runs them): formatting, clippy with warnings as
-# errors, package recovery fixtures, the tests, the snapshots among them, and real clients in the nested compositor. About two
+# errors, package recovery fixtures, packages' checksums, the tests, the snapshots among them, and real clients in the nested compositor. About two
 # minutes. The nested test needs sway, Xwayland, foot, grim, dbus-daemon and gdbus.
 #
 #   tools/check.sh
 set -eu
 cd "$(dirname "$0")/../clamshell"
 python3 ../tools/tests/package-recovery.py
+../tools/tests/package-sums.sh
 python3 tests/nested_env_test.py
 cargo fmt --check
 cargo clippy --workspace --all-targets --quiet -- -D warnings
