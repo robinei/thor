@@ -111,8 +111,9 @@ mkdir -p "$WORK/boot/EFI/BOOT" "$WORK/boot/loader/entries"
 printf 'default thor.conf\ntimeout 3\n' > "$WORK/boot/loader/loader.conf"
 if [ "$TARGET" = thor ]; then
     # /KERNEL starts as ROCKNIX's (its addresses and page size are what the ABL wants); thor-boot puts our
-    # kernel, initramfs and command line into it, and the files systemd-boot loads beside it.
-    mkdir -p "$WORK/boot/dtbs"
+    # kernel, initramfs and command line into it, and the files systemd-boot loads beside it. No \dtbs:
+    # the entry names its device tree, which OpenABL takes over its Device model's, and since OpenABL's
+    # 7bc320c (after 1.2) .dtb files there would stop a Linux boot until a Device model is picked.
     bsdtar -xOf "$ROCKNIX" '*/target/KERNEL' > "$WORK/boot/KERNEL"
     printf 'title   Arch Linux ARM (Thor)\nlinux   /thor-a/Image\ninitrd  /thor-a/initramfs.img\ndevicetree /thor-a/thor.dtb\noptions %s\n' \
         "$CMDLINE" > "$WORK/boot/loader/entries/thor.conf"
@@ -187,7 +188,7 @@ if [ "$TARGET" = thor ]; then
     arch-chroot "$ROOT" thor-boot
     mkdir -p "$WORK/boot"; mount -o ro "${DEVICE}p1" "$WORK/boot"
     python3 "$ROOT/usr/lib/thor/bootimg.py" info "$WORK/boot/KERNEL"
-    ls -l "$WORK/boot" "$WORK/boot/dtbs"
+    ls -l "$WORK/boot"
     umount "$WORK/boot"
 else
     say "boot: systemd-boot (the removable path, which UEFI starts without its variables)"
