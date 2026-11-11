@@ -355,13 +355,14 @@ Thor fixes (battery, bottom panel and touch, the sensor hub's FastRPC routing, s
 motor, the sensor hub's process types and PDR in the device tree, ROCKNIX's panel reset at the clock
 handover and its QSEED4 preload of 7 behind the inline rotator (`rocknix-0018`: no seam in a
 rotated layer split over two pipes, which direct scanout of a game uses), PB-OS's GEM fault at an mmap
-offset (`pbos-0611`: Turnip's dma-buf mappings on the Adreno 740), 7.2.8's DisplayPort fixes, and
-fixes from the later 7.2 stable releases and 7.4-rc (`stable-0004`..`0011`, `upstream-*`: hibernation's
-freeze order, q6apm's PCM position and buffer mappings, GPU fence lifetimes, hci_qca, battmgr's USB type,
-UCSI and pmic_glink's altmode, DP link training and HPD, GENI's QUP core vote, ath12k's panic handler
-reverted), SteamOS-ARM-Port's bounded fence wait at VM close (`sap-0009`), and Armada's fixes from
-after 664da8c (`armada-*`: colorops across suspend, -EINVAL with no free SSPP, unhandled GPU interrupts
-masked, the haptics SoundWire port's clock stop skipped). All untried on a Thor.
+offset (`pbos-0611`: Turnip's dma-buf mappings on the Adreno 740), 7.2.8's DisplayPort fixes, and fixes
+from the later 7.2 stable releases and 7.4-rc (`stable-0004`..`0014`, `upstream-*`: hibernation's freeze
+order, q6apm's PCM position and buffer mappings, GPU fence lifetimes, hci_qca, battmgr's USB type, UCSI
+and pmic_glink's altmode, DP link training and HPD, GENI's QUP core vote, ath12k's panic handler
+reverted, arm64 hibernation's resume, the WSA macro's volume after its clocks start), SteamOS-ARM-Port's
+bounded fence wait at VM close (`sap-0009`), and Armada's fixes from after 664da8c (`armada-*`: colorops
+across suspend, -EINVAL with no free SSPP, unhandled GPU interrupts masked, the haptics SoundWire port's
+clock stop skipped). All untried on a Thor.
 Candidates for our own patches, once tried on the device:
 - [ ] The bottom touchscreen kept powered in suspend (`edt,retain-power-in-suspend` on its node: Thorch's
       `dts-patches/0005`, Kettle's device tree; the FT5452's power-off path is unsafe), if it misbehaves
