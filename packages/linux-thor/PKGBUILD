@@ -68,7 +68,8 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         # upstream-*: fixes in mainline Linux 7.4, as they are there (each one's header names its
         # commit): q6apm's PCM position at the end of the ring and after a prepare, and its DSP
         # buffer mappings: the unmap's reply, the position buffer's handle, unmapped before the
-        # topology goes, callbacks before probe's data (0001..0006). Not yet tried on a Thor.
+        # topology goes, callbacks before probe's data (0001..0006); the battery firmware's USB type
+        # from USB_ADAP_TYPE (0007). Not yet tried on a Thor.
         pbos-0545-power-supply-qcom_battmgr-retroid-charge-controls.patch
         thor-0001-dts-thor-lra-haptics.patch
         pbos-0620-drm-panel-ch13726a-thor-16-bit-brightness-high-byte-first.patch
@@ -95,7 +96,8 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         upstream-0006-asoc-qcom-q6apm-guard-callbacks-until-probe-data-is-ready.patch
         stable-0005-drm-msm-rcu-free-the-scheduler-containing-ring-and-vm-objects.patch
         stable-0006-drm-msm-adreno-fix-autosuspend-cleanup-during-teardown.patch
-        stable-0007-bluetooth-hci_qca-do-not-write-to-the-serial-port-after-it-is-closed.patch)
+        stable-0007-bluetooth-hci_qca-do-not-write-to-the-serial-port-after-it-is-closed.patch
+        upstream-0007-power-supply-qcom_battmgr-report-the-usb-type-from-usb_adap_type.patch)
 sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             SKIP
             cdbe93282683496da781d8ffc750614b8e02d4edf9c883497488469f9f61a185
@@ -126,7 +128,8 @@ sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             25f2b281e18f1f9461347e9c0012c1942d65cac2bd19821b350b00e1e3ac5a40
             b81e58a790651ca16356ba41a4f1339ed541dd8d8d2b1b16491d86fadbe5cfc1
             27be17d3616e07bf59e030f62ec11b7a36184a27f84e2ca480868a00e8d28369
-            0660ef328cc1881efeb0e6dd480492720b70cde0919cbe1103cc12faae7a1c4e)
+            0660ef328cc1881efeb0e6dd480492720b70cde0919cbe1103cc12faae7a1c4e
+            f13546666ef47084518b6d81a19ae6432c95c1599df18310eec9daff10b4dfbc)
 # Linus Torvalds', Greg Kroah-Hartman's (keys/pgp, as Arch's linux has them).
 validpgpkeys=(ABAF11C65A2970B130ABE3C479BE3E4300411886
               647F28654894E3BD457199BE38DBBDC86092693E)
