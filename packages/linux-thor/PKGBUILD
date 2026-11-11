@@ -64,12 +64,14 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         # Armada #529; PB-OS's on 7.2.8 shows DP working); hibernation's image preallocated before
         # the kernel threads freeze (0004, 7.2.9); GPU fences outliving their ring or VM, and the
         # GPU's runtime PM on unbind (0005, 0006, 7.2.8); hci_qca's remove after a failed open
-        # (0007, 7.2.8). Not yet tried on a Thor.
+        # (0007, 7.2.8); UCSI's glink remove and its DisplayPort entry (0008, 0009, 7.2.10). Not yet
+        # tried on a Thor.
         # upstream-*: fixes in mainline Linux 7.4, as they are there (each one's header names its
         # commit): q6apm's PCM position at the end of the ring and after a prepare, and its DSP
         # buffer mappings: the unmap's reply, the position buffer's handle, unmapped before the
         # topology goes, callbacks before probe's data (0001..0006); the battery firmware's USB type
-        # from USB_ADAP_TYPE (0007). Not yet tried on a Thor.
+        # from USB_ADAP_TYPE (0007); pmic_glink's altmode worker kept until the devices resume
+        # (0008). Not yet tried on a Thor.
         pbos-0545-power-supply-qcom_battmgr-retroid-charge-controls.patch
         thor-0001-dts-thor-lra-haptics.patch
         pbos-0620-drm-panel-ch13726a-thor-16-bit-brightness-high-byte-first.patch
@@ -97,7 +99,10 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         stable-0005-drm-msm-rcu-free-the-scheduler-containing-ring-and-vm-objects.patch
         stable-0006-drm-msm-adreno-fix-autosuspend-cleanup-during-teardown.patch
         stable-0007-bluetooth-hci_qca-do-not-write-to-the-serial-port-after-it-is-closed.patch
-        upstream-0007-power-supply-qcom_battmgr-report-the-usb-type-from-usb_adap_type.patch)
+        upstream-0007-power-supply-qcom_battmgr-report-the-usb-type-from-usb_adap_type.patch
+        stable-0008-usb-typec-ucsi-glink-fix-use-after-free-of-ucsi-on-remove.patch
+        stable-0009-usb-typec-ucsi-displayport-current-cam-oob-index-fixup.patch
+        upstream-0008-soc-qcom-pmic_glink-fix-device-access-from-worker-during-suspend.patch)
 sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             SKIP
             cdbe93282683496da781d8ffc750614b8e02d4edf9c883497488469f9f61a185
@@ -129,7 +134,10 @@ sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             b81e58a790651ca16356ba41a4f1339ed541dd8d8d2b1b16491d86fadbe5cfc1
             27be17d3616e07bf59e030f62ec11b7a36184a27f84e2ca480868a00e8d28369
             0660ef328cc1881efeb0e6dd480492720b70cde0919cbe1103cc12faae7a1c4e
-            f13546666ef47084518b6d81a19ae6432c95c1599df18310eec9daff10b4dfbc)
+            f13546666ef47084518b6d81a19ae6432c95c1599df18310eec9daff10b4dfbc
+            31707415d6a53d037c1ff068254953e39b3050303bebaa5a5f3d4136b7ba0134
+            ebd9a8fa03931867fdbebef4dcaabf8e426afdec8922f5cab503e46892fe96ab
+            175ebaeb4b518042f6733357ba6b52f213fd75bb09e8e2de675573e2ba3f6104)
 # Linus Torvalds', Greg Kroah-Hartman's (keys/pgp, as Arch's linux has them).
 validpgpkeys=(ABAF11C65A2970B130ABE3C479BE3E4300411886
               647F28654894E3BD457199BE38DBBDC86092693E)
