@@ -79,7 +79,8 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         # wait bounded at 3 s (0009, seen there on a Thor). Not yet tried on our kernel.
         # armada-*: Armada's, from after our 664da8c (their numbers; applied after ours, not in
         # their series' place): a plane's colorops kept across suspend (0077a); -EINVAL for a plane
-        # layout with no free pipe (0077b). Not yet tried on a Thor.
+        # layout with no free pipe (0077b); GPU interrupts nothing handles masked when they fire
+        # (1115). Not yet tried on a Thor.
         pbos-0545-power-supply-qcom_battmgr-retroid-charge-controls.patch
         thor-0001-dts-thor-lra-haptics.patch
         pbos-0620-drm-panel-ch13726a-thor-16-bit-brightness-high-byte-first.patch
@@ -117,7 +118,8 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         stable-0010-soc-qcom-geni-se-correct-qup-core-icc-vote-constants.patch
         stable-0011-revert-wifi-ath12k-add-panic-handler.patch
         armada-0077a-drm-atomic-duplicate-state-of-all-colorops.patch
-        armada-0077b-drm-msm-dpu-return-einval-when-no-sspp-is-free.patch)
+        armada-0077b-drm-msm-dpu-return-einval-when-no-sspp-is-free.patch
+        armada-1115-drm-msm-a6xx-mask-unhandled-rbbm-interrupts.patch)
 sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             SKIP
             cdbe93282683496da781d8ffc750614b8e02d4edf9c883497488469f9f61a185
@@ -159,7 +161,8 @@ sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             ee49c447f31b45fe7c98080d8a618e8cad0de4bc4a9ee88492abb56c081a3f63
             59a26d0ed3d16ad0529e44b37136e753ddc94e376fb0e9eec34b2cda64324a3c
             5bedad50dcb00cf543c19f04113111694e679c9d19b674fbe6cd40868938caa6
-            4211408096a07fc7872b49337acb126260ba1dbe84bcc5e20156c588744829ad)
+            4211408096a07fc7872b49337acb126260ba1dbe84bcc5e20156c588744829ad
+            04627c86387e360487aa33113f1e5c5e73ab05485f611077d51bfbd22b4de0c4)
 # Linus Torvalds', Greg Kroah-Hartman's (keys/pgp, as Arch's linux has them).
 validpgpkeys=(ABAF11C65A2970B130ABE3C479BE3E4300411886
               647F28654894E3BD457199BE38DBBDC86092693E)
