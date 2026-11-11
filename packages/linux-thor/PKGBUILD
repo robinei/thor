@@ -71,7 +71,8 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         # buffer mappings: the unmap's reply, the position buffer's handle, unmapped before the
         # topology goes, callbacks before probe's data (0001..0006); the battery firmware's USB type
         # from USB_ADAP_TYPE (0007); pmic_glink's altmode worker kept until the devices resume
-        # (0008). Not yet tried on a Thor.
+        # (0008); DP link training's failure reported after a last reinit, HPD state changed under
+        # its lock (0009, 0010). Not yet tried on a Thor.
         pbos-0545-power-supply-qcom_battmgr-retroid-charge-controls.patch
         thor-0001-dts-thor-lra-haptics.patch
         pbos-0620-drm-panel-ch13726a-thor-16-bit-brightness-high-byte-first.patch
@@ -102,7 +103,9 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         upstream-0007-power-supply-qcom_battmgr-report-the-usb-type-from-usb_adap_type.patch
         stable-0008-usb-typec-ucsi-glink-fix-use-after-free-of-ucsi-on-remove.patch
         stable-0009-usb-typec-ucsi-displayport-current-cam-oob-index-fixup.patch
-        upstream-0008-soc-qcom-pmic_glink-fix-device-access-from-worker-during-suspend.patch)
+        upstream-0008-soc-qcom-pmic_glink-fix-device-access-from-worker-during-suspend.patch
+        upstream-0009-drm-msm-dp-dont-report-link-training-success-after-a-reinit.patch
+        upstream-0010-drm-msm-dp-serialize-hpd-state-updates.patch)
 sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             SKIP
             cdbe93282683496da781d8ffc750614b8e02d4edf9c883497488469f9f61a185
@@ -137,7 +140,9 @@ sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             f13546666ef47084518b6d81a19ae6432c95c1599df18310eec9daff10b4dfbc
             31707415d6a53d037c1ff068254953e39b3050303bebaa5a5f3d4136b7ba0134
             ebd9a8fa03931867fdbebef4dcaabf8e426afdec8922f5cab503e46892fe96ab
-            175ebaeb4b518042f6733357ba6b52f213fd75bb09e8e2de675573e2ba3f6104)
+            175ebaeb4b518042f6733357ba6b52f213fd75bb09e8e2de675573e2ba3f6104
+            a0d4051b796c6580a59477ff2b5072da3df62cfdc91d0ae54e8cd743d97caa6d
+            ac5e7d0574dd8667b4846d68d767d4d9532d085659780153bf0f0249f2796511)
 # Linus Torvalds', Greg Kroah-Hartman's (keys/pgp, as Arch's linux has them).
 validpgpkeys=(ABAF11C65A2970B130ABE3C479BE3E4300411886
               647F28654894E3BD457199BE38DBBDC86092693E)

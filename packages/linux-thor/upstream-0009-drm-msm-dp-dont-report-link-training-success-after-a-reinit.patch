@@ -1,0 +1,41 @@
+From: Oleg Keri <okerixx@gmail.com>
+Subject: [PATCH] drm/msm/dp: don't report link training success after a reinit
+
+When every training attempt fails, the retry loop in
+msm_dp_ctrl_on_link() ends on a successful
+msm_dp_ctrl_reinitialize_mainlink(), leaving rc at 0. The caller then
+enables the stream on an untrained link and the display stays dark.
+
+The retry counter only reaches zero in that case, so treat it as a
+training failure.
+
+Fixes: 8ede2ecc3e5e ("drm/msm/dp: Add DP compliance tests on Snapdragon Chipsets")
+Signed-off-by: Oleg Keri <okerixx@gmail.com>
+Reviewed-by: Dmitry Baryshkov <dmitry.baryshkov@oss.qualcomm.com>
+Patchwork: https://patchwork.freedesktop.org/patch/756528/
+Link: https://lore.kernel.org/r/20260925125314.16563-1-okerixx@gmail.com
+Signed-off-by: Dmitry Baryshkov <dmitry.baryshkov@oss.qualcomm.com>
+
+Ours: upstream commit a47987366e7f (Linux 7.4-rc1), taken as it is there
+(after 7.2.8's stable-0001, which keeps the disable path from waiting
+for an idle pattern on a link that never came up): when every training
+attempt failed the stream was enabled on an untrained link and the
+monitor stayed dark. Not yet tried on a Thor.
+---
+ drivers/gpu/drm/msm/dp/dp_ctrl.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/gpu/drm/msm/dp/dp_ctrl.c b/drivers/gpu/drm/msm/dp/dp_ctrl.c
+index 9024abdc2..19e116581 100644
+--- a/drivers/gpu/drm/msm/dp/dp_ctrl.c
++++ b/drivers/gpu/drm/msm/dp/dp_ctrl.c
+@@ -2368,6 +2368,9 @@ int msm_dp_ctrl_on_link(struct msm_dp_ctrl *msm_dp_ctrl)
+ 	if (ctrl->link->sink_request & DP_TEST_LINK_PHY_TEST_PATTERN)
+ 		return rc;
+ 
++	if (!link_train_max_retries)
++		rc = -ETIMEDOUT;
++
+ 	if (rc == 0) {  /* link train successfully */
+ 		/*
+ 		 * do not stop train pattern here
