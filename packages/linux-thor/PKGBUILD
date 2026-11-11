@@ -26,7 +26,7 @@ _armada=664da8c6d73c05b3dc55d7c7286dee33f61124a5
 # (Armada's commit's time: the version after the kernel's, so that their newer commit is a newer package.)
 _armada_time=202610291947
 pkgver=$_kver.$_armada_time
-pkgrel=1
+pkgrel=2
 pkgdesc="Armada's Linux kernel for the AYN Thor (SM8550), with its modules and device trees"
 arch=(aarch64)
 url=https://github.com/armada-os/armada
@@ -58,9 +58,11 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         # PR #3495, tried on a Thor); QSEED4's horizontal preload of 7 behind the inline rotator, so a
         # rotated layer split over two pipes (a game's buffer shown directly, turned for the sideways
         # panels) has no seam (0018, at 8662e9f5ad, measured on an SM8650 tablet, not yet tried on a Thor).
-        # stable-*: fixes of Linux 7.2.8 (Armada pins 7.2.6) to DisplayPort and the DPU, as they are
-        # there: Armada's kernel hard-freezes the Thor when a DP monitor is plugged in (Armada #529),
-        # PB-OS's on 7.2.8 shows DP working. Not yet tried on a Thor.
+        # stable-*: fixes of Linux's 7.2 stable releases after Armada's 7.2.6, as they are there (each
+        # one's header names its release and upstream commit): 7.2.8's to DisplayPort and the DPU
+        # (0001..0003: Armada's kernel hard-freezes the Thor when a DP monitor is plugged in, Armada
+        # #529; PB-OS's on 7.2.8 shows DP working); hibernation's image preallocated before the kernel
+        # threads freeze (0004, 7.2.9). Not yet tried on a Thor.
         pbos-0545-power-supply-qcom_battmgr-retroid-charge-controls.patch
         thor-0001-dts-thor-lra-haptics.patch
         pbos-0620-drm-panel-ch13726a-thor-16-bit-brightness-high-byte-first.patch
@@ -77,7 +79,8 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         rocknix-0018-drm-msm-dpu-preload-seven-pixels-in-qseed4-behind-the-inline-rotator.patch
         stable-0001-drm-msm-dp-skip-push-idle-when-the-link-was-never-enabled.patch
         stable-0002-drm-msm-dp-fix-link-bandwidth-check-when-wide-bus-is-enabled.patch
-        stable-0003-drm-msm-dpu-clear-pending-peripheral-flush-state.patch)
+        stable-0003-drm-msm-dpu-clear-pending-peripheral-flush-state.patch
+        stable-0004-pm-hibernate-freeze-kernel-threads-after-image-preallocation.patch)
 sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             SKIP
             cdbe93282683496da781d8ffc750614b8e02d4edf9c883497488469f9f61a185
@@ -98,7 +101,8 @@ sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             7c1d5de97f6027c606e8260c3addd4d27c3b18e237152ce371740baeee6fdd76
             8a175ce1ae47de256bd775ed892dc21bfb493c278a2c5ed3d119cd3577c0a477
             158ba786ac5a5d5cb2df7999269f090f5518a950980dc3ad65c55f7dd6c97da5
-            1138bd37189179a05492cd002370d4a50e2e2327cbdab996b0f61c8a6ae72b0a)
+            1138bd37189179a05492cd002370d4a50e2e2327cbdab996b0f61c8a6ae72b0a
+            7d11967c255556f2830b9b1e2278f6ef51cd7977c50e9bc41e5850658eaaa401)
 # Linus Torvalds', Greg Kroah-Hartman's (keys/pgp, as Arch's linux has them).
 validpgpkeys=(ABAF11C65A2970B130ABE3C479BE3E4300411886
               647F28654894E3BD457199BE38DBBDC86092693E)
