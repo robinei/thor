@@ -17,17 +17,37 @@ Android kept. Written 2026-10-14, before having the device; everything here is u
   says "Unlocked bootloader required", and unlocking erases Android's data. Which firmware has it isn't
   known (Kettle: "mentioned once, for firmware 355"; one report of a menu with Android/UEFI instead,
   as on the Odin 3). Verify on the device (day one, step 2) before flashing anything.
-- **Else OpenABL** (github.com/OpenHandheldCollective/OpenABL, v1.1 of 2026-10-19; where ROCKNIX's `next` and
-  the community are moving; downloaded: `~/.cache/thor-vm/openabl/abl_signed-SM8550.elf`, sha256
-  `cd97748bbd1c5dc994b8a73a05e88955297f4c88384e3ca4028d043fc1b16848`). Qualcomm's ABL with a menu and
-  standard Linux boot: from internal storage, SD or USB it tries `Boot####` options, then Boot Loader
-  Specification entries (`\loader\entries\*.conf`, ours: `thor.conf`, its `devicetree` line taking
-  precedence) and UKIs, then extlinux, then `\EFI\BOOT\BOOTAA64.EFI`, then an Android boot image
-  (`/KERNEL`): all of our image's ways. Device model from the `.dtb` files in `\dtbs` (ours has the
-  Thor's); display rotation, boot source, a verbose log on screen, EDL, device info in its menu; fastboot
-  and Android (with verified boot) as before; settings in UEFI variables. Flashed to `abl_a` and `abl_b`:
-  `fastboot flash` (unlocked), or as ROCKNIX's scripts do from Android ("Run Script as Root", `dd`; ROCKNIX's
-  `next` ships an `openabl/` folder with the same three scripts). Linux reaches its UEFI variables (bootctl,
+- **Else OpenABL** (github.com/OpenHandheldCollective/OpenABL, v1.2 of 2026-10-24; where ROCKNIX's `next`,
+  Armada and the community are moving; downloaded: `~/.cache/thor-vm/openabl/v1.2/abl_signed-SM8550.elf`,
+  sha256 `2a2808d12f2d494ddd2c39093bbffa90bc43402050be1a87baf6a4c37c830163`, which the release's
+  `.sha256` file and asset digest, Kettle's `packages/openabl/releases.tsv` and Armada's
+  `packages/openabl-updater/legacy-releases.tsv` all give; v1.1, `cd97748b…b16848`, kept beside it in
+  `~/.cache/thor-vm/openabl/`). Qualcomm's ABL with a menu and standard Linux boot: from internal storage,
+  SD or USB it tries `Boot####` options, then Boot Loader Specification entries (`\loader\entries\*.conf`;
+  ours `thor.conf`, and `thor-prev.conf` after an update; `loader.conf`'s `default thor.conf` first) and
+  UKIs, then extlinux, then `\EFI\BOOT\BOOTAA64.EFI`, then (1.2, not after) an Android boot image
+  (`/KERNEL`). It starts an entry's kernel itself, through its EFI stub, with the entry's initrd and
+  `devicetree` (which takes precedence over its Device model): systemd-boot isn't involved. Device model
+  from `.dtb` files in `\boot\grub`, `\dtbs` or `\dtb` (and their `qcom` folders); our card has none, so
+  our entry's device tree is the one used (the model also sets its menu's Auto rotation and a developer
+  option's panel lines, nothing we need). Display rotation, boot source, a verbose log on screen, EDL,
+  device info in its menu; fastboot and Android (with verified boot) as before; settings in UEFI variables
+  (1.2). 1.2 fixed the hang at the boot logo (#29: the stack canary cleaned by address before the MMU goes
+  off, dad6370), hands XBL's unused memory to Linux and hands the display over as the device tree says
+  (332f2b4), and no longer takes a BLS entry's raw kernel at `\KERNEL` for a boot image (3f19b4e: only a
+  file starting `ANDROID!` is one; ours does). After 1.2, on main (unreleased): aa949d6 drops Android boot
+  images (`\KERNEL`, `\boot\Image`, ...), so from the release after 1.2 our BLS entry is the only way
+  OpenABL boots us (`/KERNEL` stays for ROCKNIX's ABL); 71c0040 moves its settings from UEFI variables to
+  the last 4 KiB of `misc` (the Device model carried over); 9da0c8a honours `loader.conf`'s `timeout`
+  (ours, 3: Boot entries shown with a countdown, the previous kernel's among them) and
+  `LoaderEntryOneShot`; 7bc320c stops a Linux boot with no Device model set when the drives hold `.dtb`
+  files (ours don't). Read against 1.2's and main's sources (2026-11-11), our card needs nothing changed
+  for it: the entries' keys (`title`, `linux`, `initrd`, `devicetree`, `options`), their `/` paths (taken
+  as `\`), the `default` (matched against the file name with `.conf`, as systemd-boot does, so
+  `thor-prev.conf` sorts after it) and the slots' `/thor-a/thor.dtb` device trees. Flashed to `abl_a` and
+  `abl_b`: `fastboot flash` (unlocked), or from Android by `dd` as root ("Run Script as Root"; day one, step 4;
+  ROCKNIX's `next` ships an `openabl/` folder with its three `dd` scripts). Linux reaches its UEFI
+  variables (bootctl,
   boot counting, BootNext) only with its kernel patch adding SM8550 to qcom_scm's QSEECOM allowlist
   (`Linux/0001-firmware-qcom-scm-allow-QSEECOM-on-OpenABL-s-platforms.patch`, tested on SM6115 only):
   Armada carries it (`0910`), so our kernel has it since we follow 664da8c; untried on a Thor.
@@ -42,8 +62,7 @@ Android kept. Written 2026-10-14, before having the device; everything here is u
   or `fastboot flash abl_a`/`abl_b` with the backups; an ABL broken past fastboot needs EDL, with AYN's
   factory package (day one, step 3). **ROCKNIX's own updates and its install to internal storage
   re-flash both ABL slots** (`updateabl`), even over stock: boot ROCKNIX from SD only, never update or
-  install it. Its `next` moved to OpenABL (OpenHandheldCollective/OpenABL v1.1, 2026-10-19; it also boots
-  `BOOTAA64.EFI`, BLS, UKIs, extlinux and `/KERNEL`), so its next release will flash OpenABL instead.
+  install it. Its `next` moved to OpenABL (above), so its next release will flash OpenABL instead.
 - `/KERNEL` (ROCKNIX 20261001) is an Android boot image, header version 0, page size 2048: a gzip'd arm64
   `Image` with 14 device trees appended (AYN Thor, Odin 2 / Mini / Portal, gamepad nodes; the ABL picks
   the matching one), the initramfs built into the kernel (the ramdisk is 5 bytes), and the command line
@@ -966,6 +985,7 @@ Held back until real use shows whether they are worth what they cost.
 - ROCKNIX's Thor page (the Boot Mode note): <https://rocknix.org/devices/ayn/thor-sm8550/>
 - ROCKNIX: <https://github.com/ROCKNIX/distribution> (SM8550 options: `BOOTLOADER="qcom-abl"`,
   `KERNEL_TARGET="Image"`), ABL: <https://github.com/ROCKNIX/abl>
+- OpenABL (its README has the boot order and the menu): <https://github.com/OpenHandheldCollective/OpenABL>
 - Thorch (Arch Linux ARM on ROCKNIX's Thor work, the closest model): <https://github.com/thorch-os/thorch>
 - Pocknix (Arch Linux ARM for SM8250/SM8550 handhelds): <https://github.com/shuuri-labs/pocknix-os>
 - Kettle Linux's Thor notes (stock U-Boot/UEFI, screens, touch, audio, power, gamepad):

@@ -23,8 +23,9 @@
 #
 # Two ways to boot, one FAT partition: the stock bootloader (U-Boot with UEFI, as Kettle Linux's Thor notes
 # have it) starts systemd-boot (EFI/BOOT/BOOTAA64.EFI), which loads the selected thor-a or thor-b
-# slot's kernel (an EFI program), initramfs and device tree; the ABL boots /KERNEL, an Android boot image of the same
-# kernel. Layout: GPT; 1: FAT "ROCKNIX" at 16 MiB, 512 MiB (room for thor-boot's new files beside the
+# slot's kernel (an EFI program), initramfs and device tree; OpenABL boots the same loader entry itself;
+# ROCKNIX's ABL boots /KERNEL, an Android boot image of the same kernel (with EFI renamed EFI.disabled: it
+# takes BOOTAA64.EFI first, and fails on systemd-boot). Layout: GPT; 1: FAT "ROCKNIX" at 16 MiB, 512 MiB (room for thor-boot's new files beside the
 # old ones), an EFI system partition (as Armada's and Kettle's, which ROCKNIX's ABL boots) with ROCKNIX's
 # label, GPT name "system" and legacy-boot attribute; 2: ext4 THOR_ROOT, the system.
 # thor-boot (thor-system) fills the FAT partition, here and after every update of what it is made of. The

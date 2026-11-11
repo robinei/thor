@@ -4,7 +4,8 @@
 # Thor's device tree and initramfs; the loader entry's options line is the command line), and in
 # /KERNEL for the ABL, repacked (checked before it replaces the old one). The slot left stays as a second
 # entry, the previous kernel, with its modules (thor-modules), for a kernel that boots and then fails:
-# systemd-boot's menu offers it (the ABL boots only /KERNEL, the newest). Run as root. pacman runs it after
+# systemd-boot's menu and OpenABL's Boot entries offer it (ROCKNIX's ABL boots only /KERNEL, the newest).
+# Run as root. pacman runs it after
 # updates of the kernel or of what the initramfs and the boot loader are made of (90-thor-boot.hook); the
 # first boot, after putting the swap file's place on the command line; the image build, once.
 set -euo pipefail
