@@ -17,7 +17,10 @@ Android kept. Written 2026-10-14, before having the device; everything here is u
   says "Unlocked bootloader required", and unlocking erases Android's data (ours came unlocked: day one,
   step 2). Which firmware has it isn't
   known (Kettle: "mentioned once, for firmware 355"; one report of a menu with Android/UEFI instead,
-  as on the Odin 3). Verify on the device (day one, step 2) before flashing anything.
+  as on the Odin 3; and Armada #884, 2026-11-11, a Thor Max whose OpenABL flash hadn't taken: the stock
+  menu's Switch Boot Mode offered Android and UEFI, and UEFI went back to the bootloader on Armada's card,
+  which has had no `BOOTAA64.EFI` since their PR #846). Verify on the device (day one, step 2) before
+  flashing anything.
 - **Else OpenABL** (github.com/OpenHandheldCollective/OpenABL, v1.2 of 2026-10-24; where ROCKNIX's `next`,
   Armada and the community are moving; downloaded: `~/.cache/thor-vm/openabl/v1.2/abl_signed-SM8550.elf`,
   sha256 `2a2808d12f2d494ddd2c39093bbffa90bc43402050be1a87baf6a4c37c830163`, which the release's
@@ -55,9 +58,11 @@ Android kept. Written 2026-10-14, before having the device; everything here is u
 - **Or ROCKNIX's ABL** v1.2 (in 20261001: `rocknix_abl/` on the image's FAT partition, with
   `backup_abl.sh`, `flash_abl.sh`, `restore_backup_abl.sh`: plain `dd` of `abl_a` and `abl_b` to and from
   `/sdcard/rocknix_abl/`, run as root through AYN Android's "Run Script as Root", Settings → Handheld
-  Settings → Advanced). It finds the boot partition on internal storage, SD or USB; per Kettle (citing
-  ROCKNIX's developers, unverified) it boots `\EFI\BOOT\BOOTAA64.EFI` when there is one and `/KERNEL` only
-  without: our image has both, so it would go the EFI way under either bootloader. Its menu (hold Volume
+  Settings → Advanced). It finds the boot partition on internal storage, SD or USB; it
+  boots `\EFI\BOOT\BOOTAA64.EFI` when there is one and `/KERNEL` only without (Kettle, citing ROCKNIX's
+  developers), and fails on systemd-boot there: Armada's PR #846 (b350320, 2026-11-05) took systemd-boot
+  off their card for that. Ours keeps `BOOTAA64.EFI`, as stock U-Boot needs it, so under ROCKNIX's ABL
+  `EFI` on the card is renamed `EFI.disabled` (day one, step 6; thor-boot keeps it so). Its menu (hold Volume
   down at power-on): Boot mode Linux, Boot source SD card, and **Device model: AYN Thor**, which it needs
   before it boots anything (`no match found for DTB!` otherwise). The way back: `restore_backup_abl.sh`,
   or `fastboot flash abl_a`/`abl_b` with the backups; an ABL broken past fastboot needs EDL, with AYN's
@@ -167,7 +172,7 @@ What the image adds:
 
 | Part | Source |
 |---|---|
-| Bootloader | not in the image: stock U-Boot (UEFI), else ROCKNIX's ABL or OpenABL flashed once (see below) |
+| Bootloader | not in the image: stock U-Boot (UEFI), else OpenABL (preferred) or ROCKNIX's ABL flashed once (see below) |
 | FAT `ROCKNIX` (GPT name `system`, legacy-boot attribute, at 16 MiB, 512 MiB; an EFI system partition) | the loader's config and entry with our command line (`root=LABEL=THOR_ROOT rw` + ROCKNIX's SM8550 parameters, `fbcon=rotate:1`, `psi=1 cgroup_disable=pressure`, `ufshcd_core.uic_cmd_timeout=3000`, `panic=30`), ROCKNIX's `/KERNEL` as the header thor-boot repacks; thor-boot then fills it |
 | Root: ext4 `THOR_ROOT` | `pacstrap` from Arch Linux ARM's mirrors (unpinned) and the local `[thor]`: base, sudo, NetworkManager, OpenSSH, Xwayland, Mesa + `vulkan-freedreno`, PipeWire, Noto, vim, gptfdisk; RetroArch with cores for NES, SNES, N64, Game Boy, GBA, DS, Mega Drive, PlayStation and Dreamcast and XMB's assets, mpv, ffmpeg; evtest, alsa-utils; for maintenance pacman-contrib, base-devel, squashfs-tools, git; the Thor's packages (their dependencies bring foot, udiskie, zram-generator) |
 | System | hostname `thor`, time zone UTC (`THOR_TIMEZONE` for another), locale (`THOR_LOCALE`, default `en_US.UTF-8`); from the packages: systemd-timesyncd, NetworkManager and Bluetooth on (their install scripts), sudo for wheel (`/etc/sudoers.d/10-thor-wheel`), UPower hibernating at 3 % (power off if it can't; `UPower.conf.d/50-thor.conf`); sshd installed but off; `[thor]` in pacman.conf, its database and packages signed (`SigLevel = Required`) |
@@ -419,8 +424,7 @@ To know:
    what it offers. This unit's bootloader came unlocked (over adb 2026-11-11: `ro.boot.flash.locked=0`,
    `ro.boot.vbmeta.device_state=unlocked`, verified boot state orange, slot `_a`), so the switch needs no
    unlocking and no wipe; the menu itself is still to be looked at. If the
-   switch works, skip step 4: no ROCKNIX ABL. If it needs unlocking, weigh that (it erases Android's data)
-   against flashing ROCKNIX's ABL, which doesn't.
+   switch works, skip step 4: no ABL flashed.
 3. Back up first anyway: `tools/device/android-backup.sh`, run with "Run Script as Root", copies the
    bootloaders (abl, loader, xbl) and the device's own partitions (persist, devinfo, the radios'
    calibration and the rest AYN's packages don't hold or would overwrite) to `/sdcard/thor-backup/` with
@@ -439,21 +443,27 @@ To know:
    persist itself is lost. For only the ABL, `fastboot flash abl_a`/`abl_b` with the stock `abl.elf` (or
    the backup) while fastboot still works. `Thor_20251120_ota.zip` is an ordinary Android OTA
    (`payload.bin`): rollback from Android's Local Update (renamed `update.zip`, 35 % battery or more).
-4. Only without a stock Linux mode: flash OpenABL (downloaded; to `abl_a` and `abl_b`, by `dd` as root in
-   Android, "Run Script as Root", after step 3's backup), ROCKNIX's ABL the fallback (`flash_abl.sh`).
-   Check that Android still boots. In the menu (hold Volume down at power-on): Boot mode Linux, Boot source
-   SD card, Device model AYN Thor (OpenABL: from `\dtbs`, or the entry's own).
+4. Only without a stock Linux mode: flash OpenABL 1.2 (downloaded; see "How the boot works") to `abl_a`
+   and `abl_b`, by `dd` as root in Android ("Run Script as Root", after step 3's backup). It is the
+   bootloader to use: it boots our loader entry itself, before anything else on the card. ROCKNIX's ABL
+   is the fallback (`flash_abl.sh`), and needs step 6's `EFI.disabled`. Check that Android still boots.
+   In the menu (hold Volume down at power-on): Boot mode Linux, Boot source SD card. OpenABL needs no
+   Device model for our card (the entry names its device tree; Display rotation by hand if its menu is
+   sideways); ROCKNIX's ABL needs Device model AYN Thor.
 5. Boot a known-good image (ROCKNIX 20261001, downloaded) from SD: proves the bootloader, the SD slot and
-   the screens. Don't update ROCKNIX or install it to internal storage (it re-flashes the ABL).
+   the screens (OpenABL 1.2 still boots its `/KERNEL`; OpenABL's next release won't). Don't update ROCKNIX
+   or install it to internal storage (it re-flashes the ABL).
    Note what ROCKNIX's session shows for outputs (`swaymsg -t get_outputs`), inputs
    (`swaymsg -t get_inputs`, `evtest`), the gamepad's device and buttons, sound devices, Wi-Fi.
 6. Boot our image from SD. If it doesn't come up, the known issues above are the suspects, in order.
-   Which way it boots: with `EFI/BOOT/BOOTAA64.EFI` on the card, every bootloader we know of (U-Boot,
-   ROCKNIX's ABL 1.2, OpenABL after its BLS entries) takes the UEFI way (systemd-boot) before `/KERNEL`,
-   and nobody has run systemd-boot on the Thor; the way Thorch, Pocknix and Armada boot is `/KERNEL`. If
-   the UEFI way shows nothing, rename `EFI` on the card's FAT partition to `EFI.disabled` (on the PC; as
-   Armada's image does) to make the ABL take `/KERNEL`. Under OpenABL set "ABL mode: Verbose" to see why
-   an entry fails. A kernel panic reboots after 30 s (`panic=30`).
+   Which way it boots: under OpenABL, the loader entry `thor.conf` first (OpenABL starts the kernel
+   itself, with the entry's initramfs and device tree, as Armada's cards boot since their PR #846), then
+   `BOOTAA64.EFI` (systemd-boot, reading the same entry), then, under 1.2, `/KERNEL`; "ABL mode: Verbose"
+   shows why an entry fails. Under ROCKNIX's ABL, first rename `EFI` on the card's FAT partition to
+   `EFI.disabled` (on the PC; thor-boot's updates keep it so): it takes `BOOTAA64.EFI` before `/KERNEL`
+   and fails on systemd-boot (Armada #846); renamed, it boots `/KERNEL`, as Thorch and Pocknix do. Under
+   stock U-Boot, systemd-boot, which nobody has run on the Thor. A kernel panic reboots after 30 s
+   (`panic=30`).
    Serial console: none known; a USB keyboard and the screen, or ssh over USB Ethernet (after setting
    a password and turning Remote login on in ClamShell's Device view). Each boot runs
    `thor-selftest` (from early on, not waited for): a pass at once (the kernel, its command line, our
@@ -897,8 +907,9 @@ named pbos-NNNN are PB-OS's (github.com/project-barry/pb-os, `external-and-mods/
 ours go into linux-thor's `source=`.
 
 Boot
-- Nothing on the screen by the UEFI way: rename `EFI` on the card's FAT partition to `EFI.disabled` (on
-  the PC; as Armada's image) so the ABL boots `/KERNEL`. Under OpenABL: "ABL mode: Verbose".
+- Nothing on the screen: under OpenABL, "ABL mode: Verbose" says why the entry failed; under ROCKNIX's
+  ABL, check that `EFI` on the card is renamed `EFI.disabled` (day one, step 6); under stock U-Boot,
+  systemd-boot is the suspect: OpenABL instead (step 4).
 - `/KERNEL` alone fails (UEFI boots): the 62 MB Image; `CONFIG_DEBUG_INFO_BTF=n`, `CONFIG_DEBUG_INFO=n` in
   `config.thor`.
 - ROCKNIX's ABL doesn't find the card: partition 1's type to Microsoft basic data (ROCKNIX's), in
