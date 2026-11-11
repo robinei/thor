@@ -64,8 +64,8 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         # Armada #529; PB-OS's on 7.2.8 shows DP working); hibernation's image preallocated before
         # the kernel threads freeze (0004, 7.2.9); GPU fences outliving their ring or VM, and the
         # GPU's runtime PM on unbind (0005, 0006, 7.2.8); hci_qca's remove after a failed open
-        # (0007, 7.2.8); UCSI's glink remove and its DisplayPort entry (0008, 0009, 7.2.10). Not yet
-        # tried on a Thor.
+        # (0007, 7.2.8); UCSI's glink remove and its DisplayPort entry (0008, 0009, 7.2.10); the
+        # GENI serial engines' QUP core clock vote (0010, 7.2.10). Not yet tried on a Thor.
         # upstream-*: fixes in mainline Linux 7.4, as they are there (each one's header names its
         # commit): q6apm's PCM position at the end of the ring and after a prepare, and its DSP
         # buffer mappings: the unmap's reply, the position buffer's handle, unmapped before the
@@ -109,7 +109,8 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         upstream-0008-soc-qcom-pmic_glink-fix-device-access-from-worker-during-suspend.patch
         upstream-0009-drm-msm-dp-dont-report-link-training-success-after-a-reinit.patch
         upstream-0010-drm-msm-dp-serialize-hpd-state-updates.patch
-        sap-0009-drm-msm-bound-the-fence-wait-in-vm-close.patch)
+        sap-0009-drm-msm-bound-the-fence-wait-in-vm-close.patch
+        stable-0010-soc-qcom-geni-se-correct-qup-core-icc-vote-constants.patch)
 sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             SKIP
             cdbe93282683496da781d8ffc750614b8e02d4edf9c883497488469f9f61a185
@@ -147,7 +148,8 @@ sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             175ebaeb4b518042f6733357ba6b52f213fd75bb09e8e2de675573e2ba3f6104
             a0d4051b796c6580a59477ff2b5072da3df62cfdc91d0ae54e8cd743d97caa6d
             ac5e7d0574dd8667b4846d68d767d4d9532d085659780153bf0f0249f2796511
-            7db670ad93244aae60728211c0d03987d78d8e8ee6d4da10318f15d68e30664b)
+            7db670ad93244aae60728211c0d03987d78d8e8ee6d4da10318f15d68e30664b
+            ee49c447f31b45fe7c98080d8a618e8cad0de4bc4a9ee88492abb56c081a3f63)
 # Linus Torvalds', Greg Kroah-Hartman's (keys/pgp, as Arch's linux has them).
 validpgpkeys=(ABAF11C65A2970B130ABE3C479BE3E4300411886
               647F28654894E3BD457199BE38DBBDC86092693E)
