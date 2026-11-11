@@ -31,9 +31,9 @@ source=("hexagonrpc-$_hexagonrpc.tar.gz::https://github.com/linux-msm/hexagonrpc
         pbos-0007-hexagonrpcd-support-large-and-extended-callbacks.patch
         pbos-0008-hexagonrpcd-enumerate-virtual-directories.patch)
 sha256sums=(575bf34b8e2a51f851b078cc4b87db3c9bb121ce5849be765352b016756d63eb
-            a17a38b5a876caa714d9a082341d0d5c46c15eb98548d5dd782bb81ba70b973c
-            ada7c322ef339168842089b5f56594ef3e8f35cd78d383338af8acba8560b7a6
-            444ea4e3c07560ca4f43b1ae84bf3209a81f476e03024c08143a248c30cd7e96
+            8f029098544d789af776f5cc0fbde417df36b594aa3381a8a4ae53d0e41c5c14
+            ddefc0ce6649d704937aa09e1ba6bfd95ab89408468c74663b08b83f49174682
+            ef01e3896cd6d148536a6c7253cf21c4af016a2b6aded7603ca5150c9dd451b6
             6ab652128fe718e3516fa0cc473c12a94916e9c146614cbcab60b393b7293153
             5ebb8418e749924bb16d1a49d9bf907cd1a40b7d1d2c5eaba9b71b8f658ab0ce
             441e2078ce103f7f15cd837b3d9a7af83a5295b78f35e18b13bb6e35689b5ee1
