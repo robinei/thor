@@ -451,6 +451,9 @@ To know:
    runner hands a script to its root service one line at a time (logcat: `PServiceBridgeV2: Send code=0,
    data=[<line>]` per line), so a script of several lines does nothing through it; the launcher, one
    line, runs the script with `sh` as root (uid 0, SELinux context `pservice`).
+   Done 2026-11-11: the backup taken (39 partitions, 372 MB) and checked (`sha256sum -c SHA256SUMS`, all
+   OK), kept off the repository in `~/Downloads/thor/thor-backup-20261111/`. It holds keystore and
+   persist, private to this device: never committed.
 
    **The way back, whatever breaks: AYN's factory packages** (from the AYN Discord's #thor-general-faq,
    in `~/Downloads/thor/`): `Thor_20260112.7z` and `Thor_20260206.7z` (1.0.0.377) are full flash packages
