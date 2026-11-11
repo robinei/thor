@@ -373,7 +373,9 @@ To know:
 
 ## Day one, in order
 
-1. Boot Android, update its firmware, note the versions (Android build, bootloader). Charge. Read this
+1. Boot Android, update its firmware, note the versions (Android build, bootloader). This unit (noted
+   2026-11-11): Android build 1.0.0.377 (2026-02-06), firmware V02.09.001.01 of 2025-09-05; the OTA
+   updater says it is the newest. Charge. Read this
    unit's top panel calibration, which AYN's Android keeps (ROCKNIX's PR #3489 read it over adb:
    `display.frame_len_120` and `display.frame_len_60`, e.g. 52 and 2000; look for them with
    `adb shell settings list system | grep frame_len` and `getprop | grep frame_len`): written as
