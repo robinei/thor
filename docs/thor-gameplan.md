@@ -49,8 +49,9 @@ Android kept. Written 2026-10-14, before having the device; everything here is u
   for it: the entries' keys (`title`, `linux`, `initrd`, `devicetree`, `options`), their `/` paths (taken
   as `\`), the `default` (matched against the file name with `.conf`, as systemd-boot does, so
   `thor-prev.conf` sorts after it) and the slots' `/thor-a/thor.dtb` device trees. Flashed to `abl_a` and
-  `abl_b`: `fastboot flash` (unlocked), or from Android by `dd` as root ("Run Script as Root"; day one, step 4;
-  ROCKNIX's `next` ships an `openabl/` folder with its three `dd` scripts). Linux reaches its UEFI
+  `abl_b`: `fastboot flash` (unlocked), or from Android with `tools/device/abl-flash.sh` ("Run Script as Root";
+  day one, step 4; ROCKNIX's `next` ships an `openabl/` folder with its three `dd` scripts, which have
+  the `/sdcard` problem of step 4). Linux reaches its UEFI
   variables (bootctl,
   boot counting, BootNext) only with its kernel patch adding SM8550 to qcom_scm's QSEECOM allowlist
   (`Linux/0001-firmware-qcom-scm-allow-QSEECOM-on-OpenABL-s-platforms.patch`, tested on SM6115 only):
@@ -444,9 +445,19 @@ To know:
    the backup) while fastboot still works. `Thor_20251120_ota.zip` is an ordinary Android OTA
    (`payload.bin`): rollback from Android's Local Update (renamed `update.zip`, 35 % battery or more).
 4. Only without a stock Linux mode: flash OpenABL 1.2 (downloaded; see "How the boot works") to `abl_a`
-   and `abl_b`, by `dd` as root in Android ("Run Script as Root", after step 3's backup). It is the
-   bootloader to use: it boots our loader entry itself, before anything else on the card. ROCKNIX's ABL
-   is the fallback (`flash_abl.sh`), and needs step 6's `EFI.disabled`. Check that Android still boots.
+   and `abl_b` with `tools/device/abl-flash.sh`, after step 3's backup: copy `abl_signed-SM8550.elf` to the
+   internal storage as `thor-abl/abl.elf` (`adb push abl_signed-SM8550.elf /sdcard/thor-abl/abl.elf`, or
+   as a file over USB) and run the script with "Run Script as Root". It writes the slot not in use first,
+   reads each slot back past the page cache and compares its SHA-256 with the file's, and stops at the
+   first that doesn't hold it; the runner only says "completed", so read its report,
+   `/sdcard/thor-abl/flash.txt`: it must end `done: abl_a and abl_b hold ...` with `2a2808d1...c830163`.
+   Not ROCKNIX's or Armada's `flash_abl.sh` and `backup_abl.sh`: they read and write `/sdcard`, the
+   internal storage, while their files are on the SD card (`/storage/XXXX-XXXX`), so they find nothing
+   and still report done (Armada #650; #884 is a Thor whose OpenABL flash this way didn't take). OpenABL
+   is the bootloader to use: it boots our loader entry itself, before anything else on the card.
+   ROCKNIX's ABL is the fallback, flashed the same way (its ELF as `abl.elf`), and needs step 6's
+   `EFI.disabled`. The way back: step 3's `abl_a.img` as `abl.elf`, the same script (or EDL, step 3).
+   Check that Android still boots.
    In the menu (hold Volume down at power-on): Boot mode Linux, Boot source SD card. OpenABL needs no
    Device model for our card (the entry names its device tree; Display rotation by hand if its menu is
    sideways); ROCKNIX's ABL needs Device model AYN Thor.
