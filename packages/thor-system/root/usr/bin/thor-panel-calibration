@@ -116,7 +116,7 @@ def save(path, rates, found):
     except OSError:
         pass
     saved.update({calibration["attribute"]: str(found[calibration["hz"]]) for calibration in rates if calibration["hz"] in found})
-    # (A kept value that tints, one copied from AYN's Android by hand, saved as it is applied.)
+    # (A kept value that tints, one written by hand, saved as it is applied.)
     for calibration in rates:
         kept = saved.get(calibration["attribute"], "")
         if kept.isdigit():

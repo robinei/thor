@@ -4,7 +4,7 @@
 #
 # A frame_len_120 that leaves 2 when divided by 4 tints the panel green and raises its gamma
 # (github.com/armada-os/armada/issues/874: 54, 58, 62 and 66 tint; 52, 56, 60, 76 and 59 don't). Such
-# a value (one copied from AYN's Android, say) is applied 2 lower, the multiple of 4 below it: of the two
+# a value (one written by hand, say) is applied 2 lower, the multiple of 4 below it: of the two
 # nearest values known not to tint, the one with the higher rate, as calibration ends just above 120 Hz.
 # The device profile says the same (crates/device, RefreshRate::tints_at_2_mod_4); thor-panel-calibration
 # never saves such a value.
