@@ -14,7 +14,8 @@ Android kept. Written 2026-10-14, before having the device; everything here is u
   storage (which first: not documented). No `/KERNEL`, no extlinux. U-Boot's own device tree is the Odin
   2's (its SMBIOS says "AYN Odin 2"), so the EFI program must load the Thor's: ours is systemd-boot with
   a `devicetree` line (Kettle uses GRUB). **The switch needs an unlocked bootloader**: locked, the menu
-  says "Unlocked bootloader required", and unlocking erases Android's data. Which firmware has it isn't
+  says "Unlocked bootloader required", and unlocking erases Android's data (ours came unlocked: day one,
+  step 2). Which firmware has it isn't
   known (Kettle: "mentioned once, for firmware 355"; one report of a menu with Android/UEFI instead,
   as on the Odin 3). Verify on the device (day one, step 2) before flashing anything.
 - **Else OpenABL** (github.com/OpenHandheldCollective/OpenABL, v1.2 of 2026-10-24; where ROCKNIX's `next`,
@@ -358,7 +359,7 @@ Candidates for our own patches, once tried on the device:
       Thor: 54, 58, 62 and 66 tint; 52, 56, 60 and 76 don't, nor 59, the only odd value tried; 57 and
       the other values that leave 1 untried). frame_len_60 wasn't tried there. Ours never writes or saves
       such a value: the measuring steps by 4 from a multiple of 4, and a value it starts from or keeps,
-      or one copied from Android, becomes the multiple of 4 below (of the two nearest values known not to
+      or one written by hand, becomes the multiple of 4 below (of the two nearest values known not to
       tint, the one with the higher rate: calibration ends just above 120 Hz; about 0.11 Hz higher),
       logged. The rule is in the device profile (`tints_at_2_mod_4`) and in
       `/usr/lib/thor/panel-calibration`. If a value that leaves 1 or 3, or a frame_len_60, turns out
@@ -394,23 +395,30 @@ To know:
 
 1. Boot Android, update its firmware, note the versions (Android build, bootloader). This unit (noted
    2026-11-11): Android build 1.0.0.377 (2026-02-06), firmware V02.09.001.01 of 2025-09-05; the OTA
-   updater says it is the newest. Charge. Read this
-   unit's top panel calibration, which AYN's Android keeps (ROCKNIX's PR #3489 read it over adb:
-   `display.frame_len_120` and `display.frame_len_60`, e.g. 52 and 2000; look for them with
-   `adb shell settings list system | grep frame_len` and `getprop | grep frame_len`): written as
-   `frame_len_120=52` and `frame_len_60=2000` lines into `/var/lib/thor/panel-calibration` on our card,
-   they spare the Device view's two-minute measuring (the panel is timed by its own oscillator, which
-   varies per unit: uncalibrated it runs at 118.6 Hz). They are applied as they are, unless a
-   frame_len_120 tints the panel (see "the top panel's refresh calibration" above): then the multiple of 4
-   below it, logged (`journalctl -t thor-panel-calibration`). How
-   Android holds its charge limit (80 %, added by an AYN update; and Direct Power Supply, its bypass):
-   with root, at the limit on the charger, the battery's `constant_charge_current` (or the downstream
-   driver's equivalents under `/sys/class/power_supply/battery/`) and `current_now`: if the current
-   goes to 0, Android holds it as our default does (`tuning::Hold`); if not, it sends the firmware a
-   request mainline's qcom_battmgr doesn't, worth finding for a kernel patch.
+   updater says it is the newest; baseband BP01.001(SG855GWFPAR01A01). Charge.
+   The top panel's calibration doesn't come from Android: read over adb (2026-11-11, no root), Android
+   1.0.0.377 has no frame_len in `settings list system`, `global` or `secure`, in getprop, or in the
+   sysfs adb's shell can read, and no other project (ROCKNIX, Armada, SteamOS-ARM-Port) reads it from
+   Android: all measure it on Linux. Ours is the Device view's measuring (about two minutes; the panel is
+   timed by its own oscillator, which varies per unit: uncalibrated it runs at 118.6 Hz). Values written
+   by hand into `/var/lib/thor/panel-calibration` are applied as they are, unless a frame_len_120 tints
+   the panel (see "the top panel's refresh calibration" above): then the multiple of 4 below it, logged
+   (`journalctl -t thor-panel-calibration`).
+   How Android holds its charge (read over adb 2026-11-11, no root): at exactly 0 mA. With AYN's 80 %
+   limit on (system setting `percent_80_charge_limit=1`) at 93 %: the battery's status Discharging, its
+   `current_now` 0, the USB supply's `current_now` about 284 mA at 4.9 V (a 5 V / 900 mA SDP port): the
+   system runs from USB with the battery bypassed. Charge separation alone (`is_charging_separation=1`,
+   AYN's Direct Power Supply; the 80 % limit off) does the same at 93 %: battery 0 mA, USB 270–380 mA.
+   `battery/charge_control_limit` stays 0 (its maximum 17), so neither uses it, and the battery node has
+   no `constant_charge_current` or `charge_control_end_threshold`. So Android sends the charger firmware
+   a request mainline's qcom_battmgr doesn't (mainline's least current is 100 mA; Armada #677 measured
+   12–29 mA still charging below that). Open: find that request (needs root: AYN's service, or the glink
+   messages to the firmware), for a kernel patch that holds at a true 0 mA.
 2. **Check for a stock Linux boot mode before flashing anything**: enter the fastboot menu (hold Power and
    Volume down) and look for the default-boot switch (Android / Loader, or Android / UEFI). Note exactly
-   what it offers, and whether the bootloader is locked (it says "Unlocked bootloader required"). If the
+   what it offers. This unit's bootloader came unlocked (over adb 2026-11-11: `ro.boot.flash.locked=0`,
+   `ro.boot.vbmeta.device_state=unlocked`, verified boot state orange, slot `_a`), so the switch needs no
+   unlocking and no wipe; the menu itself is still to be looked at. If the
    switch works, skip step 4: no ROCKNIX ABL. If it needs unlocking, weigh that (it erases Android's data)
    against flashing ROCKNIX's ABL, which doesn't.
 3. Back up first anyway: `tools/device/android-backup.sh`, run with "Run Script as Root", copies the
