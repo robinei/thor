@@ -66,7 +66,8 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         # GPU's runtime PM on unbind (0005, 0006, 7.2.8); hci_qca's remove after a failed open
         # (0007, 7.2.8); UCSI's glink remove and its DisplayPort entry (0008, 0009, 7.2.10); the
         # GENI serial engines' QUP core clock vote (0010, 7.2.10); ath12k's panic handler reverted
-        # (0011, 7.2.11). Not yet tried on a Thor.
+        # (0011, 7.2.11); arm64 hibernation's resume with the runtime linear map and EL2's vectors
+        # set again (0012, 0013, 7.2.8). Not yet tried on a Thor.
         # upstream-*: fixes in mainline Linux 7.4, as they are there (each one's header names its
         # commit): q6apm's PCM position at the end of the ring and after a prepare, and its DSP
         # buffer mappings: the unmap's reply, the position buffer's handle, unmapped before the
@@ -121,7 +122,9 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         armada-0077a-drm-atomic-duplicate-state-of-all-colorops.patch
         armada-0077b-drm-msm-dpu-return-einval-when-no-sspp-is-free.patch
         armada-1115-drm-msm-a6xx-mask-unhandled-rbbm-interrupts.patch
-        armada-0570-soundwire-qcom-skip-the-clock-stop-handshake-for-the-pmic-haptics-port.patch)
+        armada-0570-soundwire-qcom-skip-the-clock-stop-handshake-for-the-pmic-haptics-port.patch
+        stable-0012-arm64-hibernate-clone-only-the-linear-map-that-exists-at-runtime.patch
+        stable-0013-arm64-hibernate-pass-hvc_set_vectors-args-to-the-resume-hvc.patch)
 sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             SKIP
             cdbe93282683496da781d8ffc750614b8e02d4edf9c883497488469f9f61a185
@@ -165,7 +168,9 @@ sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             5bedad50dcb00cf543c19f04113111694e679c9d19b674fbe6cd40868938caa6
             4211408096a07fc7872b49337acb126260ba1dbe84bcc5e20156c588744829ad
             04627c86387e360487aa33113f1e5c5e73ab05485f611077d51bfbd22b4de0c4
-            d7225f5300fa81e4a25138f4582e5e01f5259cdfefe53b91be0b4261fa2e9755)
+            d7225f5300fa81e4a25138f4582e5e01f5259cdfefe53b91be0b4261fa2e9755
+            f3e9a8fc16d8dca2c65a6010bf7b3cd4d17d96c92408ddcd314a46b071f4460b
+            55b9cad2e841bfc887876fe5dd09390d8d7ead05283e9fba92fd33297417ff26)
 # Linus Torvalds', Greg Kroah-Hartman's (keys/pgp, as Arch's linux has them).
 validpgpkeys=(ABAF11C65A2970B130ABE3C479BE3E4300411886
               647F28654894E3BD457199BE38DBBDC86092693E)
