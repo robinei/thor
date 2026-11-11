@@ -58,11 +58,15 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         # PR #3495, tried on a Thor); QSEED4's horizontal preload of 7 behind the inline rotator, so a
         # rotated layer split over two pipes (a game's buffer shown directly, turned for the sideways
         # panels) has no seam (0018, at 8662e9f5ad, measured on an SM8650 tablet, not yet tried on a Thor).
-        # stable-*: fixes of Linux's 7.2 stable releases after Armada's 7.2.6, as they are there (each
-        # one's header names its release and upstream commit): 7.2.8's to DisplayPort and the DPU
-        # (0001..0003: Armada's kernel hard-freezes the Thor when a DP monitor is plugged in, Armada
-        # #529; PB-OS's on 7.2.8 shows DP working); hibernation's image preallocated before the kernel
-        # threads freeze (0004, 7.2.9). Not yet tried on a Thor.
+        # stable-*: fixes of Linux's 7.2 stable releases after Armada's 7.2.6, as they are there
+        # (each one's header names its release and upstream commit): 7.2.8's to DisplayPort and the
+        # DPU (0001..0003: Armada's kernel hard-freezes the Thor when a DP monitor is plugged in,
+        # Armada #529; PB-OS's on 7.2.8 shows DP working); hibernation's image preallocated before
+        # the kernel threads freeze (0004, 7.2.9). Not yet tried on a Thor.
+        # upstream-*: fixes in mainline Linux 7.4, as they are there (each one's header names its
+        # commit): q6apm's PCM position at the end of the ring and after a prepare, and its DSP
+        # buffer mappings: the unmap's reply, the position buffer's handle, unmapped before the
+        # topology goes, callbacks before probe's data (0001..0006). Not yet tried on a Thor.
         pbos-0545-power-supply-qcom_battmgr-retroid-charge-controls.patch
         thor-0001-dts-thor-lra-haptics.patch
         pbos-0620-drm-panel-ch13726a-thor-16-bit-brightness-high-byte-first.patch
@@ -80,7 +84,13 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         stable-0001-drm-msm-dp-skip-push-idle-when-the-link-was-never-enabled.patch
         stable-0002-drm-msm-dp-fix-link-bandwidth-check-when-wide-bus-is-enabled.patch
         stable-0003-drm-msm-dpu-clear-pending-peripheral-flush-state.patch
-        stable-0004-pm-hibernate-freeze-kernel-threads-after-image-preallocation.patch)
+        stable-0004-pm-hibernate-freeze-kernel-threads-after-image-preallocation.patch
+        upstream-0001-asoc-qcom-q6apm-dai-wrap-the-position-of-a-full-ring-to-0.patch
+        upstream-0002-asoc-qcom-q6apm-reset-the-hw-pointer-with-the-fragment-queue.patch
+        upstream-0003-asoc-qcom-q6apm-fix-unmap-regions-response-handling.patch
+        upstream-0004-asoc-qcom-q6apm-clear-the-right-handle-on-pos-buffer-unmap.patch
+        upstream-0005-asoc-qcom-q6apm-unmap-dsp-buffers-before-removing-the-topology.patch
+        upstream-0006-asoc-qcom-q6apm-guard-callbacks-until-probe-data-is-ready.patch)
 sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             SKIP
             cdbe93282683496da781d8ffc750614b8e02d4edf9c883497488469f9f61a185
@@ -102,7 +112,13 @@ sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             8a175ce1ae47de256bd775ed892dc21bfb493c278a2c5ed3d119cd3577c0a477
             158ba786ac5a5d5cb2df7999269f090f5518a950980dc3ad65c55f7dd6c97da5
             1138bd37189179a05492cd002370d4a50e2e2327cbdab996b0f61c8a6ae72b0a
-            7d11967c255556f2830b9b1e2278f6ef51cd7977c50e9bc41e5850658eaaa401)
+            7d11967c255556f2830b9b1e2278f6ef51cd7977c50e9bc41e5850658eaaa401
+            2455f9214c33910dcabe0e757ed2542f025ddd63edaa86c2baf789c9d112eb91
+            b7c64f0fdd4f07662f4b639be36426625d83a27a25cb7e2be04103254e6037b1
+            c981d12122b46e457b061b71062dc398b7dcd6b6d1b62fa87a04d9f33a323893
+            1d1b284ce65a18f854ffffff1d1b11cdd9dc948713dbb6f2a283cf6c4820abad
+            93a41796261534454cd9a46e13e50fd92736acd08706ed9a1c7dfbc750ce94be
+            25f2b281e18f1f9461347e9c0012c1942d65cac2bd19821b350b00e1e3ac5a40)
 # Linus Torvalds', Greg Kroah-Hartman's (keys/pgp, as Arch's linux has them).
 validpgpkeys=(ABAF11C65A2970B130ABE3C479BE3E4300411886
               647F28654894E3BD457199BE38DBBDC86092693E)
