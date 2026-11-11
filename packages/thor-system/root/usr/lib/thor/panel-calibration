@@ -1,10 +1,32 @@
 #!/bin/sh
 # The top panel's calibrated frame lengths (thor-panel-calibration's), into its driver's files when it
 # binds (73-thor-power.rules), taken at its next prepare: PANEL is its device's sysfs path.
+#
+# A frame_len_120 that leaves 2 when divided by 4 tints the panel green and raises its gamma
+# (github.com/armada-os/armada/issues/874: 54, 58, 62 and 66 tint; 52, 56, 60, 76 and 59 don't). Such
+# a value (one copied from AYN's Android, say) is applied 2 lower, the multiple of 4 below it: of the two
+# nearest values known not to tint, the one with the higher rate, as calibration ends just above 120 Hz.
+# The device profile says the same (crates/device, RefreshRate::tints_at_2_mod_4); thor-panel-calibration
+# never saves such a value.
 saved=/var/lib/thor/panel-calibration
 # (The power group writes it: read only as a regular file, never through a symlink.)
 [ -f "$saved" ] && [ ! -L "$saved" ] || exit 0
 while IFS='=' read -r name value; do
-    case $name in frame_len_120 | frame_len_60) [ -w "$1/$name" ] && echo "$value" > "$1/$name" ;; esac
+    case $name in
+    frame_len_120 | frame_len_60)
+        case $name:$value in
+        frame_len_120:*[!0-9]* | frame_len_120:) ;;
+        frame_len_120:*)
+            if [ $((value % 4)) -eq 2 ]; then
+                message="frame_len_120=$value tints the panel (armada-os/armada#874): $((value - 2)) applied instead"
+                echo "$message" >&2
+                logger -t thor-panel-calibration -p user.warning "$message"
+                value=$((value - 2))
+            fi
+            ;;
+        esac
+        [ -w "$1/$name" ] && echo "$value" > "$1/$name"
+        ;;
+    esac
 done < "$saved"
 exit 0

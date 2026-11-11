@@ -8,6 +8,7 @@ pub fn panel(profile: &DeviceProfile) -> serde_json::Value {
             "rates": calibration.rates.iter().map(|rate| serde_json::json!({
                 "hz": rate.hz, "attribute": rate.attribute, "low": rate.low, "high": rate.high,
                 "tolerance_millihz": rate.tolerance_millihz, "big_error_millihz": rate.big_error_millihz,
+                "tints_at_2_mod_4": rate.tints_at_2_mod_4,
             })).collect::<Vec<_>>(),
         })
     });

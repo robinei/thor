@@ -9,6 +9,11 @@ applies at each boot. ClamShell has the bottom screen off meanwhile (its vblanks
 measured instead: the one display left running is the top's), and sets both screens back when this
 ends.
 
+A frame_len_120 that leaves 2 when divided by 4 tints the panel green and raises its gamma
+(github.com/armada-os/armada/issues/874; the profile's `tints_at_2_mod_4`): such a value is never
+written or saved, but the multiple of 4 below it (the profile's steps of 4 keep the measuring off such
+values; this also covers the value it starts from and a saved value it keeps).
+
   thor-panel-calibration
 """
 import fcntl
@@ -58,13 +63,22 @@ def write(attr, value):
     time.sleep(0.5)
 
 
-def calibrate(attr, target, settings, step_size, fd, pipe):
+def untinted(calibration, value):
+    """`value`, or if the panel tints at it the multiple of 4 below (of the two nearest values known not
+    to tint, the one with the higher rate), said on stderr."""
+    if calibration.get("tints_at_2_mod_4") and value % 4 == 2:
+        print(f"{calibration['attribute']}={value} tints the panel (armada-os/armada#874): {value - 2} instead", file=sys.stderr)
+        return value - 2
+    return value
+
+
+def calibrate(attr, target, calibration, step_size, fd, pipe):
     """The frame length that puts the rate just above `target` (ROCKNIX's steps and tolerances), or
     None (the value it started from written back)."""
-    tolerance, big_error = settings["tolerance_millihz"] / 1000, settings["big_error_millihz"] / 1000
-    low, high = settings["low"], settings["high"]
-    start = int(open(attr).read())
-    value = start // step_size * step_size
+    tolerance, big_error = calibration["tolerance_millihz"] / 1000, calibration["big_error_millihz"] / 1000
+    low, high = calibration["low"], calibration["high"]
+    start = untinted(calibration, int(open(attr).read()))
+    value = untinted(calibration, start // step_size * step_size)
     try:
         start_rate = rate(fd, pipe)
         deadline, adjust_until = time.monotonic() + 60, time.monotonic() + 15
@@ -75,7 +89,7 @@ def calibrate(attr, target, settings, step_size, fd, pipe):
             if time.monotonic() < adjust_until:
                 if not settled:
                     step = step_size if abs(delta) < big_error else 2 * step_size
-                    value = min(high, max(low, value + (step if delta > 0 else -step)))
+                    value = untinted(calibration, min(high, max(low, value + (step if delta > 0 else -step))))
                     write(attr, value)
             elif settled:
                 print(f"{target} Hz: {start_rate:.3f} -> {target + delta:.3f} Hz (0x{start:x} -> 0x{value:x})")
@@ -91,6 +105,28 @@ def calibrate(attr, target, settings, step_size, fd, pipe):
     except OSError as e:
         print(f"{target} Hz: not set back: {e}", file=sys.stderr)
     return None
+
+
+def save(path, rates, found):
+    """The rates `found` ({hz: value}) into `path`; a rate not found keeps its saved value, untinted."""
+    saved = {}
+    try:
+        with open(path) as f:
+            saved = dict(line.strip().split("=", 1) for line in f if "=" in line)
+    except OSError:
+        pass
+    saved.update({calibration["attribute"]: str(found[calibration["hz"]]) for calibration in rates if calibration["hz"] in found})
+    # (A kept value that tints, one copied from AYN's Android by hand, saved as it is applied.)
+    for calibration in rates:
+        kept = saved.get(calibration["attribute"], "")
+        if kept.isdigit():
+            saved[calibration["attribute"]] = str(untinted(calibration, int(kept)))
+    # (In place, as one write, synced: the folder is root's, so no new file can be renamed over it; a write
+    # cut short leaves it empty, which reads as uncalibrated.)
+    with open(path, "w") as f:
+        f.write("".join(f"{k}={v}\n" for k, v in sorted(saved.items())))
+        f.flush()
+        os.fsync(f.fileno())
 
 
 def ask_rate(hz):
@@ -127,20 +163,7 @@ def main():
     os.close(fd)
     if not found:
         sys.exit("no rate calibrated")
-    # (What was found kept; a rate not found keeps its saved value.)
-    saved = {}
-    try:
-        with open(SAVED) as f:
-            saved = dict(line.strip().split("=", 1) for line in f if "=" in line)
-    except OSError:
-        pass
-    saved.update({calibration["attribute"]: str(found[calibration["hz"]]) for calibration in rates if calibration["hz"] in found})
-    # (In place, as one write, synced: the folder is root's, so no new file can be renamed over it; a write
-    # cut short leaves it empty, which reads as uncalibrated.)
-    with open(SAVED, "w") as f:
-        f.write("".join(f"{k}={v}\n" for k, v in sorted(saved.items())))
-        f.flush()
-        os.fsync(f.fileno())
+    save(SAVED, rates, found)
     print(f"saved in {SAVED}")
     if len(found) < len(rates):
         sys.exit("one rate not calibrated (the other saved)")

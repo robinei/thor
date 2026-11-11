@@ -17,7 +17,11 @@ fn panel_queries_follow_the_selected_profile() {
         if profile == "thor" {
             let calibration = panel.get("calibration").unwrap();
             assert_eq!(calibration.get("step"), Some(&serde_json::json!(4)));
-            assert_eq!(calibration.get("rates").unwrap().as_array().unwrap().len(), 2);
+            let rates = calibration.get("rates").unwrap().as_array().unwrap();
+            assert_eq!(rates.len(), 2);
+            // (The tool keeps a tinting frame_len_120 off the panel by this fact: Armada #874.)
+            let tints = |attribute: &str| rates.iter().find(|rate| rate["attribute"] == attribute).unwrap()["tints_at_2_mod_4"].clone();
+            assert_eq!((tints("frame_len_120"), tints("frame_len_60")), (serde_json::json!(true), serde_json::json!(false)));
         } else {
             assert_eq!(panel.get("calibration"), Some(&serde_json::Value::Null));
         }

@@ -4,6 +4,7 @@ without root, mounts or services."""
 import contextlib
 import fcntl
 import hashlib
+import importlib.machinery
 import importlib.util
 import io
 import os
@@ -767,6 +768,61 @@ class PanelCalibrationReaders(unittest.TestCase):
                 panel = m.root / 'sys/bus/mipi-dsi/devices/dsi0'
                 expected = ('53\n', '2010\n') if kind == 'regular' else ('52\n', '2000\n')
                 self.assertEqual(((panel / 'frame_len_120').read_text(), (panel / 'frame_len_60').read_text()), expected)
+
+    def test_a_tinting_frame_len_120_is_applied_as_the_multiple_of_4_below_and_logged(self):
+        # (Armada #874: 120 Hz values that leave 2 by 4 tint; 60 Hz isn't known to.)
+        for value, applied in [('58', '56\n'), ('66', '64\n'), ('56', '56\n'), ('59', '59\n'), ('53', '53\n')]:
+            with self.subTest(value=value):
+                m = self.machine()
+                m.command('logger', f'echo "$*" >> {m.root}/logger')
+                m.file('var/lib/thor/panel-calibration', f'frame_len_120={value}\nframe_len_60=2010\n')
+                result = self.apply(m)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                panel = m.root / 'sys/bus/mipi-dsi/devices/dsi0'
+                self.assertEqual(((panel / 'frame_len_120').read_text(), (panel / 'frame_len_60').read_text()), (applied, '2010\n'))
+                logged = (m.root / 'logger').read_text() if (m.root / 'logger').exists() else ''
+                if applied != f'{value}\n':
+                    self.assertIn(f'-p user.warning frame_len_120={value} tints the panel', logged)
+                    self.assertIn('tints the panel', result.stderr)
+                else:
+                    self.assertEqual(logged, '')
+
+
+class PanelCalibrationTool(unittest.TestCase):
+    """thor-panel-calibration's values: never a tinting frame_len_120 (Armada #874), written or saved."""
+
+    RATES = [
+        {'hz': 60, 'attribute': 'frame_len_60', 'tints_at_2_mod_4': False},
+        {'hz': 120, 'attribute': 'frame_len_120', 'tints_at_2_mod_4': True},
+    ]
+
+    def tool(self):
+        loader = importlib.machinery.SourceFileLoader('panel_calibration', str(REPO / 'packages/thor-system/root/usr/bin/thor-panel-calibration'))
+        spec = importlib.util.spec_from_loader('panel_calibration', loader)
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
+        return module
+
+    def test_only_a_tinting_value_is_moved_to_the_multiple_of_4_below_and_said(self):
+        tool = self.tool()
+        for rate, value, expected in [(1, 58, 56), (1, 54, 52), (1, 56, 56), (1, 59, 59), (1, 57, 57), (0, 2010, 2010)]:
+            with self.subTest(attribute=self.RATES[rate]['attribute'], value=value):
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr):
+                    self.assertEqual(tool.untinted(self.RATES[rate], value), expected)
+                self.assertEqual('tints the panel' in stderr.getvalue(), value != expected)
+
+    def test_a_kept_tinting_value_is_saved_untinted_beside_the_rate_found(self):
+        tool = self.tool()
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'panel-calibration'
+            path.write_text('frame_len_120=58\nframe_len_60=2002\n')
+            with contextlib.redirect_stderr(io.StringIO()):
+                tool.save(path, self.RATES, {60: 2000})
+            self.assertEqual(path.read_text(), 'frame_len_120=56\nframe_len_60=2000\n')
+            with contextlib.redirect_stderr(io.StringIO()):
+                tool.save(path, self.RATES, {120: 62})
+            self.assertEqual(path.read_text(), 'frame_len_120=60\nframe_len_60=2000\n')
 
 
 class DevicePacman(unittest.TestCase):

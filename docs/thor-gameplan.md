@@ -334,7 +334,16 @@ Candidates for our own patches, once tried on the device:
       20261001; tested on a Thor: 118.63 to 120.09 Hz), its kernel patch in Armada's kernel since 664da8c
       (`0518`, the same sysfs names and ranges; ours was thor-0005) and its tool as ours
       (`thor-panel-calibration`, thor-system; the values in `/var/lib/thor/panel-calibration`, applied as
-      the panel's driver binds).
+      the panel's driver binds). A frame_len_120 that leaves 2 when divided by 4 tints the panel green
+      and raises its gamma at every brightness (github.com/armada-os/armada/issues/874, 2026-11-10, on a
+      Thor: 54, 58, 62 and 66 tint; 52, 56, 60 and 76 don't, nor 59, the only odd value tried; 57 and
+      the other values that leave 1 untried). frame_len_60 wasn't tried there. Ours never writes or saves
+      such a value: the measuring steps by 4 from a multiple of 4, and a value it starts from or keeps,
+      or one copied from Android, becomes the multiple of 4 below (of the two nearest values known not to
+      tint, the one with the higher rate: calibration ends just above 120 Hz; about 0.11 Hz higher),
+      logged. The rule is in the device profile (`tints_at_2_mod_4`) and in
+      `/usr/lib/thor/panel-calibration`. If a value that leaves 1 or 3, or a frame_len_60, turns out
+      to tint too, the rule widens.
 Done in userspace instead (2026-10-20), so no patch of ours:
 - [x] The stick range: Thorch sets `axis-range = <1024>` on the gamepad node (its `dts-patches/0007`);
       Armada's device tree doesn't (they calibrate through rsinput's module parameters); without either,
@@ -370,7 +379,9 @@ To know:
    `adb shell settings list system | grep frame_len` and `getprop | grep frame_len`): written as
    `frame_len_120=52` and `frame_len_60=2000` lines into `/var/lib/thor/panel-calibration` on our card,
    they spare the Device view's two-minute measuring (the panel is timed by its own oscillator, which
-   varies per unit: uncalibrated it runs at 118.6 Hz). How
+   varies per unit: uncalibrated it runs at 118.6 Hz). They are applied as they are, unless a
+   frame_len_120 tints the panel (see "the top panel's refresh calibration" above): then the multiple of 4
+   below it, logged (`journalctl -t thor-panel-calibration`). How
    Android holds its charge limit (80 %, added by an AYN update; and Direct Power Supply, its bypass):
    with root, at the limit on the charger, the battery's `constant_charge_current` (or the downstream
    driver's equivalents under `/sys/class/power_supply/battery/`) and `current_now`: if the current

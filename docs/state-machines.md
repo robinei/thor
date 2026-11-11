@@ -2050,6 +2050,7 @@ The Device view's Refresh row is under Device view. Without `refresh_calibration
 | the row reads Unavailable, dimmed, still tappable | GAP (the snapshots use the Thor's profile) |
 | `Idle --tap--> Running [CalibrateRefresh, the bottom screen off]`; no program is started, and `RefreshCalibrated(Err)` answers it: `Done(Err)` | refresh `a_profile_without_calibration_reports_unavailable_without_running_a_tool`, device `the_refresh_calibration_runs_once_at_a_time_and_says_how_it_went` |
 | `thor-panel-calibration` takes its facts from `clamshell device panel` (rates, attributes, step, tolerances) and exits saying there is no panel to calibrate when they are null | `panel_queries_follow_the_selected_profile`; the frame length search on the device |
+| a frame_len_120 that leaves 2 by 4 tints the panel (`tints_at_2_mod_4`, github.com/armada-os/armada/issues/874): the measuring's steps of 4 never reach one; one it starts from, or a saved one it keeps, is written and saved as the multiple of 4 below, said on stderr; `/usr/lib/thor/panel-calibration` applies a saved one the same way, logged as a warning | device `the_refresh_calibration_steps_never_reach_a_tinting_value`, `panel_queries_follow_the_selected_profile`; package-recovery `PanelCalibrationTool`, `test_a_tinting_frame_len_120_is_applied_as_the_multiple_of_4_below_and_logged` |
 
 ### Charging (system/power/tuning.rs)
 

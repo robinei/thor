@@ -61,6 +61,11 @@ pub struct RefreshRate {
     pub high: u16,
     pub tolerance_millihz: u16,
     pub big_error_millihz: u16,
+    /// A value that leaves 2 when divided by 4 tints the panel green and raises its gamma
+    /// (github.com/armada-os/armada/issues/874: the ICNA3520's frame_len_120 at 54, 58, 62 and 66; 52,
+    /// 56, 60, 76 and 59 don't). thor-panel-calibration and /usr/lib/thor/panel-calibration never write
+    /// or save one, but the multiple of 4 below it.
+    pub tints_at_2_mod_4: bool,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RefreshCalibration {
@@ -68,12 +73,14 @@ pub struct RefreshCalibration {
     pub step: u16,
     pub rates: &'static [RefreshRate],
 }
+/// The steps are 4, from a multiple of 4 between bounds that are multiples of 4, so that the measuring
+/// never tries a frame_len_120 that tints the panel (`tints_at_2_mod_4`).
 const THOR_REFRESH: RefreshCalibration = RefreshCalibration {
     program: "thor-panel-calibration",
     step: 4,
     rates: &[
-        RefreshRate { hz: 60, attribute: "frame_len_60", low: 0x770, high: 0x838, tolerance_millihz: 50, big_error_millihz: 100 },
-        RefreshRate { hz: 120, attribute: "frame_len_120", low: 0x10, high: 0x80, tolerance_millihz: 200, big_error_millihz: 400 },
+        RefreshRate { hz: 60, attribute: "frame_len_60", low: 0x770, high: 0x838, tolerance_millihz: 50, big_error_millihz: 100, tints_at_2_mod_4: false },
+        RefreshRate { hz: 120, attribute: "frame_len_120", low: 0x10, high: 0x80, tolerance_millihz: 200, big_error_millihz: 400, tints_at_2_mod_4: true },
     ],
 };
 /// The two-screen machine's fixed facts, identified once and passed to their readers.
@@ -241,6 +248,17 @@ mod tests {
         assert_eq!((hdr.top.connector, hdr.top.colour.sdr_white), ("Virtual-1", Some(203_000)));
         assert_eq!(hdr.bottom.colour, DeviceProfile::thor().bottom.colour);
         assert_eq!(DeviceProfile::identify(Some("unknown"), b"ayn,thor\0", "", ""), Err("unknown"));
+    }
+    #[test]
+    fn the_refresh_calibration_steps_never_reach_a_tinting_value() {
+        let calibration = THOR_REFRESH;
+        for rate in calibration.rates.iter().filter(|rate| rate.tints_at_2_mod_4) {
+            // The measuring starts at a multiple of the step and moves by one or two steps, clamped to
+            // the bounds: all of them multiples of 4 keep it off values that leave 2.
+            assert_eq!(calibration.step % 4, 0);
+            assert_eq!((rate.low % 4, rate.high % 4), (0, 0), "{}", rate.attribute);
+        }
+        assert!(calibration.rates.iter().any(|rate| rate.attribute == "frame_len_120" && rate.tints_at_2_mod_4));
     }
     #[test]
     fn profiles_always_name_distinct_top_and_bottom_screens() {

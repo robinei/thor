@@ -48,7 +48,7 @@ From the inventory of 2026-10-24 (paths under `clamshell/` unless noted), with w
 | The touchscreen of each screen (`top_touchscreen`, `bottom_touchscreen`) | `thor-outputs` |
 | Backlight per screen (`ae96000.dsi.0` top, `ae94000.dsi.0` bottom) | `crates/state/src/levels/mod.rs:91-97` |
 | The bottom panel's size in millimetres (65 by 75, from its 16.5 px/mm), used only when its connector gives none | `crates/system/src/wiring/mod.rs:52`, then as a density |
-| Top panel refresh calibration (ICNA3520 frame lengths) and its Device view row | `crates/system/src/display/refresh.rs`, `thor-panel-calibration` |
+| Top panel refresh calibration (ICNA3520 frame lengths; frame_len_120 values that leave 2 by 4 tint the panel, Armada #874) and its Device view row | `crates/system/src/display/refresh.rs`, `thor-panel-calibration` |
 | Each panel's colour: primaries and white point, transfer function (gamma 2.2), peak, frame-average and black luminance, the link's bit depth (8 today: dither when compositing in 10), HDR capable or not, and where SDR white is shown (`sdr_white`: none, at the peak, until the panel is driven brighter for HDR, phase 4h of `docs/history/compositor-mvp.md`). The top panel's from gamescope's profile (R 0.680/0.320, G 0.265/0.690, B 0.150/0.060, D65; 650/650/0.002 nits); a panel without one is sRGB at gamma 2.2, SDR. Nested on a desktop the host's description is used instead | `docs/history/compositor-mvp.md`, phases 2h and 4h |
 | The AYN key (`gpio-keys-ayn`, `KEY_F24`), Back (`BTN_BACK`) | `crates/system/src/input/pad/device.rs:36`, `remap/mod.rs:203-209` |
 | The X/Y swap by driver (`rsinput`, `xpad`) | `crates/system/src/input/pad/device.rs:145-166` |
