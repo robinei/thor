@@ -1,8 +1,12 @@
 #!/system/bin/sh
 # Day one, in Android, before any flashing: copies the Thor's own partitions to the internal storage
-# (/sdcard/thor-backup/), for copying off the device. Run it as root with AYN Android's "Run Script as
-# Root" (Settings → Handheld Settings → Advanced), from wherever it was copied to. It only reads the
-# partitions: each is copied with dd into a file of its name, with a SHA256SUMS beside them.
+# (/sdcard/thor-backup/), for copying off the device. It only reads the partitions: each is copied with
+# dd into a file of its name, with a SHA256SUMS beside them.
+#
+# AYN's "Run Script as Root" (com.odin.settings; Settings → Handheld Settings → Advanced) hands a script
+# to its root service one line at a time, so a script of several lines does nothing there. This file goes
+# into the internal storage's top folder (/sdcard) with its one-line launcher, run-android-backup.sh, and the
+# runner is given the launcher, which runs this with sh as root (its output: /sdcard/thor-backup.log).
 #
 # Which: the bootloaders we may replace (abl, AYN's U-Boot in loader, xbl), and what AYN's factory packages
 # (Thor_20260112.7z, Thor_20260206.7z) don't hold or would overwrite, the device's own data: persist (the

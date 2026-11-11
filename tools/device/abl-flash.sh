@@ -1,8 +1,7 @@
 #!/system/bin/sh
 # Day one, in Android, after android-backup.sh: writes a bootloader (OpenABL's abl_signed-SM8550.elf,
 # ROCKNIX's ABL, or a backup's abl_a.img to go back) to abl_a and abl_b, and checks that both hold it.
-# Run it as root with AYN Android's "Run Script as Root" (Settings → Handheld Settings → Advanced), from
-# wherever it was copied to. It takes no arguments: the file is /sdcard/thor-abl/abl.elf, on the internal
+# It takes no arguments: the file is /sdcard/thor-abl/abl.elf, on the internal
 # storage (/sdcard is the internal storage, not the SD card: ROCKNIX's and Armada's flash and backup
 # scripts look there for files kept on the SD card, find nothing and still report done; Armada #650, #884).
 # The runner shows only "completed": the report is /sdcard/thor-abl/flash.txt.
@@ -11,6 +10,11 @@
 # device boots still holds the old bootloader. Each check reads the partition back past the page cache:
 # the SHA-256 of its first <size of the file> bytes against the file's (as Kettle's releases.tsv records
 # ABLs; the rest of the partition keeps the old bootloader's tail, which nothing reads).
+#
+# AYN's "Run Script as Root" (com.odin.settings; Settings → Handheld Settings → Advanced) hands a script
+# to its root service one line at a time, so a script of several lines does nothing there. This file goes
+# into the internal storage's top folder (/sdcard) with its one-line launcher, run-abl-flash.sh, and the
+# runner is given the launcher, which runs this with sh as root (its output: /sdcard/thor-abl-flash.log).
 set -u
 DIR=/sdcard/thor-abl
 FILE=$DIR/abl.elf

@@ -53,8 +53,8 @@ Android kept. Written 2026-10-14, before having the device; everything here is u
   as `\`), the `default` (matched against the file name with `.conf`, as systemd-boot does, so
   `thor-prev.conf` sorts after it) and the slots' `/thor-a/thor.dtb` device trees. Flashed to `abl_a` and
   `abl_b`: `fastboot flash` (unlocked), or from Android with `tools/device/abl-flash.sh` ("Run Script as Root";
-  day one, step 4; ROCKNIX's `next` ships an `openabl/` folder with its three `dd` scripts, which have
-  the `/sdcard` problem of step 4). Linux reaches its UEFI
+  day one, step 4, through its one-line launcher; ROCKNIX's `next` ships an `openabl/` folder with its
+  three `dd` scripts, which have the problems of step 4). Linux reaches its UEFI
   variables (bootctl,
   boot counting, BootNext) only with its kernel patch adding SM8550 to qcom_scm's QSEECOM allowlist
   (`Linux/0001-firmware-qcom-scm-allow-QSEECOM-on-OpenABL-s-platforms.patch`, tested on SM6115 only):
@@ -442,10 +442,15 @@ To know:
    `ro.boot.vbmeta.device_state=unlocked`, verified boot state orange, slot `_a`), and its menu (looked at
    2026-11-11) has Switch Boot mode, Android or UEFI, with no unlocking or wipe needed. Set it to UEFI
    for steps 5 and 6 (and back to Android for Android). Skip step 4 unless the UEFI way fails.
-3. Back up first anyway: `tools/device/android-backup.sh`, run with "Run Script as Root", copies the
+3. Back up first anyway: `tools/device/android-backup.sh` copies the
    bootloaders (abl, loader, xbl) and the device's own partitions (persist, devinfo, the radios'
    calibration and the rest AYN's packages don't hold or would overwrite) to `/sdcard/thor-backup/` with
-   checksums; copy that folder off the device.
+   checksums; copy that folder off the device. To run it: copy it and its one-line launcher,
+   `tools/device/run-android-backup.sh`, to the internal storage's top folder (`adb push` to `/sdcard/`)
+   and give the launcher to "Run Script as Root"; its output goes to `/sdcard/thor-backup.log`. AYN's
+   runner hands a script to its root service one line at a time (logcat: `PServiceBridgeV2: Send code=0,
+   data=[<line>]` per line), so a script of several lines does nothing through it; the launcher, one
+   line, runs the script with `sh` as root (uid 0, SELinux context `pservice`).
 
    **The way back, whatever breaks: AYN's factory packages** (from the AYN Discord's #thor-general-faq,
    in `~/Downloads/thor/`): `Thor_20260112.7z` and `Thor_20260206.7z` (1.0.0.377) are full flash packages
@@ -463,13 +468,16 @@ To know:
 4. Only if the UEFI way doesn't boot our card (steps 5 and 6): flash OpenABL 1.2 (downloaded; see "How the boot works") to `abl_a`
    and `abl_b` with `tools/device/abl-flash.sh`, after step 3's backup: copy `abl_signed-SM8550.elf` to the
    internal storage as `thor-abl/abl.elf` (`adb push abl_signed-SM8550.elf /sdcard/thor-abl/abl.elf`, or
-   as a file over USB) and run the script with "Run Script as Root". It writes the slot not in use first,
+   as a file over USB), the script and its launcher `tools/device/run-abl-flash.sh` to `/sdcard/`, and
+   give the launcher to "Run Script as Root" (as step 3; its output in `/sdcard/thor-abl-flash.log`).
+   It writes the slot not in use first,
    reads each slot back past the page cache and compares its SHA-256 with the file's, and stops at the
    first that doesn't hold it; the runner only says "completed", so read its report,
    `/sdcard/thor-abl/flash.txt`: it must end `done: abl_a and abl_b hold ...` with `2a2808d1...c830163`.
    Not ROCKNIX's or Armada's `flash_abl.sh` and `backup_abl.sh`: they read and write `/sdcard`, the
-   internal storage, while their files are on the SD card (`/storage/XXXX-XXXX`), so they find nothing
-   and still report done (Armada #650; #884 is a Thor whose OpenABL flash this way didn't take). OpenABL
+   internal storage, while their files are on the SD card (`/storage/XXXX-XXXX`), and are several lines,
+   which AYN's runner sends one at a time (step 3), so they do nothing and the runner still says
+   completed (likely both in Armada #650; #884 is a Thor whose OpenABL flash this way didn't take). OpenABL
    is the fallback to stock UEFI: it boots our loader entry itself, before anything else on the card.
    ROCKNIX's ABL comes last, flashed the same way (its ELF as `abl.elf`), and needs step 6's
    `EFI.disabled`. The way back: step 3's `abl_a.img` as `abl.elf`, the same script (or EDL, step 3).
