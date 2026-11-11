@@ -1022,6 +1022,12 @@ Held back until real use shows whether they are worth what they cost.
   free), since it takes some 80 of the 1080 lines from what is below (a dual-screen emulator's second
   screen wants all of them). Worth it if, with windows below, reaching for the bar (or Home + right stick
   press) turns out to happen often.
+- The two screens equally bright at the same percentage. Pocknix (fe33923, 2026-11-10) maps the bottom
+  panel's backlight level through x^2.7 in its kernel driver, as the bottom panel is much brighter than
+  the top at the same percentage; in the kernel because its writers (sway, Steam) set both screens to
+  the same value, and a second, correcting write to the bottom takes about 33 ms on the DSI link. If
+  they look unequal on the device: the same curve in ClamShell, the backlights' only writer, applied to
+  the bottom's level before its one write, rather than a kernel patch.
 
 ## References
 
