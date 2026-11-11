@@ -73,6 +73,9 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         # from USB_ADAP_TYPE (0007); pmic_glink's altmode worker kept until the devices resume
         # (0008); DP link training's failure reported after a last reinit, HPD state changed under
         # its lock (0009, 0010). Not yet tried on a Thor.
+        # sap-*: SteamOS-ARM-Port's (github.com/hashtagbasit/SteamOS-ARM-Port,
+        # external-and-mods/kernel-sm8550/patches, at 4f1892e, not upstream): the VM close's fence
+        # wait bounded at 3 s (0009, seen there on a Thor). Not yet tried on our kernel.
         pbos-0545-power-supply-qcom_battmgr-retroid-charge-controls.patch
         thor-0001-dts-thor-lra-haptics.patch
         pbos-0620-drm-panel-ch13726a-thor-16-bit-brightness-high-byte-first.patch
@@ -105,7 +108,8 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         stable-0009-usb-typec-ucsi-displayport-current-cam-oob-index-fixup.patch
         upstream-0008-soc-qcom-pmic_glink-fix-device-access-from-worker-during-suspend.patch
         upstream-0009-drm-msm-dp-dont-report-link-training-success-after-a-reinit.patch
-        upstream-0010-drm-msm-dp-serialize-hpd-state-updates.patch)
+        upstream-0010-drm-msm-dp-serialize-hpd-state-updates.patch
+        sap-0009-drm-msm-bound-the-fence-wait-in-vm-close.patch)
 sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             SKIP
             cdbe93282683496da781d8ffc750614b8e02d4edf9c883497488469f9f61a185
@@ -142,7 +146,8 @@ sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             ebd9a8fa03931867fdbebef4dcaabf8e426afdec8922f5cab503e46892fe96ab
             175ebaeb4b518042f6733357ba6b52f213fd75bb09e8e2de675573e2ba3f6104
             a0d4051b796c6580a59477ff2b5072da3df62cfdc91d0ae54e8cd743d97caa6d
-            ac5e7d0574dd8667b4846d68d767d4d9532d085659780153bf0f0249f2796511)
+            ac5e7d0574dd8667b4846d68d767d4d9532d085659780153bf0f0249f2796511
+            7db670ad93244aae60728211c0d03987d78d8e8ee6d4da10318f15d68e30664b)
 # Linus Torvalds', Greg Kroah-Hartman's (keys/pgp, as Arch's linux has them).
 validpgpkeys=(ABAF11C65A2970B130ABE3C479BE3E4300411886
               647F28654894E3BD457199BE38DBBDC86092693E)
