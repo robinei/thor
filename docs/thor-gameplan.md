@@ -384,6 +384,19 @@ Done in userspace instead (2026-10-20), so no patch of ours:
       `75-thor-tsens.rules` (Thorch patches it out instead, `0003-thermal-qcom-tsens-skip-ayn-thor-uplow-wake-irq`).
 
 To know:
+- Linux 7.2 is end of life: its last release is 7.2.15 (2026-11-01). linux-thor stays on Armada's 7.2.6
+  and carries backports (7.2.8's DisplayPort fixes, PB-OS's) until Armada moves to 7.3 or 7.4; then
+  `tools/repo/follow-armada.sh` as usual.
+- Mainline has the Thor since 7.4-rc1: `arch/arm64/boot/dts/qcom/qcs8550-ayntec-thor.dts` (with
+  `qcs8550-ayntec-common.dtsi`), compatible `"ayntec,thor", "qcom,qcs8550", "qcom,sm8550"`, model
+  `AYN Thor`, panels `ayntec,thor-panel-top` and `-bottom`, the sound card's model `AYN-Odin2`, and no
+  gamepad (rsinput) node. Armada and ROCKNIX use `ayn,thor` and `qcs8550-ayn-thor.dts`. On a kernel with
+  mainline's device tree these of ours would need changing (checked 2026-11-11): ClamShell's device
+  detection (`crates/device`, `identify`: the whole entry `ayn,thor`, so the Thor would be the generic
+  profile), `ConditionFirmware=device-tree-compatible(ayn,thor)` in `thor-drivers.service` and
+  `thor-sensors.service`, and thor-boot's `qcs8550-ayn-thor.dtb` (and its test's). thor-selftest's check
+  of the model (`AYN Thor`) holds; its sound card check and thor-ucm would need the card's name under
+  that kernel, and the panel calibration Armada's panel driver's `frame_len_*` files.
 - Hibernate: nobody has tried it on the Thor (Thorch sets `AllowHibernation=no`, its sleep config saying
   its power patches are written for s2idle; Armada masks it). Our suspend-then-hibernate stays, but is
   tried on its own on day one; if hibernate doesn't come back, `SleepOperation=suspend` in our logind
