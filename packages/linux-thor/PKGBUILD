@@ -63,7 +63,8 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         # DPU (0001..0003: Armada's kernel hard-freezes the Thor when a DP monitor is plugged in,
         # Armada #529; PB-OS's on 7.2.8 shows DP working); hibernation's image preallocated before
         # the kernel threads freeze (0004, 7.2.9); GPU fences outliving their ring or VM, and the
-        # GPU's runtime PM on unbind (0005, 0006, 7.2.8). Not yet tried on a Thor.
+        # GPU's runtime PM on unbind (0005, 0006, 7.2.8); hci_qca's remove after a failed open
+        # (0007, 7.2.8). Not yet tried on a Thor.
         # upstream-*: fixes in mainline Linux 7.4, as they are there (each one's header names its
         # commit): q6apm's PCM position at the end of the ring and after a prepare, and its DSP
         # buffer mappings: the unmap's reply, the position buffer's handle, unmapped before the
@@ -93,7 +94,8 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         upstream-0005-asoc-qcom-q6apm-unmap-dsp-buffers-before-removing-the-topology.patch
         upstream-0006-asoc-qcom-q6apm-guard-callbacks-until-probe-data-is-ready.patch
         stable-0005-drm-msm-rcu-free-the-scheduler-containing-ring-and-vm-objects.patch
-        stable-0006-drm-msm-adreno-fix-autosuspend-cleanup-during-teardown.patch)
+        stable-0006-drm-msm-adreno-fix-autosuspend-cleanup-during-teardown.patch
+        stable-0007-bluetooth-hci_qca-do-not-write-to-the-serial-port-after-it-is-closed.patch)
 sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             SKIP
             cdbe93282683496da781d8ffc750614b8e02d4edf9c883497488469f9f61a185
@@ -123,7 +125,8 @@ sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             93a41796261534454cd9a46e13e50fd92736acd08706ed9a1c7dfbc750ce94be
             25f2b281e18f1f9461347e9c0012c1942d65cac2bd19821b350b00e1e3ac5a40
             b81e58a790651ca16356ba41a4f1339ed541dd8d8d2b1b16491d86fadbe5cfc1
-            27be17d3616e07bf59e030f62ec11b7a36184a27f84e2ca480868a00e8d28369)
+            27be17d3616e07bf59e030f62ec11b7a36184a27f84e2ca480868a00e8d28369
+            0660ef328cc1881efeb0e6dd480492720b70cde0919cbe1103cc12faae7a1c4e)
 # Linus Torvalds', Greg Kroah-Hartman's (keys/pgp, as Arch's linux has them).
 validpgpkeys=(ABAF11C65A2970B130ABE3C479BE3E4300411886
               647F28654894E3BD457199BE38DBBDC86092693E)
