@@ -1,0 +1,45 @@
+From: Melissa Wen <mwen@igalia.com>
+Subject: [PATCH v4 03/11] drm/atomic: duplicate state of all colorops
+
+Userspace expects that colorop settings of an inactive color pipeline
+persist, so that, when the color pipeline is activated again, preserves
+the values they had when it was deactivated. Colorop setup is expected
+to persist even during a suspend/resume. To snapshot colorop settings
+correctly, duplicate state of all colorops in a given plane, regardless
+of whether color pipeline is active. Depends on skipping
+drm_atomic_colorop_check() for duplicated state done in previous commit.
+
+Signed-off-by: Melissa Wen <mwen@igalia.com>
+Reviewed-by: Harry Wentland <harry.wentland@amd.com>
+
+Armada's 0077a (github.com/armada-os/armada, packages/kernel/patches,
+added in e22f194 by FeralAI, after our 664da8c): patch 3 of Melissa
+Wen's v4 series "drm/atomic: don't allow changes to inactive colorops &
+other fixes" (lore 20260811171011.184964-4-mwen@igalia.com), taken alone
+as Armada has it (patch 2's check isn't in this kernel). A plane's
+colorops kept across a suspend entered while its color pipeline was
+off. Not yet tried on a Thor.
+---
+ drivers/gpu/drm/drm_atomic_helper.c | 9 +++------
+ 1 file changed, 3 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/gpu/drm/drm_atomic_helper.c b/drivers/gpu/drm/drm_atomic_helper.c
+index 51f39edc3..ea15e5851 100644
+--- a/drivers/gpu/drm/drm_atomic_helper.c
++++ b/drivers/gpu/drm/drm_atomic_helper.c
+@@ -3752,12 +3752,9 @@ drm_atomic_helper_duplicate_state(struct drm_device *dev,
+ 			goto free;
+ 		}
+ 
+-		if (plane_state->color_pipeline) {
+-			err = drm_atomic_add_affected_colorops(state, plane);
+-			if (err)
+-				goto free;
+-		}
+-
++		err = drm_atomic_add_affected_colorops(state, plane);
++		if (err)
++			goto free;
+ 	}
+ 
+ 	drm_connector_list_iter_begin(dev, &conn_iter);

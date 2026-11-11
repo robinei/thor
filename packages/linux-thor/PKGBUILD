@@ -77,6 +77,9 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         # sap-*: SteamOS-ARM-Port's (github.com/hashtagbasit/SteamOS-ARM-Port,
         # external-and-mods/kernel-sm8550/patches, at 4f1892e, not upstream): the VM close's fence
         # wait bounded at 3 s (0009, seen there on a Thor). Not yet tried on our kernel.
+        # armada-*: Armada's, from after our 664da8c (their numbers; applied after ours, not in
+        # their series' place): a plane's colorops kept across suspend (0077a). Not yet tried on a
+        # Thor.
         pbos-0545-power-supply-qcom_battmgr-retroid-charge-controls.patch
         thor-0001-dts-thor-lra-haptics.patch
         pbos-0620-drm-panel-ch13726a-thor-16-bit-brightness-high-byte-first.patch
@@ -112,7 +115,8 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
         upstream-0010-drm-msm-dp-serialize-hpd-state-updates.patch
         sap-0009-drm-msm-bound-the-fence-wait-in-vm-close.patch
         stable-0010-soc-qcom-geni-se-correct-qup-core-icc-vote-constants.patch
-        stable-0011-revert-wifi-ath12k-add-panic-handler.patch)
+        stable-0011-revert-wifi-ath12k-add-panic-handler.patch
+        armada-0077a-drm-atomic-duplicate-state-of-all-colorops.patch)
 sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             SKIP
             cdbe93282683496da781d8ffc750614b8e02d4edf9c883497488469f9f61a185
@@ -152,7 +156,8 @@ sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             ac5e7d0574dd8667b4846d68d767d4d9532d085659780153bf0f0249f2796511
             7db670ad93244aae60728211c0d03987d78d8e8ee6d4da10318f15d68e30664b
             ee49c447f31b45fe7c98080d8a618e8cad0de4bc4a9ee88492abb56c081a3f63
-            59a26d0ed3d16ad0529e44b37136e753ddc94e376fb0e9eec34b2cda64324a3c)
+            59a26d0ed3d16ad0529e44b37136e753ddc94e376fb0e9eec34b2cda64324a3c
+            5bedad50dcb00cf543c19f04113111694e679c9d19b674fbe6cd40868938caa6)
 # Linus Torvalds', Greg Kroah-Hartman's (keys/pgp, as Arch's linux has them).
 validpgpkeys=(ABAF11C65A2970B130ABE3C479BE3E4300411886
               647F28654894E3BD457199BE38DBBDC86092693E)
