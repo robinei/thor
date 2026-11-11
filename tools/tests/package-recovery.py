@@ -320,6 +320,17 @@ for last; do :; done; echo "mv ${{last#{m.root}/run/thor-esp/}}" >> {m.root}/eve
         self.assertEqual(self.second.returncode, 0, self.second.stdout + self.second.stderr)
         self.assertEqual(self.coherent(m), '/thor-b/Image')
 
+    def test_efi_renamed_for_rocknixs_abl_stays_renamed(self):
+        m = self.machine()
+        esp = m.root / 'run/thor-esp'
+        (esp / 'EFI').rename(esp / 'EFI.disabled')
+        result = self.run_boot(m)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((esp / 'EFI').exists())
+        self.assertEqual((esp / 'EFI.disabled/BOOT/BOOTAA64.EFI').read_text(), 'new EFI')
+        self.assertIn('EFI is renamed EFI.disabled', result.stdout)
+        self.assertEqual(self.coherent(m), '/thor-b/Image')
+
     def test_repeated_updates_alternate_slots_without_touching_selected_files(self):
         m = self.machine()
         self.assertEqual(self.coherent(m), '/thor-a/Image')

@@ -61,13 +61,20 @@ need=$(( $(stat -c %s "$modules/Image" /boot/initramfs-thor.img "$modules/dtbs/q
 free=$(( $(stat -f -c '%a * %S' "$mnt") ))
 [ "$free" -gt "$(( need + 4 * 1024 * 1024 ))" ] \
     || { echo "thor-boot: insufficient FAT space for $(( need >> 20 )) MiB; selected boot files unchanged"; exit 1; }
-mkdir -p "$stage" "$mnt/EFI/BOOT"
+# systemd-boot where the card has it: `EFI` renamed `EFI.disabled` (for ROCKNIX's ABL, which boots
+# \EFI\BOOT\BOOTAA64.EFI before /KERNEL and fails on systemd-boot: Armada PR #846) stays renamed.
+efi=$mnt/EFI
+if [ ! -e "$efi" ] && [ -d "$mnt/EFI.disabled" ]; then
+    efi=$mnt/EFI.disabled
+    echo "thor-boot: EFI is renamed EFI.disabled: systemd-boot updated there, so that the ABL boots /KERNEL"
+fi
+mkdir -p "$stage" "$efi/BOOT"
 cp "$modules/Image" "$stage/Image"
 cp "$modules/dtbs/qcs8550-ayn-thor.dtb" "$stage/thor.dtb"
 cp /boot/initramfs-thor.img "$stage/initramfs.img"
 # (The kernel's release: its modules' folder, kept while the slot is an entry.)
 echo "$kver" > "$stage/release"
-cp /usr/lib/systemd/boot/efi/systemd-bootaa64.efi "$mnt/EFI/BOOT/BOOTAA64.EFI.new"
+cp /usr/lib/systemd/boot/efi/systemd-bootaa64.efi "$efi/BOOT/BOOTAA64.EFI.new"
 # ABL has one coherent image of its own, published independently of the EFI entry.
 python3 /usr/lib/thor/bootimg.py repack "$mnt/KERNEL" --kernel "$work/kernel.gz" --ramdisk "$stage/initramfs.img" \
     --cmdline "$cmdline" -o "$mnt/KERNEL.new"
@@ -78,13 +85,13 @@ awk -v slot="$next" '
     $1 == "devicetree" { $0 = "devicetree /" slot "/thor.dtb" }
     { print }
 ' "$entry" > "$entry.new"
-for f in "$stage/Image" "$stage/thor.dtb" "$stage/initramfs.img" "$entry.new" "$mnt/EFI/BOOT/BOOTAA64.EFI.new"; do
+for f in "$stage/Image" "$stage/thor.dtb" "$stage/initramfs.img" "$entry.new" "$efi/BOOT/BOOTAA64.EFI.new"; do
     [ "$(stat -c %s "$f")" -gt 0 ] || { echo "thor-boot: $f is empty; selected boot files unchanged"; exit 1; }
 done
 sync
 mv "$stage" "$slot"
 mv "$mnt/KERNEL.new" "$mnt/KERNEL"
-mv "$mnt/EFI/BOOT/BOOTAA64.EFI.new" "$mnt/EFI/BOOT/BOOTAA64.EFI"
+mv "$efi/BOOT/BOOTAA64.EFI.new" "$efi/BOOT/BOOTAA64.EFI"
 # Order: the renames above on the card before the entry's. FAT orders no metadata writes, so a power cut
 # during one sync could keep the entry's rename and lose the slot's, and the entry would name a slot that
 # isn't there.
