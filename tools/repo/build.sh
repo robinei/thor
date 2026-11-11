@@ -105,7 +105,11 @@ for p in "${PACKAGES[@]}"; do
     export GNUPGHOME=$work/gnupg-$p
     mkdir -p -m 700 "$GNUPGHOME"
     for key in "$work/$p"/keys/pgp/*.asc; do [ -f "$key" ] && gpg --quiet --import "$key" 2> /dev/null; done
-    mk() { (cd "$work/$p" && THOR_REPO=$work/src PKGDEST=$OUT SRCDEST=$src SRCPKGDEST=$OUT BUILDDIR=$work/.build \
+    # (The kernel builds host tools, resolve_btfids among them, against this PC's libraries: the
+    # sysroot's pkg-config would link them for aarch64.)
+    nocross=()
+    [ "$p" != linux-thor ] || nocross=(-u PKG_CONFIG_ALLOW_CROSS -u PKG_CONFIG_SYSROOT_DIR -u PKG_CONFIG_LIBDIR)
+    mk() { (cd "$work/$p" && env "${nocross[@]}" THOR_REPO=$work/src PKGDEST=$OUT SRCDEST=$src SRCPKGDEST=$OUT BUILDDIR=$work/.build \
         makepkg --config "$work/makepkg.conf" --nodeps --noconfirm --noprogressbar "$@" >> "$work/$p.log" 2>&1) \
         || { tail -30 "$work/$p.log"; exit 1; }; }
     mk -f
