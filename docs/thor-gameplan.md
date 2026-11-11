@@ -126,7 +126,8 @@ Android kept. Written 2026-10-14, before having the device; everything here is u
   without it); ClamShell and the udev rule find it by its type.
 - USB-C display out: plugging in a DisplayPort monitor hard-freezes the device on Armada's 7.2.3 (Armada
   #529, open); PB-OS's Thor on Linux 7.2.8 shows DP working. Armada pins 7.2.6, so linux-thor carries
-  three of 7.2.8's DP and DPU fixes (`stable-0001`..`0003`); untried on a Thor.
+  three of 7.2.8's DP and DPU fixes (`stable-0001`..`0003`) and two of 7.4-rc1's to link training and
+  HPD (`upstream-0009`, `0010`); untried on a Thor.
 - The bottom screen draws about 0.7 W at idle. Wi-Fi and Bluetooth work.
 
 ## Our image and packages
@@ -354,7 +355,13 @@ Thor fixes (battery, bottom panel and touch, the sensor hub's FastRPC routing, s
 motor, the sensor hub's process types and PDR in the device tree, ROCKNIX's panel reset at the clock
 handover and its QSEED4 preload of 7 behind the inline rotator (`rocknix-0018`: no seam in a
 rotated layer split over two pipes, which direct scanout of a game uses), PB-OS's GEM fault at an mmap
-offset (`pbos-0611`: Turnip's dma-buf mappings on the Adreno 740) and 7.2.8's DisplayPort fixes.
+offset (`pbos-0611`: Turnip's dma-buf mappings on the Adreno 740), 7.2.8's DisplayPort fixes, and
+fixes from the later 7.2 stable releases and 7.4-rc (`stable-0004`..`0011`, `upstream-*`: hibernation's
+freeze order, q6apm's PCM position and buffer mappings, GPU fence lifetimes, hci_qca, battmgr's USB type,
+UCSI and pmic_glink's altmode, DP link training and HPD, GENI's QUP core vote, ath12k's panic handler
+reverted), SteamOS-ARM-Port's bounded fence wait at VM close (`sap-0009`), and Armada's fixes from
+after 664da8c (`armada-*`: colorops across suspend, -EINVAL with no free SSPP, unhandled GPU interrupts
+masked, the haptics SoundWire port's clock stop skipped). All untried on a Thor.
 Candidates for our own patches, once tried on the device:
 - [ ] The bottom touchscreen kept powered in suspend (`edt,retain-power-in-suspend` on its node: Thorch's
       `dts-patches/0005`, Kettle's device tree; the FT5452's power-off path is unsafe), if it misbehaves
@@ -929,9 +936,10 @@ From the review of 2026-10-21 (what Armada, ROCKNIX, Thorch and Kettle do, taken
       (Pocknix turns it back on around sleep).
 - [ ] The bottom touchscreen after sleep: still working, no contact left behind (#757); else the
       `edt,retain-power-in-suspend` patch (see "Candidates for our own patches").
-- [ ] USB-C display out, with 7.2.8's DP fixes (`stable-0001`..`0003`): last, with nothing unsaved
-      (Armada #529: a DisplayPort monitor hard-freezes the device on Armada's kernel). Capture ready first:
-      netconsole to the PC over Wi-Fi (`modprobe netconsole netconsole=@/wlan0,6666@<PC's address>/`,
+- [ ] USB-C display out, with the DP fixes (`stable-0001`..`0003`, `upstream-0009`, `0010`): last, with
+      nothing unsaved (Armada #529: a DisplayPort monitor hard-freezes the device on Armada's kernel).
+      Capture ready first: netconsole to the PC over Wi-Fi
+      (`modprobe netconsole netconsole=@/wlan0,6666@<PC's address>/`,
       `nc -ul 6666` on the PC, `dmesg -n 8`), or ramoops (a `ramoops` reserved-memory node in a dts
       patch of ours; `/sys/fs/pstore` after the reboot). Then a 1080p monitor, then a
       4K one (over two lanes 4K60 needs more than the link carries: it should be refused and 4K30 or
