@@ -1,7 +1,7 @@
 //! The screens' brightness. Each backlight is set to the level times its share, through logind, which
-//! lets the session's user set it without root, or else directly in sysfs. It runs on a thread of its
-//! own, so a stuck PipeWire in the sound thread doesn't hold it up. While a finger slides, only the
-//! latest level is set.
+//! lets the session's user set it without root (sysfs is root's), or for a stand-in by writing its
+//! files. It runs on a thread of its own, so a stuck PipeWire in the sound thread doesn't hold it up.
+//! While a finger slides, only the latest level is set.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -60,6 +60,7 @@ fn raw(level: u8, share: u8, max: u32) -> u32 {
 /// Starts the thread that sets the brightness. Only the latest of the waiting commands is carried out.
 pub(crate) fn spawn(backlights: Backlights) -> io::Result<Worker<Command>> {
     let mut setter = Setter::default();
+    let system = backlights.dir == Path::new(SYSTEM);
     worker::spawn_coalescing(
         clamshell_state::Thread::Brightness.name(),
         |_| (),
@@ -67,61 +68,76 @@ pub(crate) fn spawn(backlights: Backlights) -> io::Result<Worker<Command>> {
             for dir in backlights.devices() {
                 let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or_default();
                 let share = shares.iter().find(|s| s.backlight == name).map_or(100, |s| s.share);
-                setter.set(&dir, level, share);
+                setter.set(&dir, level, share, system);
             }
         },
     )
 }
 
-/// Sets backlights through logind's session, or else by writing sysfs, which needs write access. The
-/// logind connection is kept, and made again after the bus fails.
+/// The system's backlights, which only root may write.
+const SYSTEM: &str = "/sys/class/backlight";
+
+/// Sets the system's backlights through logind's session, which lets the session's user set them, and a
+/// stand-in's by writing its files. The logind connection is kept, and made again after the bus fails.
 struct Setter {
     logind: Kept,
     bus: Quiet,
-    sysfs: Quiet,
+    set: Quiet,
 }
 
 impl Default for Setter {
     fn default() -> Setter {
-        Setter { logind: Kept::system(), bus: Quiet::default(), sysfs: Quiet::default() }
+        Setter { logind: Kept::system(), bus: Quiet::default(), set: Quiet::default() }
     }
 }
 
 impl Setter {
-    fn set(&mut self, dir: &Path, level: u8, share: u8) {
+    fn set(&mut self, dir: &Path, level: u8, share: u8, system: bool) {
         let (Some(name), Some(max)) = (dir.file_name().and_then(|n| n.to_str()), sys::read::<u32>(dir.join("max_brightness"))) else {
             return;
         };
         let value = raw(level, share, max);
-        let through_logind = match self.logind.get() {
+        if !system {
+            match std::fs::write(dir.join("brightness"), value.to_string()) {
+                Ok(()) => self.set.ok(),
+                Err(e) => self.set.failed(&format!("brightness {name}"), &e),
+            }
+            return;
+        }
+        let conn = match self.logind.get() {
             Ok(conn) => {
                 self.bus.ok();
-                let set = conn.call::<()>(
-                    "org.freedesktop.login1",
-                    "/org/freedesktop/login1/session/auto",
-                    "org.freedesktop.login1.Session",
-                    "SetBrightness",
-                    ("backlight", name, value),
-                );
-                if let Err(e) = &set {
-                    self.logind.failed(e);
-                }
-                set
+                conn
             }
+            Err(e) => return self.bus.failed("brightness: system bus", &e),
+        };
+        let set = conn.call::<()>(
+            "org.freedesktop.login1",
+            "/org/freedesktop/login1/session/auto",
+            "org.freedesktop.login1.Session",
+            "SetBrightness",
+            ("backlight", name, value),
+        );
+        match set {
+            Ok(()) => self.set.ok(),
             Err(e) => {
-                self.bus.failed("brightness: system bus", &e);
-                Err(e)
+                self.logind.failed(&e);
+                if powered_down(dir) {
+                    // A panel that is off can't take the level, as when the bottom screen is off. The kernel
+                    // keeps it and sets it as the panel comes on, so nothing is lost.
+                    log::debug!("brightness {name} through logind, its panel off: {e}");
+                } else {
+                    self.set.failed(&format!("brightness {name} through logind"), &e);
+                }
             }
-        };
-        let Err(e) = through_logind else {
-            return;
-        };
-        log::debug!("brightness through logind: {e}");
-        match std::fs::write(dir.join("brightness"), value.to_string()) {
-            Ok(()) => self.sysfs.ok(),
-            Err(e) => self.sysfs.failed(&format!("brightness {name}"), &e),
         }
     }
+}
+
+/// Whether the backlight's panel is powered down (`bl_power` other than 0, as the kernel sets it while
+/// the panel is off).
+fn powered_down(dir: &Path) -> bool {
+    sys::read::<u32>(dir.join("bl_power")).is_some_and(|power| power != 0)
 }
 
 #[cfg(test)]
@@ -152,5 +168,20 @@ mod tests {
         assert_eq!(backlights.names(), vec!["a", "b"]);
         assert_eq!(backlights.level(), Some(50));
         assert_eq!(Backlights::new(dir.join("none")).level(), None);
+    }
+
+    #[test]
+    fn a_stand_in_is_written_and_a_panel_off_is_known() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("a");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("max_brightness"), "255\n").unwrap();
+        std::fs::write(dir.join("bl_power"), "0\n").unwrap();
+        Setter::default().set(&dir, 50, 100, false);
+        assert_eq!(std::fs::read_to_string(dir.join("brightness")).unwrap(), "128");
+        assert!(!powered_down(&dir));
+        std::fs::write(dir.join("bl_power"), "4\n").unwrap();
+        assert!(powered_down(&dir));
+        assert!(!powered_down(&tmp.path().join("none")), "unknown: taken as on");
     }
 }
