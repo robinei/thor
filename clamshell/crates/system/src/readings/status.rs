@@ -37,7 +37,7 @@ fn follow(backlights: &Backlights, carried: &Carried, sink: &impl Sink, commands
         if seen {
             status = read(backlights, carried);
         } else {
-            (status.battery, status.charging, status.discharging) = read_battery().unwrap_or((None, false, false));
+            (status.battery, (status.charging, status.full, status.discharging)) = read_battery().unwrap_or((None, (false, false, false)));
         }
         if let Some(changed) = last.offer(status) {
             sink.send(Event::Reading(Reading::Status(changed)))?;
@@ -53,22 +53,25 @@ fn follow(backlights: &Backlights, carried: &Carried, sink: &impl Sink, commands
 /// The status, its volume and mute with the number of the last sound command carried out before they
 /// were read.
 fn read(backlights: &Backlights, carried: &Carried) -> Status {
-    let (battery, charging, discharging) = read_battery().unwrap_or((None, false, false));
+    let (battery, (charging, full, discharging)) = read_battery().unwrap_or((None, (false, false, false)));
     let wifi = sys::text("/proc/net/wireless").as_deref().and_then(parse_wireless);
     let (sound_seen, read) = mixer::read_volume(carried);
     let (volume, muted) = read.map_or((None, false), |(v, m)| (Some(v), m));
-    Status { battery, charging, discharging, wifi, volume, muted, sound_seen, brightness: backlights.level() }
+    Status { battery, charging, full, discharging, wifi, volume, muted, sound_seen, brightness: backlights.level() }
 }
 
-/// The system's battery: its capacity, whether it is charging (or full on power), and whether it is
-/// discharging. Discharging means running on battery, not held at a charge limit on the charger, which
-/// reads "Not charging".
-fn read_battery() -> Option<(Option<u8>, bool, bool)> {
+/// The system's battery: its capacity and what its status says (see [`battery_state`]).
+fn read_battery() -> Option<(Option<u8>, (bool, bool, bool))> {
     let dir = sys::system_battery()?;
     let capacity = sys::read::<u8>(dir.join("capacity")).map(|c| c.min(100));
-    let status = sys::read::<String>(dir.join("status"));
-    let charging = matches!(status.as_deref(), Some("Charging" | "Full"));
-    Some((capacity, charging, status.as_deref() == Some("Discharging")))
+    Some((capacity, battery_state(sys::read::<String>(dir.join("status")).as_deref())))
+}
+
+/// From the battery's status: whether it is on the charger, charging or full; whether it is full; and
+/// whether it is discharging. Discharging means running on battery, not held at a charge limit on the
+/// charger, which reads "Not charging".
+fn battery_state(status: Option<&str>) -> (bool, bool, bool) {
+    (matches!(status, Some("Charging" | "Full")), status == Some("Full"), status == Some("Discharging"))
 }
 
 /// Link quality (0-100) of the first interface in `/proc/net/wireless`, or `None` if none is listed
@@ -83,6 +86,14 @@ fn parse_wireless(text: &str) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_full_battery_is_on_the_charger_and_full() {
+        assert_eq!(battery_state(Some("Full")), (true, true, false));
+        assert_eq!(battery_state(Some("Charging")), (true, false, false));
+        assert_eq!(battery_state(Some("Not charging")), (false, false, false), "held at a limit");
+        assert_eq!(battery_state(Some("Discharging")), (false, false, true));
+    }
 
     #[test]
     fn wireless_quality_as_percent() {

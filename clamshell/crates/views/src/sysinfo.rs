@@ -102,6 +102,7 @@ pub(super) fn draw(f: &mut Frame) {
     let status = s.sys().status();
     let detail = match (status.battery, m.minutes_left) {
         (None, _) => Line::of(format_args!("no battery")),
+        (Some(b), _) if status.full => Line::of(format_args!("{b}% · full")),
         (Some(b), _) if status.charging => Line::of(format_args!("{b}% · charging")),
         (Some(b), Some(min)) => Line::of(format_args!("{b}% · {} left", HoursMinutes(min))),
         (Some(b), None) => Line::of(format_args!("{b}%")),

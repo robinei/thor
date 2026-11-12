@@ -1,7 +1,8 @@
 # FNV-1a hashes of the snapshots' sizes and pixels (src/dev/snapshot.rs). After a change meant to change
 # what is drawn: CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots
 bar-window-below.png 60d2776a54975ee6
-battery-menu.png 41da1322968dda54
+battery-full.png 059b26e480d90776
+battery-menu.png 21750f549e2b1474
 battery.png 8e5637c7843459b5
 bluetooth-pairing-compare.png 2c1a88ea4052a66f
 bluetooth-pairing-type.png ed57c7bd9834b93b
@@ -23,11 +24,11 @@ device-sticks.png dad79e33b9c10294
 device-unavailable.png 16390380417095b2
 device.png a20edc3a67a63a65
 dock-menu.png d7a6308ebd5776ae
-keyboard-back.png 60e3ec6233bd9818
+keyboard-back.png 0ec696b45af1348a
 keyboard-caps.png 6c9fc858967455f1
 keyboard-fn.png 88a177edfb207d53
 keyboard-mods.png 8a98ca5d107ce7a9
-keyboard-pressed.png 8ee891b57a0872b8
+keyboard-pressed.png b39d20d1300a5c96
 keyboard.png 86b70379890b90f5
 keymap-capture.png 2f5d4d6efc8251da
 keymap-delete.png d17857911813231e
@@ -97,6 +98,7 @@ setup-wifi.png 8ea91506c11bd0b4
 setup-zone.png 260a82bc3dbfc2ef
 slider.png d3e88495bede0e39
 status-low.png a1c0a5482847d615
+sysinfo-full.png 662a6643dda46baa
 sysinfo.png db6c5570987978c5
 time-by-hand.png b70517a0513c51f1
 time-europe.png 6a21a0728eb001f6

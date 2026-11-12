@@ -758,6 +758,7 @@ Pointer(Activate(Tab(Battery)))
   Watch Metrics off
   Watch Battery on
 -- battery.png
+-- battery-full.png
 -- battery-menu.png
 == group top-filter.png
 Tick 1760000000
@@ -961,6 +962,7 @@ Pointer(Activate(PadMouse))
 Pointer(Activate(Tab(Sysinfo)))
   Watch Metrics on
 -- sysinfo.png
+-- sysinfo-full.png
 Pointer(Activate(Tab(Keyboard)))
   Watch Metrics off
 -- keyboard-back.png

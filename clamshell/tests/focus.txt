@@ -687,6 +687,12 @@ Battery(Spender(0)): ^Tile(ChargeLimit) vBattery(Spender(1)) <Tab(Settings) >Til
 Battery(Spender(1)): ^Battery(Spender(0)) vBattery(Spender(2)) <Tab(Settings) >Tile(Sleep)
 Battery(Spender(2)): ^Battery(Spender(1)) vBattery(Spender(4)) <Tab(Settings) >Tile(Sleep)
 Battery(Spender(4)): ^Battery(Spender(2)) v- <Tab(Settings) >Tile(Sleep)
+== battery-full.png (bottom; the pad on both screens)
+start Tab(Battery); back -
+-- bar as in bottom.png except
+Tab(Windows), PadMouse, Tab(Time): vTile(Sleep)
+Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vTile(ChargeLimit)
+-- screen as in battery.png
 == battery-menu.png (bottom; the pad on both screens)
 start "zelda-lttp"; back -
 -- bar as in bottom.png except
@@ -1286,6 +1292,10 @@ start PadMouse; back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^-
 == sysinfo.png (bottom; the pad on the second screen)
+start Tab(Sysinfo); back -
+-- bar as in bottom.png except
+Tab(Windows), PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^-
+== sysinfo-full.png (bottom; the pad on the second screen)
 start Tab(Sysinfo); back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): ^-

@@ -10,12 +10,21 @@ use clamshell_state::status::metrics::Metrics;
 use clamshell_state::{Event, Id, LaunchUnit, PointerEvent, Reading, Status, Tab, WindowEvent};
 
 /// A status that shows every bar icon.
-pub const STATUS: Status =
-    Status { battery: Some(72), charging: true, discharging: false, wifi: Some(80), volume: Some(60), muted: false, sound_seen: 0, brightness: Some(70) };
+pub const STATUS: Status = Status {
+    battery: Some(72),
+    charging: true,
+    full: false,
+    discharging: false,
+    wifi: Some(80),
+    volume: Some(60),
+    muted: false,
+    sound_seen: 0,
+    brightness: Some(70),
+};
 
 /// Low battery, no Wi-Fi, muted.
 pub const STATUS_LOW: Status =
-    Status { battery: Some(9), charging: false, discharging: true, wifi: None, volume: Some(40), muted: true, sound_seen: 0, brightness: None };
+    Status { battery: Some(9), charging: false, full: false, discharging: true, wifi: None, volume: Some(40), muted: true, sound_seen: 0, brightness: None };
 
 /// A launch of entry `id`, the `n`th thing started.
 pub fn run(id: &str, n: u64) -> LaunchUnit {

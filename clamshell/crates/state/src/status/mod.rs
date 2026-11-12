@@ -22,7 +22,10 @@ const WARN_AT: [u8; 2] = [10, 5];
 pub struct Status {
     /// Battery charge 0-100, if there is a battery.
     pub battery: Option<u8>,
+    /// On the charger, charging or full.
     pub charging: bool,
+    /// On the charger with the battery full, as its firmware says.
+    pub full: bool,
     /// On battery, meaning the battery is discharging. False on the charger, whether or not the charge
     /// is held at a limit.
     pub discharging: bool,

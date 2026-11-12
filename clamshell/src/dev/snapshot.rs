@@ -655,6 +655,8 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
             vec![],
             vec![
                 shot("battery.png", Bottom, demo::battery(now)),
+                // On the charger, full.
+                shot("battery-full.png", Bottom, vec![Reading::Status(Status { battery: Some(100), charging: true, full: true, ..Status::default() }).into()]),
                 // A program's row in the battery tab tapped: its menu (Quit, Force kill).
                 shot("battery-menu.png", Bottom, vec![tap(Id::Battery(clamshell_state::BatteryId::Spender(0)))]),
             ],
@@ -843,6 +845,7 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
                 shot("keyboard-caps.png", Bottom, vec![PointerEvent::Up(ctrl()?).into(), key(Key::Mod(Modifier::Shift))?, key(Key::Caps)?]),
                 shot("touchpad.png", Bottom, vec![tab(Tab::Touchpad), tap(Id::PadMouse)]),
                 shot("sysinfo.png", Bottom, demo::metrics()),
+                shot("sysinfo-full.png", Bottom, vec![Reading::Status(Status { battery: Some(100), charging: true, full: true, ..Status::default() }).into()]),
                 shot("keyboard-back.png", Bottom, vec![tab(Tab::Keyboard)]),
                 shot("keyboard-pressed.png", Bottom, vec![key(Key::Mod(Modifier::Shift))?, PointerEvent::Down(control::key(Key::Char('g'))?, None).into()]),
             ],

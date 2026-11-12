@@ -137,13 +137,14 @@ fn top_line(f: &mut Frame, top: Rect, body_h: f32) {
     f.c.text_fit(lines.take_top(size * LINE), size, Tone::Dim, &left, Keep::Start);
 }
 
-/// What the battery is doing ("Discharging · 6.2 W", "Charging · 12.0 W", "Charging or full"), and
+/// What the battery is doing ("Discharging · 6.2 W", "Charging · 12.0 W", "Full"), and
 /// the time left ("3 h 10 min left") when discharging.
 fn drain(s: &State) -> (Fmt<64>, Fmt<64>) {
     let sys = s.sys();
     let state = match (sys.status().charging, sys.metrics().power_w) {
+        (true, _) if sys.status().full => Fmt::of(format_args!("Full")),
         (true, Some(w)) if w.abs() > 0.05 => Fmt::of(format_args!("Charging · {:.1} W", w.abs())),
-        (true, _) => Fmt::of(format_args!("Charging or full")),
+        (true, _) => Fmt::of(format_args!("Charging")),
         (false, Some(w)) => Fmt::of(format_args!("Discharging · {w:.1} W")),
         (false, None) => Fmt::of(format_args!("Discharging")),
     };
