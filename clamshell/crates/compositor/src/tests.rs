@@ -1243,3 +1243,26 @@ fn a_buffer_refused_for_our_reasons_leaves_its_client_connected() {
     assert!(!crate::render::clients_fault(&GlesError::MappingError));
     assert!(!crate::render::clients_fault(&GlesError::UnsupportedPixelFormat(smithay::backend::allocator::Fourcc::Argb8888)));
 }
+
+/// What the top screen shows changing (the Device view opened from the Library, then closed) is a change
+/// of the top screen's view for the host, though the core recorded the view first itself, for the pad
+/// (`follow_top`), and the host's own recording after it finds nothing new: the device's host composes a
+/// screen only for its changes, and its top panel went on showing Setup after Setup's Done.
+#[test]
+fn a_change_of_what_the_top_screen_shows_is_the_hosts_to_compose() {
+    use clamshell_state::{BuiltinApp, EntryAct, Top};
+    let top = |changed: [bool; 4]| changed[0];
+    let state =
+        State::new(Init { library: Some(clamshell_library::demo::library()), account: clamshell_state::setup::account::Account::NoHelper, ..Init::default() });
+    let (_display, mut server) = ServerBuilder::new().state(state).build();
+    server.core.handle(Event::Start);
+    server.core.handle(Event::tick(1000));
+    // Settled: the first frames' reports may change what follows.
+    assert!((0..10).any(|_| crate::render::record_ui(&mut server) == [false; 4]), "the frames settle");
+    for (act, app) in [(EntryAct::Play, BuiltinApp::Device), (EntryAct::Quit, BuiltinApp::Library)] {
+        server.core.handle(Event::Entry(BuiltinApp::Device.id().into(), act));
+        assert_eq!(server.core.state().top(), Top::App { app, view: 0 });
+        assert!(top(crate::render::record_ui(&mut server)), "{app:?} shown: the top screen changed");
+        assert!(!top(crate::render::record_ui(&mut server)), "{app:?} shown: told once");
+    }
+}

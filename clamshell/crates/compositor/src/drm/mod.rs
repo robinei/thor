@@ -982,7 +982,12 @@ fn step(
         let part = screen.scene();
         let planed = screen.planed();
         let changed = |parts: [bool; 2]| parts.get(part).copied().unwrap_or(true);
-        if changed(changes.parts) || changed(ui_changed) || (changed(changes.cursor) && !planed.cursor) || planed != screen.composed_planed {
+        // (Its overlay's changes not while the overlay is on a plane of its own.)
+        let ui = render::LAYERS
+            .into_iter()
+            .zip(ui_changed)
+            .any(|(layer, changed)| changed && render::part(layer) == part && !(planed.overlay && matches!(layer, clamshell_ui::Layer::Overlay(_))));
+        if changed(changes.parts) || ui || (changed(changes.cursor) && !planed.cursor) || planed != screen.composed_planed {
             screen.needs_compose = true;
         }
     }

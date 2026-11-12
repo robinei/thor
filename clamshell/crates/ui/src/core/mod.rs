@@ -44,6 +44,8 @@ struct ScreenCore {
     /// What it shows may have changed since it was last recorded, so it is recorded again when a frame
     /// is due.
     stale: bool,
+    /// A recording changed it since the host last asked (see [`Core::take_change`]).
+    unseen: bool,
     /// Where the content went in the last frame, in logical pixels (see [`crate::toolkit::FrameOut`]).
     content: Option<Rect>,
     /// Where a finger may point in the last frame, in logical pixels, and whether it points at once
@@ -63,6 +65,7 @@ impl Default for ScreenCore {
             size: (1, 1),
             scale: 1,
             stale: true,
+            unseen: false,
             content: None,
             point_area: None,
             pointing: None,
@@ -410,9 +413,24 @@ impl Core {
         self.reports.extend(render::list_changes(&self.state, &out));
         if whole {
             s.frames.redraw_all(Bounds::of_size(size_px));
+            s.unseen = true;
             return Some(Bounds::of_size(size_px));
         }
-        s.frames.damage()
+        let damage = s.frames.damage();
+        s.unseen |= damage.is_some();
+        damage
+    }
+
+    /// Whether a recording of `layer` changed it since the last call, whoever recorded it: the host, or
+    /// the core itself for the pad (`fresh`, `follow_top`), whose recording leaves the next
+    /// one nothing to compare. A host that shows the layer from a picture it composes asks this, not what
+    /// its own recording returns, to know whether to compose again.
+    pub fn take_change(&mut self, layer: impl Into<Layer>) -> bool {
+        let s = match layer.into() {
+            Layer::Screen(screen) => &mut self.screens[screen],
+            Layer::Overlay(screen) => &mut self.overlays[screen],
+        };
+        std::mem::take(&mut s.unseen)
     }
 
     /// Draws `layer`'s latest frame into `target`, which is its size in buffer pixels and holds frame `held`

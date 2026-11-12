@@ -186,7 +186,10 @@ and fixed once. Seven rules:
   only the rectangle around the differing commands is redrawn: every command meeting it is played again,
   clipped to it, from the background up, so blending stays exact. Each pixmap knows the frame it holds, so a
   reused one also gets what changed since it last held a frame. An idle tick costs a recording and a
-  comparison, about 0.02 ms. The nested host submits only for changed recordings or visual facts,
+  comparison, about 0.02 ms. The core also records a screen itself, for the pad (the targets after a
+  change of what the main screen shows, or before a pad button acts), so a host doesn't go by what its own
+  recording found: it asks whether any recording changed a layer since it last asked (`Core::take_change`),
+  and composes the screen if one did. The nested host submits only for changed recordings or visual facts,
   paced to its refresh deadline, and for host exposure. Client pacing, cursor animation, colour
   measurement and resource expiry have independent deadlines; there is no idle frame timer.
 - **Input.** A frame keeps its targets (a rectangle, an id, the key of the list item it showed, what a

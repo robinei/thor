@@ -228,21 +228,21 @@ pub(crate) fn part(layer: Layer) -> usize {
     }
 }
 
-/// Records the stale visible layers, to find what of the UI changed without drawing it: whether each part
-/// of the scene's (the top screen's, the second's) did.
-pub(crate) fn record_ui(server: &mut Server) -> [bool; 2] {
+/// Records the stale visible layers, to find what of the UI changed without drawing it: which of
+/// [`LAYERS`] did since the last call, by any recording (see `Core::take_change`): the core records a
+/// layer itself for the pad, so the host's recording after it may find nothing new. The top screen's view
+/// isn't recorded nor asked while a window covers it; its change waits until it is uncovered.
+pub(crate) fn record_ui(server: &mut Server) -> [bool; 4] {
     server.place();
-    let mut changed = [false; 2];
-    for layer in LAYERS {
+    let mut changed = [false; 4];
+    for (layer, changed) in LAYERS.into_iter().zip(&mut changed) {
         if layer == Layer::Screen(Screen::Top) && server.scene.covers_top() {
             continue;
         }
-        if server.core.stale(layer)
-            && server.core.record(layer, false).is_some()
-            && let Some(part) = changed.get_mut(part(layer))
-        {
-            *part = true;
+        if server.core.stale(layer) {
+            server.core.record(layer, false);
         }
+        *changed = server.core.take_change(layer);
     }
     server.core.frames_done();
     server.place();
