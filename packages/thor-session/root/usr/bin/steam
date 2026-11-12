@@ -1,13 +1,17 @@
 #!/bin/bash
 # Starts Steam, Valve's native ARM64 client in ~/.local/share/Steam (steam-setup), as /usr/bin/steam: what
 # ClamShell's Steam launches (`steam -gamepadui -silent -applaunch ID`), the desktop file and steam:// links run.
-# Not set up yet: set up first, in a terminal. As Armada's launch-steam: the client's own folder and the
-# links to older libraries first in the library path, Valve's runtime's tools on the path, and both kept
-# for compatibility tools (Steam restores SYSTEM_PATH and SYSTEM_LD_LIBRARY_PATH for them).
+# Not set up yet: set up first, in a terminal that closes once setup is done (or, on a failure, once the
+# user has read why); then Steam starts here, on its own. Set up: no terminal. As Armada's launch-steam:
+# the client's own folder and the links to older libraries first in the library path, Valve's runtime's
+# tools on the path, and both kept for compatibility tools (Steam restores SYSTEM_PATH and
+# SYSTEM_LD_LIBRARY_PATH for them).
 set -u
 ROOT=$HOME/.local/share/Steam
 if [ ! -x "$ROOT/steamrtarm64/steam" ]; then
-    exec foot --title "Steam setup" bash -c 'steam-setup && exec steam "$@" || read -rp "Press Enter to close " _' steam "$@"
+    foot --title "Steam setup" bash -c 'steam-setup || { read -rp "Steam setup failed. Press Enter to close " _; exit 1; }' \
+        || { echo "steam: setup didn't finish (its terminal exited $?)" >&2; exit 1; }
+    [ -x "$ROOT/steamrtarm64/steam" ] || { echo "steam: setup ended without the client installed" >&2; exit 1; }
 fi
 steam-setup --links
 export LD_LIBRARY_PATH="$ROOT/steamrtarm64:$ROOT/lib/aarch64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"

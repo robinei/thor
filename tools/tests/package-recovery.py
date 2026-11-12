@@ -1016,6 +1016,51 @@ esac''')
         self.assertIn("manifest names no linuxarm64 binaries", result.stdout)
 
 
+class SteamStart(unittest.TestCase):
+    """/usr/bin/steam: a terminal only while setup is needed, and Steam started outside it."""
+
+    def machine(self, set_up, setup_ok=True):
+        m = Machine()
+        self.addCleanup(m.close)
+        home = m.root / 'home'
+        client = home / '.local/share/Steam/steamrtarm64/steam'
+        client.parent.mkdir(parents=True)
+        log = m.root / 'calls'
+        body = f'echo "client $*" >> {log}'
+        if set_up:
+            client.write_text(f'#!/bin/sh\n{body}\n')
+            client.chmod(0o755)
+        # foot runs its command (after --title TITLE) and returns its status, as foot does.
+        m.command('foot', f'echo "foot $2" >> {log}; shift 2; "$@"; status=$?; echo "foot closed" >> {log}; exit $status')
+        install = f"printf '#!/bin/sh\\n{body}\\n' > {client}; chmod +x {client}" if setup_ok else 'echo "no network"; exit 1'
+        m.command('steam-setup', f'case $1 in --links) ;; *) echo "setup" >> {log}; {install} ;; esac')
+        return m
+
+    def start(self, m):
+        script = REPO / 'packages/thor-session/root/usr/bin/steam'
+        result = subprocess.run(['bash', script, '-gamepadui', '-silent'], env={**m.env, 'HOME': str(m.root / 'home')},
+                                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=15)
+        log = m.root / 'calls'
+        return result, log.read_text().splitlines() if log.exists() else []
+
+    def test_a_steam_set_up_starts_without_a_terminal(self):
+        result, calls = self.start(self.machine(set_up=True))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls, ['client -noverifyfiles -nobootstrapupdate -skipinitialbootstrap -norepairfiles -gamepadui -silent'])
+
+    def test_setup_runs_in_a_terminal_that_closes_before_steam_starts(self):
+        result, calls = self.start(self.machine(set_up=False))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls, ['foot Steam setup', 'setup', 'foot closed',
+                                 'client -noverifyfiles -nobootstrapupdate -skipinitialbootstrap -norepairfiles -gamepadui -silent'])
+
+    def test_a_failed_setup_starts_no_steam_and_says_so(self):
+        result, calls = self.start(self.machine(set_up=False, setup_ok=False))
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(calls, ['foot Steam setup', 'setup', 'foot closed'])
+        self.assertIn("steam: setup didn't finish", result.stderr)
+
+
 class Workflow(unittest.TestCase):
     def test_the_workflow_has_a_read_only_token_and_actions_pinned_by_commit(self):
         """A compromised action, or a tag moved under it, would otherwise run with a token that can change

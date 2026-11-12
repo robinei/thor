@@ -560,7 +560,9 @@ Arch Linux ARM package, so not here for now. The x86 client under FEX (Canonical
 fallback, slower (its UI emulated).
 
 Ours: `steam-setup` (thor-session), after Thorch's installer for Arch Linux ARM, run as the user on the
-first start of `steam` (thor-session too, in a terminal):
+first start of `steam` (thor-session too), in a terminal that closes once it is done; `steam` then starts
+the client outside it, in the same launch (ClamShell waits for the launch's next window when the
+terminal's closes), and a start once set up opens no terminal:
 - Valve's runtime for the client (steamrt3c arm64, `repo.steampowered.com/steamrt3c/images/<version>/`,
   checked against its SHA256SUMS) and the client's binaries (the beta manifest's
   `bins_linuxarm64_linuxarm64` zip, checked against the manifest's sha2) into `~/.local/share/Steam`.
