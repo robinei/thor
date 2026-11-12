@@ -344,7 +344,7 @@ bottom screen to open the windows' tab and turn on (`Bottom::show_below`).
 | Home+Start: wake if off by itself (dark for a game too, which sets `woken` as a tap does), else toggle off | `the_bottom_screen_turns_off_and_on`, `home_start_brings_back_…`, `…off_by_hand_and_by_itself_at_once`, `home_start_wakes_a_screen_dark_for_a_game` |
 | settle: off by itself when on battery, not refreshing, not set to stay on, no windows shown, no editor, and dark in a game or untouched 4 min | `on_battery_the_untouched_…` and siblings; `a_refresh_calibration_or_an_editor_keeps_it_on` |
 | Resumed (the device woken from sleep): a use, as a touch is, so a screen off or dimmed by itself is lit again; one off by hand, or dark for a game, stays so | `waking_the_device_brings_back_the_bottom_screen_off_by_itself` |
-| settle: dimmed after 60 s untouched (`idle::DIM_AFTER`, the time the screens dim without input), unless windows are shown; other input (the pad, keys, the top screen) or an app keeping the screen on doesn't keep it lit | `the_bottom_screen_dims_untouched_and_lights_when_used`; idle `pad_input_keeps_the_top_lit_but_lets_the_bottom_dim`, `an_app_keeping_the_screen_on_keeps_the_top_lit` |
+| settle: dimmed after the `DimAfter` setting's time untouched (1 min by default; the time the screens dim without input; never with 0), unless windows are shown; other input (the pad, keys, the top screen) or an app keeping the screen on doesn't keep it lit | `the_bottom_screen_dims_untouched_and_lights_when_used`; idle `pad_input_keeps_the_top_lit_but_lets_the_bottom_dim`, `an_app_keeping_the_screen_on_keeps_the_top_lit` |
 | dark (`bottom_dark`): for a game set to darken it, until woken, and never while a window is shown there; while dark, or off, or showing a window, the tab's readings aren't watched | `the_dark_second_screen_watches_nothing_and_a_window_there_keeps_it_lit` |
 | Wake tap sets `woken`; a game starting resets it | `dark_for_a_game_…`, `a_game_can_start_the_pad_mouse_…`, `a_game_starting_lets_a_woken_screen_go_dark_again`; touch or pad focus don't wake a dark screen (kept by decision, S16 in the history notes) |
 
@@ -362,17 +362,23 @@ and identity changes, with live ids distinct throughout (invariant 4).
 
 State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`, `woke_at`,
 `sleep_not_before`. The stage is recomputed every settle from the time idle and the policy. Dimmed
-comes after `DIM_AFTER` (60 s) without input of any kind, whatever the screen-off time (with "never"
-too; with 1 minute the screens go off without dimming first); Off and Asleep after the settings' times.
+comes after the global `DimAfter` setting's time without input of any kind (15 s to 10 min, 1 min by
+default, or never), whatever the screen-off time (with "never" too; with screens off sooner than the
+dim they go off without dimming first); Off and Asleep after the settings' times.
 Dimmed lowers the backlights to a third (both screens, by their shares); it is how the top screen dims.
 The bottom screen's drawn dim (bottom/screen.rs) follows its own touches after the same 60 s, and a
 touch is input too, so with no input both dim at once; the randomized test holds that the stage is
-never Dimmed or darker with the bottom screen lit, unless it shows windows (invariant 8).
+never Dimmed with the bottom screen lit, unless it shows windows (invariant 8), and slides the setting.
+
+`DimAfter` is a slider row on the brightness tab (`widgets::slider_row`, below the brightness level;
+snapshot `brightness-dim.png`). A global-only setting's slider has no Default stop: its stops are its
+values, written to All as it slides and saved when let go (`Save(Settings)`).
 
 | Transition | Test |
 |---|---|
 | put down after a bottom touch: both screens dim at the same moment; then pad input lights the top screen at once (brightness back) and leaves the bottom dimmed until touched | `put_down_after_a_bottom_touch_both_screens_dim_at_once` |
 | an inhibitor (CompositorInput) keeps the stage Awake with no input; once quiet, Dimmed a minute after the last input | `an_app_keeping_the_screen_on_keeps_the_top_lit` |
+| `DimAfter` slid: both dims (Dimmed, and the bottom's untouched dim) follow the new time; never dims neither, the screens still go off | `the_dim_time_moves_both_dims` |
 | Awake → Dimmed → Off → Asleep by time; effects through sync: dim brightness, `Outputs{top: false}`, status watch off, `Sleep` (after `Outputs`) | `the_state_dims_turns_the_screens_off_and_back_and_sleeps_only_when_allowed`; tests `the_screens_go_off_before_the_device_sleeps` |
 | any input, KeptAwake while awake (one after the dim is ignored), Resumed or a running refresh → Awake: undim, `Outputs{top: true}` | same; `off_by_itself_before_the_screens_go_off_…`, `a_running_refresh_calibration_keeps_idle_awake`, `a_late_kept_awake_leaves_the_screens_dimmed` |
 | BottomTouched is input, at the touch (the input thread reports at most every few seconds) | `a_bottom_touch_is_input` |
@@ -380,7 +386,7 @@ never Dimmed or darker with the bottom screen lit, unless it shows windows (inva
 | a press on dark screens, or within 1 s of waking, is swallowed | idle `a_press_on_dark_screens_only_wakes_them`, `a_tap_on_dark_screens_wakes_them_and_does_nothing_else` |
 | Busy → sleep postponed 5 min | `a_busy_machine_sleeps_later` |
 | compositor input/quiet; watching off | `the_compositor_holds_idle_off_…`, `with_the_devices_no_longer_read_nothing_goes_idle` |
-| AskAwake 10 s before dimming (50 s without input), once, with the shown app's command | `an_app_shown_that_keeps_the_screen_on_…` |
+| AskAwake 10 s before dimming (or the screens going off, if sooner or never dimming), once, with the shown app's command | `an_app_shown_that_keeps_the_screen_on_…`, `without_a_dim_first_the_runner_is_asked_before_the_screens_go_off` |
 | first tick, wall-clock jumps | `what_is_heard_before_the_clock_is_known_…`, `a_step_of_the_wall_clock_…` |
 | a suspend that fails without Busy leaves the stage Asleep with screens off until input | `a_suspend_that_failed_waits_for_input` |
 | the system's sleep thread (`power/sleep.rs`) holds logind's delay lock; PrepareForSleep(true) while held → `pad::Command::Sleep` (the gyro's stream closed, waited for at most 1 s), the lock released; PrepareForSleep(false), the clocks saying it slept, or 10 s released without sleeping → `pad::Command::Woke`, the lock taken again. A batch of signals is taken in its order: released once, a sleep given up at once (true, false) a wake, a sleep again before the lock was taken (false, true) still released | system `prepare_for_sleep_signals_are_taken_in_their_order`; the lock and the pad's part: VM `gyro_sleep` |

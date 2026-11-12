@@ -76,14 +76,17 @@ impl State {
         }
     }
 
-    /// A setting's slider, on the stop of the value written at the level edited, or Default.
+    /// A setting's slider, on the stop of the value written at the level edited, or Default; a global-only
+    /// setting's on the stop of its value.
     fn setting_slider_at(&self, setting: Setting, x: f32, width: f32) -> Slider {
         let len = self.setting_stops(setting);
         let own = match self.panel().source(setting) {
+            _ if setting.global_only() => Some(self.prefs.settings().global.get(setting)),
             crate::settings::panel::Source::Written(_) => Some(self.panel().tile_value(setting)),
             _ => None,
         };
-        let at = own.and_then(|v| (1..len).find(|i| self.setting_stop(setting, *i) == Some(Some(v)))).unwrap_or(0);
+        let first = usize::from(!setting.global_only());
+        let at = own.and_then(|v| (first..len).find(|i| self.setting_stop(setting, *i) == Some(Some(v)))).unwrap_or(0);
         let (at, hi) = (u8::try_from(at).unwrap_or(0), u8::try_from(len.saturating_sub(1)).unwrap_or(0));
         Slider::ranged(Control::Setting(setting), at, 0, hi, x, width)
     }
@@ -112,13 +115,20 @@ impl State {
 
     /// How many stops `setting`'s slider has at the level edited (see [`State::setting_stop`]).
     pub(crate) fn setting_stops(&self, setting: Setting) -> usize {
+        if setting.global_only() {
+            return setting.choices().len();
+        }
         let at_all = self.panel().editing().is_none();
         1 + setting.choices().iter().filter(|v| !(at_all && **v == setting.default_value())).count()
     }
 
     /// Stop `i` of `setting`'s slider at the level edited: first Default (None), which writes nothing
     /// there, then its values. At All, Default is the stock value, so that value isn't a stop of its own.
+    /// A global-only setting is always written for all, so it has no Default: its stops are its values.
     pub(crate) fn setting_stop(&self, setting: Setting, i: usize) -> Option<Option<u16>> {
+        if setting.global_only() {
+            return setting.choices().get(i).map(|v| Some(*v));
+        }
         if i == 0 {
             return Some(None);
         }

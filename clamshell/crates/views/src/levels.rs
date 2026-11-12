@@ -2,14 +2,15 @@
 //!
 //! The volume tab shows the output volume with its mute button, the outputs (a tap chooses which one
 //! plays), then each app that is playing, with its own level and mute button. The brightness tab shows
-//! the brightness level, the same as the bar's, then each screen's backlight as a share of it. The two
-//! are multiplied.
+//! the brightness level, the same as the bar's, then how long the screens go without input before they
+//! dim, then each screen's backlight as a share of it. The level and the shares are multiplied.
 //!
 //! A level row is set to where the finger is on its track and follows the finger as it moves. The pad's
 //! left and right step it.
 
 use clamshell_state::levels::Level;
-use clamshell_state::{AudioId, Id, ListId, RowPart};
+use clamshell_state::settings::Setting;
+use clamshell_state::{AudioId, Control, Id, ListId, RowPart};
 
 use clamshell_ui::gfx::icons::Icon;
 use clamshell_ui::gfx::{Align, Column, Keep, Rect};
@@ -195,6 +196,15 @@ pub(super) fn draw_brightness(f: &mut Frame) {
     f.c.text_in(Rect::new(name.x + z.icon * 1.4, name.y, name.w, name.h), z.text, Tone::Normal, "Brightness", Align::Start);
     level(f, Level::Brightness, row, false);
     number(f, number_r, s.levels().level(Level::Brightness), "", z.text);
+
+    // How long without input before the screens dim (the bottom one untouched), held to slide through its
+    // values. The track spans the screen's width, as other sliders' do.
+    let dim = Setting::DimAfter;
+    let mut value = Fmt::<16>::new();
+    dim.describe(s.prefs().settings().global.get(dim), &mut value);
+    let track = Track { x0: body.x, w: body.w };
+    let dim_row = col.take(z.row_h);
+    let held = widgets::slider_row(f, dim_row, z.text, (Control::Setting(dim), track), dim.title(), value.as_str(), Tone::Normal);
     col.skip(z.pad * 0.5);
 
     // Each screen's share of the level.
@@ -202,7 +212,7 @@ pub(super) fn draw_brightness(f: &mut Frame) {
     if s.levels().backlights().is_empty() {
         let r = col.rest();
         f.c.text(r.x, r.y, z.text, Tone::Dim, "No backlight");
-        return;
+        return held_dim(f, held, area, value.as_str());
     }
     let backlights = s.levels().backlights();
     let rows = Scrolled::begin(f, ListId::Backlights, col.rest(), z.row_h, backlights.len());
@@ -225,4 +235,13 @@ pub(super) fn draw_brightness(f: &mut Frame) {
         number(f, percent, s.levels().level(level_id), " %", z.text);
     }
     rows.end(f, area.right() + z.pad * 0.4);
+    held_dim(f, held, area, value.as_str());
+}
+
+/// The dim time's slider while it is held, drawn last so that its card covers the rows below.
+/// The slider writes the setting as it moves, so `value`, read before, is the one it is at.
+fn held_dim(f: &mut Frame, held: Option<widgets::HeldRow>, area: Rect, value: &str) {
+    let Some(held) = held else { return };
+    let text = Fmt::<48>::of(format_args!("{} {value}", Setting::DimAfter.title()));
+    widgets::held_row(f, held, area, &text);
 }

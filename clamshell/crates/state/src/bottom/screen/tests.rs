@@ -1,4 +1,7 @@
 use super::*;
+
+/// The default dim time.
+const DIM_AFTER: u64 = 60;
 use crate::Compositor;
 use crate::HardwareKey;
 use crate::Tab;
@@ -162,8 +165,8 @@ fn on_battery_the_untouched_bottom_screen_goes_off_and_a_touch_brings_it_back() 
     let mut s = state();
     on_battery(&mut s, true);
     s.applied(Event::tick(1000));
-    assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER - 1))), None, "dimmed, not yet off");
-    assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER))), Some(false), "off by itself");
+    assert_eq!(power(&s.applied(Event::tick(1000 + OFF_AFTER - 1))), None, "dimmed, not yet off");
+    assert_eq!(power(&s.applied(Event::tick(1000 + OFF_AFTER))), Some(false), "off by itself");
     assert!(s.bottom_off());
     assert_eq!(power(&s.applied(Event::BottomTouched)), Some(true), "a touch: on again");
     assert!(!s.bottom_off());
@@ -180,7 +183,7 @@ fn off_by_itself_before_the_screens_go_off_it_stays_off_as_they_come_back() {
     // minutes after the input, a touch on it being both.
     s.applied(Event::tick(1060));
     s.applied(Event::BottomTouched);
-    let fx = s.applied(Event::tick(1060 + DIM_AFTER + OFF_AFTER));
+    let fx = s.applied(Event::tick(1060 + OFF_AFTER));
     assert!(s.bottom_off());
     assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: false })), "{fx:?}");
     let fx = s.applied(Event::tick(1060 + 300));
@@ -196,7 +199,7 @@ fn waking_the_device_brings_back_the_bottom_screen_off_by_itself() {
     let mut s = state();
     on_battery(&mut s, true);
     s.applied(Event::tick(1000));
-    assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER))), Some(false), "off by itself");
+    assert_eq!(power(&s.applied(Event::tick(1000 + OFF_AFTER))), Some(false), "off by itself");
     assert_eq!(power(&s.applied(Event::Resumed)), Some(true), "woken: on");
     assert!(!s.bottom_off() && !s.bottom_dimmed());
     // Off by hand, it stays off.
@@ -222,9 +225,9 @@ fn the_wall_clock_set_back_does_not_keep_it_on() {
     let year = 365 * 86_400;
     s.applied(Event::Tick { unix_secs: 2 * year, mono_secs: 1000 });
     let at = |mono: u64| Event::Tick { unix_secs: year + mono, mono_secs: mono };
-    assert_eq!(power(&s.applied(at(1000 + DIM_AFTER + OFF_AFTER - 1))), None);
+    assert_eq!(power(&s.applied(at(1000 + OFF_AFTER - 1))), None);
     assert!(s.bottom_dimmed(), "dimmed on time");
-    assert_eq!(power(&s.applied(at(1000 + DIM_AFTER + OFF_AFTER))), Some(false), "off on time");
+    assert_eq!(power(&s.applied(at(1000 + OFF_AFTER))), Some(false), "off on time");
 }
 
 #[test]
@@ -232,14 +235,14 @@ fn on_the_charger_or_set_to_stay_on_it_only_dims() {
     let mut s = state();
     on_battery(&mut s, false);
     s.applied(Event::tick(1000));
-    assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER))), None, "on the charger: only dimmed");
+    assert_eq!(power(&s.applied(Event::tick(1000 + OFF_AFTER))), None, "on the charger: only dimmed");
     // Unplugged now, but set to Screen on, so it is only dimmed.
     s.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::On.value());
     on_battery(&mut s, true);
-    assert_eq!(power(&s.applied(Event::tick(1001 + DIM_AFTER + OFF_AFTER))), None);
+    assert_eq!(power(&s.applied(Event::tick(1001 + OFF_AFTER))), None);
     // Back to the default, it turns off. With the charger plugged in, it turns on.
     s.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::OffWhenIdle.value());
-    assert_eq!(power(&s.applied(Event::tick(1002 + DIM_AFTER + OFF_AFTER))), Some(false));
+    assert_eq!(power(&s.applied(Event::tick(1002 + OFF_AFTER))), Some(false));
     assert_eq!(power(&on_battery(&mut s, false)), Some(true), "the charger: on again");
 }
 
@@ -277,7 +280,7 @@ fn windows_moved_down_keep_it_on() {
     key(&mut s, HardwareKey::WindowDown);
     s.observed(vec![win(1, GAME, "Top"), win(2, GAME, "Bottom")]);
     s.applied(Event::tick(1000));
-    assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER))), None, "a window shown there");
+    assert_eq!(power(&s.applied(Event::tick(1000 + OFF_AFTER))), None, "a window shown there");
 }
 
 #[test]
@@ -286,7 +289,7 @@ fn home_start_brings_back_a_screen_off_by_hand_and_by_itself_at_once() {
     on_battery(&mut s, true);
     s.applied(Event::tick(1000));
     key(&mut s, HardwareKey::BottomPower);
-    s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER));
+    s.applied(Event::tick(1000 + OFF_AFTER));
     assert_eq!(power(&key(&mut s, HardwareKey::BottomPower)), Some(true), "one press");
     assert!(!s.bottom_off(), "on, and not off by itself either");
 }
@@ -296,7 +299,7 @@ fn home_start_brings_back_a_screen_off_by_itself() {
     let mut s = state();
     on_battery(&mut s, true);
     s.applied(Event::tick(1000));
-    s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER));
+    s.applied(Event::tick(1000 + OFF_AFTER));
     assert_eq!(power(&key(&mut s, HardwareKey::BottomPower)), Some(true), "on, as a touch would");
     assert!(!s.bottom_off());
 }
@@ -371,7 +374,7 @@ fn a_refresh_calibration_or_an_editor_keeps_it_on() {
     s.applied(Event::tick(1000));
     let fx = s.applied(Event::Pointer(crate::PointerEvent::Activate(crate::Id::Device(crate::DeviceId::Refresh))));
     assert_eq!(power(&fx), Some(false), "off while calibrating");
-    assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER))), None, "calibrating");
+    assert_eq!(power(&s.applied(Event::tick(1000 + OFF_AFTER))), None, "calibrating");
     assert!(!s.bottom_off());
     assert_eq!(power(&s.applied(Event::RefreshCalibrated(Ok(String::new())))), None, "done: off by itself, so it stays off");
     assert!(s.bottom_off());
@@ -381,10 +384,10 @@ fn a_refresh_calibration_or_an_editor_keeps_it_on() {
     let step = crate::setup::account::PasswordStep::Current;
     let editor = crate::Editor { purpose: crate::bottom::editor::Purpose::AccountPassword(step), text: String::new() };
     s.applied(Event::EditOnKeyboard(editor));
-    assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER))), None, "typing");
+    assert_eq!(power(&s.applied(Event::tick(1000 + OFF_AFTER))), None, "typing");
     let fx = s.applied(Event::Pointer(crate::PointerEvent::Activate(crate::Id::Editor(crate::EditorId::Cancel))));
     assert_eq!(power(&fx), None, "the cancel is a touch: in use again");
-    assert_eq!(power(&s.applied(Event::tick(1000 + 2 * (DIM_AFTER + OFF_AFTER)))), Some(false), "then off by itself");
+    assert_eq!(power(&s.applied(Event::tick(1000 + 2 * (OFF_AFTER)))), Some(false), "then off by itself");
 }
 
 /// The Wake tap lasts until the next game: a game starting lets the screen go dark again.

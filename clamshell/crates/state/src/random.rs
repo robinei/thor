@@ -423,7 +423,8 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
             ids.extend(row(ListId::Time, s.lists().len(ListId::Time)));
         }
         Tab::Battery => ids.push(Id::Battery(BatteryId::Back)),
-        Tab::Touchpad | Tab::Sysinfo | Tab::Brightness => {}
+        Tab::Brightness => ids.push(Id::Control(Control::Setting(Setting::DimAfter))),
+        Tab::Touchpad | Tab::Sysinfo => {}
     }
     ids
 }
@@ -790,10 +791,11 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
             0 => LevelEvent::Step(Level::Volume, if rng.one_in(2) { 1 } else { -1 }).into(),
             1 => LevelEvent::Set(Level::Brightness, rng.below(101) as u8).into(),
             2 => {
-                let control = match rng.below(5) {
+                let control = match rng.below(6) {
                     0 => Control::Volume,
                     1 => Control::Brightness,
                     2 => Control::Setting(Setting::HdrPeak),
+                    5 => Control::Setting(Setting::DimAfter),
                     3 => Control::Light(crate::lights::LightParam::ALL.get(rng.below(3)).copied().unwrap_or(crate::lights::LightParam::Hue)),
                     _ => Control::Curve(crate::curve::CurveParam::ALL.get(rng.below(6)).copied().unwrap_or(crate::curve::CurveParam::Highlights)),
                 };
@@ -1296,10 +1298,14 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     // 8. The bottom screen.
     let bottom = s.bottom();
     ensure!(!s.bottom_dimmed() || !bottom.shows_windows(session), "8: dimmed while showing windows");
-    // A touch on the bottom screen is input too, and both dim after as long: the top screen is never dimmed
-    // by idle while the bottom one is lit, unless it shows windows, which never dim. (The bottom screen
-    // dimmed with the top one lit is fine: other input, or an app keeping the screen on.)
-    ensure!(s.idle().stage() < Stage::Dimmed || s.bottom_dimmed() || bottom.shows_windows(session), "8: the top screen dimmed by idle with the bottom one lit");
+    // A touch on the bottom screen is input too, and both dim after the same time (the DimAfter setting):
+    // the screens are never dimmed by idle while the bottom one is lit, unless it shows windows, which never
+    // dim. (The bottom screen dimmed with the top one lit is fine: other input, or an app keeping the screen
+    // on. Off and asleep come by their own times, which may be before the dim's, or with it never.)
+    ensure!(
+        s.idle().stage() != Stage::Dimmed || s.bottom_dimmed() || bottom.shows_windows(session),
+        "8: the top screen dimmed by idle with the bottom one lit"
+    );
     ensure!(bottom.chosen_tab() == bottom.tab() || bottom.tab() == Tab::Keyboard, "8: chosen {:?}, shown {:?}", bottom.chosen_tab(), bottom.tab());
     ensure!(bottom.editor().is_none_or(|e| e.tab() == bottom.tab()), "8: an editor for another tab shown");
     ensure!(bottom.tab() != Tab::Touchpad || bottom.pointing(), "8: the touchpad tab doesn't point");

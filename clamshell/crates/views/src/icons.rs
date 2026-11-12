@@ -42,6 +42,7 @@ pub(super) fn setting(s: Setting) -> Icon {
         Setting::CpuMax => Icon::Cpu,
         Setting::GpuMax => Icon::Gpu,
         Setting::ChargeLimit => Icon::Battery { tenths: 8, charging: true },
+        Setting::DimAfter => Icon::Brightness,
         Setting::ScreenOff => Icon::ScreenOff,
         Setting::Sleep => Icon::Moon,
         Setting::Background => Icon::Windows,

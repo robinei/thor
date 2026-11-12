@@ -1165,9 +1165,15 @@ start "zelda-lttp"; back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vLevel(Brightness)
 -- screen
-Level(Brightness): ^Tab(Wifi) vBacklights[0].Level <[Step Brightness -1] >[Step Brightness 1]
-Backlights[0].Level: ^Level(Brightness) vBacklights[1].Level <[Step Backlight(0) -1] >[Step Backlight(0) 1]
+Level(Brightness): ^Tab(Wifi) vControl(Setting(DimAfter)) <[Step Brightness -1] >[Step Brightness 1]
+Control(Setting(DimAfter)): ^Level(Brightness) vBacklights[0].Level <Tab(Settings) >Level(Brightness)
+Backlights[0].Level: ^Control(Setting(DimAfter)) vBacklights[1].Level <[Step Backlight(0) -1] >[Step Backlight(0) 1]
 Backlights[1].Level: ^Backlights[0].Level v- <[Step Backlight(1) -1] >[Step Backlight(1) 1]
+== brightness-dim.png (bottom; the pad on both screens)
+start "zelda-lttp"; back -
+-- bar as in bottom.png except
+Tab(Windows), PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vLevel(Brightness)
+-- screen as in brightness.png
 == slider.png (bottom; the pad on both screens)
 start Tab(Dock); back -
 -- bar as in bottom.png except

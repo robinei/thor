@@ -28,12 +28,10 @@ pub(crate) struct Power {
     pub(crate) refreshing: bool,
 }
 
-/// How long, in seconds, the second screen goes untouched and without the pad's focus before it dims
-/// (the same time the screens dim without input, so they dim together when nothing is touched), and
-/// after that before it powers off by itself. It only powers off on battery and when the setting isn't
-/// "Screen on" (see [`Bottom::off_at`]).
-use crate::idle::DIM_AFTER;
-const OFF_AFTER: u64 = 180;
+/// How long, in seconds, the second screen goes untouched and without the pad's focus before it powers
+/// off by itself. It only powers off on battery and when the setting isn't "Screen on" (see
+/// [`Bottom::off_at`]).
+const OFF_AFTER: u64 = 240;
 
 impl Bottom {
     /// Whether the second screen is dark. It is when the program in force (`in_game`) wants it dark and
@@ -43,12 +41,14 @@ impl Bottom {
     }
 
     /// Whether the second screen is drawn dimmed at `now`. It is when it shows ClamShell's view and has
-    /// gone untouched, without the pad's focus, for [`DIM_AFTER`]. Windows moved there are never dimmed,
+    /// gone untouched, without the pad's focus, for `dim` seconds ([`crate::settings::Setting::DimAfter`],
+    /// which the screens dim after without input, so that both dim together when nothing is touched;
+    /// none is never). Windows moved there are never dimmed,
     /// since they are watched without touching. This spares the OLED while a game played with the pad on
     /// the main screen keeps the device awake and nobody looks below. A touch on it, or the pad's focus
     /// coming to it, brings it back.
-    pub(crate) fn dimmed_at(&self, session: &Session, now: u64) -> bool {
-        !self.shows_windows(session) && self.idle_for(now) >= DIM_AFTER
+    pub(crate) fn dimmed_at(&self, session: &Session, dim: Option<u64>, now: u64) -> bool {
+        !self.shows_windows(session) && dim.is_some_and(|dim| self.idle_for(now) >= dim)
     }
 
     /// Seconds since the second screen was last used at `now`, or 0 before the clock's first reading.
@@ -91,11 +91,10 @@ impl Bottom {
     /// Whether the bottom screen should be off by itself at `now`. That needs all of: running on battery,
     /// the setting in force not "Screen on", no refresh calibration running, ClamShell's view on it rather
     /// than a window moved down, and nothing being typed there. On top of that, the screen must be dark
-    /// for a game and not tapped since, or untouched and without the pad's focus for [`DIM_AFTER`] plus
-    /// [`OFF_AFTER`]. The panel is driven in video mode and streamed every frame whatever it shows, so
+    /// for a game and not tapped since, or untouched and without the pad's focus for [`OFF_AFTER`]. The panel is driven in video mode and streamed every frame whatever it shows, so
     /// only turning it off saves power.
     fn idle_wanted(&self, p: Power, now: u64) -> bool {
-        let untouched = self.idle_for(now) >= DIM_AFTER + OFF_AFTER;
+        let untouched = self.idle_for(now) >= OFF_AFTER;
         p.discharging
             && !p.refreshing
             && p.when_idle != BottomWhenIdle::On

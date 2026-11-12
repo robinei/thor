@@ -1,6 +1,6 @@
-//! Idle. With no input of any kind for [`DIM_AFTER`], the screens dim; later they go off, then the
-//! device sleeps. Any input brings them back. The later times are global settings
-//! ([`Setting::ScreenOff`], [`Setting::Sleep`]). The bottom screen also dims by itself while it goes
+//! Idle. With no input of any kind for a while, the screens dim; later they go off, then the device
+//! sleeps. Any input brings them back. The times are global settings ([`Setting::DimAfter`],
+//! [`Setting::ScreenOff`], [`Setting::Sleep`]). The bottom screen also dims by itself while it goes
 //! untouched (see [`crate::bottom::Bottom::dimmed_at`]), after the same time, so with the device put down
 //! after a touch on it both dim together.
 //!
@@ -22,9 +22,6 @@ use crate::settings::{Setting, Values};
 
 /// The compositor reports no input after this many seconds without any.
 pub const NOTIFY_AFTER: u64 = 10;
-/// How long, in seconds, without input before the screens dim. The bottom screen dims after as long
-/// untouched.
-pub(crate) const DIM_AFTER: u64 = 60;
 /// How long before the screens dim to ask a runner whose app is shown whether it keeps the screen on.
 const ASK_BEFORE: u64 = 10;
 /// Presses that end within this long after the screens came back are taken as the wake-up, not as
@@ -92,17 +89,25 @@ pub struct Idle {
 /// What the idle times are, and whether sleeping is allowed now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Policy {
+    dim: Option<u64>,
     screen_off: Option<u64>,
     sleep: Option<u64>,
     may_sleep: bool,
 }
 
 impl Policy {
-    /// Reads the policy from the global settings, which are in minutes, with 0 meaning never.
+    /// Reads the policy from the global settings, in minutes but the dim's in seconds, with 0 meaning
+    /// never.
     pub(crate) fn of(global: &Values, may_sleep: bool) -> Policy {
         let secs = |s: Setting| Some(u64::from(global.get(s)) * 60).filter(|&t| t > 0);
-        Policy { screen_off: secs(Setting::ScreenOff), sleep: secs(Setting::Sleep), may_sleep }
+        Policy { dim: dim_after(global), screen_off: secs(Setting::ScreenOff), sleep: secs(Setting::Sleep), may_sleep }
     }
+}
+
+/// How long, in seconds, without input before the screens dim, and untouched before the bottom screen
+/// dims ([`Setting::DimAfter`]), or none for never.
+pub(crate) fn dim_after(global: &Values) -> Option<u64> {
+    Some(u64::from(global.get(Setting::DimAfter))).filter(|&t| t > 0)
 }
 
 impl Idle {
@@ -160,12 +165,14 @@ impl Idle {
     }
 
     /// Whether to ask the shown app's runner if it keeps the screen on. It is asked [`ASK_BEFORE`] the
-    /// screens dim, once per idle time.
-    pub(crate) fn ask_awake(&mut self, now: u64) -> bool {
-        let Some(since) = self.since() else {
+    /// screens dim (or go off, if sooner or they never dim), once per idle time.
+    pub(crate) fn ask_awake(&mut self, now: u64, policy: Policy) -> bool {
+        // Before the screens dim, or go off if that comes first or they never dim.
+        let first = [policy.dim, policy.screen_off].into_iter().flatten().min();
+        let (Some(since), Some(first)) = (self.since(), first) else {
             return false;
         };
-        let due = self.stage == Stage::Awake && now.saturating_sub(since) + ASK_BEFORE >= DIM_AFTER && self.asked_for != Some(since);
+        let due = self.stage == Stage::Awake && now.saturating_sub(since) + ASK_BEFORE >= first && self.asked_for != Some(since);
         if due {
             self.asked_for = Some(since);
         }
@@ -182,7 +189,7 @@ impl Idle {
         }
         if policy.screen_off.is_some_and(|off| t >= off) {
             Stage::Off
-        } else if t >= DIM_AFTER {
+        } else if policy.dim.is_some_and(|dim| t >= dim) {
             Stage::Dimmed
         } else {
             Stage::Awake
@@ -219,7 +226,7 @@ impl Idle {
         }
         // An app shown that keeps the screen on without the compositor hearing it, as Android's do.
         if let Some(awake) = awake
-            && self.ask_awake(now)
+            && self.ask_awake(now, policy)
         {
             out.effects.push(Effect::AskAwake(awake.to_vec()));
         }
@@ -237,8 +244,11 @@ mod tests {
     use crate::State;
     use crate::testkit::Applied;
 
+    /// The default dim time.
+    const DIM_AFTER: u64 = 60;
+
     fn policy(off: u64, sleep: u64, may_sleep: bool) -> Policy {
-        Policy { screen_off: (off > 0).then_some(off * 60), sleep: (sleep > 0).then_some(sleep * 60), may_sleep }
+        Policy { dim: Some(DIM_AFTER), screen_off: (off > 0).then_some(off * 60), sleep: (sleep > 0).then_some(sleep * 60), may_sleep }
     }
 
     #[test]
@@ -382,6 +392,21 @@ mod tests {
         s.applied(Event::tick(1000));
         s.applied(Event::Idle(IdleEvent::Watching(true)));
         assert!(!s.applied(Event::tick(1050)).contains(&ask));
+    }
+
+    /// With the screens never dimming, or going off before they would, the runner is asked before they go
+    /// off.
+    #[test]
+    fn without_a_dim_first_the_runner_is_asked_before_the_screens_go_off() {
+        let mut idle = Idle::default();
+        idle.heard(IdleEvent::Watching(true), 0);
+        let never = Policy { dim: None, ..policy(5, 0, true) };
+        assert!(!idle.ask_awake(289, never));
+        assert!(idle.ask_awake(290, never));
+        let mut idle = Idle::default();
+        idle.heard(IdleEvent::Watching(true), 0);
+        let later = Policy { dim: Some(600), ..policy(5, 0, true) };
+        assert!(idle.ask_awake(290, later), "the screens go off before the dim");
     }
 
     #[test]
@@ -543,6 +568,44 @@ mod tests {
         s.applied(Event::Idle(IdleEvent::CompositorQuiet));
         s.applied(Event::tick(1000 + 10 * DIM_AFTER + DIM_AFTER - NOTIFY_AFTER));
         assert_eq!(s.idle().stage(), Stage::Dimmed);
+    }
+
+    /// The dim time is a global setting, slid on the brightness tab through its values with no Default
+    /// stop, written as it slides and saved when let go. It moves both dims: the screens' without input and
+    /// the bottom screen's untouched. Never dims neither.
+    #[test]
+    fn the_dim_time_moves_both_dims() {
+        use crate::effect::Save;
+        use crate::{Control, Event, Slide};
+        let mut s = crate::testkit::state();
+        s.applied(Event::tick(1000));
+        s.applied(Event::Idle(IdleEvent::Watching(true)));
+        // By `stops` along the track.
+        let slide = |s: &mut State, stops: f32| {
+            s.applied(Slide::Start { control: Control::Setting(Setting::DimAfter), x: 300.0, width: 600.0 }.into());
+            let length = s.held_slider().map_or(0.0, |sl| sl.length);
+            s.applied(Slide::To { x: 300.0 + stops * length / 6.0 }.into());
+            s.applied(Slide::End.into())
+        };
+        assert_eq!(s.setting_stops(Setting::DimAfter), Setting::DimAfter.choices().len(), "no Default");
+        // From a minute, one stop down: 30 s.
+        let fx = slide(&mut s, -1.0);
+        assert_eq!(s.prefs().settings().global.get(Setting::DimAfter), 30);
+        assert!(fx.iter().any(|e| matches!(e, Effect::Save(Save::Settings(_)))), "saved: {fx:?}");
+        s.applied(Event::tick(1029));
+        assert!(s.idle().stage() == Stage::Awake && !s.bottom_dimmed());
+        s.applied(Event::tick(1030));
+        assert!(s.idle().stage() == Stage::Dimmed && s.bottom_dimmed(), "both after 30 s");
+        // To the end: never.
+        slide(&mut s, 10.0);
+        assert_eq!(s.prefs().settings().global.get(Setting::DimAfter), 0);
+        s.applied(Event::tick(1200));
+        assert!(s.idle().stage() == Stage::Awake && !s.bottom_dimmed(), "never");
+        assert_eq!(
+            s.applied(Event::tick(1300)).iter().filter(|e| matches!(e, Effect::Compositor(Compositor::Outputs { top: false, .. }))).count(),
+            1,
+            "the screens still go off"
+        );
     }
 
     /// A touch on the bottom screen is input, counted at the touch itself rather than at the input

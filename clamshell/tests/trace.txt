@@ -936,6 +936,9 @@ Pointer(Activate(Tab(Brightness)))
 Level(Set(Backlight(1), 65))
   Brightness 70 over 1 shares
 -- brightness.png
+Slide(To { x: 868.0 })
+  Apply settings of all
+-- brightness-dim.png
 == group slider.png
 Tick 1760000000
   Keymap 0 "Default"

@@ -7,7 +7,8 @@ bluetooth-pairing-compare.png 2c1a88ea4052a66f
 bluetooth-pairing-type.png ed57c7bd9834b93b
 bluetooth.png 40c341b678c9a435
 bottom.png a0e3c43268171873
-brightness.png 21609660b36dd127
+brightness-dim.png fbe5fdbafaebc00b
+brightness.png 6dd954ca8eb6931c
 curve-edit-hdr.png 5df937efbc70a920
 curve-edit-histogram.png 8f176574604fc888
 curve-edit-peak.png 43bf8e42219e5716

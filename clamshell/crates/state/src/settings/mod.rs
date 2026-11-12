@@ -87,6 +87,9 @@ pub enum Setting {
     /// (`clamshell_system::power::tuning::Hold`). 0 means bypass: the battery is left alone while the
     /// charger powers the device. Global only, since it is for battery care.
     ChargeLimit,
+    /// The screens dim after this many seconds without input, and the bottom screen after as long
+    /// untouched (see [`crate::idle`]). 0 means never. Global only.
+    DimAfter,
     /// The screens go off after this many minutes without input. 0 means never. Global only.
     ScreenOff,
     /// The device sleeps after this many minutes without input. 0 means never. Global only.
@@ -378,7 +381,7 @@ impl VulkanDriver {
     }
 }
 
-pub const COUNT: usize = 33;
+pub const COUNT: usize = 34;
 
 /// What a value does, for the tile's colour. It is the stock value and does nothing, or it saves power
 /// or eases the load, costs power, or changes how the game looks or plays.
@@ -421,6 +424,7 @@ names!(Setting {
     CpuMax: "cpumax";
     GpuMax: "gpumax";
     ChargeLimit: "charge";
+    DimAfter: "dim";
     ScreenOff: "screenoff";
     Sleep: "sleep";
     Background: "background";
@@ -494,7 +498,7 @@ impl Setting {
             | Setting::Keymap6
             | Setting::Keymap7
             | Setting::Keymap8 => None,
-            Setting::ChargeLimit | Setting::ScreenOff | Setting::Sleep => None,
+            Setting::ChargeLimit | Setting::DimAfter | Setting::ScreenOff | Setting::Sleep => None,
         }
     }
 
@@ -513,6 +517,7 @@ impl Setting {
             Setting::Sharpen => &[0, 25, 50, 75, 100],
             Setting::HdrPeak => &[0, 400, 600, 800, 1000, 1500, 2000, 4000],
             Setting::ChargeLimit => &[100, 90, 80, 0],
+            Setting::DimAfter => &[15, 30, 60, 120, 300, 600, 0],
             Setting::ScreenOff => &[1, 2, 5, 10, 0],
             Setting::Sleep => &[5, 15, 30, 60, 0],
             _ => &[],
@@ -525,6 +530,7 @@ impl Setting {
         }
         match self {
             Setting::ChargeLimit => 100,
+            Setting::DimAfter => 60,
             Setting::ScreenOff => 5,
             Setting::Sleep => 15,
             _ => 0,
@@ -540,7 +546,7 @@ impl Setting {
 
     /// Whether the setting applies only to all games, not per game.
     pub(crate) fn global_only(self) -> bool {
-        matches!(self, Setting::ChargeLimit | Setting::ScreenOff | Setting::Sleep)
+        matches!(self, Setting::ChargeLimit | Setting::DimAfter | Setting::ScreenOff | Setting::Sleep)
     }
 
     /// The setting's name, as its menu's title.
@@ -574,6 +580,7 @@ impl Setting {
             Setting::CpuMax => "CPU limit",
             Setting::GpuMax => "GPU limit",
             Setting::ChargeLimit => "Charge limit",
+            Setting::DimAfter => "Dim after",
             Setting::ScreenOff => "Screens off",
             Setting::Sleep => "Sleep",
             Setting::Background => "In the background",
@@ -593,7 +600,7 @@ impl Setting {
         match (self, value) {
             (Setting::Refresh, 120) | (Setting::CpuMax | Setting::GpuMax, 100) => Impact::Costs,
             // Never, or later than the default, costs power. Sooner saves it.
-            (Setting::ScreenOff | Setting::Sleep, v) if v == 0 || v > self.default_value() => Impact::Costs,
+            (Setting::DimAfter | Setting::ScreenOff | Setting::Sleep, v) if v == 0 || v > self.default_value() => Impact::Costs,
             (s, _) if s.is_keymap() => Impact::Changes,
             (Setting::Curve | Setting::Lights | Setting::HdrPeak | Setting::Sharpen, _) => Impact::Changes,
             _ => Impact::Saves,
@@ -631,6 +638,7 @@ impl Setting {
             (Setting::Sharpen, 0) => "Sharpen off",
             (Setting::ChargeLimit, 100) => "Charge full",
             (Setting::ChargeLimit, 0) => "Bypass",
+            (Setting::DimAfter, 0) => "Never",
             (Setting::ScreenOff, 0) => "Always on",
             (Setting::Sleep, 0) => "No sleep",
             // Numbers: the value with its unit.
@@ -641,6 +649,8 @@ impl Setting {
             (Setting::Sharpen, v) => return number(buf, "Sharpen ", v, " %"),
             (Setting::HdrPeak, v) => return number(buf, "", v, " nits"),
             (Setting::ChargeLimit, v) => return number(buf, "Charge to ", v, " %"),
+            (Setting::DimAfter, v) if v < 60 => return number(buf, "", v, " s"),
+            (Setting::DimAfter, v) => return number(buf, "", v / 60, " min"),
             (Setting::ScreenOff, v) => return number(buf, "Off after ", v, " min"),
             (Setting::Sleep, v) => return number(buf, "Sleep after ", v, " min"),
             // Named choices come from their table, above.

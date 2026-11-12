@@ -795,16 +795,27 @@ pub fn shots(now: u64) -> Result<Vec<Group>, ParseError> {
         ),
         group(
             vec![],
-            vec![shot(
-                "brightness.png",
-                Bottom,
-                vec![
-                    tab(Tab::Brightness),
-                    Reading::Backlights(vec!["dsi0-backlight".into(), "dsi1-backlight".into()]).into(),
-                    LevelEvent::Set(Level::Backlight(1), 65).into(),
-                    PointerEvent::Up(Level::Backlight(1).id()).into(),
-                ],
-            )],
+            vec![
+                shot(
+                    "brightness.png",
+                    Bottom,
+                    vec![
+                        tab(Tab::Brightness),
+                        Reading::Backlights(vec!["dsi0-backlight".into(), "dsi1-backlight".into()]).into(),
+                        LevelEvent::Set(Level::Backlight(1), 65).into(),
+                        PointerEvent::Up(Level::Backlight(1).id()).into(),
+                    ],
+                ),
+                // The dim time held and slid on from a minute.
+                shot(
+                    "brightness-dim.png",
+                    Bottom,
+                    vec![
+                        Slide::Start { control: Control::Setting(Setting::DimAfter), x: 620.0, width: 1240.0 }.into(),
+                        Slide::To { x: 620.0 + 0.2 * 1240.0 }.into(),
+                    ],
+                ),
+            ],
         ),
         // The volume's slider over the dock, then the keyboard.
         group(

@@ -320,7 +320,7 @@ impl State {
 
     /// Whether the bottom screen is drawn dimmed now (see [`Bottom::dimmed_at`]).
     pub fn bottom_dimmed(&self) -> bool {
-        self.bottom.dimmed_at(&self.session, self.clock.mono())
+        self.bottom.dimmed_at(&self.session, crate::idle::dim_after(&self.prefs.settings().global), self.clock.mono())
     }
 
     /// Whether the bottom screen is off now, by hand or by itself (see [`Bottom::off_at`]).
