@@ -419,8 +419,7 @@ fn warm_frames_do_not_allocate() {
             "dark while a game runs",
             vec![
                 Event::Units(vec![LaunchUnit { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 0 }]),
-                // The second screen's setting, from Off when idle past On to Dark in game.
-                tap(Id::Settings(SettingsId::Tile(Setting::BottomScreen))),
+                // The second screen's setting, from On in game to Dark in game.
                 tap(Id::Settings(SettingsId::Tile(Setting::BottomScreen))),
             ],
         ),

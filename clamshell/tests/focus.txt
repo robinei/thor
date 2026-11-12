@@ -679,16 +679,14 @@ Wifi[11]: ^Wifi[10] vWifi[12] <Tab(Settings) >Wifi(Power)
 start Tab(Battery); back -
 -- bar as in bottom.png except
 Tab(Windows), PadMouse, Tab(Time): vTile(Sleep)
-Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness): vTile(ChargeLimit)
-Tab(Bluetooth), Tab(Wifi), Tab(Battery): vTile(ScreenOff)
+Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vTile(ChargeLimit)
 -- screen
-Tile(Sleep): ^PadMouse vBattery(Spender(0)) <Tile(ScreenOff) >Tab(Windows)
-Tile(ScreenOff): ^Tab(Wifi) vBattery(Spender(0)) <Tile(ChargeLimit) >Tile(Sleep)
-Tile(ChargeLimit): ^Control(Volume) vBattery(Spender(0)) <Tab(Sysinfo) >Tile(ScreenOff)
-Battery(Spender(0)): ^Tile(ChargeLimit) vBattery(Spender(1)) <Tile(ChargeLimit) >Tile(Sleep)
-Battery(Spender(1)): ^Battery(Spender(0)) vBattery(Spender(2)) <Tile(ChargeLimit) >Tile(Sleep)
-Battery(Spender(2)): ^Battery(Spender(1)) vBattery(Spender(4)) <Tile(ChargeLimit) >Tile(Sleep)
-Battery(Spender(4)): ^Battery(Spender(2)) v- <Tile(ChargeLimit) >Tile(Sleep)
+Tile(Sleep): ^PadMouse vBattery(Spender(0)) <Tile(ChargeLimit) >Tab(Windows)
+Tile(ChargeLimit): ^Tab(Wifi) vBattery(Spender(0)) <Tab(Bluetooth) >Tile(Sleep)
+Battery(Spender(0)): ^Tile(ChargeLimit) vBattery(Spender(1)) <Tab(Settings) >Tile(Sleep)
+Battery(Spender(1)): ^Battery(Spender(0)) vBattery(Spender(2)) <Tab(Settings) >Tile(Sleep)
+Battery(Spender(2)): ^Battery(Spender(1)) vBattery(Spender(4)) <Tab(Settings) >Tile(Sleep)
+Battery(Spender(4)): ^Battery(Spender(2)) v- <Tab(Settings) >Tile(Sleep)
 == battery-menu.png (bottom; the pad on both screens)
 start "zelda-lttp"; back -
 -- bar as in bottom.png except
@@ -1166,8 +1164,9 @@ start "zelda-lttp"; back -
 Tab(Windows), PadMouse, Tab(Time), Tab(Settings), Tab(Dock), Tab(Keyboard), Tab(Touchpad), Tab(Sysinfo), Control(Volume), Control(Brightness), Tab(Bluetooth), Tab(Wifi), Tab(Battery): vLevel(Brightness)
 -- screen
 Level(Brightness): ^Tab(Wifi) vControl(Setting(DimAfter)) <[Step Brightness -1] >[Step Brightness 1]
-Control(Setting(DimAfter)): ^Level(Brightness) vBacklights[0].Level <Tab(Settings) >Level(Brightness)
-Backlights[0].Level: ^Control(Setting(DimAfter)) vBacklights[1].Level <[Step Backlight(0) -1] >[Step Backlight(0) 1]
+Control(Setting(DimAfter)): ^Level(Brightness) vControl(Setting(ScreenOff)) <Tab(Settings) >Level(Brightness)
+Control(Setting(ScreenOff)): ^Control(Setting(DimAfter)) vBacklights[0].Level <Tab(Settings) >Backlights[0].Level
+Backlights[0].Level: ^Control(Setting(ScreenOff)) vBacklights[1].Level <[Step Backlight(0) -1] >[Step Backlight(0) 1]
 Backlights[1].Level: ^Backlights[0].Level v- <[Step Backlight(1) -1] >[Step Backlight(1) 1]
 == brightness-dim.png (bottom; the pad on both screens)
 start "zelda-lttp"; back -

@@ -342,7 +342,8 @@ bottom screen to open the windows' tab and turn on (`Bottom::show_below`).
 | the window below displaced by another (Return): back behind in its group, and if its stack had the keyboard, the keyboard goes to the window in front, or to ClamShell's UI with the Library in front | windows `a_window_displaced_from_below_gives_up_the_keyboard` |
 | dock tap or BottomWindows → windows shown (the windows' tab), the screen turned on if it was off by hand | running `show_of_an_entry_whose_windows_are_all_below_shows_them_there` |
 | Home+Start: wake if off by itself (dark for a game too, which sets `woken` as a tap does), else toggle off | `the_bottom_screen_turns_off_and_on`, `home_start_brings_back_…`, `…off_by_hand_and_by_itself_at_once`, `home_start_wakes_a_screen_dark_for_a_game` |
-| settle: off by itself when on battery, not refreshing, not set to stay on, no windows shown, no editor, and dark in a game or untouched 4 min | `on_battery_the_untouched_…` and siblings; `a_refresh_calibration_or_an_editor_keeps_it_on` |
+| settle: off by itself when not refreshing, no windows shown, no editor, and dark in a game (the tile's "Dark in game", until tapped) or untouched for the `ScreenOff` setting's time (the screens go off after as long without input; never with 0), on the charger too | `untouched_the_bottom_screen_goes_off_…`, `on_the_charger_too_it_goes_off_untouched_unless_screens_never_go_off`, `dark_for_a_game_it_goes_off_…`; `a_refresh_calibration_or_an_editor_keeps_it_on` |
+| the screens back from idle Off to Awake (any input): a use, so a bottom screen that went off untouched with them comes back with them | `untouched_it_goes_off_with_the_screens_and_comes_back_with_them` |
 | Resumed (the device woken from sleep): a use, as a touch is, so a screen off or dimmed by itself is lit again; one off by hand, or dark for a game, stays so | `waking_the_device_brings_back_the_bottom_screen_off_by_itself` |
 | settle: dimmed after the `DimAfter` setting's time untouched (1 min by default; the time the screens dim without input; never with 0), unless windows are shown; other input (the pad, keys, the top screen) or an app keeping the screen on doesn't keep it lit | `the_bottom_screen_dims_untouched_and_lights_when_used`; idle `pad_input_keeps_the_top_lit_but_lets_the_bottom_dim`, `an_app_keeping_the_screen_on_keeps_the_top_lit` |
 | dark (`bottom_dark`): for a game set to darken it, until woken, and never while a window is shown there; while dark, or off, or showing a window, the tab's readings aren't watched | `the_dark_second_screen_watches_nothing_and_a_window_there_keeps_it_lit` |
@@ -370,8 +371,11 @@ The bottom screen's drawn dim (bottom/screen.rs) follows its own touches after t
 touch is input too, so with no input both dim at once; the randomized test holds that the stage is
 never Dimmed with the bottom screen lit, unless it shows windows (invariant 8), and slides the setting.
 
-`DimAfter` is a slider row on the brightness tab (`widgets::slider_row`, below the brightness level;
-snapshot `brightness-dim.png`). A global-only setting's slider has no Default stop: its stops are its
+`DimAfter` and `ScreenOff` ("Screens off after", 1, 2, 5, 10 min or never) are slider rows on the
+brightness tab (`widgets::slider_row`, below the brightness level; snapshots `brightness.png`,
+`brightness-dim.png`), and on no tile. Dim after is drawn dim when the screens go off no later than they
+would dim (`State::dims_before_off`), since then they go off without dimming. A key pressed
+(`HardwareKey`) is input too. A global-only setting's slider has no Default stop: its stops are its
 values, written to All as it slides and saved when let go (`Save(Settings)`).
 
 | Transition | Test |
@@ -381,6 +385,7 @@ values, written to All as it slides and saved when let go (`Save(Settings)`).
 | `DimAfter` slid: both dims (Dimmed, and the bottom's untouched dim) follow the new time; never dims neither, the screens still go off | `the_dim_time_moves_both_dims` |
 | Awake → Dimmed → Off → Asleep by time; effects through sync: dim brightness, `Outputs{top: false}`, status watch off, `Sleep` (after `Outputs`) | `the_state_dims_turns_the_screens_off_and_back_and_sleeps_only_when_allowed`; tests `the_screens_go_off_before_the_device_sleeps` |
 | any input, KeptAwake while awake (one after the dim is ignored), Resumed or a running refresh → Awake: undim, `Outputs{top: true}` | same; `off_by_itself_before_the_screens_go_off_…`, `a_running_refresh_calibration_keeps_idle_awake`, `a_late_kept_awake_leaves_the_screens_dimmed` |
+| `ScreenOff` slid on the brightness tab; with the dim no sooner, Off comes without Dimmed and `dims_before_off` is false; a HardwareKey is input | `the_screens_off_time_is_slid_and_a_dim_after_it_never_comes` |
 | BottomTouched is input, at the touch (the input thread reports at most every few seconds) | `a_bottom_touch_is_input` |
 | Resumed at State level (stage, and Apply resent) | tests `back_from_sleep_applies_the_settings_again_and_wakes_the_screens` |
 | a press on dark screens, or within 1 s of waking, is swallowed | idle `a_press_on_dark_screens_only_wakes_them`, `a_tap_on_dark_screens_wakes_them_and_does_nothing_else` |

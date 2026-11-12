@@ -2,13 +2,13 @@
 # what is drawn: CLAMSHELL_UPDATE_SNAPSHOTS=1 cargo test -p clamshell snapshots
 bar-window-below.png 60d2776a54975ee6
 battery-menu.png 41da1322968dda54
-battery.png da760771634d8668
+battery.png 8e5637c7843459b5
 bluetooth-pairing-compare.png 2c1a88ea4052a66f
 bluetooth-pairing-type.png ed57c7bd9834b93b
 bluetooth.png 40c341b678c9a435
 bottom.png a0e3c43268171873
-brightness-dim.png fbe5fdbafaebc00b
-brightness.png 6dd954ca8eb6931c
+brightness-dim.png d5121dbd9936aa73
+brightness.png 1b8f5efc33c7ee80
 curve-edit-hdr.png 5df937efbc70a920
 curve-edit-histogram.png 8f176574604fc888
 curve-edit-peak.png 43bf8e42219e5716
@@ -83,12 +83,12 @@ notice-long.png f6f57067c8d99572
 portal-replace.png 7dc20c67a3a6f51e
 portal-save.png 829355a7ee610113
 settings-env.png e733ebc86e24e662
-settings-global.png 2d8886101be1acfd
+settings-global.png 2ad5c8927efc6971
 settings-menu.png 81241f20e081f1fd
-settings-running.png 9286bc7a26a426e1
+settings-running.png 528516c84dde4f1d
 settings-vulkan-installed.png 518513c80555e345
 settings-vulkan-missing.png d730dbbcdc09397e
-settings.png b099adca7a7e8ab9
+settings.png db73b128d348166d
 setup-password.png bc21c471ddcd9b06
 setup-problem.png eb5f8f4e7ff3a240
 setup-typing.png a57d1d0dc99de9bf

@@ -318,6 +318,12 @@ impl State {
         &self.bottom
     }
 
+    /// Whether the screens dim before they go off, by the settings (see [`crate::idle`]): the brightness
+    /// tab shows the dim time dimmed when they don't.
+    pub fn dims_before_off(&self) -> bool {
+        crate::idle::dims_before_off(&self.prefs.settings().global)
+    }
+
     /// Whether the bottom screen is drawn dimmed now (see [`Bottom::dimmed_at`]).
     pub fn bottom_dimmed(&self) -> bool {
         self.bottom.dimmed_at(&self.session, crate::idle::dim_after(&self.prefs.settings().global), self.clock.mono())
@@ -508,7 +514,11 @@ impl State {
             Event::Pointing(pointing) => self.bottom.point(pointing, out),
             Event::Resumed => self.resumed(),
             Event::Idle(event) => self.idle.heard(event, now),
-            Event::HardwareKey(key) => self.on_hardware_key(key, out),
+            // A key pressed is input, counted here as the pad's on the screens is.
+            Event::HardwareKey(key) => {
+                self.idle.own_input(now);
+                self.on_hardware_key(key, out);
+            }
             // Input, timed here rather than by the input thread's reports, which come at most every few
             // seconds, so that both screens count from the same touch.
             Event::BottomTouched => {
@@ -611,7 +621,7 @@ impl State {
     /// 12. The idle stage.
     /// 13. The program in force.
     /// 14. (The second screen off by itself reads the program in force's setting and darkness as 13 left
-    ///     them: `dark_for_a_game_on_battery_it_goes_off_and_a_tap_wakes_it`.)
+    ///     them: `dark_for_a_game_it_goes_off_and_a_tap_wakes_it`.)
     /// 15. The notifications' times, which run while the second screen is lit, as 12 and 13 leave it
     ///     (`a_notification_waits_for_the_bottom_screen_and_then_shows_its_time`).
     /// 16. The pad mouse, when the program in force changed.
@@ -690,7 +700,13 @@ impl State {
         // video asks the compositor to keep the screen on.
         let policy = crate::idle::Policy::of(&self.prefs.settings().global, self.session.device_session());
         let refreshing = self.device_view.calibrating();
+        let was_off = self.idle.stage() >= crate::idle::Stage::Off;
         self.idle.follow(self.clock.mono(), policy, refreshing, self.session.awake_command(), out);
+        // The screens back from off, by any input: the bottom one comes back too, as for a use of it, since
+        // untouched it went off with them.
+        if was_off && self.idle.stage() == crate::idle::Stage::Awake {
+            self.bottom.used(&self.clock);
+        }
         // Once the front is settled, which the program in force follows; the pad's route then follows the
         // program.
         let changed = self.session.follow_program();

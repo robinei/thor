@@ -1,6 +1,6 @@
 //! The battery tab. The top row shows the level and what the battery is doing (drain and time left),
-//! beside tiles for the battery's settings: the charge limit, and when the screens go off and the device
-//! sleeps without input. The tiles are drawn and stepped as in the settings grid. Below is the charge over
+//! beside tiles for the battery's settings: the charge limit, and when the device sleeps without input
+//! (when the screens dim and go off is on the brightness tab). The tiles are drawn and stepped as in the settings grid. Below is the charge over
 //! the last day, from UPower's history, with charging in green.
 //!
 //! Then comes what is using the machine now, as many programs as fit: the busiest first, then idle ones
@@ -26,7 +26,7 @@ use super::format::{Bytes, Duration, MaybeShare, Share};
 const TOP_H: f32 = 0.22;
 /// The settings tiles beside the level, and a tile's width as a fraction of the row's, close to the
 /// settings grid's.
-const TILES: [Setting; 3] = [Setting::ChargeLimit, Setting::ScreenOff, Setting::Sleep];
+const TILES: [Setting; 2] = [Setting::ChargeLimit, Setting::Sleep];
 const TILE_W: f32 = 0.23;
 /// A tile's height as a fraction of the area's height, the same as the settings grid's.
 const TILE_H: f32 = 0.19;

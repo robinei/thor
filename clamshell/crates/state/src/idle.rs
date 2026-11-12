@@ -104,6 +104,19 @@ impl Policy {
     }
 }
 
+/// How long, in seconds, without input before the screens go off ([`Setting::ScreenOff`]), or none for
+/// never. The bottom screen goes off after as long untouched.
+pub(crate) fn screen_off(global: &Values) -> Option<u64> {
+    Policy::of(global, false).screen_off
+}
+
+/// Whether the screens dim before they go off, by the settings: they dim, and sooner than they go off if
+/// they do.
+pub(crate) fn dims_before_off(global: &Values) -> bool {
+    let off = Policy::of(global, false).screen_off;
+    dim_after(global).is_some_and(|dim| off.is_none_or(|off| dim < off))
+}
+
 /// How long, in seconds, without input before the screens dim, and untouched before the bottom screen
 /// dims ([`Setting::DimAfter`]), or none for never.
 pub(crate) fn dim_after(global: &Values) -> Option<u64> {
@@ -320,7 +333,8 @@ mod tests {
         assert_eq!(
             s.applied(Event::tick(1300)),
             vec![
-                Effect::Compositor(Compositor::Outputs { top: false, bottom: true }),
+                // The bottom screen, untouched as long, goes off with them.
+                Effect::Compositor(Compositor::Outputs { top: false, bottom: false }),
                 Effect::Watch(crate::Watch::Status, false),
                 Effect::Watch(crate::Watch::Metrics, false)
             ]
@@ -606,6 +620,30 @@ mod tests {
             1,
             "the screens still go off"
         );
+    }
+
+    /// The screens-off time is slid the same way, through its values. With the dim no sooner, the screens
+    /// go off without dimming, and the brightness tab shows the dim time as not coming. A key is input.
+    #[test]
+    fn the_screens_off_time_is_slid_and_a_dim_after_it_never_comes() {
+        use crate::{Control, Event, HardwareKey, Slide};
+        let mut s = crate::testkit::state();
+        s.applied(Event::tick(1000));
+        s.applied(Event::Idle(IdleEvent::Watching(true)));
+        assert!(s.dims_before_off());
+        // From 5 minutes to the first stop, 1 minute; the dim to 2 minutes.
+        s.applied(Slide::Start { control: Control::Setting(Setting::ScreenOff), x: 300.0, width: 600.0 }.into());
+        s.applied(Slide::To { x: -5000.0 }.into());
+        s.applied(Slide::End.into());
+        assert_eq!(s.prefs().settings().global.get(Setting::ScreenOff), 1);
+        s.settings_mut().global.set(Setting::DimAfter, 120);
+        assert!(!s.dims_before_off());
+        s.applied(Event::tick(1059));
+        assert_eq!(s.idle().stage(), Stage::Awake);
+        s.applied(Event::tick(1060));
+        assert_eq!(s.idle().stage(), Stage::Off, "off without dimming");
+        s.applied(Event::HardwareKey(HardwareKey::VolumeUp));
+        assert_eq!(s.idle().stage(), Stage::Awake, "a key is input");
     }
 
     /// A touch on the bottom screen is input, counted at the touch itself rather than at the input

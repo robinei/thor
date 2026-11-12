@@ -1,7 +1,8 @@
 use super::*;
 
-/// The default dim time.
+/// The default dim time, and screens-off time, after which the bottom screen goes off untouched.
 const DIM_AFTER: u64 = 60;
+const OFF_AFTER: u64 = 300;
 use crate::Compositor;
 use crate::HardwareKey;
 use crate::Tab;
@@ -161,7 +162,7 @@ fn power(fx: &[Effect]) -> Option<bool> {
 }
 
 #[test]
-fn on_battery_the_untouched_bottom_screen_goes_off_and_a_touch_brings_it_back() {
+fn untouched_the_bottom_screen_goes_off_and_a_touch_brings_it_back() {
     let mut s = state();
     on_battery(&mut s, true);
     s.applied(Event::tick(1000));
@@ -172,24 +173,21 @@ fn on_battery_the_untouched_bottom_screen_goes_off_and_a_touch_brings_it_back() 
     assert!(!s.bottom_off());
 }
 
+/// Put down after a touch on it, the bottom screen goes off with the screens, and input of any kind
+/// brings both back.
 #[test]
-fn off_by_itself_before_the_screens_go_off_it_stays_off_as_they_come_back() {
+fn untouched_it_goes_off_with_the_screens_and_comes_back_with_them() {
     use crate::idle::IdleEvent;
     let mut s = state();
-    on_battery(&mut s, true);
     s.applied(Event::tick(1000));
     s.applied(Event::Idle(IdleEvent::Watching(true)));
-    // The bottom screen goes off by itself 4 minutes after its last use, and the screens for idle 5
-    // minutes after the input, a touch on it being both.
     s.applied(Event::tick(1060));
     s.applied(Event::BottomTouched);
     let fx = s.applied(Event::tick(1060 + OFF_AFTER));
-    assert!(s.bottom_off());
-    assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: false })), "{fx:?}");
-    let fx = s.applied(Event::tick(1060 + 300));
     assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: false, bottom: false })), "{fx:?}");
     let fx = s.applied(Event::Idle(IdleEvent::DeviceInput));
-    assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: false })), "{fx:?}");
+    assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: true })), "{fx:?}");
+    assert!(!s.bottom_dimmed());
 }
 
 /// Waking the device brings back a bottom screen that went off by itself, as a touch would; one off by
@@ -210,7 +208,7 @@ fn waking_the_device_brings_back_the_bottom_screen_off_by_itself() {
     // Dark for a game, it stays dark.
     let mut s = state();
     on_battery(&mut s, true);
-    s.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::DarkInGame.value());
+    s.settings_mut().global.set(Setting::BottomScreen, BottomInGame::Dark.value());
     s.applied(Event::tick(1000));
     crate::testkit::start(&mut s, "zelda-lttp");
     assert!(s.bottom_off());
@@ -230,27 +228,26 @@ fn the_wall_clock_set_back_does_not_keep_it_on() {
     assert_eq!(power(&s.applied(at(1000 + OFF_AFTER))), Some(false), "off on time");
 }
 
+/// The charger doesn't matter; with the screens set never to go off, it doesn't go off by itself either.
 #[test]
-fn on_the_charger_or_set_to_stay_on_it_only_dims() {
+fn on_the_charger_too_it_goes_off_untouched_unless_screens_never_go_off() {
     let mut s = state();
     on_battery(&mut s, false);
     s.applied(Event::tick(1000));
-    assert_eq!(power(&s.applied(Event::tick(1000 + OFF_AFTER))), None, "on the charger: only dimmed");
-    // Unplugged now, but set to Screen on, so it is only dimmed.
-    s.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::On.value());
-    on_battery(&mut s, true);
-    assert_eq!(power(&s.applied(Event::tick(1001 + OFF_AFTER))), None);
-    // Back to the default, it turns off. With the charger plugged in, it turns on.
-    s.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::OffWhenIdle.value());
-    assert_eq!(power(&s.applied(Event::tick(1002 + OFF_AFTER))), Some(false));
-    assert_eq!(power(&on_battery(&mut s, false)), Some(true), "the charger: on again");
+    assert_eq!(power(&s.applied(Event::tick(1000 + OFF_AFTER))), Some(false), "on the charger too");
+    s.applied(Event::BottomTouched);
+    s.settings_mut().global.set(Setting::ScreenOff, 0);
+    assert_eq!(power(&s.applied(Event::tick(1000 + 10 * OFF_AFTER))), None, "never");
+    assert!(s.bottom_dimmed(), "dimmed all the same");
+    s.settings_mut().global.set(Setting::ScreenOff, 1);
+    assert_eq!(power(&s.applied(Event::tick(1000 + 10 * OFF_AFTER + 1))), Some(false), "after a minute untouched");
 }
 
 #[test]
-fn dark_for_a_game_on_battery_it_goes_off_and_a_tap_wakes_it() {
+fn dark_for_a_game_it_goes_off_and_a_tap_wakes_it() {
     let mut s = state();
     on_battery(&mut s, true);
-    s.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::DarkInGame.value());
+    s.settings_mut().global.set(Setting::BottomScreen, BottomInGame::Dark.value());
     crate::testkit::start(&mut s, "zelda-lttp");
     assert!(s.bottom_dark());
     assert!(s.bottom_off(), "dark on battery: off at once");
@@ -263,7 +260,7 @@ fn dark_for_a_game_on_battery_it_goes_off_and_a_tap_wakes_it() {
 fn home_start_wakes_a_screen_dark_for_a_game() {
     let mut s = state();
     on_battery(&mut s, true);
-    s.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::DarkInGame.value());
+    s.settings_mut().global.set(Setting::BottomScreen, BottomInGame::Dark.value());
     s.applied(Event::tick(1000));
     crate::testkit::start(&mut s, "zelda-lttp");
     assert!(s.bottom_off());
@@ -394,7 +391,7 @@ fn a_refresh_calibration_or_an_editor_keeps_it_on() {
 #[test]
 fn a_game_starting_lets_a_woken_screen_go_dark_again() {
     let mut s = state();
-    s.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::DarkInGame.value());
+    s.settings_mut().global.set(Setting::BottomScreen, BottomInGame::Dark.value());
     crate::testkit::launch(&mut s, "zelda-lttp");
     assert!(s.bottom_dark());
     s.applied(Event::Pointer(crate::PointerEvent::Activate(crate::Id::Wake)));

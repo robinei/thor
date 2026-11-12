@@ -197,14 +197,11 @@ pub(super) fn draw_brightness(f: &mut Frame) {
     level(f, Level::Brightness, row, false);
     number(f, number_r, s.levels().level(Level::Brightness), "", z.text);
 
-    // How long without input before the screens dim (the bottom one untouched), held to slide through its
-    // values. The track spans the screen's width, as other sliders' do.
-    let dim = Setting::DimAfter;
-    let mut value = Fmt::<16>::new();
-    dim.describe(s.prefs().settings().global.get(dim), &mut value);
-    let track = Track { x0: body.x, w: body.w };
-    let dim_row = col.take(z.row_h);
-    let held = widgets::slider_row(f, dim_row, z.text, (Control::Setting(dim), track), dim.title(), value.as_str(), Tone::Normal);
+    // How long without input before the screens dim, then go off (the bottom one untouched), each held to
+    // slide through its values. A dim no sooner than the screens go off doesn't come, so its value is dim.
+    let dims = if s.dims_before_off() { Tone::Normal } else { Tone::Dim };
+    let mut held = setting_row(f, &mut col, &z, Setting::DimAfter, dims);
+    held = held.or(setting_row(f, &mut col, &z, Setting::ScreenOff, Tone::Normal));
     col.skip(z.pad * 0.5);
 
     // Each screen's share of the level.
@@ -212,7 +209,7 @@ pub(super) fn draw_brightness(f: &mut Frame) {
     if s.levels().backlights().is_empty() {
         let r = col.rest();
         f.c.text(r.x, r.y, z.text, Tone::Dim, "No backlight");
-        return held_dim(f, held, area, value.as_str());
+        return held_setting(f, held, area);
     }
     let backlights = s.levels().backlights();
     let rows = Scrolled::begin(f, ListId::Backlights, col.rest(), z.row_h, backlights.len());
@@ -235,13 +232,25 @@ pub(super) fn draw_brightness(f: &mut Frame) {
         number(f, percent, s.levels().level(level_id), " %", z.text);
     }
     rows.end(f, area.right() + z.pad * 0.4);
-    held_dim(f, held, area, value.as_str());
+    held_setting(f, held, area);
 }
 
-/// The dim time's slider while it is held, drawn last so that its card covers the rows below.
-/// The slider writes the setting as it moves, so `value`, read before, is the one it is at.
-fn held_dim(f: &mut Frame, held: Option<widgets::HeldRow>, area: Rect, value: &str) {
-    let Some(held) = held else { return };
-    let text = Fmt::<48>::of(format_args!("{} {value}", Setting::DimAfter.title()));
-    widgets::held_row(f, held, area, &text);
+/// A global setting's slider row, its value in `tone`, the track spanning the screen's width as other
+/// sliders' do. Returns its slider while held, with its card's text.
+fn setting_row(f: &mut Frame, col: &mut Column, z: &Sizes, setting: Setting, tone: Tone) -> Option<(widgets::HeldRow, Fmt<48>)> {
+    let mut value = Fmt::<16>::new();
+    setting.describe(f.s.prefs().settings().global.get(setting), &mut value);
+    let body = f.body();
+    let track = Track { x0: body.x, w: body.w };
+    let row = col.take(z.row_h);
+    let held = widgets::slider_row(f, row, z.text, (Control::Setting(setting), track), setting.title(), value.as_str(), tone);
+    // The slider writes the setting as it moves, so the value read above is the one it is at.
+    held.map(|h| (h, Fmt::of(format_args!("{} {}", setting.title(), value.as_str()))))
+}
+
+/// A setting's slider while it is held, drawn last so that its card covers the rows below.
+fn held_setting(f: &mut Frame, held: Option<(widgets::HeldRow, Fmt<48>)>, area: Rect) {
+    if let Some((held, text)) = held {
+        widgets::held_row(f, held, area, &text);
+    }
 }

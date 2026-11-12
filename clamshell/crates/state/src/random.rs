@@ -423,7 +423,7 @@ fn targets(rng: &mut Rng, s: &State) -> Vec<Id> {
             ids.extend(row(ListId::Time, s.lists().len(ListId::Time)));
         }
         Tab::Battery => ids.push(Id::Battery(BatteryId::Back)),
-        Tab::Brightness => ids.push(Id::Control(Control::Setting(Setting::DimAfter))),
+        Tab::Brightness => ids.extend([Setting::DimAfter, Setting::ScreenOff].map(|t| Id::Control(Control::Setting(t)))),
         Tab::Touchpad | Tab::Sysinfo => {}
     }
     ids
@@ -795,7 +795,8 @@ fn draw_once(rng: &mut Rng, s: &State, w: &mut World, clock: &mut u64) -> Option
                     0 => Control::Volume,
                     1 => Control::Brightness,
                     2 => Control::Setting(Setting::HdrPeak),
-                    5 => Control::Setting(Setting::DimAfter),
+                    5 if rng.one_in(2) => Control::Setting(Setting::DimAfter),
+                    5 => Control::Setting(Setting::ScreenOff),
                     3 => Control::Light(crate::lights::LightParam::ALL.get(rng.below(3)).copied().unwrap_or(crate::lights::LightParam::Hue)),
                     _ => Control::Curve(crate::curve::CurveParam::ALL.get(rng.below(6)).copied().unwrap_or(crate::curve::CurveParam::Highlights)),
                 };

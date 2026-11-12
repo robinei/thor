@@ -3,7 +3,7 @@
 
 use crate::bottom::screen::Power;
 use crate::profiles::picker::{Kind as ProfileKind, PickerCx};
-use crate::settings::{BottomWhenIdle, Values};
+use crate::settings::{BottomInGame, Values};
 use crate::{Entry, Panel, Resume, State};
 
 impl State {
@@ -51,7 +51,7 @@ impl State {
     /// Whether the second screen is dark (see [`crate::Bottom::dark`]). A window shown there keeps it lit:
     /// it was put there to be watched.
     pub fn bottom_dark(&self) -> bool {
-        !self.bottom.shows_windows(&self.session) && self.bottom.dark(self.session.program().is_some(), self.in_force().choice::<BottomWhenIdle>())
+        !self.bottom.shows_windows(&self.session) && self.bottom.dark(self.session.program().is_some(), self.in_force().choice::<BottomInGame>())
     }
 
     /// What the second screen's power follows, as things are now.
@@ -59,8 +59,8 @@ impl State {
         Power {
             any_down: self.session.bottom_window().is_some(),
             in_game: self.session.program().is_some(),
-            when_idle: self.in_force().choice::<BottomWhenIdle>(),
-            discharging: self.sys.status().discharging,
+            in_game_setting: self.in_force().choice::<BottomInGame>(),
+            screen_off: crate::idle::screen_off(&self.prefs.settings().global),
             refreshing: self.device_view.calibrating(),
         }
     }

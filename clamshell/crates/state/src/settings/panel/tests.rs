@@ -288,7 +288,7 @@ fn a_running_game_takes_changes_at_once() {
 fn a_game_can_start_the_pad_mouse_and_darken_the_second_screen() {
     let mut s = state();
     taps(&mut s, Setting::PadMouse, 1);
-    taps(&mut s, Setting::BottomScreen, 2);
+    taps(&mut s, Setting::BottomScreen, 1);
     let fx = crate::testkit::start(&mut s, "zelda-lttp");
     assert!(fx.contains(&Effect::PadRoute(PadRoute::Mouse)), "{fx:?}");
     assert!(s.bottom_dark());
@@ -303,7 +303,7 @@ fn a_game_can_start_the_pad_mouse_and_darken_the_second_screen() {
 #[test]
 fn the_dark_second_screen_watches_nothing_and_a_window_there_keeps_it_lit() {
     let mut s = state();
-    taps(&mut s, Setting::BottomScreen, 2);
+    taps(&mut s, Setting::BottomScreen, 1);
     assert_eq!(s.bottom().tab(), crate::Tab::Sysinfo, "its metrics watched");
     let mut fx = s.applied(Event::Entry("zelda-lttp".into(), crate::EntryAct::Play));
     let zelda = s.session().launching().iter().find(|l| &*l.entry == "zelda-lttp").map(|l| l.unit.clone()).unwrap();

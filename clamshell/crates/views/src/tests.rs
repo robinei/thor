@@ -392,10 +392,8 @@ fn fingers_point_only_below_the_bar() {
         assert!(!area.contains(x, y), "{:?} at {:?} is in {area:?}", t.id, t.rect);
     }
     state.apply(Event::Units(vec![LaunchUnit { key: clamshell_library::key_of("zelda-lttp"), secs: 1, n: 0 }]), &mut Vec::new());
-    // The second screen's setting stepped from Off when idle, past On, to Dark in game.
-    for _ in 0..2 {
-        state.apply(clamshell_state::PointerEvent::Activate(Id::Settings(SettingsId::Tile(Setting::BottomScreen))).into(), &mut Vec::new());
-    }
+    // The second screen's setting stepped from On in game to Dark in game.
+    state.apply(clamshell_state::PointerEvent::Activate(Id::Settings(SettingsId::Tile(Setting::BottomScreen))).into(), &mut Vec::new());
     assert!(state.bottom_dark());
     let (_, out) = draw_bottom(&state, (1240, 1080), &mut cache);
     assert_eq!(out.point_area, None, "dark: nowhere");

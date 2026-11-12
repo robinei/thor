@@ -51,8 +51,7 @@ pub enum Setting {
     /// setting rather than a curve's, and applies whatever curve is chosen. Edited on the tone curve's edit
     /// screen; the compositor's alone.
     HdrPeak,
-    /// The second screen: 0 on but dimmed when untouched, 1 dark while a game runs until tapped, 2 off
-    /// when idle. With 1 and 2 it is powered off on battery (see [`crate::bottom::screen`]).
+    /// The second screen while a game runs: 0 on, 1 off until tapped (see [`BottomInGame`]).
     BottomScreen,
     /// The big CPU cores: 1 on, 0 off, leaving only the little ones.
     BigCores,
@@ -289,15 +288,14 @@ choices!(
 );
 
 choices!(
-    /// [`Setting::BottomScreen`]: what the second screen does while it isn't used (see
-    /// [`crate::bottom::screen`]).
-    BottomWhenIdle for BottomScreen, default OffWhenIdle {
-        /// Off on battery when idle, after dimming first.
-        OffWhenIdle = 2, "Off when idle", Stock;
-        /// On, but dimmed when untouched.
-        On = 0, "Screen on", Costs;
-        /// Dark while a game is in force, until tapped, and off on battery.
-        DarkInGame = 1, "Dark in game", Saves;
+    /// [`Setting::BottomScreen`]: what the second screen does while a game runs (see
+    /// [`crate::bottom::screen`]). Untouched, it dims and goes off by the brightness tab's times whatever
+    /// this is.
+    BottomInGame for BottomScreen, default On {
+        /// On.
+        On = 0, "On in game", Stock;
+        /// Off while a game is in force, until tapped.
+        Dark = 1, "Dark in game", Saves;
     }
 );
 
@@ -479,7 +477,7 @@ impl Setting {
             Setting::Scaling => Some(&Scaling::TABLE),
             Setting::Size => Some(&Size::TABLE),
             Setting::AntiAliasing => Some(&AntiAliasing::TABLE),
-            Setting::BottomScreen => Some(&BottomWhenIdle::TABLE),
+            Setting::BottomScreen => Some(&BottomInGame::TABLE),
             Setting::BigCores => Some(&Cores::TABLE),
             Setting::Fan => Some(&fan::Mode::TABLE),
             Setting::PadMouse => Some(&MouseAtLaunch::TABLE),
@@ -581,7 +579,7 @@ impl Setting {
             Setting::GpuMax => "GPU limit",
             Setting::ChargeLimit => "Charge limit",
             Setting::DimAfter => "Dim after",
-            Setting::ScreenOff => "Screens off",
+            Setting::ScreenOff => "Screens off after",
             Setting::Sleep => "Sleep",
             Setting::Background => "In the background",
             Setting::X86 => "x86 emulation",
@@ -639,7 +637,7 @@ impl Setting {
             (Setting::ChargeLimit, 100) => "Charge full",
             (Setting::ChargeLimit, 0) => "Bypass",
             (Setting::DimAfter, 0) => "Never",
-            (Setting::ScreenOff, 0) => "Always on",
+            (Setting::ScreenOff, 0) => "Never",
             (Setting::Sleep, 0) => "No sleep",
             // Numbers: the value with its unit.
             (Setting::FpsCap, v) => return number(buf, "", v, " fps"),
@@ -651,7 +649,7 @@ impl Setting {
             (Setting::ChargeLimit, v) => return number(buf, "Charge to ", v, " %"),
             (Setting::DimAfter, v) if v < 60 => return number(buf, "", v, " s"),
             (Setting::DimAfter, v) => return number(buf, "", v / 60, " min"),
-            (Setting::ScreenOff, v) => return number(buf, "Off after ", v, " min"),
+            (Setting::ScreenOff, v) => return number(buf, "", v, " min"),
             (Setting::Sleep, v) => return number(buf, "Sleep after ", v, " min"),
             // Named choices come from their table, above.
             _ => "",

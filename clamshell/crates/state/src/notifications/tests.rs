@@ -1,7 +1,7 @@
 use super::*;
 use crate::HardwareKey;
 use crate::idle::{IdleEvent, Stage};
-use crate::settings::{BottomWhenIdle, Choice, Setting};
+use crate::settings::{BottomInGame, Choice, Setting};
 use crate::testkit::{Applied, state};
 use crate::{Compositor, Event, State, Status};
 
@@ -189,7 +189,7 @@ fn a_critical_notification_lights_a_screen_dark_for_a_game() {
     let mut s = ticking();
     let status = Status { battery: Some(50), discharging: true, ..Status::default() };
     s.applied(Event::Reading(crate::Reading::Status(status)));
-    s.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::DarkInGame.value());
+    s.settings_mut().global.set(Setting::BottomScreen, BottomInGame::Dark.value());
     crate::testkit::start(&mut s, "zelda-lttp");
     assert!(s.bottom_dark() && s.bottom_off());
     notify(&mut s, note(1, Urgency::Normal, -1));
