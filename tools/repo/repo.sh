@@ -109,7 +109,10 @@ publish() {
     local upload
     mapfile -t upload < <(changed "${files[@]}")
     [ ${#upload[@]} -eq 0 ] || gh release upload "$RELEASE" -R "$GITHUB" --clobber "${upload[@]}"
+    # (A signature has the same size whatever it signs, so when the database changed, all of its files
+    # are sent, signatures first.)
     mapfile -t upload < <(changed "${db[@]}")
+    [ ${#upload[@]} -eq 0 ] || mapfile -t upload < <(printf '%s\n' "${db[@]}" | awk '{ print (/\.sig$/ ? 0 : 1), $0 }' | sort -k1,1 -s | cut -d' ' -f2-)
     for f in "${upload[@]}"; do
         gh release upload "$RELEASE" -R "$GITHUB" --clobber "$f"
     done

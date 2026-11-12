@@ -944,9 +944,19 @@ esac''')
         self.assertEqual((m.root / 'calls').read_text().splitlines(), [
             'upload b-2-1-any.pkg.tar.zst.sig b-2-1-any.pkg.tar.zst',
             'upload thor.db.sig',
+            'upload thor.files.sig',
             'upload thor.db',
+            'upload thor.files',
             'delete old-1-1-any.pkg.tar.zst',
         ])
+
+    def test_a_changed_database_takes_its_signatures_though_they_are_the_same_size(self):
+        m = self.machine([('a-1-1-any.pkg.tar.zst', 4), ('a-1-1-any.pkg.tar.zst.sig', 1), ('b-2-1-any.pkg.tar.zst', 3),
+                          ('b-2-1-any.pkg.tar.zst.sig', 1), ('thor.db', 8), ('thor.db.sig', 4), ('thor.files', 5), ('thor.files.sig', 1)])
+        result = self.publish(m)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((m.root / 'calls').read_text().splitlines(),
+                         ['upload thor.db.sig', 'upload thor.files.sig', 'upload thor.db', 'upload thor.files'])
 
     def test_a_repository_lacking_a_package_of_ours_another_depends_on_is_not_published(self):
         packages = {name: depends for name, depends in self.PACKAGES.items() if name != 'turnip-devel'}
