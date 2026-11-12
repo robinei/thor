@@ -28,10 +28,11 @@ pub(crate) struct Power {
     pub(crate) refreshing: bool,
 }
 
-/// How long, in seconds, the second screen goes untouched and without the pad's focus before it dims,
-/// and after that before it powers off by itself. It only powers off on battery and when the setting
-/// isn't "Screen on" (see [`Bottom::off_at`]).
-const DIM_AFTER: u64 = 60;
+/// How long, in seconds, the second screen goes untouched and without the pad's focus before it dims
+/// (the same time the screens dim without input, so they dim together when nothing is touched), and
+/// after that before it powers off by itself. It only powers off on battery and when the setting isn't
+/// "Screen on" (see [`Bottom::off_at`]).
+use crate::idle::DIM_AFTER;
 const OFF_AFTER: u64 = 180;
 
 impl Bottom {

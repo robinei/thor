@@ -1,5 +1,8 @@
-//! Idle. With no input for a while, the screens dim, then go off, then the device sleeps. Any input
-//! brings them back. The times are global settings ([`Setting::ScreenOff`], [`Setting::Sleep`]).
+//! Idle. With no input of any kind for [`DIM_AFTER`], the screens dim; later they go off, then the
+//! device sleeps. Any input brings them back. The later times are global settings
+//! ([`Setting::ScreenOff`], [`Setting::Sleep`]). The bottom screen also dims by itself while it goes
+//! untouched (see [`crate::bottom::Bottom::dimmed_at`]), after the same time, so with the device put down
+//! after a touch on it both dim together.
 //!
 //! Input is read from the input devices themselves: a system thread reads every one, without taking it
 //! away from anyone. Input that reaches ClamShell another way, such as the pad driving the screens, also
@@ -19,8 +22,9 @@ use crate::settings::{Setting, Values};
 
 /// The compositor reports no input after this many seconds without any.
 pub const NOTIFY_AFTER: u64 = 10;
-/// The screens dim this long before they go off.
-const DIM_BEFORE: u64 = 30;
+/// How long, in seconds, without input before the screens dim. The bottom screen dims after as long
+/// untouched.
+pub(crate) const DIM_AFTER: u64 = 60;
 /// How long before the screens dim to ask a runner whose app is shown whether it keeps the screen on.
 const ASK_BEFORE: u64 = 10;
 /// Presses that end within this long after the screens came back are taken as the wake-up, not as
@@ -157,18 +161,18 @@ impl Idle {
 
     /// Whether to ask the shown app's runner if it keeps the screen on. It is asked [`ASK_BEFORE`] the
     /// screens dim, once per idle time.
-    pub(crate) fn ask_awake(&mut self, now: u64, policy: Policy) -> bool {
-        let (Some(since), Some(off)) = (self.since(), policy.screen_off) else {
+    pub(crate) fn ask_awake(&mut self, now: u64) -> bool {
+        let Some(since) = self.since() else {
             return false;
         };
-        let due = self.stage == Stage::Awake && now.saturating_sub(since) + DIM_BEFORE + ASK_BEFORE >= off && self.asked_for != Some(since);
+        let due = self.stage == Stage::Awake && now.saturating_sub(since) + ASK_BEFORE >= DIM_AFTER && self.asked_for != Some(since);
         if due {
             self.asked_for = Some(since);
         }
         due
     }
 
-    /// The stage `policy` wants at `now`.
+    /// The stage `policy` wants at `now`. The screens dim whatever the screen-off time, even with none.
     pub(crate) fn wanted(&self, now: u64, policy: Policy) -> Stage {
         let Some(t) = self.idle_for(now) else {
             return Stage::Awake;
@@ -176,10 +180,12 @@ impl Idle {
         if policy.may_sleep && policy.sleep.is_some_and(|sleep| t >= sleep) && now >= self.sleep_not_before {
             return Stage::Asleep;
         }
-        match policy.screen_off {
-            Some(off) if t >= off => Stage::Off,
-            Some(off) if t + DIM_BEFORE >= off => Stage::Dimmed,
-            _ => Stage::Awake,
+        if policy.screen_off.is_some_and(|off| t >= off) {
+            Stage::Off
+        } else if t >= DIM_AFTER {
+            Stage::Dimmed
+        } else {
+            Stage::Awake
         }
     }
 
@@ -213,7 +219,7 @@ impl Idle {
         }
         // An app shown that keeps the screen on without the compositor hearing it, as Android's do.
         if let Some(awake) = awake
-            && self.ask_awake(now, policy)
+            && self.ask_awake(now)
         {
             out.effects.push(Effect::AskAwake(awake.to_vec()));
         }
@@ -240,12 +246,13 @@ mod tests {
         let mut idle = Idle::default();
         let p = policy(5, 15, true);
         idle.heard(IdleEvent::Watching(true), 90);
-        assert_eq!(idle.wanted(100, p), Stage::Awake);
-        assert_eq!(idle.wanted(90 + 270, p), Stage::Dimmed, "30 s before off");
+        assert_eq!(idle.wanted(90 + 59, p), Stage::Awake);
+        assert_eq!(idle.wanted(90 + 60, p), Stage::Dimmed, "a minute without input");
+        assert_eq!(idle.wanted(90 + 299, p), Stage::Dimmed);
         assert_eq!(idle.wanted(90 + 300, p), Stage::Off);
         assert_eq!(idle.wanted(90 + 900, p), Stage::Asleep);
         assert_eq!(idle.wanted(90 + 900, policy(5, 15, false)), Stage::Off, "not allowed to sleep");
-        assert_eq!(idle.wanted(90 + 900, policy(0, 0, true)), Stage::Awake, "never");
+        assert_eq!(idle.wanted(90 + 900, policy(0, 0, true)), Stage::Dimmed, "never off, but dimmed");
         idle.heard(IdleEvent::DeviceInput, 1000);
         assert_eq!(idle.wanted(1010, p), Stage::Awake, "input");
     }
@@ -268,7 +275,7 @@ mod tests {
         assert_eq!(idle.wanted(4990 + 300, p), Stage::Off);
         // The devices still count, such as the controller, since a joystick isn't the compositor's input.
         idle.heard(IdleEvent::DeviceInput, 5200);
-        assert_eq!(idle.wanted(5300, p), Stage::Awake);
+        assert_eq!(idle.wanted(5250, p), Stage::Awake);
     }
 
     #[test]
@@ -298,7 +305,8 @@ mod tests {
         s.applied(Event::tick(1000));
         s.applied(Event::Idle(IdleEvent::Watching(true)));
         // Defaults: screens off after 5 minutes, sleep after 15.
-        assert_eq!(brightness(&s.applied(Event::tick(1270))), Some(20), "dimmed to a third");
+        assert_eq!(brightness(&s.applied(Event::tick(1059))), None);
+        assert_eq!(brightness(&s.applied(Event::tick(1060))), Some(20), "dimmed to a third after a minute");
         assert_eq!(
             s.applied(Event::tick(1300)),
             vec![
@@ -357,23 +365,23 @@ mod tests {
         crate::testkit::end(&mut s, "desktop:firefox");
         s.observed(vec![crate::testkit::win(6, "firefox")]);
         let ask = Effect::AskAwake(vec!["awake".into()]);
-        // Asked once, 10 s before the screens dim. They go off at 5 minutes and dim 30 s before that.
-        assert!(!s.applied(Event::tick(1259)).contains(&ask));
-        assert!(s.applied(Event::tick(1260)).contains(&ask));
-        assert!(!s.applied(Event::tick(1261)).contains(&ask), "once");
+        // Asked once, 10 s before the screens dim, which they do after a minute without input.
+        assert!(!s.applied(Event::tick(1049)).contains(&ask));
+        assert!(s.applied(Event::tick(1050)).contains(&ask));
+        assert!(!s.applied(Event::tick(1051)).contains(&ask), "once");
         // It keeps the screen on, which counts as input, so it doesn't dim. It is asked again as the next
         // dimming nears.
         s.applied(Event::Idle(IdleEvent::KeptAwake));
-        s.applied(Event::tick(1280));
+        s.applied(Event::tick(1070));
         assert_eq!(s.idle().stage(), Stage::Awake);
-        assert!(s.applied(Event::tick(1261 + 260)).contains(&ask));
+        assert!(s.applied(Event::tick(1051 + 50)).contains(&ask));
         // With no answer, it dims as usual. An app that isn't shown isn't asked.
-        s.applied(Event::tick(1261 + 270));
+        s.applied(Event::tick(1051 + 60));
         assert_eq!(s.idle().stage(), Stage::Dimmed);
         let mut s = crate::testkit::state();
         s.applied(Event::tick(1000));
         s.applied(Event::Idle(IdleEvent::Watching(true)));
-        assert!(!s.applied(Event::tick(1260)).contains(&ask));
+        assert!(!s.applied(Event::tick(1050)).contains(&ask));
     }
 
     #[test]
@@ -473,6 +481,68 @@ mod tests {
         assert_eq!(s.idle().stage(), Stage::Asleep);
         let fx = s.applied(Event::Idle(IdleEvent::DeviceInput));
         assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: true })), "{fx:?}");
+    }
+
+    /// The bottom screen dims a minute after its last touch, the top screen a minute after the last input
+    /// of any kind. Put down after a touch on the bottom screen, both dim at once. Input of any kind then
+    /// lights the top screen at once; only a touch lights the bottom one.
+    #[test]
+    fn put_down_after_a_bottom_touch_both_screens_dim_at_once() {
+        use crate::Event;
+        use crate::status::Status;
+        let mut s = crate::testkit::state();
+        s.applied(crate::Reading::Status(Status { brightness: Some(60), ..Status::default() }).into());
+        s.applied(crate::LevelEvent::Set(crate::Level::Brightness, 60).into());
+        s.applied(Event::tick(1000));
+        s.applied(Event::Idle(IdleEvent::Watching(true)));
+        s.applied(Event::tick(1030));
+        s.applied(Event::BottomTouched);
+        s.applied(Event::tick(1030 + DIM_AFTER - 1));
+        assert!(s.idle().stage() == Stage::Awake && !s.bottom_dimmed());
+        let fx = s.applied(Event::tick(1030 + DIM_AFTER));
+        assert!(s.idle().stage() == Stage::Dimmed && s.bottom_dimmed(), "both at once");
+        assert!(fx.iter().any(|e| matches!(e, Effect::Brightness { level: 20, .. })), "{fx:?}");
+        let fx = s.applied(Event::Idle(IdleEvent::DeviceInput));
+        assert_eq!(s.idle().stage(), Stage::Awake, "the pad lights the top screen");
+        assert!(fx.iter().any(|e| matches!(e, Effect::Brightness { level: 60, .. })), "{fx:?}");
+        assert!(s.bottom_dimmed(), "but not the bottom one");
+        s.applied(Event::BottomTouched);
+        assert!(!s.bottom_dimmed());
+    }
+
+    /// Playing with the pad, the top screen stays lit and the untouched bottom screen dims.
+    #[test]
+    fn pad_input_keeps_the_top_lit_but_lets_the_bottom_dim() {
+        use crate::{Event, Id, LibraryViewId, PointerEvent};
+        let mut s = crate::testkit::state();
+        s.applied(Event::tick(1000));
+        s.applied(Event::Idle(IdleEvent::Watching(true)));
+        for t in (1020..=1000 + 3 * DIM_AFTER).step_by(20) {
+            s.applied(Event::tick(t));
+            // The pad in a game, which the input thread hears, and on ClamShell's main screen.
+            s.applied(Event::Idle(IdleEvent::DeviceInput));
+            s.applied(PointerEvent::Focus(Id::LibraryView(LibraryViewId::Launch)).into());
+        }
+        assert_eq!(s.idle().stage(), Stage::Awake);
+        assert!(s.bottom_dimmed());
+    }
+
+    /// An app that keeps the screen on, such as a video player asking the compositor, keeps the top screen
+    /// lit without input; the untouched bottom screen dims.
+    #[test]
+    fn an_app_keeping_the_screen_on_keeps_the_top_lit() {
+        use crate::Event;
+        let mut s = crate::testkit::state();
+        s.applied(Event::tick(1000));
+        s.applied(Event::Idle(IdleEvent::Watching(true)));
+        s.applied(Event::Idle(IdleEvent::CompositorInput));
+        s.applied(Event::tick(1000 + 10 * DIM_AFTER));
+        assert_eq!(s.idle().stage(), Stage::Awake);
+        assert!(s.bottom_dimmed());
+        // Once it no longer does, the top screen dims a minute after the last input.
+        s.applied(Event::Idle(IdleEvent::CompositorQuiet));
+        s.applied(Event::tick(1000 + 10 * DIM_AFTER + DIM_AFTER - NOTIFY_AFTER));
+        assert_eq!(s.idle().stage(), Stage::Dimmed);
     }
 
     /// A touch on the bottom screen is input, counted at the touch itself rather than at the input

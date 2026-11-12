@@ -1296,6 +1296,10 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     // 8. The bottom screen.
     let bottom = s.bottom();
     ensure!(!s.bottom_dimmed() || !bottom.shows_windows(session), "8: dimmed while showing windows");
+    // A touch on the bottom screen is input too, and both dim after as long: the top screen is never dimmed
+    // by idle while the bottom one is lit, unless it shows windows, which never dim. (The bottom screen
+    // dimmed with the top one lit is fine: other input, or an app keeping the screen on.)
+    ensure!(s.idle().stage() < Stage::Dimmed || s.bottom_dimmed() || bottom.shows_windows(session), "8: the top screen dimmed by idle with the bottom one lit");
     ensure!(bottom.chosen_tab() == bottom.tab() || bottom.tab() == Tab::Keyboard, "8: chosen {:?}, shown {:?}", bottom.chosen_tab(), bottom.tab());
     ensure!(bottom.editor().is_none_or(|e| e.tab() == bottom.tab()), "8: an editor for another tab shown");
     ensure!(bottom.tab() != Tab::Touchpad || bottom.pointing(), "8: the touchpad tab doesn't point");
