@@ -189,6 +189,32 @@ fn off_by_itself_before_the_screens_go_off_it_stays_off_as_they_come_back() {
     assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: false })), "{fx:?}");
 }
 
+/// Waking the device brings back a bottom screen that went off by itself, as a touch would; one off by
+/// hand, or dark for a game, stays so.
+#[test]
+fn waking_the_device_brings_back_the_bottom_screen_off_by_itself() {
+    let mut s = state();
+    on_battery(&mut s, true);
+    s.applied(Event::tick(1000));
+    assert_eq!(power(&s.applied(Event::tick(1000 + DIM_AFTER + OFF_AFTER))), Some(false), "off by itself");
+    assert_eq!(power(&s.applied(Event::Resumed)), Some(true), "woken: on");
+    assert!(!s.bottom_off() && !s.bottom_dimmed());
+    // Off by hand, it stays off.
+    key(&mut s, HardwareKey::BottomPower);
+    assert!(s.bottom_off());
+    assert_eq!(power(&s.applied(Event::Resumed)), None);
+    assert!(s.bottom_off(), "off by hand");
+    // Dark for a game, it stays dark.
+    let mut s = state();
+    on_battery(&mut s, true);
+    s.settings_mut().global.set(Setting::BottomScreen, BottomWhenIdle::DarkInGame.value());
+    s.applied(Event::tick(1000));
+    crate::testkit::start(&mut s, "zelda-lttp");
+    assert!(s.bottom_off());
+    s.applied(Event::Resumed);
+    assert!(s.bottom_dark() && s.bottom_off(), "dark for the game");
+}
+
 #[test]
 fn the_wall_clock_set_back_does_not_keep_it_on() {
     let mut s = state();

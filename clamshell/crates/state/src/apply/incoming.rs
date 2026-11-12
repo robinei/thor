@@ -97,9 +97,12 @@ impl State {
         self.sent.resend(Resend::FetchFirst);
     }
 
-    /// Back from sleep: idle counts from now, and the settings in force are applied again.
+    /// Back from sleep: idle counts from now, the bottom screen comes back as for a use of it if it had
+    /// gone off or dimmed by itself (one off by hand, or dark for a game, stays so), and the settings in
+    /// force are applied again.
     pub(crate) fn resumed(&mut self) {
         self.idle.resumed(self.clock.mono());
+        self.bottom.used(&self.clock);
         self.sent.resend(Resend::Resumed);
     }
 
