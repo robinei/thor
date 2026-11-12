@@ -170,18 +170,20 @@ fn on_battery_the_untouched_bottom_screen_goes_off_and_a_touch_brings_it_back() 
 }
 
 #[test]
-fn off_by_itself_as_the_screens_go_off_it_goes_off_with_them_and_stays_off() {
+fn off_by_itself_before_the_screens_go_off_it_stays_off_as_they_come_back() {
     use crate::idle::IdleEvent;
     let mut s = state();
     on_battery(&mut s, true);
     s.applied(Event::tick(1000));
     s.applied(Event::Idle(IdleEvent::Watching(true)));
+    // The bottom screen goes off by itself 4 minutes after its last use, and the screens for idle 5
+    // minutes after the input, a touch on it being both.
     s.applied(Event::tick(1060));
     s.applied(Event::BottomTouched);
-    // The screens go off for idle after 5 minutes, and the bottom one by itself 4 minutes after the
-    // touch, at the same time.
     let fx = s.applied(Event::tick(1060 + DIM_AFTER + OFF_AFTER));
     assert!(s.bottom_off());
+    assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: false })), "{fx:?}");
+    let fx = s.applied(Event::tick(1060 + 300));
     assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: false, bottom: false })), "{fx:?}");
     let fx = s.applied(Event::Idle(IdleEvent::DeviceInput));
     assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: false })), "{fx:?}");

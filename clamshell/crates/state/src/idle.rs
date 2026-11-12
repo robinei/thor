@@ -475,6 +475,22 @@ mod tests {
         assert!(fx.contains(&Effect::Compositor(Compositor::Outputs { top: true, bottom: true })), "{fx:?}");
     }
 
+    /// A touch on the bottom screen is input, counted at the touch itself rather than at the input
+    /// thread's next report.
+    #[test]
+    fn a_bottom_touch_is_input() {
+        use crate::Event;
+        let mut s = crate::testkit::state();
+        s.applied(Event::tick(1000));
+        s.applied(Event::Idle(IdleEvent::Watching(true)));
+        s.applied(Event::tick(1200));
+        s.applied(Event::BottomTouched);
+        s.applied(Event::tick(1200 + 299));
+        assert_eq!(s.idle().stage(), Stage::Dimmed, "counted from the touch");
+        s.applied(Event::tick(1200 + 300));
+        assert_eq!(s.idle().stage(), Stage::Off);
+    }
+
     #[test]
     fn back_from_sleep_counts_from_the_wake() {
         let mut idle = Idle::default();

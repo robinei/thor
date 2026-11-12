@@ -509,7 +509,12 @@ impl State {
             Event::Resumed => self.resumed(),
             Event::Idle(event) => self.idle.heard(event, now),
             Event::HardwareKey(key) => self.on_hardware_key(key, out),
-            Event::BottomTouched => self.bottom.used(&self.clock),
+            // Input, timed here rather than by the input thread's reports, which come at most every few
+            // seconds, so that both screens count from the same touch.
+            Event::BottomTouched => {
+                self.idle.own_input(now);
+                self.bottom.used(&self.clock);
+            }
             Event::Frozen(keys) => self.session.found_frozen(keys),
             Event::Paste => self.bottom.paste(),
             Event::DumpWindowEvents(path) => out.effects.push(Effect::Compositor(Compositor::DumpWindowEvents(path))),

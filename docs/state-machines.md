@@ -365,7 +365,8 @@ State: `stage: Awake < Dimmed < Off < Asleep`, compositor activity, `last_input`
 | Transition | Test |
 |---|---|
 | Awake → Dimmed → Off → Asleep by time; effects through sync: dim brightness, `Outputs{top: false}`, status watch off, `Sleep` (after `Outputs`) | `the_state_dims_turns_the_screens_off_and_back_and_sleeps_only_when_allowed`; tests `the_screens_go_off_before_the_device_sleeps` |
-| any input, KeptAwake while awake (one after the dim is ignored), Resumed or a running refresh → Awake: undim, `Outputs{top: true}` | same; `off_by_itself_as_the_screens_go_off_…`, `a_running_refresh_calibration_keeps_idle_awake`, `a_late_kept_awake_leaves_the_screens_dimmed` |
+| any input, KeptAwake while awake (one after the dim is ignored), Resumed or a running refresh → Awake: undim, `Outputs{top: true}` | same; `off_by_itself_before_the_screens_go_off_…`, `a_running_refresh_calibration_keeps_idle_awake`, `a_late_kept_awake_leaves_the_screens_dimmed` |
+| BottomTouched is input, at the touch (the input thread reports at most every few seconds) | `a_bottom_touch_is_input` |
 | Resumed at State level (stage, and Apply resent) | tests `back_from_sleep_applies_the_settings_again_and_wakes_the_screens` |
 | a press on dark screens, or within 1 s of waking, is swallowed | idle `a_press_on_dark_screens_only_wakes_them`, `a_tap_on_dark_screens_wakes_them_and_does_nothing_else` |
 | Busy → sleep postponed 5 min | `a_busy_machine_sleeps_later` |
