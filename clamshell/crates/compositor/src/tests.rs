@@ -34,6 +34,8 @@ pub(crate) struct Client {
     touches: Vec<TouchRecord>,
     keys: Vec<(u32, bool)>,
     keyboard_enter: u32,
+    /// How many keymaps the keyboard was sent.
+    keymaps: usize,
     activation_tokens: Vec<String>,
     text: Vec<keyboard_tests::TextRecord>,
     dmabuf_formats: Vec<(u32, u64)>,

@@ -431,6 +431,7 @@ windows is open, listening included. The focus ring hides when the route leaves 
 |---|---|
 | front changes the claimant, the route follows; the Keyboard tab opened (by touch or a text field) leaves it | `the_pad_goes_to_library_view_or_the_program_by_what_is_in_front`, `a_text_field_brings_up_the_keyboard_and_back` |
 | Keyboard tab open with a game in front: the game keeps the pad; the switch → Keys; again → Game | `the_keyboard_tab_open_leaves_the_pad_with_the_game_until_switched` |
+| Keys: the D-pad's arrows, A's Enter and B's Backspace go down and up with the buttons, up no sooner than `KEY_HELD_AT_LEAST` after down (a release sooner waits for the pad thread's tick); pressed again while it waits, up first | system `a_key_goes_up_with_its_button_but_not_too_soon`, `maps_the_dpad_a_and_b` |
 | View switches to the second screen and back (Keys there on the Keyboard tab) | `view_moves_the_pad_between_…`, `view_does_nothing_with_a_builtin_in_front` |
 | Home + View sends the switch from any route, the game's included, where View alone is the game's; the game sees neither; with the Library in front it moves the focus between the screens as View does | system `home_with_view_switches_the_pad_from_any_route` |
 | View (from the pad or a desktop's Tab) bringing the pad to the second screen brings the focus there: where it was when View took the pad away, else the open tab; decided by the UI core after the switch is applied | views `view_from_a_game_brings_the_focus_to_the_second_screen` |
@@ -1301,21 +1302,39 @@ The state's side: `a_text_field_brings_up_the_keyboard_and_back`,
 `a_text_field_doesnt_take_the_screen_from_an_open_editor`,
 `a_keyboard_a_text_field_brought_up_isnt_saved_as_the_tab`.
 
+When an on-screen key is typed (the UI's press machine, `ui/input/press.rs`): its Down shows it pressed as
+the finger lands, and it is typed (`Activate`) at the lift for a tap, or once the finger has stayed on it
+`KEY_HOLD` (150 ms), within `POINT_START`, for a hold; a finger moving past `POINT_START` before then points
+and types nothing, and a held key never points. The pad's A (and a desktop's Enter) types a key as it goes
+down. A modifier or Caps isn't typed: a tap latches, `LONG_PRESS` locks, as before. Tests (ui
+`press::tests`): `a_tapped_key_is_typed_at_the_lift`, `a_drag_from_a_key_points_and_types_nothing`,
+`a_held_key_is_typed_after_key_hold_and_held_until_the_lift`, `one_key_held_while_another_is_tapped`,
+`a_modifier_held_still_locks_at_the_long_press`, `the_pads_a_types_a_key_as_it_goes_down`. `clamshell ctl
+tap key` and `type` let each key go after its tap (`typing`).
+
 An on-screen key goes to an open editor, the keymap's capture, or by `State::top()` the Library's find (its
 list or a pick, not the edit mode, Device or Setup: nothing) or the window in front as
-`Compositor::Key(stroke)`, which `Server::stroke` carries out:
+`Compositor::Key(stroke)`, held down until its `Up` gives `Compositor::KeyUp(key)`, each finger's key on its
+own (up to `TYPED`, 4; one more lets go of the first); a repeat while held sends `Key` again (state
+`a_key_typed_into_a_window_is_held_until_let_go`). `Server::stroke` carries it out:
 
 - no client has the seat's keyboard: nothing;
 - a printable character without Ctrl, Alt or Super, with a text input active: `commit_string` of the
-  (shifted) character, then `done`;
-- otherwise: the modifiers down (Ctrl, Alt, Super, Shift), the key down and up, the modifiers up in
-  reverse order, from a keyboard source of its own, so a key held on a real keyboard stays held; these keys
-  skip the filter above, so an on-screen F12 reaches the client;
+  (shifted) character, then `done`, again for each repeat;
+- otherwise: the modifiers down (Ctrl, Alt, Super, Shift), then the key, held as on a real keyboard: up at
+  `KeyUp`, then the modifiers in reverse order, but no sooner than `KEY_HELD_AT_LEAST` (100 ms) after it went
+  down, so a game that reads the keys' state once a frame sees a tap (a release waiting is a deadline of the
+  loop's). The same key again while held is a repeat and sends nothing: the client repeats a held key from
+  `wl_keyboard`'s repeat info. Pressed again while its release waits, it goes up first. The keys come from a
+  keyboard source of their own, through the seat's one keymap, so a key held on a real keyboard stays held
+  and the client is never sent another keymap; these keys skip the filter above, so an on-screen F12 reaches
+  the client;
 - a modifier alone, Caps, F13 and above, or a key with no keycode: nothing (debug).
 
 Touching the bottom screen's UI keeps the client's keyboard focus. Tests (tests/keyboard_tests.rs):
 `the_bottom_keyboards_strokes_reach_the_focused_client_as_keys` (modifier order, keys before enable, a
-physical Shift kept, F12 delivered), `a_text_field_opens_the_keyboard_and_takes_its_characters_as_text`
+physical Shift kept, F12 delivered, one keymap), `an_on_screen_key_is_held_until_let_go_and_at_least_its_least_time`
+(held between down and up, the least time, a repeat not pressed again, two keys at once), `a_text_field_opens_the_keyboard_and_takes_its_characters_as_text`
 (commit strings and serials, focus kept on a touch of the bottom UI),
 `a_text_field_deactivated_closes_the_keyboard_and_characters_are_keys_again` (keys after disable, the tab
 given back), `home_takes_the_keyboard_from_a_text_field_and_closes_the_keyboard` (silence after Home). `tests/nested-compositor.py`: an X11 client receives whole strokes, a no-input

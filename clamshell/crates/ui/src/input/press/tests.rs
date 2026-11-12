@@ -194,6 +194,7 @@ fn a_held_key_repeats() {
     let state = State::new(Init::default());
     let mut input = Input::default();
     act(|o| input.press(Source::PadA, key(), Hold::Repeat, t0(), o));
+    // (Typed as A went down; held, it repeats.)
     let held = act(|o| input.timer(Source::PadA, Timer::Hold, &state, t0(), o));
     assert_eq!(held, vec![Action::Emit(PointerEvent::Activate(key()).into()), Action::Arm(Source::PadA, Timer::Hold, REPEAT)]);
     assert_eq!(events(&act(|o| input.up(Source::PadA, End::Release, &blank(), t0(), o))), vec![PointerEvent::Up(key()).into()]);
@@ -445,4 +446,86 @@ fn a_level_row_in_a_list_scrolls_with_a_vertical_swipe_and_sets_with_a_sideways_
     assert_eq!(act(|o| input.timer(finger, Timer::Hold, &blank(), t0(), o)), vec![], "held still, it doesn't long-press");
     let up = act(|o| input.up(finger, End::Release, &blank(), t0(), o));
     assert_eq!(events(&up), vec![set(25), PointerEvent::Activate(row.id.clone()).into(), PointerEvent::Up(row.id.clone()).into()]);
+}
+
+/// A key's target, as the keyboard draws it: it repeats when held.
+fn key_target(k: Key) -> Target {
+    Target { hold: Hold::Repeat, ..target(Id::Key(keyboard::find(k).unwrap_or(KeyPos { row: 0, col: 0 })), None) }
+}
+
+fn activated(actions: &[Action]) -> bool {
+    events(actions).iter().any(|e| matches!(e, Event::Pointer(PointerEvent::Activate(_))))
+}
+
+/// A tap on a key types it at the lift, after its Down showed it pressed as the finger landed.
+#[test]
+fn a_tapped_key_is_typed_at_the_lift() {
+    let mut input = Input::default();
+    let finger = Source::Touch(1);
+    let down = act(|o| input.touch(finger, Some(&key_target(Key::Char('a'))), true, (10.0, 10.0), t0(), o));
+    assert!(events(&down).contains(&PointerEvent::Down(key(), None).into()), "pressed at once");
+    assert!(!activated(&down) && down.contains(&Action::Arm(finger, Timer::KeyHold, KEY_HOLD)), "{down:?}");
+    let up = act(|o| input.up(finger, End::Release, &blank(), t0(), o));
+    assert!(up.contains(&Action::Disarm(finger, Timer::KeyHold)));
+    assert_eq!(events(&up), vec![PointerEvent::Activate(key()).into(), PointerEvent::Up(key()).into()]);
+}
+
+/// A finger starting on a key and moving past POINT_START before KEY_HOLD points and types nothing.
+#[test]
+fn a_drag_from_a_key_points_and_types_nothing() {
+    let mut input = Input::default();
+    let finger = Source::Touch(1);
+    act(|o| input.touch(finger, Some(&key_target(Key::Named(keyboard::Named::Esc))), true, (10.0, 10.0), t0(), o));
+    let moved = act(|o| input.moved(finger, (10.0 + POINT_START, 10.0), t0(), o));
+    assert_eq!(points(&moved), vec![(finger, ContactPhase::Down)]);
+    assert!(moved.contains(&Action::Disarm(finger, Timer::KeyHold)) && !activated(&moved), "{moved:?}");
+    assert!(!activated(&act(|o| input.up(finger, End::Release, &blank(), t0(), o))));
+}
+
+/// A finger kept on a key for KEY_HOLD types it then, before the lift, and from then never points; the lift
+/// lets it go without typing it again. ClamShell's own repeat still comes at LONG_PRESS, for what takes text.
+#[test]
+fn a_held_key_is_typed_after_key_hold_and_held_until_the_lift() {
+    let state = blank();
+    let mut input = Input::default();
+    let finger = Source::Touch(1);
+    act(|o| input.touch(finger, Some(&key_target(Key::Char('a'))), true, (10.0, 10.0), t0(), o));
+    assert_eq!(events(&act(|o| input.timer(finger, Timer::KeyHold, &state, t0(), o))), vec![PointerEvent::Activate(key()).into()]);
+    assert!(points(&act(|o| input.moved(finger, (10.0 + POINT_START * 2.0, 10.0), t0(), o))).is_empty(), "a held key never points");
+    assert_eq!(events(&act(|o| input.up(finger, End::Release, &state, t0(), o))), vec![PointerEvent::Up(key()).into()]);
+}
+
+/// Each finger is its own key: one held while another taps.
+#[test]
+fn one_key_held_while_another_is_tapped() {
+    let state = blank();
+    let mut input = Input::default();
+    let (held, tapping) = (Source::Touch(1), Source::Touch(2));
+    let w = Id::Key(keyboard::find(Key::Char('w')).unwrap_or(KeyPos { row: 0, col: 0 }));
+    act(|o| input.touch(held, Some(&key_target(Key::Char('w'))), true, (10.0, 10.0), t0(), o));
+    act(|o| input.timer(held, Timer::KeyHold, &state, t0(), o));
+    act(|o| input.touch(tapping, Some(&key_target(Key::Char('a'))), true, (60.0, 10.0), t0(), o));
+    assert_eq!(events(&act(|o| input.up(tapping, End::Release, &state, t0(), o))), vec![PointerEvent::Activate(key()).into(), PointerEvent::Up(key()).into()]);
+    assert!(input.pressed(held));
+    assert_eq!(events(&act(|o| input.up(held, End::Release, &state, t0(), o))), vec![PointerEvent::Up(w).into()]);
+}
+
+/// A modifier isn't typed at KEY_HOLD: held, it long-presses (locks) at LONG_PRESS as before.
+#[test]
+fn a_modifier_held_still_locks_at_the_long_press() {
+    let state = blank();
+    let mut input = Input::default();
+    let ctrl = target(Id::Key(keyboard::find(Key::Mod(keyboard::Modifier::Ctrl)).unwrap_or(KeyPos { row: 0, col: 0 })), None);
+    let down = act(|o| input.touch(Source::Touch(1), Some(&ctrl), true, (10.0, 10.0), t0(), o));
+    assert!(!down.iter().any(|a| matches!(a, Action::Arm(_, Timer::KeyHold, _))), "{down:?}");
+    assert_eq!(events(&act(|o| input.timer(Source::Touch(1), Timer::Hold, &state, t0(), o))), vec![PointerEvent::LongPress(ctrl.id.clone()).into()]);
+}
+
+/// The pad's A types a key as it goes down, and its release only lets the key go.
+#[test]
+fn the_pads_a_types_a_key_as_it_goes_down() {
+    let mut input = Input::default();
+    let down = act(|o| input.press(Source::PadA, key(), Hold::Repeat, t0(), o));
+    assert_eq!(events(&down), vec![PointerEvent::Down(key(), None).into(), PointerEvent::Activate(key()).into()]);
+    assert_eq!(events(&act(|o| input.up(Source::PadA, End::Release, &blank(), t0(), o))), vec![PointerEvent::Up(key()).into()]);
 }

@@ -243,7 +243,7 @@ impl PadRouter {
             closing: None,
             mouse: PadMouse::new(ranges),
             navigator: Navigator::new(ranges.stick, ranges.trigger),
-            typing: Typing,
+            typing: Typing::default(),
             listener: Listener::new(ranges),
             remap,
             passed: false,

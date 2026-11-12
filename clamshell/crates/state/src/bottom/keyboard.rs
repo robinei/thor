@@ -224,9 +224,36 @@ pub struct Keyboard {
     logo: Latch,
     fn_layer: Latch,
     caps: bool,
+    /// The keys sent down to the window in front, each until it is let go, with what it was.
+    typed: [Option<(KeyPos, Key)>; TYPED],
 }
 
+/// The least time a key typed from the on-screen keyboard or with the pad is held down, so that a game
+/// reading the keys' state once a frame, rather than their events, sees a tap at 10 frames a second or more.
+/// It delays only the key's release, never its press.
+pub const KEY_HELD_AT_LEAST: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// How many keys may be down on the window in front at once, one a finger. A key more lets go of the first.
+pub const TYPED: usize = 4;
+
 impl Keyboard {
+    /// The key at `pos`, `key`, was sent down to the window in front (again, while held, as it repeats).
+    pub(crate) fn typed(&mut self, pos: KeyPos, key: Key) {
+        if self.typed.iter().flatten().any(|&(p, _)| p == pos) {
+            return;
+        }
+        let slot = self.typed.iter().position(Option::is_none).unwrap_or(0);
+        if let Some(t) = self.typed.get_mut(slot) {
+            *t = Some((pos, key));
+        }
+    }
+
+    /// The key at `pos` was let go. Returns the key it sent down, which is to go up now.
+    pub(crate) fn untyped(&mut self, pos: KeyPos) -> Option<Key> {
+        let slot = self.typed.iter_mut().find(|t| t.is_some_and(|(p, _)| p == pos))?;
+        slot.take().map(|(_, key)| key)
+    }
+
     /// Whether Caps Lock is on.
     pub fn caps(&self) -> bool {
         self.caps

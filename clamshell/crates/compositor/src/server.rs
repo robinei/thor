@@ -51,6 +51,8 @@ pub(crate) struct Server {
     pub vt_switch: Option<i32>,
     /// The source the on-screen keyboard's keys are sent from, apart from a host's keyboard.
     pub keyboard_source: smithay::input::keyboard::KeyboardSource,
+    /// The on-screen keyboard's keys held down (see `keyboard`).
+    pub held_keys: [Option<crate::keyboard::HeldKey>; clamshell_state::bottom::keyboard::TYPED],
     pub pacing: crate::pacing::Pacing,
     /// Whether the event loop ends: the state quit, or a failure left no way on.
     pub exit: bool,
@@ -132,6 +134,7 @@ impl Server {
             keyboard_home: false,
             vt_switch: None,
             keyboard_source: smithay::input::keyboard::KeyboardSource::new_auxiliary(),
+            held_keys: Default::default(),
             touch: crate::touch::Touches::new(),
             exit: false,
             screenshot_requested: false,
@@ -217,6 +220,7 @@ impl Server {
         self.update_idle(Instant::now());
         self.report_frames(Instant::now());
         self.report_screens();
+        self.release_keys(Instant::now());
         self.core.run(Instant::now());
         while let Some(effect) = self.core.next_effect() {
             let Effect::Compositor(own) = effect else {
@@ -241,7 +245,8 @@ impl Server {
                 // The second screen is on only while the screens are.
                 Compositor::Outputs { top, bottom } => self.screens.on = [top, top && bottom],
                 Compositor::Refresh(hz) => self.screens.refresh_wanted = hz,
-                Compositor::Key(stroke) => self.stroke(&stroke),
+                Compositor::Key(stroke) => self.stroke(&stroke, Instant::now()),
+                Compositor::KeyUp(key) => self.key_up(key, Instant::now()),
             }
         }
         self.sync_windows();

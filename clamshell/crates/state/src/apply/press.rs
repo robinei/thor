@@ -63,6 +63,9 @@ impl State {
                 self.pointer.up(&id);
                 if let Id::Key(pos) = id {
                     self.keyboard.up(pos);
+                    if let Some(key) = self.keyboard.untyped(pos) {
+                        out.effects.push(Effect::Compositor(Compositor::KeyUp(key)));
+                    }
                 }
             }
             PointerEvent::Act(_) => {}
@@ -160,7 +163,11 @@ impl State {
                     }
                     Some(stroke) => match self.top() {
                         crate::Top::App { app, .. } => (crate::builtin_apps::definition(app).typed)(self, stroke, out),
-                        crate::Top::Window { .. } => out.effects.push(Effect::Compositor(Compositor::Key(stroke))),
+                        // It stays down until the key is let go (see `PointerEvent::Up`).
+                        crate::Top::Window { .. } => {
+                            self.keyboard.typed(pos, stroke.key);
+                            out.effects.push(Effect::Compositor(Compositor::Key(stroke)));
+                        }
                     },
                     None => {}
                 }

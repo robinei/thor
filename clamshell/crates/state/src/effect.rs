@@ -184,8 +184,11 @@ pub enum Effect {
 /// The effects the compositor carries out itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Compositor {
-    /// A key press for the focused app, through the virtual keyboard.
+    /// A key of the on-screen keyboard down for the focused app, with its modifiers. It is held until
+    /// [`Compositor::KeyUp`]; again while held, it is the same key repeating.
     Key(Stroke),
+    /// The key is let go.
+    KeyUp(crate::bottom::keyboard::Key),
     /// Ask these windows to close, as their own close buttons would.
     Close(Vec<i64>),
     /// The screens' power, sent when it changes and when it is to be set again (the same value twice

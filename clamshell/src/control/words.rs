@@ -373,15 +373,23 @@ pub fn key(key: Key) -> Result<Id, ParseError> {
     keyboard::find(key).map(Id::Key).ok_or_else(untypeable)
 }
 
+/// A tap on `id`. A key is let go too, as a finger lifting, so that it goes up in the window in front.
+pub fn tapped(id: Id) -> Vec<Event> {
+    let up = matches!(id, Id::Key(_)).then(|| PointerEvent::Up(id.clone()).into());
+    [Some(PointerEvent::Activate(id).into()), up].into_iter().flatten().collect()
+}
+
 /// Types text on the on-screen keyboard: each character's key, preceded by one Shift tap if it needs it.
 pub fn type_text(text: &str) -> Result<Vec<Event>, ParseError> {
-    let tap = |k: Key| key(k).map(|id| Event::Pointer(PointerEvent::Activate(id)));
     let mut events = Vec::new();
     for c in text.chars() {
-        let char_key = |k: Key| tap(k).map_err(|_| ParseError::Untypeable(c));
+        let mut tap = |k: Key| key(k).map(|id| events.extend(tapped(id))).map_err(|_| ParseError::Untypeable(c));
         match (' '..='~').find(|&b| b != c && keyboard::shifted(b) == c) {
-            Some(base) => events.extend([char_key(Key::Mod(Modifier::Shift))?, char_key(Key::Char(base))?]),
-            None => events.push(char_key(Key::Char(c))?),
+            Some(base) => {
+                tap(Key::Mod(Modifier::Shift))?;
+                tap(Key::Char(base))?;
+            }
+            None => tap(Key::Char(c))?,
         }
     }
     Ok(events)

@@ -57,6 +57,10 @@ pub const POINT_IDLE: Duration = Duration::from_millis(1000);
 pub const LONG_PRESS: Duration = Duration::from_millis(450);
 /// The key repeat interval while held: 25 per second.
 pub const REPEAT: Duration = Duration::from_millis(40);
+/// A finger kept on a key this long, within [`POINT_START`], holds it: the key goes down then rather than
+/// at the lift, and stays down until the lift. It is short of [`LONG_PRESS`] so a held key in a game isn't
+/// felt as late, and long enough that a finger starting to point has moved past [`POINT_START`] first.
+pub const KEY_HOLD: Duration = Duration::from_millis(150);
 
 /// Turns the compositor's event times, in milliseconds on its monotonic clock, into instants. It
 /// measures from the earliest base seen, since an event handled late only looks later. So a batch of
@@ -100,6 +104,8 @@ pub enum Timer {
     Fling,
     /// The keyboard's pointing goes idle (see [`POINT_IDLE`]).
     Pointing,
+    /// A finger has been on a key for [`KEY_HOLD`].
+    KeyHold,
 }
 
 /// What the caller does.
@@ -209,6 +215,16 @@ impl Press {
         self.rect.is_none_or(|r| Rect::new(r.x - slack, r.y - slack, r.w + 2.0 * slack, r.h + 2.0 * slack).contains(self.at.0, self.at.1))
     }
 
+    /// A key (a target that repeats) is typed now, rather than when let go: it is held from here, so its
+    /// release types nothing more and it never points. The pad's A types it as A goes down; a finger, once it
+    /// held it for [`KEY_HOLD`].
+    fn strike_key(&mut self, out: &mut Vec<Action>) {
+        if self.hold == Hold::Repeat {
+            self.gesture = Gesture::Held;
+            out.push(Action::Emit(PointerEvent::Activate(self.id.clone()).into()));
+        }
+    }
+
     /// Whether it may point now: a finger that would still tap, where pointing is allowed.
     fn may_point(&self, source: Source) -> bool {
         matches!(source, Source::Touch(_)) && self.gesture == Gesture::Tap && self.points
@@ -245,8 +261,10 @@ impl Input {
         if self.pressed(source) {
             return;
         }
-        self.presses.push((source, Press::of_pad(id.clone(), hold, now)));
+        let mut press = Press::of_pad(id.clone(), hold, now);
         out.extend([Action::Emit(PointerEvent::Down(id, None).into()), Action::Arm(source, Timer::Hold, LONG_PRESS)]);
+        press.strike_key(out);
+        self.presses.push((source, press));
     }
 
     /// A finger or the mouse comes down on `target`, or on nothing (where the screen's view says a press
@@ -267,6 +285,7 @@ impl Input {
             _ => (Gesture::Tap, false),
         };
         let press = Press::of_touch(target, points, gesture, (x, y), now);
+        let hold_key = press.hold == Hold::Repeat && gesture == Gesture::Tap;
         let down = PointerEvent::Down(press.id.clone(), target.and_then(|t| t.item));
         self.presses.push((source, press));
         out.extend([Action::Emit(PointerEvent::HideFocus.into()), Action::Emit(down.into())]);
@@ -284,6 +303,10 @@ impl Input {
             }
             Gesture::LevelDrag { level, track } => out.push(Action::Emit(LevelEvent::Set(level, track.value_at(x)).into())),
             _ => out.push(Action::Arm(source, Timer::Hold, LONG_PRESS)),
+        }
+        // A key is typed at the lift, as a tap, or once held for KEY_HOLD.
+        if hold_key {
+            out.push(Action::Arm(source, Timer::KeyHold, KEY_HOLD));
         }
     }
 
@@ -306,6 +329,7 @@ impl Input {
         for (source, press) in self.presses.iter_mut().filter(|(s, p)| p.may_point(*s)) {
             press.gesture = Gesture::Pointing;
             out.push(Action::Disarm(*source, Timer::Hold));
+            out.push(Action::Disarm(*source, Timer::KeyHold));
             out.push(Action::Emit(PointerEvent::Up(press.id.clone()).into()));
             out.push(Action::Point(*source, ContactPhase::Down, press.at));
         }
@@ -397,6 +421,12 @@ impl Input {
         };
         match timer {
             Timer::Slide => return Self::start_slide(press, out),
+            Timer::KeyHold => {
+                if press.gesture == Gesture::Tap {
+                    press.strike_key(out);
+                }
+                return;
+            }
             Timer::Fling | Timer::Pointing => return,
             // The slide's timer is the shorter one, so the hold comes first only if that one couldn't run.
             Timer::Hold if matches!(press.gesture, Gesture::PendingSlide { .. }) => {
@@ -442,6 +472,9 @@ impl Input {
         };
         let (_, press) = self.presses.remove(at);
         out.push(Action::Disarm(source, Timer::Hold));
+        if press.hold == Hold::Repeat {
+            out.push(Action::Disarm(source, Timer::KeyHold));
+        }
         // The key was let go when it began pointing. Once the last finger is off, pointing goes idle
         // after a while.
         if press.gesture == Gesture::Pointing {

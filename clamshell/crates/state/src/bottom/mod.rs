@@ -301,6 +301,29 @@ mod tests {
         assert_eq!(tap(&mut s, Id::Tab(Tab::Touchpad)), vec![wifi(false)], "the old tab's off");
     }
 
+    /// A key typed into the window in front stays down until it is let go, as on a real keyboard; each
+    /// finger's key goes up on its own. Its repeats while held send it again, which the compositor takes as
+    /// still held.
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn a_key_typed_into_a_window_is_held_until_let_go() {
+        use crate::bottom::keyboard::{Key, Stroke, find};
+        let mut s = state();
+        s.observed(vec![foot()]);
+        tap(&mut s, Id::Tab(Tab::Keyboard));
+        let (a, w) = (find(Key::Char('a')).unwrap(), find(Key::Char('w')).unwrap());
+        let stroke = |key| Effect::Compositor(Compositor::Key(Stroke { key, shift: false, ctrl: false, alt: false, logo: false }));
+        let up = |key| Effect::Compositor(Compositor::KeyUp(key));
+        assert_eq!(s.applied(PointerEvent::Down(Id::Key(w), None).into()), vec![], "pressed: nothing typed yet");
+        assert_eq!(s.applied(PointerEvent::Activate(Id::Key(w)).into()), vec![stroke(Key::Char('w'))], "held long enough: down");
+        assert_eq!(s.applied(PointerEvent::Activate(Id::Key(w)).into()), vec![stroke(Key::Char('w'))], "repeating");
+        s.applied(PointerEvent::Down(Id::Key(a), None).into());
+        assert_eq!(s.applied(PointerEvent::Activate(Id::Key(a)).into()), vec![stroke(Key::Char('a'))], "another finger's tap");
+        assert_eq!(s.applied(PointerEvent::Up(Id::Key(a)).into()), vec![up(Key::Char('a'))]);
+        assert_eq!(s.applied(PointerEvent::Up(Id::Key(w)).into()), vec![up(Key::Char('w'))], "the held one, let go");
+        assert_eq!(s.applied(PointerEvent::Up(Id::Key(w)).into()), vec![], "once");
+    }
+
     #[test]
     fn a_text_field_brings_up_the_keyboard_and_back() {
         let mut s = state();

@@ -131,7 +131,7 @@ pub fn parse(line: &str) -> Result<Vec<Event>, ParseError> {
     }
     let words: Vec<&str> = line.split_whitespace().collect();
     match words.as_slice() {
-        ["tap", target @ ..] => Ok(vec![PointerEvent::Activate(by_table(TARGETS, target)?).into()]),
+        ["tap", target @ ..] => Ok(words::tapped(by_table(TARGETS, target)?)),
         ["long", target @ ..] => Ok(vec![PointerEvent::LongPress(by_table(TARGETS, target)?).into()]),
         words => by_table(COMMANDS, words),
     }
@@ -209,8 +209,8 @@ mod tests {
         assert_eq!(parse("tap map-to pick"), Ok(km(KeymapId::Target(Target::Pick))));
         assert_eq!(parse("tap keymap-act hold"), Ok(km(KeymapId::Actuation(Actuation::Hold))));
         assert_eq!(parse("tap map-to mouse"), Ok(km(KeymapId::Target(Target::MouseParts))));
-        assert_eq!(parse("tap key ctrl"), Ok(activate(key(Key::Mod(Modifier::Ctrl)).unwrap())));
-        assert_eq!(parse("tap key x"), Ok(activate(key(Key::Char('x')).unwrap())));
+        assert_eq!(parse("tap key ctrl"), Ok(words::tapped(key(Key::Mod(Modifier::Ctrl)).unwrap())));
+        assert_eq!(parse("tap key x"), Ok(words::tapped(key(Key::Char('x')).unwrap())));
         assert_eq!(parse("listen a"), Ok(vec![Event::Listened(Input::Button(Button::A))]));
         assert_eq!(parse("listen home"), Err(ParseError::Name("home".into())));
     }
@@ -278,10 +278,12 @@ mod tests {
 
     #[test]
     fn typing() {
-        let shift = Event::Pointer(PointerEvent::Activate(key(Key::Mod(Modifier::Shift)).unwrap()));
-        let char_key = |c| Event::Pointer(PointerEvent::Activate(key(Key::Char(c)).unwrap()));
-        assert_eq!(parse("type a!"), Ok(vec![char_key('a'), shift.clone(), char_key('1')]));
-        assert_eq!(parse("type  x"), Ok(vec![char_key(' '), char_key('x')]), "the text as it is");
+        // Each key let go after its tap, so that it goes up in the window in front.
+        let tap = |k| words::tapped(key(k).unwrap());
+        let char_key = |c| tap(Key::Char(c));
+        assert_eq!(parse("type a!"), Ok([char_key('a'), tap(Key::Mod(Modifier::Shift)), char_key('1')].concat()));
+        assert_eq!(parse("type  x"), Ok([char_key(' '), char_key('x')].concat()), "the text as it is");
+        assert_eq!(parse("tap key a"), Ok(char_key('a')));
         assert_eq!(type_text("é"), Err(ParseError::Untypeable('é')));
     }
 }

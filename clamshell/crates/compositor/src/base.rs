@@ -95,6 +95,7 @@ impl Base {
                 .deadline()
                 .into_iter()
                 .chain(server.pointer.cursor_activity.deadline(now))
+                .chain(server.held_keys.iter().flatten().filter_map(crate::keyboard::HeldKey::release_at).min())
                 .chain(server.pacing.frames_due)
                 .chain(x11.deadline())
                 .chain(host_deadline)
