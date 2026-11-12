@@ -7,10 +7,14 @@
 # bins_linuxarm64_linuxarm64), each checked against Valve's checksum; then the links Steam expects in
 # ~/.steam, and links to the older libraries the client wants that Arch Linux ARM has newer versions of
 # or none (from Valve's runtime: gtk2, ibus; from the client: libvpx 6); then a first run that fetches
-# the rest of the client and exits. /usr/bin/steam starts it, and runs this on the first start.
+# the rest of the client and exits. And Steam's icon (the desktop file's Icon=steam), which only Valve's
+# launcher package has: from its source tarball on Valve's repository, pinned with the checksum Valve's
+# signed .dsc gives, into the user's hicolor theme. /usr/bin/steam starts it, and runs this on the first
+# start.
 #
 #   steam-setup             install what is missing (and the links)
 #   steam-setup --links     the links only (each start: Steam's updates may remove them)
+#   steam-setup --icons     Steam's icon, if missing (each start, behind Steam: a setup from before it)
 #   steam-setup --update    the client's own update, run and exited (maintenance)
 #
 # Environment: STEAM_BRANCH (default publicbeta, as Thorch and Armada; Valve's stable linuxarm64
@@ -20,6 +24,9 @@ BRANCH=${STEAM_BRANCH:-publicbeta}
 ROOT=$HOME/.local/share/Steam
 CDN=https://client-update.steamstatic.com
 RUNTIME=https://repo.steampowered.com/steamrt3c/images
+LAUNCHER=https://repo.steampowered.com/steam/archive/stable/steam_1.0.0.87.tar.gz
+LAUNCHER_SHA256=649375d2f9377f8009aaf3e2ff09978041eb9114897d9c5a3886f1d82e27ba1f
+ICONS=${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor
 
 # Replaces a link (never a real file or directory).
 link() {  # TARGET LINK
@@ -77,6 +84,19 @@ download() {  # URL FILE SHA256
     mv "$2.part" "$2"
 }
 
+# Steam's icon at each size Valve's launcher has, the largest last: it says they are there. (In a subshell,
+# so that a failure ends only this; set -e doesn't hold where it is called with ||.)
+icons() (
+    [ ! -f "$ICONS/256x256/apps/steam.png" ] || exit 0
+    tmp=$(mktemp -d) || exit 1
+    trap 'rm -rf "$tmp"' EXIT
+    download "$LAUNCHER" "$tmp/launcher.tar.gz" "$LAUNCHER_SHA256"
+    tar -xzf "$tmp/launcher.tar.gz" -C "$tmp" steam-launcher/icons || exit 1
+    for size in 16 24 32 48 256; do
+        install -Dm644 "$tmp/steam-launcher/icons/$size/steam.png" "$ICONS/${size}x${size}/apps/steam.png" || exit 1
+    done
+)
+
 # The client run until it has updated itself, then exited (steam starts it without its updates).
 update() {
     cd "$ROOT/steamrtarm64"
@@ -86,8 +106,9 @@ update() {
 case ${1:-} in
     --links) links; exit 0 ;;
     --update) links; update; links; exit 0 ;;
+    --icons) icons; exit ;;
     "") ;;
-    *) echo "usage: steam-setup [--links | --update]"; exit 2 ;;
+    *) echo "usage: steam-setup [--links | --update | --icons]"; exit 2 ;;
 esac
 
 [ "$(id -u)" != 0 ] || { echo "run it as the user: Steam goes into their home"; exit 1; }
@@ -143,6 +164,7 @@ if [ ! -x "$ROOT/steamrtarm64/steam" ]; then
     update
 fi
 links
+icons || echo "Steam's icon not installed (tried again at Steam's next start)"
 # Libraries the client still can't find (named, so the list above can grow).
 missing=$(LD_LIBRARY_PATH="$ROOT/steamrtarm64:$ROOT/lib/aarch64-linux-gnu" ldd "$ROOT/steamrtarm64/steamui.so" 2> /dev/null | awk '/not found/ { print $1 }' || true)
 [ -z "$missing" ] || { echo "the client lacks:"; echo "$missing"; }

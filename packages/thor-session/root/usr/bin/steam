@@ -14,6 +14,10 @@ if [ ! -x "$ROOT/steamrtarm64/steam" ]; then
     [ -x "$ROOT/steamrtarm64/steam" ] || { echo "steam: setup ended without the client installed" >&2; exit 1; }
 fi
 steam-setup --links
+# (Steam's icon, for a setup from before steam-setup fetched it: behind Steam, which needn't wait for it.)
+if [ ! -f "${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/256x256/apps/steam.png" ]; then
+    { steam-setup --icons > /dev/null || echo "steam: Steam's icon not installed (tried again at the next start)" >&2; } &
+fi
 export LD_LIBRARY_PATH="$ROOT/steamrtarm64:$ROOT/lib/aarch64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 [ ! -d "$ROOT/steam-runtime-steamrt-arm64/bin" ] || export PATH="$ROOT/steam-runtime-steamrt-arm64/bin:$PATH"
 export SYSTEM_PATH=$PATH SYSTEM_LD_LIBRARY_PATH=$LD_LIBRARY_PATH

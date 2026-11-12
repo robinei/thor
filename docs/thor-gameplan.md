@@ -575,6 +575,11 @@ terminal's closes), and a start once set up opens no terminal:
   with 127: Thorch's `thorch-repair-steam-arm64`); `~/.steam/sdk64` and `sdk32`'s `steamclient.so` from
   the first place that has one (Thorch's). Remade at each start and after an update. What it still lacks, `ldd` of
   `steamui.so` lists at the end.
+- Steam's icon (`steam.desktop`'s `Icon=steam`; only Valve's launcher package has it): `icons/*/steam.png`
+  from the launcher's source tarball on `repo.steampowered.com/steam/archive/stable/`, pinned to a
+  version with the SHA-256 that Valve's signed `.dsc` gives, into `~/.local/share/icons/hicolor`, where
+  ClamShell looks first. At each start `steam` fetches it behind Steam if it is missing. The Library
+  shows it from its next read (ClamShell's start, Rescan library).
 - A first run (`steam -exitsteam`) that fetches the rest of the client. Then `steam` starts it as Armada's
   launch-steam does (its folder and the links first in the library path, the runtime's tools on the path,
   SYSTEM_PATH and SYSTEM_LD_LIBRARY_PATH kept for compatibility tools) with Thorch's flags (no

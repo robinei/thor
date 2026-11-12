@@ -1019,10 +1019,12 @@ esac''')
 class SteamStart(unittest.TestCase):
     """/usr/bin/steam: a terminal only while setup is needed, and Steam started outside it."""
 
-    def machine(self, set_up, setup_ok=True):
+    def machine(self, set_up, setup_ok=True, icon=True):
         m = Machine()
         self.addCleanup(m.close)
         home = m.root / 'home'
+        if icon:
+            m.file('home/.local/share/icons/hicolor/256x256/apps/steam.png')
         client = home / '.local/share/Steam/steamrtarm64/steam'
         client.parent.mkdir(parents=True)
         log = m.root / 'calls'
@@ -1033,7 +1035,7 @@ class SteamStart(unittest.TestCase):
         # foot runs its command (after --title TITLE) and returns its status, as foot does.
         m.command('foot', f'echo "foot $2" >> {log}; shift 2; "$@"; status=$?; echo "foot closed" >> {log}; exit $status')
         install = f"printf '#!/bin/sh\\n{body}\\n' > {client}; chmod +x {client}" if setup_ok else 'echo "no network"; exit 1'
-        m.command('steam-setup', f'case $1 in --links) ;; *) echo "setup" >> {log}; {install} ;; esac')
+        m.command('steam-setup', f'case $1 in --links) ;; --icons) echo "icons" >> {log} ;; *) echo "setup" >> {log}; {install} ;; esac')
         return m
 
     def start(self, m):
@@ -1059,6 +1061,24 @@ class SteamStart(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertEqual(calls, ['foot Steam setup', 'setup', 'foot closed'])
         self.assertIn("steam: setup didn't finish", result.stderr)
+
+    def test_a_missing_icon_is_fetched_behind_steam(self):
+        result, calls = self.start(self.machine(set_up=True, icon=False))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(sorted(calls), ['client -noverifyfiles -nobootstrapupdate -skipinitialbootstrap -norepairfiles -gamepadui -silent',
+                                         'icons'])
+
+
+class SteamIcons(unittest.TestCase):
+    def test_a_launcher_tarball_that_doesnt_match_valves_checksum_installs_no_icon(self):
+        m = Machine()
+        self.addCleanup(m.close)
+        m.command('curl', 'while [ $# -gt 0 ]; do case $1 in -o) echo other > "$2"; shift 2 ;; *) shift ;; esac; done')
+        script = REPO / 'packages/thor-session/root/usr/bin/steam-setup'
+        result = subprocess.run(['bash', script, '--icons'], env={**m.env, 'HOME': str(m.root / 'home')}, capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('checksum mismatch', result.stdout)
+        self.assertFalse((m.root / 'home/.local/share/icons').exists())
 
 
 class Workflow(unittest.TestCase):
