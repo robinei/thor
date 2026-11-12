@@ -68,6 +68,8 @@ early() {
     # (The kernel's default; systemd sets ours, s2idle, at each sleep. Whether deep is offered at all.)
     info "sleep modes: $(cat /sys/power/mem_sleep 2> /dev/null)"
     check "PSI (/proc/pressure/memory)" test -r /proc/pressure/memory
+    # (pacman's download sandbox: without it every download fails.)
+    check "Landlock (/sys/kernel/security/lsm)" grep -qw landlock /sys/kernel/security/lsm
     info "root: $(findmnt -no SOURCE,FSTYPE,OPTIONS /)"
     flush
 }

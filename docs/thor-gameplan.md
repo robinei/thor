@@ -331,6 +331,10 @@ For our image (small):
       in `config.thor` (Armada's config lacks it, and without it the option does nothing): the console
       turned. The compositor turns both screens 90° by itself, from the device profile. Keep `/KERNEL`'s command line under 512
       bytes (Armada: the ABL may not read past that).
+- [x] `CONFIG_SECURITY_LANDLOCK=y` in `config.thor` (found on the device 2026-11-12): arm64's defconfig
+      and Armada's config leave it out, though `CONFIG_LSM` lists landlock, and without it pacman can't
+      download anything ("Landlock is not supported by the kernel", its sandbox user `alpm` refused).
+      thor-selftest checks that `/sys/kernel/security/lsm` lists landlock.
 - [x] USB controller autosuspend (`power/control=auto` on the DWC3 device), so it doesn't hold a DDR vote
       while idle (Thorch `99-thorch-sm8550-usb-autosuspend.rules`, Armada `60-armada-usb-autosuspend.rules`).
 - [x] Backlight names for the Brightness tab: top `ae96000.dsi.0`, bottom `ae94000.dsi.0` (not Kettle's
