@@ -16,8 +16,9 @@ license=('MIT OR Apache-2.0')
 # (PipeWire, ALSA's default device through it too), X programs (Xwayland), removable storage (udisks2, udiskie; exFAT's tools), archives browsed
 # (ratarmount), opening files (xdg-utils, imv, zathura); the starter library's players (RetroArch with
 # its cores and XMB's assets, PPSSPP, ScummVM, mpv; ffmpeg's ffprobe for videos' lengths); Firefox, on
-# the dock from the start.
-depends=(clamshell thor-system dbus rtkit xdg-desktop-portal-gtk foot udiskie xorg-xwayland mesa noto-fonts python python-pillow curl unzip
+# the dock from the start; Steam's setup (curl, unzip) and its client (lsof: without it the client refuses
+# every connection from its own web UI, "lsof is required to run steam").
+depends=(clamshell thor-system dbus rtkit xdg-desktop-portal-gtk foot udiskie xorg-xwayland mesa noto-fonts python python-pillow curl unzip lsof
          networkmanager bluez upower pipewire pipewire-alsa pipewire-pulse wireplumber udisks2 exfatprogs ratarmount xdg-utils
          imv zathura zathura-pdf-mupdf mpv ffmpeg
          retroarch retroarch-assets-xmb retroarch-assets-glui retroarch-assets-ozone libretro-core-info
