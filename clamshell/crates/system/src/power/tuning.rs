@@ -160,7 +160,7 @@ fn big_cpus(clusters: &[(u64, Vec<u32>)]) -> Vec<u32> {
 pub(crate) fn spawn(policy: ChargePolicy, method: Option<String>) -> io::Result<Worker<Values>> {
     Worker::spawn(clamshell_state::Thread::Tuning.name(), move |commands| {
         let (mut quiet, mut known, mut last) = (Quiet::default(), Vec::new(), None::<Values>);
-        let mut charge = Charge { hold: Hold::selected(method.as_deref(), policy), switches: policy.switches, held: false };
+        let mut charge = Charge { hold: Hold::selected(method.as_deref(), policy), switches: policy.switches, held: false, threshold: Quiet::default() };
         log::info!(
             "charge limit held by {}",
             match charge.hold {
@@ -200,7 +200,7 @@ pub(crate) fn spawn(policy: ChargePolicy, method: Option<String>) -> io::Result<
 pub(crate) fn release_hardware(policy: ChargePolicy, method: Option<&str>) {
     let mut quiet = Quiet::default();
     release_caps(Path::new("/sys"), &mut quiet);
-    let mut charge = Charge { hold: Hold::selected(method, policy), switches: policy.switches, held: false };
+    let mut charge = Charge { hold: Hold::selected(method, policy), switches: policy.switches, held: false, threshold: Quiet::default() };
     charge.battery(100, &mut quiet);
 }
 
@@ -302,13 +302,16 @@ struct Charge {
     hold: Hold,
     switches: Option<Switches>,
     held: bool,
+    /// Writing the end threshold failed, other than for access.
+    threshold: Quiet,
 }
 
 impl Charge {
     /// Battery care by [`Hold`], where the battery has the files. `limit` is the Charge limit setting,
     /// with 0 for Bypass.
     ///
-    /// The end threshold is written only if it differs; it is 100 unless the threshold holds the limit.
+    /// The end threshold is written only where it holds the limit, or to lift one left there (see
+    /// [`threshold_write`]).
     /// While charging is held, the charge current is set to 0 every time, since it isn't known whether
     /// the firmware keeps it across unplugging and replugging. Otherwise it is set to its maximum where
     /// it differs.
@@ -329,9 +332,16 @@ impl Charge {
         for supply in sys::power_supplies() {
             let (by_threshold, by_current, _, _) = targets(self.hold.for_supply(&supply), limit, firmware);
             let file = supply.join("charge_control_end_threshold");
-            let end = u64::from(by_threshold);
-            if file.exists() && sys::read(&file) != Some(end) {
-                write(&file, end, quiet);
+            if let Some(end) = file.exists().then(|| threshold_write(by_threshold, sys::read(&file))).flatten()
+                && let Err(e) = fs::write(&file, end.to_string())
+            {
+                // Firmware that doesn't take the threshold times out (the Thor's: ETIMEDOUT), which isn't a
+                // matter of access.
+                if e.kind() == io::ErrorKind::PermissionDenied {
+                    quiet.failed("the settings need write access to cpufreq, devfreq and the battery", &format_args!("{}: {e}", file.display()));
+                } else {
+                    self.threshold.failed("the battery's firmware doesn't take a charge limit as its end threshold", &format_args!("{}: {e}", file.display()));
+                }
             }
             let current = supply.join("constant_charge_current");
             if let Some(max) = sys::read::<u64>(supply.join("constant_charge_current_max")).filter(|_| current.exists()) {
@@ -347,6 +357,16 @@ impl Charge {
             }
         }
     }
+}
+
+/// The end threshold to write, given the one wanted (`by_threshold`, 100 unless the threshold holds the
+/// limit) and the one read (`now`): the wanted one where it holds a limit and differs, and 100 where a
+/// limit (1 to 99) is left from before. Otherwise nothing: a threshold the firmware doesn't take, such as
+/// the Thor's, which reads 0 and times out when written, is left alone.
+fn threshold_write(by_threshold: u16, now: Option<u64>) -> Option<u64> {
+    let want = u64::from(by_threshold);
+    let limit_left = now.is_some_and(|n| (1..100).contains(&n));
+    (now != Some(want) && (want < 100 || limit_left)).then_some(want)
 }
 
 /// The device with the battery firmware's own charge switches, the battery manager, where the kernel has
@@ -386,6 +406,16 @@ mod tests {
         assert_eq!(Hold::selected(Some("threshold"), ChargePolicy::thor()).for_supply(root.path()), Hold::Threshold);
         fs::remove_file(root.path().join("charge_control_end_threshold")).unwrap();
         assert_eq!(detected.for_supply(root.path()), Hold::Current, "rediscover after a supply changes");
+    }
+
+    #[test]
+    fn the_end_threshold_is_written_only_to_hold_a_limit_or_lift_one() {
+        assert_eq!(threshold_write(80, Some(100)), Some(80));
+        assert_eq!(threshold_write(80, Some(80)), None);
+        assert_eq!(threshold_write(100, Some(80)), Some(100), "a limit left from before");
+        assert_eq!(threshold_write(100, Some(100)), None);
+        assert_eq!(threshold_write(100, Some(0)), None, "the Thor's, which the firmware doesn't take");
+        assert_eq!(threshold_write(100, None), None);
     }
 
     #[test]

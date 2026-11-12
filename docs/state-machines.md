@@ -2079,12 +2079,15 @@ and the OEM switches again at each settings application and every 30 s while the
 | `start --CLAMSHELL_CHARGE_LIMIT current, threshold or firmware--> that way` | `detected_controls_take_precedence_unless_the_profile_records_a_firmware_quirk` |
 | `start --the profile's prefer_current (the Thor: its firmware ignores the threshold)--> current`; otherwise `detected` | same |
 | `detected --the supply has charge_control_end_threshold--> threshold [the limit as end threshold, current at its most]`; `--the threshold gone--> current` | same |
-| `current`: threshold 100; current 0 at or over the limit, the most again 5 below | `a_charge_limit_holds_at_the_limit_and_charges_again_five_below` |
+| `current`: current 0 at or over the limit, the most again 5 below; the threshold is left alone unless a limit (1-99) is left there, which is lifted to 100 | `a_charge_limit_holds_at_the_limit_and_charges_again_five_below`, `the_end_threshold_is_written_only_to_hold_a_limit_or_lift_one` |
+| a threshold write that fails other than for access (the Thor's firmware times out, ETIMEDOUT) → warned once that the firmware doesn't take a charge limit as its end threshold, not as missing write access | same |
 | `firmware --both switches there (named by the profile), limit 80--> [the 80 % switch on, charging on, current not held]`; switches missing or another limit: held as current | `firmware_switches_require_both_detected_attributes_and_use_the_supplied_names` |
 | `any --Bypass (0)--> [current 0, threshold 100; with the firmware's switches, charging off]` | same |
 | `any --the session ends--> [limit 100: threshold 100, current at its most, switches reset]` | same |
 
-Whether the firmware honours a write is checked on the device.
+Whether the firmware honours a write is checked on the device. On the Thor (2026-11-12): the threshold
+reads 0 and its writes time out; 0 written to `constant_charge_current` with the charger in took the
+battery's current from +689 mA to 0 at once, so the limit and Bypass are held by the current there.
 
 ### Stick lights (system/lights.rs, device/lights.rs)
 
