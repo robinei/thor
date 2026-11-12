@@ -149,6 +149,10 @@ if [ -n "$written" ]; then
     say "  %INSTALLED_DB% (this PC's pacman's) taken out of $(wc -l <<< "$written") packages' local entries"
     xargs -d '\n' sed -i '/^%INSTALLED_DB%$/,/^$/d' <<< "$written"
 fi
+# The repositories' databases pacstrap synced here: the [thor] one is this PC's local repository's,
+# newer than the published one, so the device's pacman would keep it and check it against the
+# published signature (invalid). The device syncs its own at its first update.
+rm -f "$ROOT"/var/lib/pacman/sync/*
 # pacstrap's keyring setup leaves a gpg-agent running in the new root, which keeps it mounted.
 gpgconf --homedir "$ROOT/etc/pacman.d/gnupg" --kill all 2> /dev/null || true
 gpgconf --homedir "$WORK/gnupg" --kill all 2> /dev/null || true
