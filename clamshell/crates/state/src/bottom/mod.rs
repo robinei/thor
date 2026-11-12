@@ -308,10 +308,8 @@ mod tests {
         s.observed(vec![foot()]);
         let fx = s.applied(Event::TextInput(true));
         assert_eq!(s.bottom().tab(), Tab::Keyboard);
-        assert_eq!(fx, vec![Effect::PadRoute(PadRoute::Keys)]);
-        // The app in front has the pad again, as a game would.
-        let back = vec![Effect::PadRoute(PadRoute::Game)];
-        assert_eq!(s.applied(Event::TextInput(false)), back);
+        assert_eq!(fx, vec![], "the app in front keeps the pad");
+        assert_eq!(s.applied(Event::TextInput(false)), vec![]);
         assert_eq!(s.bottom().tab(), Tab::Touchpad, "back where it came from");
     }
 

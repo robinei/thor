@@ -1167,10 +1167,9 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     let claimant = if s.pad().mouse_on() {
         PadRoute::Mouse
     } else {
-        match (s.top(), s.bottom().tab()) {
-            (Top::App { .. }, _) => PadRoute::Ui,
-            (_, Tab::Keyboard) => PadRoute::Keys,
-            _ => PadRoute::Game,
+        match s.top() {
+            Top::App { .. } => PadRoute::Ui,
+            Top::Window { .. } => PadRoute::Game,
         }
     };
     ensure!(
@@ -1186,7 +1185,13 @@ fn check(s: &mut State, sent: &mut Sent, w: &World, effects: &[Effect], before: 
     if claimant == PadRoute::Ui && !stepping {
         ensure!(route == if listening { PadRoute::Listen } else { PadRoute::Ui }, "3: the Library claims, route {route:?}");
     }
-    ensure!(route == claimant || route == PadRoute::Ui || route == PadRoute::Listen, "3: route {route:?}, claimant's {claimant:?}");
+    ensure!(route == claimant || route == PadRoute::Ui || route == PadRoute::Listen || route == PadRoute::Keys, "3: route {route:?}, claimant's {claimant:?}");
+    // Typing is the pad moved to the second screen while it shows the keyboard, never the keyboard alone.
+    ensure!(route != PadRoute::Keys || (s.bottom().tab() == Tab::Keyboard && claimant != PadRoute::Ui), "3: typing on {:?}", s.bottom().tab());
+    ensure!(
+        route != PadRoute::Ui || s.bottom().tab() != Tab::Keyboard || claimant == PadRoute::Ui || stepping,
+        "3: the second screen's pad on the keyboard isn't typing"
+    );
     let again = s.reconcile_pad();
     ensure!(again.is_none(), "3: reconciling again changes the route to {again:?}");
     // A hold on the Library's selected entry shows the ring on its actions whatever has the pad, since the ring

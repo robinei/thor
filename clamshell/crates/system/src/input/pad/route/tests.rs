@@ -129,11 +129,11 @@ fn the_virtual_pad_is_blanked_away_from_the_game_and_restored_after() {
 }
 
 #[test]
-fn home_chords_use_the_right_stick_and_not_select_or_the_dpad() {
+fn home_chords_use_the_right_stick_and_not_the_dpad() {
     let (mut r, mut out) = router(PadRoute::Game);
     let now = Instant::now();
     event(&mut r, key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
-    for code in [KeyCode::BTN_SELECT, KeyCode::BTN_DPAD_UP, KeyCode::BTN_DPAD_DOWN] {
+    for code in [KeyCode::BTN_DPAD_UP, KeyCode::BTN_DPAD_DOWN] {
         event(&mut r, key(code, Press::Down), now, &mut out);
         event(&mut r, key(code, Press::Up), now, &mut out);
     }
@@ -146,6 +146,23 @@ fn home_chords_use_the_right_stick_and_not_select_or_the_dpad() {
     assert!(!out.pad.iter().any(|raw| {
         raw.as_key().is_some_and(|(key, _)| matches!(key, KeyCode::BTN_SELECT | KeyCode::BTN_THUMBR | KeyCode::BTN_DPAD_UP | KeyCode::BTN_DPAD_DOWN))
     }));
+}
+
+/// Home with View switches the pad between the top screen and the second screen from any route: from the
+/// game, where View alone is the game's, and from ClamShell's screens, the Library's included. The game
+/// sees neither, and letting Home go isn't Home.
+#[test]
+fn home_with_view_switches_the_pad_from_any_route() {
+    for route in [PadRoute::Game, PadRoute::Ui, PadRoute::Keys, PadRoute::Mouse] {
+        let (mut r, mut out) = router(route);
+        let now = Instant::now();
+        event(&mut r, key(KeyCode::BTN_MODE, Press::Down), now, &mut out);
+        event(&mut r, key(KeyCode::BTN_SELECT, Press::Down), now, &mut out);
+        event(&mut r, key(KeyCode::BTN_SELECT, Press::Up), now, &mut out);
+        event(&mut r, key(KeyCode::BTN_MODE, Press::Up), now, &mut out);
+        assert_eq!(actions(&out), vec![Event::Pad(PadInput::Switch)], "{route:?}");
+        assert!(!out.pad.iter().any(|raw| raw.as_key().is_some_and(|(key, _)| key == KeyCode::BTN_SELECT)), "{route:?}: the game sees no View");
+    }
 }
 
 #[test]

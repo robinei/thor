@@ -420,17 +420,21 @@ values, written to All as it slides and saved when let go (`Save(Settings)`).
 
 ## Pad route and pointer (nav/pad.rs, nav/pointer.rs)
 
-Claimant: pad mouse, else the Library in front, else Typing on the Keyboard tab, else the game. Route: Ui for
-the Library; else Ui if switched there by View, else Game/Keys/Mouse; Listen, instead of Ui, while a keymap
+Claimant: pad mouse, else the Library in front, else the game, whatever tab is open: nothing on the second
+screen takes the pad by itself, so the Keyboard tab can stay open during a game for typing by touch. Route: Ui
+for the Library; else, if switched to the second screen (View, or Home + View from a game), Keys on the
+Keyboard tab and Ui on any other; else Game/Mouse; Listen, instead of Ui, while a keymap
 screen listens. Ui whatever the rest while a dock entry is being moved or the overview of the program's
 windows is open, listening included. The focus ring hides when the route leaves Ui.
 
 | Transition | Test |
 |---|---|
-| front or tab changes the claimant, the route follows | `the_pad_goes_to_library_view_the_program_or_typing_…` |
-| View switches to the second screen and back | `view_moves_the_pad_between_…`, `view_does_nothing_with_a_builtin_in_front` |
+| front changes the claimant, the route follows; the Keyboard tab opened (by touch or a text field) leaves it | `the_pad_goes_to_library_view_or_the_program_by_what_is_in_front`, `a_text_field_brings_up_the_keyboard_and_back` |
+| Keyboard tab open with a game in front: the game keeps the pad; the switch → Keys; again → Game | `the_keyboard_tab_open_leaves_the_pad_with_the_game_until_switched` |
+| View switches to the second screen and back (Keys there on the Keyboard tab) | `view_moves_the_pad_between_…`, `view_does_nothing_with_a_builtin_in_front` |
+| Home + View sends the switch from any route, the game's included, where View alone is the game's; the game sees neither; with the Library in front it moves the focus between the screens as View does | system `home_with_view_switches_the_pad_from_any_route` |
 | View (from the pad or a desktop's Tab) bringing the pad to the second screen brings the focus there: where it was when View took the pad away, else the open tab; decided by the UI core after the switch is applied | views `view_from_a_game_brings_the_focus_to_the_second_screen` |
-| a claimant change keeps the switch to the second screen; the Library claiming the pad clears it | `the_pad_moved_to_the_second_screen_stays_there_until_view_or_library_view` |
+| a claimant change keeps the switch to the second screen (a text field bringing up the keyboard under it: Keys); the Library claiming the pad clears it | `the_pad_moved_to_the_second_screen_stays_there_until_view_or_library_view` |
 | pad mouse by hand, by game, kept by hand | `pad_mouse_toggles_independently_…`, `the_pad_mouse_follows_the_game_…` |
 | listening, dock move, focus ring | `a_new_keymap_is_named_edited_and_mapped`, `moving_a_dock_entry_takes_the_pad_…`, `the_focus_ring_hides_when_the_pad_leaves_…` |
 | Down/Up light a target; Activate resolves the item pressed | `down_and_up_light_a_target`, `the_pressed_item_is_lit_where_it_is_now`, `a_press_acts_on_the_item_that_was_drawn`; a Down without Up leaves the press until the next Down: `a_down_without_its_up_lasts_until_the_next_down` |
@@ -519,8 +523,10 @@ samples bound to a stick, so a report's changes reach the game as one report, wi
 (`no_alloc::the_games_route_allocates_nothing_once_warm`).
 
 Home + right stick press switches to the windows' tab and back; Home + Start controls bottom power; Home + R1
-takes a screenshot; Home + B closes or quits. Select and the D-pad don't move windows or switch the bottom
-view. Tests: `home_chords_use_the_right_stick_and_not_select_or_the_dpad`, and the B and R1 chord tests. The UI's overlay over the top screen's window draws the window arrows while Home is held
+takes a screenshot; Home + B closes or quits; Home + Select switches the pad between the top screen and the
+second screen (see Pad route). The D-pad doesn't move windows or switch the bottom view. Tests:
+`home_chords_use_the_right_stick_and_not_the_dpad`, `home_with_view_switches_the_pad_from_any_route`, and the B and R1
+chord tests. The UI's overlay over the top screen's window draws the window arrows while Home is held
 (`Id::WindowArrow`); a press on one sends `PointerEvent::Act` as it comes down, which the state turns into the same `HardwareKey` event as the pad's window keys (`a_window_arrow_pressed_steps_as_the_window_key`).
 
 ## Keymaps (keymap/)

@@ -186,6 +186,7 @@ enum Home {
 ///
 /// - On its own it is [`Event::Home`], sent on release so it can start a combination.
 /// - Held with a button of [`SYSTEM`], it gives that shortcut.
+/// - Held with View: [`PadInput::Switch`], moving the pad between the game and the second screen.
 /// - Held, then B: the window in front closes if B is let go at once, or its program quits if B is held.
 /// - Held, then the Thor's Back button with a game in front: the game's Guide button while both are held.
 ///   That opens Steam's overlay, and buttons pressed in the meantime go to the game, for Steam's chords.
@@ -455,6 +456,13 @@ impl PadRouter {
                 self.home = Home::Held { combined: true };
                 self.taken.push(KeyCode::BTN_EAST);
                 self.closing = Some(now + QUIT_HOLD);
+                return;
+            }
+            // Home with View moves the pad between the game and the second screen, View being the game's.
+            Some((KeyCode::BTN_SELECT, Press::Down)) if held => {
+                self.home = Home::Held { combined: true };
+                self.taken.push(KeyCode::BTN_SELECT);
+                out.events.push(Event::Pad(PadInput::Switch));
                 return;
             }
             Some((code, Press::Down)) if held && let Some(&(_, shortcut)) = SYSTEM.iter().find(|(k, _)| *k == code) => {
