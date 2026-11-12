@@ -10,9 +10,8 @@ and only the lowest steps dimmed (measured on the Thor by stepping
 mipi_dsi_dcs_set_display_brightness_large(). The Retroid panels that share
 the driver keep the old behaviour.
 
-ClamShell's: PB-OS's 0620 (project-barry/pb-os 8ea4653) with a 0-4095 range
-instead of 0-65535 (PB-OS: "the panel looks the same from about 4095 up"), so
-that the whole of a brightness slider does something.
+PB-OS's 0620 (project-barry/pb-os 8ea4653), its 0-65535 range kept: on the
+owner's Thor (2026-11-12) the panel at 4095 was far dimmer than the top one.
 
 --- a/drivers/gpu/drm/panel/panel-ddic-ch13726a.c
 +++ b/drivers/gpu/drm/panel/panel-ddic-ch13726a.c
@@ -37,7 +36,7 @@ that the whole of a brightness slider does something.
  ch13726a_create_backlight(struct mipi_dsi_device *dsi)
  {
  	struct device *dev = &dsi->dev;
-+	int max = of_device_is_compatible(dev->of_node, "ch13726a,thor") ? 4095 : 255;
++	int max = of_device_is_compatible(dev->of_node, "ch13726a,thor") ? 65535 : 255;
  	const struct backlight_properties props = {
  		.type = BACKLIGHT_RAW,
 -		.brightness = 255,
