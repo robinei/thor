@@ -1,16 +1,18 @@
 # The AYN Thor's system, the whole of it: what an image installs (tools/image/image.sh: base and this,
 # with thor-firmware), and what pacman keeps current. Its kernel, sound profiles, Vulkan driver (Turnip)
-# and motion sensors' services; the system, the session and ClamShell; the repository's key; the day-one
+# and motion sensors' services; the system, the session and ClamShell; the repository's key and Arch Linux
+# ARM's (archlinuxarm-keyring: ALARM's base pulls in only Arch's, and an image's pacstrap -K keyring holds
+# only what the keyring packages installed populate; without it no ALARM package verifies); the day-one
 # checks' tools (evtest; alsa-utils: arecord, speaker-test, alsaucm); what maintenance needs
 # (pacman-contrib: checkupdates, pacdiff; base-devel, squashfs-tools and git: thor-firmware rebuilt on
 # the device after a ROCKNIX release).
 pkgname=thor
 pkgver=1
-pkgrel=3
+pkgrel=4
 pkgdesc="The AYN Thor's system: kernel, session, ClamShell and the rest (a metapackage)"
 arch=(aarch64)
 url=https://github.com/robinei/thor
 license=('MIT OR Apache-2.0')
-depends=(linux-thor thor-ucm thor-sensors vulkan-freedreno turnip-devel thor-system thor-session clamshell thor-keyring
+depends=(linux-thor thor-ucm thor-sensors vulkan-freedreno turnip-devel thor-system thor-session clamshell thor-keyring archlinuxarm-keyring
          alsa-ucm-conf wireless-regdb evtest alsa-utils pacman-contrib base-devel squashfs-tools git)
 optdepends=('thor-firmware: the Thor'"'"'s firmware (from ROCKNIX'"'"'s release; built where it is installed, never published)')
