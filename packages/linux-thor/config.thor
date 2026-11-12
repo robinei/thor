@@ -5,7 +5,8 @@
 # are portrait), as ROCKNIX's config has it; the PMIC's clock built in, so the system clock is set from it
 # at boot (RTC_HCTOSYS), as ROCKNIX's; the TEO idle governor beside menu (thor-system's tmpfiles.d
 # selects it: on an SM8550 handheld PB-OS measured the same frame rates at 6.54 W against 6.84, 2-5 °C
-# cooler).
+# cooler); Landlock, which pacman's download sandbox needs (without it every download fails: "Landlock is
+# not supported by the kernel"; arm64's defconfig leaves it out, though CONFIG_LSM lists it).
 CONFIG_INITRAMFS_SOURCE=""
 CONFIG_DEFAULT_HOSTNAME="thor"
 CONFIG_ANDROID_BINDER_DEVICES=""
@@ -14,3 +15,4 @@ CONFIG_DMABUF_HEAPS_SYSTEM=y
 CONFIG_FRAMEBUFFER_CONSOLE_ROTATION=y
 CONFIG_RTC_DRV_PM8XXX=y
 CONFIG_CPU_IDLE_GOV_TEO=y
+CONFIG_SECURITY_LANDLOCK=y

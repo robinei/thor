@@ -26,7 +26,7 @@ _armada=664da8c6d73c05b3dc55d7c7286dee33f61124a5
 # (Armada's commit's time: the version after the kernel's, so that their newer commit is a newer package.)
 _armada_time=202610291947
 pkgver=$_kver.$_armada_time
-pkgrel=2
+pkgrel=3
 pkgdesc="Armada's Linux kernel for the AYN Thor (SM8550), with its modules and device trees"
 arch=(aarch64)
 url=https://github.com/armada-os/armada
@@ -130,7 +130,7 @@ source=("https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-$_kver.ta
 sha256sums=(039aef84f2b0994aeda3f4fcfc3d02ec9d7a9bbb9020ea264c43f446c860f606
             SKIP
             cdbe93282683496da781d8ffc750614b8e02d4edf9c883497488469f9f61a185
-            5f8748337364f21c693756e4f0ad918db70d3638f2b547d0bc3cdce3755b67cc
+            60c2ae0b6ae367bfffc5926c63897da1657b55197ec1953ae03dfb5a1c1d2769
             2c5748b2e5eacd95d8bea920173137e94e185c0243e222e29792050407355679
             e04f90d36e37fda0cfd779f3bb9fba63d74fa44262a9031c7d9ebe82d9bd622b
             75aa231d72abb210e7fd69466d2c63d1d4846b299c059f121f7df0972e62a6c4
