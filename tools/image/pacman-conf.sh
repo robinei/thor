@@ -15,7 +15,8 @@ ARCH=$1 DIR=$2 CACHE=$3 REPO=${4:-}
 HERE=$(cd "$(dirname "$0")" && pwd)
 case $ARCH in
     aarch64)
-        KEYRING=archlinuxarm REPOS=(core extra alarm) KEYRINGS=$HERE/keyrings
+        # (ALARM's own pacman.conf's repositories, aur too, so that an image has each one's database.)
+        KEYRING=archlinuxarm REPOS=(core extra alarm aur) KEYRINGS=$HERE/keyrings
         MIRRORS="Server = http://mirror.archlinuxarm.org/\$arch/\$repo"
         ;;
     x86_64)
