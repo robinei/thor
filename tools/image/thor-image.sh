@@ -141,6 +141,14 @@ else
 fi
 # (Install scripts' and hooks' complaints, if any.)
 grep -iE "^error|error:|failed" "$WORK/pacstrap.log" | head -20 || true
+# A key this PC's pacman writes into the local database that the image's doesn't know: CachyOS's pacman
+# records %INSTALLED_DB% (the repository) for the packages named, and Arch's and Arch Linux ARM's pacman
+# warn of it at every run until each package is next upgraded.
+written=$(grep -lx '%INSTALLED_DB%' "$ROOT"/var/lib/pacman/local/*/desc || true)
+if [ -n "$written" ]; then
+    say "  %INSTALLED_DB% (this PC's pacman's) taken out of $(wc -l <<< "$written") packages' local entries"
+    xargs -d '\n' sed -i '/^%INSTALLED_DB%$/,/^$/d' <<< "$written"
+fi
 # pacstrap's keyring setup leaves a gpg-agent running in the new root, which keeps it mounted.
 gpgconf --homedir "$ROOT/etc/pacman.d/gnupg" --kill all 2> /dev/null || true
 gpgconf --homedir "$WORK/gnupg" --kill all 2> /dev/null || true
