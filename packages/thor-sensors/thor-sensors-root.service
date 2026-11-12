@@ -14,7 +14,8 @@ RestartSec=1
 # own user, PrivateNetwork, DeviceAllow, address families: each needs the device, to see that the
 # sensors still come up.)
 ProtectSystem=strict
-ReadWritePaths=/var/lib/thor-sensors
+# (Made by systemd, writable under ProtectSystem=strict.)
+StateDirectory=thor-sensors
 ProtectHome=yes
 PrivateTmp=yes
 NoNewPrivileges=yes

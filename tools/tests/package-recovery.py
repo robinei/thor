@@ -1040,7 +1040,7 @@ class SensorsSandbox(unittest.TestCase):
                 level = re.search(r'Overall exposure level for \S+: ([0-9.]+)', result.stdout)
                 self.assertIsNotNone(level, result.stdout[-500:] + result.stderr)
                 self.assertLessEqual(float(level.group(1)), 8.0, result.stdout[-2000:])
-                for setting in ['ProtectSystem=strict', 'ReadWritePaths=/var/lib/thor-sensors', 'ProtectHome=yes', 'NoNewPrivileges=yes']:
+                for setting in ['ProtectSystem=strict', 'StateDirectory=thor-sensors', 'ProtectHome=yes', 'NoNewPrivileges=yes']:
                     self.assertIn(f'\n{setting}\n', path.read_text())
 
 
